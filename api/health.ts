@@ -8,19 +8,18 @@ export default function handler(req: any, res: any) {
     return res.status(200).end();
   }
 
-  const envKeys = Object.keys(process.env).filter(k => 
-    !k.toLowerCase().includes('secret') && 
-    !k.toLowerCase().includes('key') && 
-    !k.toLowerCase().includes('pass') &&
-    !k.toLowerCase().includes('token')
-  );
+  const rawUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
+  const hasAnonKey = Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY);
+  const hasServiceKey = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   return res.status(200).json({
     status: 'ok',
     version: '2.5.0',
     app: 'Radar de Conformidade Fiscal',
-    supabaseConfigured: Boolean(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL),
-    detectedEnvKeys: envKeys,
+    supabaseUrlLength: rawUrl.length,
+    supabaseUrlPreview: rawUrl ? (rawUrl.substring(0, 15) + '...') : '(vazio)',
+    hasAnonKey,
+    hasServiceKey,
     timestamp: new Date().toISOString(),
   });
 }
