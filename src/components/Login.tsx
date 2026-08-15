@@ -23,7 +23,13 @@ export function Login() {
         body: JSON.stringify({ email, senha }),
       });
 
-      const data = await response.json();
+      const text = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text || 'Erro inesperado na resposta do servidor' };
+      }
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro de autenticação');

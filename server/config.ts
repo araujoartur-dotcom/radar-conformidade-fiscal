@@ -24,8 +24,12 @@ dotenv.config({ path: envPath });
 if (!process.env.CERT_ENCRYPTION_KEY) {
   const newKey = crypto.randomBytes(32).toString('hex');
   process.env.CERT_ENCRYPTION_KEY = newKey;
-  fs.appendFileSync(envPath, `\nCERT_ENCRYPTION_KEY=${newKey}\n`);
-  console.log('✅ CERT_ENCRYPTION_KEY gerada automaticamente e salva no .env');
+  try {
+    if (fs.existsSync(envPath)) {
+      fs.appendFileSync(envPath, `\nCERT_ENCRYPTION_KEY=${newKey}\n`);
+      console.log('✅ CERT_ENCRYPTION_KEY gerada e salva no .env');
+    }
+  } catch {}
 }
 
 function requireEnv(key: string, fallback?: string): string {
