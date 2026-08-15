@@ -48,6 +48,17 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// URL Normalizer para Vercel Serverless Functions
+app.use((req, res, next) => {
+  if (req.query?.path) {
+    const subpath = Array.isArray(req.query.path) ? req.query.path.join('/') : req.query.path;
+    if (subpath && !req.url.startsWith('/api/' + subpath) && !req.url.startsWith('/' + subpath)) {
+      req.url = '/' + subpath;
+    }
+  }
+  next();
+});
+
 // =========================================================
 // ROTAS DA API (Compatível com /api/* e /*)
 // =========================================================
@@ -73,6 +84,24 @@ app.get(['/api/health', '/health'], (req, res) => {
     app: 'Radar de Conformidade Fiscal',
     environment: SERVER.NODE_ENV,
     timestamp: new Date().toISOString(),
+  });
+});
+
+// =========================================================
+// TRATAMENTO DE 404 E ERROS
+// =========================================================
+app.use((req, res) => {
+  res.status(404).json({
+    error: `Endpoint não encontrado: ${req.method} ${req.originalUrl || req.url}`,
+    code: 'NOT_FOUND'
+  });
+});
+
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('❌ Erro não tratado na API:', err);
+  res.status(500).json({
+    error: err?.message || 'Erro interno no servidor',
+    code: 'INTERNAL_ERROR'
   });
 });
 
