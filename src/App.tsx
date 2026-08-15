@@ -347,44 +347,6 @@ export default function App() {
       {/* Main Body Workspace */}
       <main className="flex-1 max-w-[1800px] w-full mx-auto p-4 lg:p-6 flex flex-col gap-6 min-w-0 max-w-full">
         
-        {/* Environment Alert Banner */}
-        <div className={`p-3.5 rounded-2xl border flex flex-wrap items-center justify-between gap-3 text-xs transition-all ${
-          ambienteSefaz === 'homologacao'
-            ? 'bg-amber-950/30 border-amber-800/60 text-amber-200'
-            : 'bg-emerald-950/30 border-emerald-800/60 text-emerald-200'
-        }`}>
-          <div className="flex items-center gap-2.5">
-            {ambienteSefaz === 'homologacao' ? (
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-            ) : (
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            )}
-            <div>
-              <span className="font-bold uppercase tracking-wider text-[11px] mr-2">
-                {ambienteSefaz === 'homologacao' ? 'Ambiente Ativo: HOMOLOGAÇÃO (tpAmb = 2)' : 'Ambiente Ativo: PRODUÇÃO (tpAmb = 1)'}
-              </span>
-              <span className="opacity-90">
-                {ambienteSefaz === 'homologacao'
-                  ? 'Os testes usam os Web Services de Homologação da SEFAZ. Os XMLs e consultas não possuem validade jurídica.'
-                  : 'Modo oficial com transmissão real e validade jurídica contábil perante a SEFAZ.'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setAmbienteSefaz(ambienteSefaz === 'homologacao' ? 'producao' : 'homologacao')}
-              className={`px-3 py-1 rounded-lg font-bold text-[11px] border transition-all cursor-pointer ${
-                ambienteSefaz === 'homologacao'
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-400 shadow-sm'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 border-emerald-400 shadow-sm'
-              }`}
-            >
-              Comutar para {ambienteSefaz === 'homologacao' ? 'PRODUÇÃO (tpAmb = 1)' : 'HOMOLOGAÇÃO (tpAmb = 2)'}
-            </button>
-          </div>
-        </div>
-
         {/* Content Layout: Sidebar + Main Workspace */}
         <div className="flex flex-col lg:flex-row gap-6 items-start w-full min-w-0 max-w-full">
           
