@@ -24,7 +24,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   setCertificado
 }) => {
   const { get, post, put, del, uploadFile } = useApi();
-  const { switchEmpresa, empresaAtiva } = useAuth();
+  const {
+    switchEmpresa,
+    empresaAtiva,
+    setEmpresaAtiva,
+    setEmpresasDisponiveis,
+    removerEmpresa,
+    adicionarEmpresa,
+    atualizarEmpresa
+  } = useAuth();
   const [tenants, setTenants] = useState<ClienteEmpresaTenant[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -53,7 +61,26 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     setIsLoading(true);
     const res = await get<{ success: boolean; data: ClienteEmpresaTenant[] }>('/tenants');
     if (res.ok && res.data?.data) {
-      setTenants(res.data.data);
+      const list = res.data.data;
+      setTenants(list);
+
+      const formattedEmpresas = list.map(t => ({
+        id: t.id,
+        cnpjRaiz: t.cnpjRaiz,
+        cnpjCompleto: t.cnpjCompleto,
+        razaoSocial: t.razaoSocial,
+        nomeFantasia: t.nomeFantasia,
+        uf: t.uf,
+        regimeTributario: t.regimeTributario
+      }));
+      setEmpresasDisponiveis(formattedEmpresas);
+
+      // Se a empresa ativa atual não existe mais na lista (por exemplo, foi excluída), limpa ou seleciona a primeira
+      if (empresaAtiva && !list.some(t => t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto)) {
+        setEmpresaAtiva(formattedEmpresas.length > 0 ? formattedEmpresas[0] : null);
+      } else if (!empresaAtiva && formattedEmpresas.length > 0) {
+        setEmpresaAtiva(formattedEmpresas[0]);
+      }
     }
     setIsLoading(false);
   };
@@ -87,7 +114,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
     if (res.ok && res.data?.data) {
       const certData = res.data.data;
-      
+
       setTenants(prev => prev.map(t => {
         if (t.cnpjCompleto === tenantForCert) {
           return {
@@ -145,8 +172,18 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     });
 
     if (res.ok && res.data?.data) {
-      setTenants(prev => [res.data.data, ...prev]);
-      onSelectTenantCnpj(res.data.data.cnpjCompleto);
+      const created = res.data.data;
+      setTenants(prev => [created, ...prev]);
+      adicionarEmpresa({
+        id: created.id,
+        cnpjRaiz: created.cnpjRaiz,
+        cnpjCompleto: created.cnpjCompleto,
+        razaoSocial: created.razaoSocial,
+        nomeFantasia: created.nomeFantasia,
+        uf: created.uf,
+        regimeTributario: created.regimeTributario
+      });
+      onSelectTenantCnpj(created.cnpjCompleto);
       setSearchTerm('');
       setSelectedGroupFilter('todos');
       setShowAddModal(false);
@@ -176,6 +213,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
     if (res.ok) {
       setTenants(prev => prev.map(t => t.id === editingTenant.id ? editingTenant : t));
+      atualizarEmpresa({
+        id: editingTenant.id,
+        cnpjRaiz: editingTenant.cnpjRaiz,
+        cnpjCompleto: editingTenant.cnpjCompleto,
+        razaoSocial: editingTenant.razaoSocial,
+        nomeFantasia: editingTenant.nomeFantasia,
+        uf: editingTenant.uf,
+        regimeTributario: editingTenant.regimeTributario
+      });
       if (selectedTenantCnpj === editingTenant.cnpjCompleto) {
         setCertificado({ ...certificado, razãoSocial: editingTenant.razaoSocial });
       }
@@ -191,6 +237,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       const res = await del(`/tenants/${id}`);
       if (res.ok) {
         setTenants(prev => prev.filter(t => t.id !== id));
+        removerEmpresa(id);
         if (selectedTenantCnpj === cnpj) {
           onSelectTenantCnpj('');
           setCertificado({
@@ -313,11 +360,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           return (
             <div
               key={tenant.id}
-              className={`p-5 rounded-2xl border transition-all space-y-4 ${
-                isSelected
+              className={`p-5 rounded-2xl border transition-all space-y-4 ${isSelected
                   ? 'bg-gradient-to-br from-slate-900 via-indigo-950/80 to-slate-900 border-cyan-400 shadow-xl shadow-cyan-500/10 ring-1 ring-cyan-400/40'
                   : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
-              }`}
+                }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
@@ -422,10 +468,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                   <Key className={`w-4 h-4 ${tenant.certificadoA1 ? 'text-emerald-400' : 'text-amber-400'}`} />
                   <div>
                     <div className="font-bold text-white text-[11px]">
-                      {tenant.certificadoA1 ? 'Certificado A1 Vinculado' : 'Sem Certificado A1'}
+                      {tenant.certificadoA1 ? 'Certificado Vinculado' : 'Certificado Pendente'}
                     </div>
                     <div className="text-[10px] text-slate-400 font-mono">
-                      {tenant.certificadoA1 ? `${tenant.certificadoA1.fileName} (Venc: ${tenant.certificadoA1.validade})` : 'Vincular .PFX / .P12 para habilitar SEFAZ'}
+                      {tenant.certificadoA1 ? `${tenant.certificadoA1.fileName} (Venc: ${tenant.certificadoA1.validade})` : 'Certificado A1'}
                     </div>
                   </div>
                 </div>
@@ -438,7 +484,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         type="password"
                         placeholder="Senha"
                         value={certPasswords[tenant.cnpjCompleto] || ''}
-                        onChange={(e) => setCertPasswords({...certPasswords, [tenant.cnpjCompleto]: e.target.value})}
+                        onChange={(e) => setCertPasswords({ ...certPasswords, [tenant.cnpjCompleto]: e.target.value })}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
                       />
                     </div>
@@ -489,7 +535,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                   placeholder="00.000.000/0000-00"
                   value={newCnpj}
                   onChange={(e) => setNewCnpj(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-950 border border-slate-600 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
                   required
                 />
               </div>

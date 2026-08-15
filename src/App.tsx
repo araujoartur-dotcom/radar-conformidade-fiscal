@@ -83,10 +83,14 @@ export default function App() {
   const processingRef = useRef<boolean>(false);
   const pausedRef = useRef<boolean>(false);
 
-  // Load Initial Batch on Mount
+  // Sync selected tenant with active empresa in context
   useEffect(() => {
-    // Left empty for clean user workspace
-  }, []);
+    if (empresaAtiva) {
+      setSelectedTenantCnpj(empresaAtiva.cnpjCompleto);
+    } else {
+      setSelectedTenantCnpj('');
+    }
+  }, [empresaAtiva]);
 
   const loadDocumentos = async () => {
     if (!empresaAtiva) return;

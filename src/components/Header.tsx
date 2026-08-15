@@ -128,11 +128,11 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/60 text-xs font-semibold text-slate-200 transition-all cursor-pointer shadow-sm"
               title="Alternar Empresa / Filial Ativa"
             >
-              <div className="w-2 h-2 rounded-full bg-emerald-400" />
+              <div className={`w-2 h-2 rounded-full ${empresaAtiva ? 'bg-emerald-400' : 'bg-amber-400'}`} />
               <div className="text-left">
                 <div className="text-[10px] text-slate-400 font-medium leading-none">Empresa Ativa:</div>
                 <div className="font-bold text-white truncate max-w-[160px] sm:max-w-[220px]">
-                  {empresaAtiva ? empresaAtiva.razaoSocial : 'Nenhuma empresa selecionada'}
+                  {empresaAtiva ? empresaAtiva.razaoSocial : 'Nenhuma selecionada'}
                 </div>
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
@@ -146,26 +146,32 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
 
                 <div className="max-h-60 overflow-y-auto">
-                  {empresasDisponiveis.map(emp => {
-                    const isCurrent = emp.id === empresaAtiva?.id;
-                    return (
-                      <button
-                        key={emp.id}
-                        onClick={() => handleSelectEmpresa(emp)}
-                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                          isCurrent
-                            ? 'bg-cyan-950/60 text-cyan-300 font-bold'
-                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                        }`}
-                      >
-                        <div className="truncate mr-2">
-                          <div className="font-extrabold truncate text-white">{emp.razaoSocial}</div>
-                          <div className="text-[10px] font-mono text-slate-400">{emp.cnpjCompleto} ({emp.uf})</div>
-                        </div>
-                        {isCurrent && <Check className="w-4 h-4 text-cyan-400 shrink-0" />}
-                      </button>
-                    );
-                  })}
+                  {empresasDisponiveis.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                      Nenhuma empresa cadastrada na carteira.
+                    </div>
+                  ) : (
+                    empresasDisponiveis.map(emp => {
+                      const isCurrent = emp.id === empresaAtiva?.id;
+                      return (
+                        <button
+                          key={emp.id}
+                          onClick={() => handleSelectEmpresa(emp)}
+                          className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                            isCurrent
+                              ? 'bg-cyan-950/60 text-cyan-300 font-bold'
+                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                          }`}
+                        >
+                          <div className="truncate mr-2">
+                            <div className="font-extrabold truncate text-white">{emp.razaoSocial}</div>
+                            <div className="text-[10px] font-mono text-slate-400">{emp.cnpjCompleto} ({emp.uf})</div>
+                          </div>
+                          {isCurrent && <Check className="w-4 h-4 text-cyan-400 shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}

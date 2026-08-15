@@ -25,14 +25,19 @@ interface AuthContextType {
   login: (token: string, user: User, empresaAtiva: Empresa, empresas: Empresa[]) => void;
   logout: () => void;
   switchEmpresa: (novaEmpresa: Empresa, novoToken: string) => void;
+  setEmpresaAtiva: (empresa: Empresa | null) => void;
+  setEmpresasDisponiveis: (empresas: Empresa[]) => void;
+  removerEmpresa: (empresaId: string) => void;
+  adicionarEmpresa: (novaEmpresa: Empresa) => void;
+  atualizarEmpresa: (empresaAtualizada: Empresa) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [empresaAtiva, setEmpresaAtiva] = useState<Empresa | null>(null);
-  const [empresasDisponiveis, setEmpresasDisponiveis] = useState<Empresa[]>([]);
+  const [empresaAtiva, setEmpresaAtivaState] = useState<Empresa | null>(null);
+  const [empresasDisponiveis, setEmpresasDisponiveisState] = useState<Empresa[]>([]);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,22 +48,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedEmpresa = localStorage.getItem('@RadarFiscal:empresaAtiva');
     const storedEmpresas = localStorage.getItem('@RadarFiscal:empresasDisponiveis');
 
-    if (storedToken && storedUser && storedEmpresa) {
+    if (storedToken && storedUser) {
       setToken(storedToken);
       setUser(JSON.parse(storedUser));
-      setEmpresaAtiva(JSON.parse(storedEmpresa));
+      if (storedEmpresa) {
+        setEmpresaAtivaState(JSON.parse(storedEmpresa));
+      }
       if (storedEmpresas) {
-        setEmpresasDisponiveis(JSON.parse(storedEmpresas));
+        setEmpresasDisponiveisState(JSON.parse(storedEmpresas));
       }
     }
     setLoading(false);
   }, []);
 
+  const setEmpresaAtiva = (novaEmpresa: Empresa | null) => {
+    setEmpresaAtivaState(novaEmpresa);
+    if (novaEmpresa) {
+      localStorage.setItem('@RadarFiscal:empresaAtiva', JSON.stringify(novaEmpresa));
+    } else {
+      localStorage.removeItem('@RadarFiscal:empresaAtiva');
+    }
+  };
+
+  const setEmpresasDisponiveis = (novasEmpresas: Empresa[]) => {
+    setEmpresasDisponiveisState(novasEmpresas);
+    localStorage.setItem('@RadarFiscal:empresasDisponiveis', JSON.stringify(novasEmpresas));
+  };
+
   const login = (newToken: string, newUser: User, novaEmpresa: Empresa, empresas: Empresa[]) => {
     setToken(newToken);
     setUser(newUser);
-    setEmpresaAtiva(novaEmpresa);
-    setEmpresasDisponiveis(empresas);
+    setEmpresaAtivaState(novaEmpresa);
+    setEmpresasDisponiveisState(empresas);
 
     localStorage.setItem('@RadarFiscal:token', newToken);
     localStorage.setItem('@RadarFiscal:user', JSON.stringify(newUser));
@@ -69,8 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setToken(null);
     setUser(null);
-    setEmpresaAtiva(null);
-    setEmpresasDisponiveis([]);
+    setEmpresaAtivaState(null);
+    setEmpresasDisponiveisState([]);
 
     localStorage.removeItem('@RadarFiscal:token');
     localStorage.removeItem('@RadarFiscal:user');
@@ -80,9 +101,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchEmpresa = (novaEmpresa: Empresa, novoToken: string) => {
     setToken(novoToken);
-    setEmpresaAtiva(novaEmpresa);
+    setEmpresaAtivaState(novaEmpresa);
     localStorage.setItem('@RadarFiscal:token', novoToken);
     localStorage.setItem('@RadarFiscal:empresaAtiva', JSON.stringify(novaEmpresa));
+  };
+
+  const removerEmpresa = (empresaId: string) => {
+    setEmpresasDisponiveisState(prev => {
+      const updated = prev.filter(e => e.id !== empresaId);
+      localStorage.setItem('@RadarFiscal:empresasDisponiveis', JSON.stringify(updated));
+      return updated;
+    });
+
+    setEmpresaAtivaState(current => {
+      if (current?.id === empresaId) {
+        localStorage.removeItem('@RadarFiscal:empresaAtiva');
+        return null;
+      }
+      return current;
+    });
+  };
+
+  const adicionarEmpresa = (novaEmpresa: Empresa) => {
+    setEmpresasDisponiveisState(prev => {
+      const updated = [novaEmpresa, ...prev.filter(e => e.id !== novaEmpresa.id)];
+      localStorage.setItem('@RadarFiscal:empresasDisponiveis', JSON.stringify(updated));
+      return updated;
+    });
+
+    setEmpresaAtivaState(current => {
+      if (!current) {
+        localStorage.setItem('@RadarFiscal:empresaAtiva', JSON.stringify(novaEmpresa));
+        return novaEmpresa;
+      }
+      return current;
+    });
+  };
+
+  const atualizarEmpresa = (empresaAtualizada: Empresa) => {
+    setEmpresasDisponiveisState(prev => {
+      const updated = prev.map(e => e.id === empresaAtualizada.id ? empresaAtualizada : e);
+      localStorage.setItem('@RadarFiscal:empresasDisponiveis', JSON.stringify(updated));
+      return updated;
+    });
+
+    setEmpresaAtivaState(current => {
+      if (current?.id === empresaAtualizada.id) {
+        localStorage.setItem('@RadarFiscal:empresaAtiva', JSON.stringify(empresaAtualizada));
+        return empresaAtualizada;
+      }
+      return current;
+    });
   };
 
   if (loading) {
@@ -90,7 +159,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, empresaAtiva, empresasDisponiveis, token, login, logout, switchEmpresa }}>
+    <AuthContext.Provider value={{
+      user,
+      empresaAtiva,
+      empresasDisponiveis,
+      token,
+      login,
+      logout,
+      switchEmpresa,
+      setEmpresaAtiva,
+      setEmpresasDisponiveis,
+      removerEmpresa,
+      adicionarEmpresa,
+      atualizarEmpresa
+    }}>
       {children}
     </AuthContext.Provider>
   );
