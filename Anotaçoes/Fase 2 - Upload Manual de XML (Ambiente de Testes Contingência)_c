@@ -1,0 +1,30 @@
+# Walkthrough: Upload Manual de XML
+
+A funcionalidade de contingência para Upload Manual de XML (NF-e, CT-e, etc.) foi implementada com sucesso no Radar Conformidade Fiscal. O sistema agora está totalmente pronto para receber os seus arquivos reais de homologação.
+
+## O que foi alterado?
+
+### 1. Novo Motor de Ingestão de XML (Backend)
+- Foi construída a rota segura `POST /api/upload/xml`.
+- O servidor agora intercepta arquivos XML reais, decodificando toda a estrutura complexa do arquivo SEFAZ (`nfeProc`, `<infNFe>`, `<det>`).
+- O motor de regras agora inspeciona a tag `<emit>` (Emitente) e `<dest>` (Destinatário) cruzando com o **CNPJ Raiz** da sua empresa logada. 
+  - Se a sua empresa for o Destinatário, o XML é classificado automaticamente como **Operação de Entrada**.
+  - Se a sua empresa for o Emitente, o XML é classificado automaticamente como **Operação de Saída**.
+- Os dados do cabeçalho da nota, assim como os itens detalhados (produtos, valores, NCM, CFOP), são extraídos e injetados de forma estruturada no Banco de Dados SQLite.
+
+### 2. Painel de Relatórios (Frontend)
+- Foi adicionado o botão **"Importar XML Manual"** com destaque visual no painel `Relatórios de Entradas & Apropriação`.
+- A interface agora conta com um modal estilizado que permite escolher o arquivo XML do seu computador.
+- Após o processamento da barra de progresso, um alerta confirma a importação informando se a nota foi tratada como *Entrada* ou *Saída*.
+- A tabela de relatórios é recarregada dinamicamente, passando a cruzar os dados reais do seu XML com o motor de Reforma Tributária para gerar o cálculo de Crédito Esperado.
+
+## Testando o Recurso
+
+Acesse o sistema e vá na guia de Relatórios:
+1. Clique no novo botão **"Importar XML Manual"** localizado no canto superior direito.
+2. Selecione qualquer arquivo XML de Nota Fiscal (NF-e) gerado em seu ambiente de ERP/Homologação.
+3. Clique em **"Buscar Relatório"** e veja os dados da sua nota real povoarem a matriz de elegibilidade.
+4. Você poderá auditar a sua nota item a item, da mesma forma que faria se ela tivesse sido recebida diretamente do Web Service.
+
+> [!TIP]
+> Qualquer documento que você importar manualmente passará a fazer parte da Base de Auditoria e estará disponível no painel de Eventos DF-e para disparar transmissões para a Receita caso deseje testar esse fluxo na próxima etapa.

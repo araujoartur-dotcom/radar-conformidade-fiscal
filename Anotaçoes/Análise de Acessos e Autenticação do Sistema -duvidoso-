@@ -1,0 +1,42 @@
+# Análise de Acessos e Autenticação do Sistema
+
+Esta análise cobre as funcionalidades fundamentais de segurança, autenticação e controle de acesso do **Radar de Conformidade Fiscal**, com base na inspeção do código-fonte (Middlewares, Rotas de Auth e Schema do Banco de Dados).
+
+## 1. Fluxo de Autenticação (Login)
+O ponto de entrada para o sistema ocorre em `POST /api/auth/login`. O processo segue as seguintes etapas de segurança:
+- **Validação de Credenciais:** Verifica e-mail e compara o hash da senha usando `bcrypt`.
+- **Proteção contra Força Bruta:** Conta o número de `tentativas_falhas`. Após 5 tentativas sem sucesso, a conta sofre um bloqueio temporário (15 minutos), gerenciado pela coluna `bloqueado_ate`.
+- **Validação de Status:** Impede o login de usuários marcados como `bloqueado` pelo administrador.
+- **Resolução Multi-Tenant:** Ao fazer login, o sistema busca todas as empresas vinculadas ao usuário na tabela `usuario_empresa` e injeta a primeira empresa ativa automaticamente como "Tenant Ativo" (`empresaAtiva`).
+- **Geração de Tokens:** Emite um **Access Token (JWT)** contendo as informações do usuário e da empresa ativa, e um **Refresh Token** (armazenado com hash no banco de dados) para manter a sessão a longo prazo.
+
+## 2. Controle de Sessões
+O sistema gerencia sessões de forma stateful no banco de dados, oferecendo as seguintes capacidades:
+- **Refresh Token (`POST /api/auth/refresh`):** Permite a renovação do Access Token JWT sem exigir novo login, desde que a sessão não tenha expirado e não tenha sido revogada (`revogada = 0`).
+- **Troca de Empresa (`POST /api/auth/switch-empresa`):** Como o sistema é multi-tenant, usuários que pertencem a múltiplas empresas podem alternar a empresa ativa (contexto de trabalho). O endpoint valida a permissão e emite um novo JWT com o `empresaAtivaId` atualizado.
+- **Logout Seguro (`POST /api/auth/logout`):** Invalida ativamente todas as sessões do usuário alterando a flag `revogada = 1` no banco de dados.
+
+## 3. Autorização e Middlewares (Proteção de Rotas)
+As rotas da API são protegidas por um middleware robusto localizado em `server/middleware/auth.ts`:
+- **Validação JWT (`requireAuth`):** Requer o token no header `Authorization: Bearer <token>`.
+- **Validação de Integridade do Usuário/Tenant:** Mesmo com um JWT válido, o middleware consulta o banco de dados em tempo real para garantir que:
+  1. O usuário ainda existe e não foi bloqueado.
+  2. Se há uma empresa ativa no token, o usuário ainda possui permissão (`usuario_empresa`) para acessá-la. Se perder o vínculo com a empresa enquanto estiver logado, o acesso ao tenant é cortado sem invalidar o token por completo.
+- **Role-Based Access Control (RBAC):** O sistema implementa perfis de acesso (`admin_master`, `contador_gestor`, `analista_fiscal`, `auditor_externo`, `operador_leitura`). O middleware auxiliar `requirePerfil(...perfisPermitidos)` permite bloquear rotas específicas apenas para perfis de alta hierarquia.
+
+## 4. Auditoria e Rastreadores (Audit Log)
+Toda a atividade sensível do sistema é logada de forma imutável:
+- Há uma função `logAuditAction` que registra as ações em uma tabela `audit_log`.
+- Logins bem-sucedidos, trocas de contexto de empresa (switch tenant) e logouts disparam logs de auditoria, registrando o `ip_address`, o usuário, a empresa ativa e o nível (INFO, WARN, etc.).
+
+## 5. Avaliação Geral e Pontos de Atenção
+> [!TIP]
+> A fundação de segurança implementada é extremamente sólida. O uso combinado de JWT (stateless) para velocidade na autorização de rotas com Sessões em DB (stateful) para capacidade de revogação imediata é uma das melhores práticas atuais (Padrão OAuth/OIDC moderno).
+
+**Destaques Positivos:**
+- O banco de dados já possui estrutura preparada para **MFA (Autenticação Multifator)** baseada em TOTP (`mfa_habilitado`, `mfa_segredo`), embora o endpoint de login não exija o token MFA atualmente no código primário de auth.
+- A proteção contra "Brute-force" é uma medida excelente implementada diretamente na rota.
+- Rate-Limiting global simples (500 requisições por 15 minutos) protege a API contra abusos.
+
+> [!WARNING]
+> Ponto de melhoria: O Rate-Limit global é gerenciado na memória (via `Map`). Caso o sistema seja escalado para rodar em múltiplos processos (PM2 Cluster) ou múltiplos containers, as contagens serão isoladas por processo. Recomenda-se migrar esse rate-limit para Redis quando houver escalabilidade horizontal.

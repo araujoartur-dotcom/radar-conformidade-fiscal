@@ -1,0 +1,38 @@
+# Implementação — Correções Críticas de Segurança e Arquitetura
+
+## Escopo das 4 Correções
+
+### 1. Credenciais → Backend seguro com variáveis de ambiente
+### 2. Transmissão de Eventos → Integração real SEFAZ homologação
+### 3. Sessão por Empresa → JWT + controle multi-tenant
+### 4. Tabelas de BD → SQLite (POC) → PostgreSQL (produção)
+
+## Arquitetura Proposta
+
+```
+server/
+├── index.ts              ← Express server principal
+├── config.ts             ← Variáveis de ambiente centralizadas
+├── db/
+│   ├── schema.ts         ← Criação das tabelas
+│   └── database.ts       ← Conexão SQLite
+├── routes/
+│   ├── auth.ts           ← Login, JWT, sessão
+│   ├── sefaz.ts          ← Transmissão real de eventos
+│   ├── credentials.ts    ← Proxy seguro para APIs externas
+│   └── tables.ts         ← CRUD alíquotas, CFOP, cClassTrib
+├── middleware/
+│   ├── auth.ts           ← Verificação JWT + tenant
+│   └── rateLimit.ts      ← Rate limiting real
+└── services/
+    ├── sefazService.ts   ← WebService SEFAZ SOAP
+    └── cryptoService.ts  ← Criptografia de credenciais
+```
+
+## Status
+- [x] Plano criado
+- [ ] Backend Express + config segura
+- [ ] Banco de dados + tabelas
+- [ ] Autenticação JWT
+- [ ] Transmissão SEFAZ real
+- [ ] Frontend adaptado

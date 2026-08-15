@@ -1,0 +1,40 @@
+# Fase 2: Consumo Dinâmico das Tabelas e Motor de Relatórios Real
+
+Você foi muito claro! Entendi perfeitamente a sua visão. A sua ideia é exatamente como um sistema real deve funcionar. 
+
+Nesta fase, vamos transformar o que era apenas um painel de "demonstração" (com dados fixos/mockados) em um **motor real de processamento**.
+
+## Como vai funcionar a nova arquitetura?
+
+1. **Armazenamento de XMLs (Backend):** Vamos criar tabelas no banco de dados (`dfe_documentos` e `dfe_itens`) para armazenar as informações extraídas dos XMLs das notas fiscais.
+2. **Motor de Busca e Cálculo (Backend):** Quando você preencher os filtros no painel de relatórios (ex: data, CNPJ) e clicar em "Buscar", o frontend vai enviar esses filtros para o backend. O backend irá buscar os itens dos XMLs no banco, **cruzar em tempo real** com as suas tabelas de regras (CFOP, cClassTrib e Alíquotas) para determinar se a nota dá direito a crédito, e calcular os valores de IBS/CBS na hora.
+3. **Exibição (Frontend):** O backend devolve a lista pronta e o frontend apenas a exibe nas telas (Razão de Entradas, Matriz de Elegibilidade, etc).
+
+Isso garante que, se você alterar uma regra de CFOP no sistema hoje, amanhã quando você puxar o relatório novamente, o sistema já vai aplicar a nova regra para os documentos.
+
+## Proposed Changes
+
+### 1. Banco de Dados e Backend (APIs)
+- **[NEW]** Criar as tabelas `dfe_documentos` e `dfe_itens` no SQLite (`server/db/schema.ts`).
+- **[MODIFY]** Criar o script `seed.ts` para inserir algumas notas fiscais fictícias no banco, para que você tenha dados para testar.
+- **[NEW]** Criar a rota `GET /api/relatorios/xml` que recebe parâmetros de filtro (`cnpj`, `dataInicio`, `cfop`, etc.), aplica regras tributárias, e retorna os dados prontos.
+- **[MODIFY]** Garantir que as APIs de CFOP e cClassTrib estejam funcionando 100%.
+
+### 2. Painel de Relatórios (`RelatoriosXmlPanel.tsx`)
+- **[MODIFY]** Remover os dados falsos de `INITIAL_XML_ITEM_REPORTS` carregados nativamente.
+- **[MODIFY]** Adicionar um botão **"🔎 Buscar/Processar Relatório"** na interface de filtros.
+- **[MODIFY]** Ao clicar no botão, o React fará uma requisição à API `GET /api/relatorios/xml` e atualizará os painéis inferiores com os dados reais do banco de dados.
+
+### 3. Painéis de Mapas Tributários (CFOP, cClassTrib, etc.)
+- **[MODIFY]** Componentes `RelatorioMapaCfop` e `RelatorioMapaCClassTrib` passarão a consumir os endpoints do backend. A criação ou exclusão de regras refletirá imediatamente no banco de dados.
+
+## User Review Required
+
+> [!TIP]
+> **Sobre os dados iniciais:** Como os XMLs da SEFAZ ainda não estão sendo baixados automaticamente da sua rede (já que não integramos com sua pasta local real no servidor), eu vou injetar no banco de dados os itens que o Google Studio havia "simulado", mas agora salvos de verdade como se tivessem sido processados, para você testar a busca.
+
+## Verification Plan
+
+### Testes Manuais
+1. Acessar as abas de CFOP / cClassTrib, cadastrar e excluir itens e ver se estão salvos.
+2. Ir ao Painel de Relatórios, selecionar um filtro (ex: Fornecedor), clicar no novo botão **"Buscar Relatório"** e confirmar que a tabela reflete apenas os itens que passaram pelas regras processadas no backend.

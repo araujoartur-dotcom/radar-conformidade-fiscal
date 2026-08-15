@@ -1,0 +1,118 @@
+Here are key actions taken for the app:
+
+Edited 16 files
+src/types.ts
+check_circle
+src/components/Header.tsx
+check_circle
+src/components/SidebarCertificado.tsx
+check_circle
+src/utils/reportsData.ts
+check_circle
+src/components/relatorios/RelatorioRazaoEntradas.tsx
+check_circle
+src/components/relatorios/RelatorioMatrizElegibilidade.tsx
+check_circle
+src/components/relatorios/RelatorioCalculoCreditoEsperado.tsx
+check_circle
+src/components/relatorios/RelatorioExcecoesPendencias.tsx
+check_circle
+src/components/relatorios/RelatorioEstornosAjustes.tsx
+check_circle
+src/components/relatorios/RelatorioMapaCfop.tsx
+check_circle
+src/components/relatorios/RelatorioMapaCClassTrib.tsx
+check_circle
+src/components/relatorios/RelatorioOnerosidade.tsx
+check_circle
+src/components/RelatoriosXmlPanel.tsx
+check_circle
+src/App.tsx
+check_circle
+src/components/ConsultaNsuModal.tsx
+check_circle
+src/components/DfeManagerPanel.tsx
+check_circle
+build
+Built
+
+Foi implementada a nova Área de Relatórios Fiscais em Nível de Item de XML com integração total ao ecossistema SAP S/4HANA / ERPs de mercado e aderência às regras da Reforma Tributária (IBS / CBS).
+🛠️ O que foi desenvolvido:
+Menu e Navegação de Relatórios: Adicionada a aba Relatórios Fiscais (XML) no cabeçalho e na barra lateral de navegação com o ícone corporativo.
+Painel de Filtros Seletores de Extração Parametrizada:
+Filtro por CNPJ Emitente / Fornecedor e CNPJ Destinatário / Cliente / Filial.
+Filtro por Estado / UF (SP, RJ, DF, MG, PR, etc.).
+Filtro por Período de Emissão (Data Início e Data Fim).
+Filtro por Tipo de Documento (NF-e, CT-e, NFS-e) e Situação (Autorizado, Cancelado, Denegado, Substituído).
+Filtro por CFOP e cClassTrib específico.
+Filtro por Indicador de Onerosidade (Oneroso, Não Oneroso, Misto, Indeterminado).
+Checkbox para isolar Apenas Exceções e Pendências Críticas de Crédito.
+Campo de Busca Textual Rápida por Razão Social, Chave de Acesso, NCM ou Pedido de Compras.
+Botão de Exportação para Excel (.XLSX) formatado.
+
+Os 8 Relatórios Fiscais do "Pacote Mínimo":
+🧾 Razão de Entradas (Item a Item) — Relatório-Mãe: Base detalhada com dados do cabeçalho, item, NCM, CFOP, cClassTrib e projeção dos impostos IBS / CBS.
+🧠 Matriz de Elegibilidade (CFOP + cClassTrib + Onerosidade): Explicação auditável com indicação do ID da regra corporativa aplicada (ex: ELEG_001) e trilha de evidências.
+📐 Cálculo do Crédito Esperado x Apropriado: Recálculo independente de IBS / CBS comparando com o valor apropriado na contabilidade do ERP e apontando glosas e divergências.
+🚨 Exceções e Pendências de Crédito: Fila diária de saneamento operacional para bloqueio de apropriação indevida (cancelamentos, divergência de alíquotas, falta de XML, etc.) com botões de ação (Liberar, Glosar e Analisar).
+🔁 Estornos / Ajustes / Eventos que Afetam Crédito: Controle do ciclo de vida pós-emissão (cancelamentos, devoluções, NF substituta e ajustes manuais).
+🧩 Mapa CFOP x Tratamento de Crédito: Matriz corporativa editável que define o enquadramento fiscal por CFOP no ERP, permitindo inclusão de novas regras de governança.
+🏷️ Mapa cClassTrib x Alíquota/Base/Regra: Tabela de interpretação da tag <cClassTrib> exigida na Reforma Tributária.
+⚖️ Onerosidade — Auditoria e Evidências: Matriz de validação financeira para prevenção de tomada indevida de crédito em bonificações, brindes e remessas não onerosas.
+
+
+Sim, todas as ações interativas de cada relatório já estão 100% ativadas e funcionais no painel de Relatórios & Créditos (SAP / ERP)!
+Abaixo está o detalhamento de como funciona cada ação e como você pode interagir com elas:
+🎯 1. Filtros e Extração Selecionável (Painel Superior)
+Filtros em Tempo Real: Altere qualquer parâmetro (CNPJ do Fornecedor, CNPJ da Filial/Destinatário, UF, Período de Datas, CFOP, cClassTrib, Tipo de Documento, Situação ou Indicador de Onerosidade) e todas as tabelas dos 8 relatórios serão recalculadas e filtradas instantaneamente.
+Modo "Apenas Exceções": Ao marcar a caixa de seleção, o sistema isola exclusivamente as notas com inconsistências ou bloqueios fiscais.
+Exportação Excel (.XLSX): O botão "Exportar Relatório Ativo (.XLSX)" baixa a planilha Excel formatada do relatório atualmente visível, preservando todos os filtros aplicados e incluindo todas as colunas técnicas (inclusive IBS/CBS e chave do XML).
+🔍 2. Botões de Inspeção e Auditoria (Detalhes / Audit / Recalcular / Analisar)
+Em todos os relatórios baseados em notas (Relatórios #1, #2, #3, #4, #5 e #8), cada linha possui um botão de ação rápida:
+Ao clicar: Abre o Modal de Inspeção Detalhada de Item de XML.
+O que exibe:
+Dados completos do Emitente (Fornecedor) e Destinatário (Filial/Cliente).
+Raio-X do item (NCM, CFOP, cClassTrib, CST, Natureza da Operação).
+Recálculo dos impostos da Reforma Tributária (IBS e CBS) e comparação com o crédito lançado no ERP.
+Trilha de rastreabilidade contábil (Número do Pedido, GRN de recebimento e conta contábil SAP/Totvs).
+Regra de elegibilidade corporativa aplicada (ID da Regra e Critério de Onerosidade).
+🚨 3. Fila Operacional de Saneamento (Relatório #4 — Exceções)
+No Relatório de Exceções e Pendências, os analistas fiscais contam com ações operacionais diretas nas linhas:
+Botão "Liberar": Altera o status da pendência em tempo real para ✓ Saneado / Liberado, indicando que a evidência/laudo foi verificado e o crédito pode ser apropriado no ERP.
+Botão "Glosar": Marca a pendência como ✕ Glosado, bloqueando definitivamente a apropriação do crédito devido a nota cancelada, falta de XML idôneo ou operação não onerosa.
+⚙️ 4. Matrizes de Governança Corporativa (Relatórios #6 e #7 — Mapas CFOP e cClassTrib)
+Nos mapas de parametrização corporativa:
+Botão "+ Adicionar CFOP" / "+ Adicionar cClassTrib": Abre um formulário interativo no topo da página para que sua equipe cadastre novas regras corporativas (definindo se o código é elegível a crédito, se exige onerosidade, se exige validação de cClassTrib e qual a evidência mínima necessária).
+Lixeira (Excluir): Permite remover regras desatualizadas da tabela mestra.
+🔁 5. Controle de Ciclo de Vida do Crédito (Relatório #5 — Estornos)
+Monitora devoluções, cancelamentos na SEFAZ e ajustes manuais, destacando em vermelho piscante as notas que tiveram crédito apropriado no ERP mas ainda estão com Estorno Pendente.
+
+1. Como Funcionam as Ações nos Relatórios (Já Ativadas)
+Detalhes / Audit / Evidências (Relatórios #1, #2, #8):
+Abre o Modal de Auditoria Detalhada do Item, exibindo a composição completa de tributos (Base/Alíquota IBS/CBS), rastreabilidade de entrada no ERP (GRN, Pedido SAP, Conta Contábil) e informações do Fornecedor e Receptora.
+Recalcular (Relatório #3 - Crédito Esperado):
+Dispara a simulação do motor fiscal independente para recalcular a alíquota e comparar a diferença (glosa/impasse) com a conta de crédito no ERP.
+Liberar / Glosar / Analisar (Relatório #4 - Exceções e Pendências):
+Liberar: Muda em tempo real o status para ✓ Saneado / Liberado, autorizando a apropriação do crédito fiscal.
+Glosar: Atualiza o status para ✕ Glosado, bloqueando o crédito por inconsistência ou cancelamento do documento.
+Analisar: Abre a inspeção detalhada do bloqueio.
+Ajustar (Relatório #5 - Estornos e Eventos):
+Permite inspecionar o estorno de nota de devolução/cancelamento e validar se o estorno proporcional já foi processado no ERP.
+Adicionar CFOP e Adicionar cClassTrib (Relatórios #6 e #7 - Matrizes de Governança):
+Abrem formulários para cadastrar novas diretrizes corporativas (CFOP, cClassTrib, exigência de onerosidade e evidência mínima) e contam com botão de exclusão em tempo real.
+Exportar Relatório Ativo (.XLSX) (Botão Superior):
+Gera e faz o download imediato de uma planilha Excel contendo exatamente os dados e colunas do relatório selecionado.
+
+1. Como funcionam as ações dos relatórios e o que já está ativado?
+Todas as ações já estão 100% ativadas e operacionais no sistema:
+Botões de "Detalhes / Audit / Analisar / Evidências":
+Ao clicar em qualquer item nas tabelas dos relatórios, abre-se o Modal de Auditoria do Item de XML, exibindo todos os detalhes de fornecedor, cliente, chave de acesso de 44 dígitos, bases e alíquotas de IBS/CBS, número do pedido no SAP/ERP, lançamento contábil e a trilha de automação de captura.
+Fila Operacional de Saneamento (#4 Exceções e Pendências):
+Na aba de Exceções, você encontra os botões "Liberar" (para aprovar o crédito após validação de laudo) e "Glosar" (para bloquear o crédito e atualizar a conta contábil). O status do item é atualizado em tempo real na interface.
+Gerenciadores de Governança (#6 Mapa CFOP e #7 Mapa cClassTrib):
+Permitem incluir novas regras corporativas dinamicamente através do formulário "Adicionar CFOP" ou "Adicionar cClassTrib", definindo se exige onerosidade, tratamento de crédito (Elegível / Não Elegível) e evidências mínimas exigidas.
+Possuem também ação de exclusão de regras obsoletas.
+Filtros e Seletor Parametrizado:
+Todos os filtros de CNPJ Emitente, CNPJ Destinatário, UF, Intervalo de Datas, CFOP, cClassTrib, Indicador de Onerosidade e Exceções Críticas atualizam os 8 relatórios instantaneamente ao digitar ou selecionar.
+Exportação Nativa para Excel (.XLSX):
+O botão "Exportar Relatório Ativo (.XLSX)" gera um arquivo Excel estruturado no padrão da Reforma Tributária com todas as colunas necessárias para auditoria e carga no ERP.

@@ -1,0 +1,21 @@
+Gestão de Usuário e CNPJ Raiz e Cerificado Digital
+
+Implementei as configurações para Acesso Corporativo, Autenticação em Dois Fatores (MFA/2FA), Gestão de Perfis via Admin e Arquitetura Multi-Tenant para Escritórios de Contabilidade & Grupos Empresariais:
+🔑 1. Acesso Corporativo & Autenticação Forte (MFA / 2FA)
+Login Único por E-mail e Senha: Fluxo centralizado de autenticação corporativa.
+Autenticação em Dois Fatores (MFA / 2FA): Suporte a aplicativos autenticadores (Google Authenticator, Authy, Microsoft Authenticator via TOTP 6 dígitos), SMS e e-mail.
+Sessão Segura & Auditoria: Registro de IP, e-mail e horário em todas as operações com a SEFAZ (consultas, transmissões de eventos e emissões).
+🛡️ 2. Controle de Perfis & Liberador de Acessos (Admin)
+Admin Master: Controle total sobre usuários, perfis, liberação de módulos e vinculo de certificados.
+Contador Gestor: Gestão de carteiras contábeis e clientes multi-CNPJ.
+Analista Fiscal: Operação diária de consultas, XMLs, escrituração e eventos.
+Auditor Externo: Acesso restrito a leitura de relatórios, memórias de cálculo e evidências do Sped/SAP sem permissão de transmissão.
+Operador: Apenas visualização de dados cadastrais.
+Liberação de CNPJs por Usuário: Permissão granulada onde o Admin define exatamente a quais CNPJs da carteira cada usuário tem acesso.
+🏢 3. Carteira Multi-Tenant para Escritórios Contábeis (Isolamento por CNPJ)
+Gestão de Múltiplos CNPJs: Cadastro e alocação de empresas clientes, matrizes e filiais em um único painel.
+Isolamento de Dados: Banco de dados e registros contábeis/fiscais segregados por cliente (particionamento lógico tenant).
+Vínculo Individual de Certificados A1: Upload e validação dos arquivos .PFX ou .P12 com controle de vencimento e emissor para cada CNPJ individualmente.
+📊 4. Limite de CNPJ Raiz (Sinalização)
+Sem Limite Rígido na Nuvem: Na arquitetura cloud multi-tenant, não existe um limite estrutural de CNPJs Raiz.
+O sistema organiza os dados agrupando os primeiros 8 dígitos (CNPJ Raiz) para matriz/filiais e distribui o armazenamento dos XMLs por pastas e diretórios dinâmicos sem gargalos de performance.

@@ -1,0 +1,29 @@
+Excelente! Eu acabei de iniciar o servidor da interface do usuário (Frontend) em segundo plano.
+
+O sistema é uma aplicação web que roda direto no seu navegador. Para acessar e realizar os testes, basta clicar no link abaixo:
+
+🔗 Acessar o Sistema: http://localhost:3000
+
+(Lembre-se): Se pedir login, as credenciais padrão do administrador são:
+
+E-mail: admin@radarfiscal.com.br
+Senha: Admin@RadarFiscal2026!
+Pode acessar e testar a tela de Relatórios. Lembre-se de clicar no botão "Buscar Relatório" que criamos para ver os dados puxando em tempo real do banco de dados!
+
+Se algo der errado na tela ou tiver dúvidas durante o uso, é só me falar!
+
+10:20 PM, 8/6/2026
+10:22 PM, 8/6/2026
+Foi um erro de CORS (bloqueio de acesso entre portas diferentes)!
+
+O frontend (na porta 3000) tentou conversar com o backend, mas o servidor backend estava configurado para aceitar requisições de outra porta no ambiente de desenvolvimento.
+
+Acabei de realizar a correção no arquivo de configuração (.env) e reiniciei ambos os servidores (tanto o backend quanto a interface).
+
+Pode tentar fazer login novamente na tela, por favor?
+
+Se a página não recarregou sozinha, atualize a aba com F5.
+Em seguida, entre com 
+
+admin@radarfiscal.com.br
+ e Admin@RadarFiscal2026!

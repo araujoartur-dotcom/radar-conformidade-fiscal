@@ -1,0 +1,48 @@
+# Upload Manual de XML (Ambiente de Testes / Contingência)
+
+Este plano descreve a implementação de uma funcionalidade que permite o upload de arquivos XML reais (NFe, CTe) manualmente para o sistema. Isso responde à necessidade de testar casos reais de homologação e atuar como contingência em caso de falha nos Web Services da SEFAZ/CGIBS.
+
+## User Review Required
+
+> [!IMPORTANT]
+> O recurso de upload manual permitirá que o usuário envie um XML válido (procNFe). O sistema fará a leitura desse arquivo, extraindo as informações de cabeçalho e detalhamento de itens, e as injetará no banco de dados. Uma vez no banco, **todos os outros fluxos do sistema (cálculo de crédito, transmissão de eventos, etc.) funcionarão normalmente, como se o XML tivesse sido capturado via robô da SEFAZ.**
+
+Por favor, revise a abordagem abaixo e clique em **Proceed** para que eu construa essa funcionalidade para você.
+
+## Proposed Changes
+
+### Backend (Servidor)
+
+A responsabilidade do backend será receber o arquivo XML, validar, converter para JSON usando a biblioteca `xml2js` (já instalada) e extrair os dados.
+
+#### [NEW] `server/routes/upload.ts`
+- Nova rota `POST /api/upload/xml`.
+- Utilizaremos uma abordagem baseada em texto simples (ou `multer`) para receber o conteúdo XML. Para maior simplicidade e menos dependências, podemos ler o payload do corpo da requisição `text/xml` ou via um campo JSON que contenha a string do XML em base64/texto puro.
+- A rota invocará `xml2js.parseStringPromise()` para processar o XML.
+- Vai extrair o CNPJ Emitente, CNPJ Destinatário, Data, Chave de Acesso, Valor Total (na tag `<infNFe>`).
+- **[NOVO DETALHE]** O backend identificará automaticamente se a nota é de **Entrada** (quando o CNPJ do destinatário for o da sua empresa) ou de **Saída** (quando o CNPJ do emitente for o da sua empresa). Ambas serão armazenadas.
+- Vai extrair os produtos/itens iterando sobre as tags `<det>`. Para cada item, lerá NCM, CFOP, cClassTrib (se existir), e os valores do produto.
+- Inserirá um registro na tabela `dfe_documentos` com a flag `tipo_operacao` (Entrada/Saída) e vários registros na tabela `dfe_itens`.
+- O armazenamento no SQLite servirá como base de auditoria (guardando o conteúdo das notas) alinhado ao requisito legal de **guarda por 5 anos**.
+
+#### [MODIFY] `server/index.ts`
+- Registrar as rotas de `uploadRoutes` no Express.
+- Habilitar `express.text({ type: 'text/xml' })` ou aumentar o limite do JSON caso o envio seja encapsulado em JSON.
+
+### Frontend (Interface do Usuário)
+
+Adicionaremos o botão de Upload na tela de Relatórios (ou em um lugar de destaque) e um modal para seleção do arquivo.
+
+#### [MODIFY] `src/components/RelatoriosXmlPanel.tsx`
+- Adicionar um novo botão no cabeçalho ao lado de "Exportar Relatório": **"📤 Importar XML Manual"**.
+- Criar um estado `isUploadModalOpen`.
+- Criar a interface do Modal com um input nativo de arquivo `<input type="file" accept=".xml" />`.
+- Ao selecionar e submeter o arquivo, o componente fará um `fetch` (POST) para `/api/upload/xml` enviando o conteúdo do arquivo lido através do `FileReader`.
+- Em caso de sucesso, fechará o modal, chamará o recarregamento dos dados do painel e exibirá um toast de sucesso.
+
+## Verification Plan
+
+### Testes Manuais
+- Após a conclusão, o usuário testará a nova tela selecionando um arquivo XML real gerado num ERP de homologação.
+- Confirmar se o relatório de auditoria e cálculo de crédito passará a exibir os itens contidos nesse XML que foi carregado manualmente.
+- Confirmar se o documento inserido manualmente aparece disponível nas outras abas para que seja possível transmitir "Eventos da Reforma Tributária" associados àquela Chave de Acesso (respondendo à Pergunta 2).

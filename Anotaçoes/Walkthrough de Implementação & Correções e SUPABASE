@@ -1,0 +1,63 @@
+# 🚀 Walkthrough de Implementação & Correções
+
+Concluímos com sucesso a resolução dos bugs de **Acesso Corporativo**, **Cadastro de Empresas & Diretórios** e **Dados Mestres Fiscais**, além de preparar toda a infraestrutura e integração para conexão com o **Supabase (PostgreSQL Cloud)**.
+
+---
+
+## 🛠️ O que foi Realizado
+
+### 1. 🔐 Correções no Módulo de Acesso Corporativo & Autenticação
+- **Hash Seguro de Senhas com bcrypt:**
+  - Corrigido o bug em [`server/routes/users.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts) onde a senha era salva como `'HASH_DEFAULT'`.
+  - Agora, qualquer novo usuário criado via API ou painel recebe a senha criptografada com `bcrypt` (senha personalizada ou padrão `Mudar@123456`).
+- **Vínculo Automático de Permissões e Empresas (`usuario_empresa`):**
+  - Ao cadastrar um novo usuário, o sistema agora grava os vínculos das empresas autorizadas (ou acesso global `'*'`).
+  - Atualização do endpoint `GET /api/users` para retornar a lista real de CNPJs autorizados através de `JOIN` com `empresas`.
+  - Atualização do endpoint `PUT /api/users/:id` para permitir redefinição de senha e alteração de CNPJs autorizados.
+- **Seletor Dinâmico de Tenant (Empresa Ativa) no Header:**
+  - Criado o componente dropdown no topo de [`src/components/Header.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx) permitindo alternar entre filiais e matrizes em tempo real com emissão de novo token JWT via `/api/auth/switch-empresa`.
+- **Painel de Usuários Atualizado:**
+  - Em [`src/components/AcessoCorporativoModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx), adicionados campos de senha inicial, redefinição de senha e multi-seleção de CNPJs cadastrados na carteira.
+
+---
+
+### 2. 🏢 Correções no Módulo de Cadastro de Empresas & Diretórios
+- **Suporte a Matrizes e Filiais (Desbloqueio de `cnpj_raiz`):**
+  - Corrigido em [`server/db/schema.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts) e [`server/routes/tenants.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts) para remover a restrição `UNIQUE` em `cnpj_raiz` e mantê-la apenas em `cnpj_completo`.
+  - Agora é possível cadastrar Matriz (`.../0001-XX`) e Filiais (`.../0002-YY`, `.../0003-ZZ`) que compartilham os mesmos 8 dígitos raiz.
+- **Persistência Completa de Diretórios por CNPJ Raiz:**
+  - [`src/components/ConfigDiretorioModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConfigDiretorioModal.tsx) foi conectado à API [`server/routes/directories.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/directories.ts) (`GET`, `POST`, `DELETE /directories`).
+  - As configurações de pastas de Entrada, Saída e Eventos agora persistem diretamente no banco de dados.
+
+---
+
+### 3. 📊 Correções em Dados Mestres & Regras Fiscais
+- **Padronização Oficial do `cClassTrib` para 6 Dígitos:**
+  - Códigos atualizados em [`server/db/seed.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts) e [`server/routes/tables.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts) para o padrão de 6 dígitos (`000001`, `100001`, `200001`, etc.) da Nota Técnica RTC.
+- **Prevenção de Crash em Alíquotas (UPSERT):**
+  - O endpoint `POST /api/tables/aliquotas` agora usa `ON CONFLICT (competencia_inicio, tipo_tributo) DO UPDATE`, permitindo atualizar as alíquotas de CBS e IBS da data vigente sem erros de chave única duplicada.
+- **CRUD Completo de CFOP e Regras de Elegibilidade:**
+  - Em [`src/components/TabelasFiscaisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx): adicionados modais de criação e edição de CFOP, desativação de regras, e uma nova aba para auditar as **Regras de Elegibilidade** de crédito (`ELEG_001`, `ELEG_002`, `ELEG_015`, etc.).
+
+---
+
+### 4. ⚡ Integração Supabase (PostgreSQL Cloud)
+- Instalado o pacote `@supabase/supabase-js`.
+- Criado o módulo singleton [`server/db/supabase.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase.ts) que inicializa o cliente caso as credenciais estejam presentes no `.env`.
+- Criado o script DDL completo [`server/db/supabase_schema.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql) com todas as tabelas, tipos ENUM, índices, constraints de chave e políticas de RLS (Row Level Security).
+- Criado o script [`server/db/seed_supabase.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed_supabase.ts) chamado automaticamente na inicialização do servidor.
+- Adicionadas as variáveis de ambiente em [`.env.example`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/.env.example) e [`.env`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/.env):
+  ```env
+  SUPABASE_URL=https://seu-projeto.supabase.co
+  SUPABASE_ANON_KEY=sua-anon-key-aqui
+  SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key-aqui
+  ```
+
+---
+
+## 🧪 Validações Realizadas
+
+1. **Build do Frontend (`vite build`):**
+   - Executado e finalizado com sucesso (código 0, 1.709 módulos transformados).
+2. **Inicialização do Servidor Backend (`tsx server/index.ts`):**
+   - Banco de dados inicializado, schema carregado, seed conferido e servidor Express rodando na porta `3001`.

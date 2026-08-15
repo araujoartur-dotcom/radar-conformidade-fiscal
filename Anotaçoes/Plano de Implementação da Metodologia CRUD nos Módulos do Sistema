@@ -1,0 +1,87 @@
+# Plano de Implementação da Metodologia CRUD nos Módulos do Sistema
+
+Este documento descreve o mapeamento e a proposta de implementação da metodologia **CRUD** (Create, Read, Update, Delete — Criar, Listar/Visualizar, Editar e Excluir) nos módulos cadastrais e de governança do **Radar de Conformidade Fiscal**.
+
+---
+
+## Mapeamento de Módulos & Análise de Aderência CRUD
+
+Abaixo está o diagnóstico das funcionalidades e das capacidades CRUD propostas para implementação:
+
+| Módulo do Sistema | C (Create) | R (Read/List) | U (Update/Edit) | D (Delete/Remove) | Persistência Backend DB |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **1. Carteira de Clientes / CNPJs & Certificados** | ✅ Criar Empresa | ✅ Listar Cards | ❌ Editar Dados | ❌ Excluir Empresa | 🔄 Adicionar `/api/tenants` |
+| **2. Configuração de Diretórios por CNPJ Raiz** | ✅ Criar Regra | ✅ Listar Pastas | ✅ Editar Caminho | ❌ Excluir Regra | 🔄 Adicionar `/api/directories` |
+| **3. Acesso Corporativo & Usuários (2FA)** | ✅ Novo Usuário | ✅ Listar Usuários | ❌ Editar Perfil | ❌ Desativar/Remover | 🔄 Adicionar `/api/users` |
+| **4. Regras de Mapeamento Reforma Tributária** | ❌ Novo Mapeamento | ✅ Consultar cClass | ❌ Editar Alíquota/CBS | ❌ Remover Regra | 🔄 Adicionar `/api/tax-rules` |
+| **5. Integrações ERP & Webhooks (SAP)** | ❌ Novo Webhook | ✅ Visualizar Status | ❌ Editar Endpoint | ❌ Remover Integração | 🔄 Adicionar `/api/integrations` |
+
+*Nota: O Gerenciador de XMLs e Documentos Fiscais foi mantido em seu comportamento nativo de consulta e armazenamento de custódia fiscal, sem alterações de exclusão.*
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> As exclusões efetuadas na Carteira de CNPJs e no Acesso Corporativo serão executadas via backend com registro no log de segurança/auditoria.
+
+> [!TIP]
+> Todos os formulários de Edição e Criação utilizarão modais dinâmicos com validação em tempo real de CNPJ, IE e formatos de caminho no Windows.
+
+---
+
+## Open Questions
+
+> [!WARNING]
+> 1. **Exclusão de CNPJ da Carteira:** Ao excluir uma empresa da carteira, os arquivos XML já baixados na pasta local do Windows (`C:\Radar Conformidade Fiscal\<CNPJ_RAIZ>\...`) devem permanecer intactos em disco, correto?
+> 2. **Permissão de Exclusão:** As ações de **Excluir (Delete)** ficarão restritas exclusivamente ao perfil **Admin Master**?
+
+---
+
+## Proposed Changes
+
+---
+
+### Módulo 1: Carteira de Clientes, CNPJs e Certificados (`CarteiraCnpjsPanel.tsx`)
+
+#### [MODIFY] [CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- Adicionar modal de **Edição de CNPJ** (Editar Razão Social, Nome Fantasia, Grupo Contábil, Regime Tributário e UF).
+- Adicionar botão e confirmação de **Exclusão de Empresa** da carteira.
+- Conectar chamadas à API REST backend para persistência SQLite.
+
+#### [NEW] [server/routes/tenants.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts)
+- Endpoints REST `/api/tenants` (`GET`, `POST`, `PUT /:id`, `DELETE /:id`).
+
+---
+
+### Módulo 2: Configuração de Diretórios por CNPJ Raiz (`ConfigDiretorioModal.tsx`)
+
+#### [MODIFY] [ConfigDiretorioModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConfigDiretorioModal.tsx)
+- Adicionar botão **Excluir Mapeamento de Diretório**.
+- Adicionar validação e teste de escrita em pasta no Windows antes de salvar edições.
+
+#### [NEW] [server/routes/directories.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/directories.ts)
+- Endpoints REST `/api/directories` (`GET`, `POST`, `PUT /:id`, `DELETE /:id`).
+
+---
+
+### Módulo 3: Acesso Corporativo & Gestão de Usuários (`AcessoCorporativoModal.tsx`)
+
+#### [MODIFY] [AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx)
+- Adicionar ação de **Edição de Usuário** (Permite alterar e-mail, grupo contábil, perfil e CNPJs autorizados).
+- Adicionar ação de **Inativar / Excluir Usuário** com log de segurança.
+
+#### [NEW] [server/routes/users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)
+- Endpoints REST `/api/users` (`GET`, `POST`, `PUT /:id`, `DELETE /:id`).
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Executar build do TypeScript (`npx tsc --noEmit`) para garantir integridade das tipagens CRUD.
+- Testar endpoints do servidor REST backend.
+
+### Manual Verification
+- Testar criação, edição, listagem e exclusão na **Carteira de CNPJs**.
+- Verificar persistência e atualização no banco SQLite.

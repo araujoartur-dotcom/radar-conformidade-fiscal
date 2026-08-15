@@ -1,0 +1,8 @@
+{
+  "name": "Remix Radar de Conformidade Fiscal_V3",
+  "description": "Sistema de alta performance para consulta cadastral de CNPJ e Inscrição Estadual (CCC/SEFAZ), processamento em lote Excel, certificado A1 e auditoria fiscal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

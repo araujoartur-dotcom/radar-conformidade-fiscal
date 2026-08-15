@@ -1,0 +1,139 @@
+# Plano de Implementação — Integração Supabase & Correção de Acesso, Cadastro e Dados Mestres
+
+Este documento estabelece o plano técnico para migrar a camada de persistência do **Radar de Conformidade Fiscal** para o **Supabase (PostgreSQL)** e corrigir todos os bugs diagnosticados nos módulos de **Acesso Corporativo**, **Cadastros Multi-Tenant** e **Dados Mestres Fiscais**.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Credenciais do Supabase:** Para conectar o sistema à sua instância do Supabase, precisaremos adicionar ao arquivo `.env`:
+> - `SUPABASE_URL` (Ex: `https://xyzcompany.supabase.co`)
+> - `SUPABASE_ANON_KEY` (Chave pública anônima)
+> - `SUPABASE_SERVICE_ROLE_KEY` (Chave de serviço para operações administrativas seguras no backend)
+>
+> Disponibilizaremos o script SQL completo (`supabase_schema.sql`) para execução com 1 clique no **SQL Editor** do Supabase.
+
+> [!TIP]
+> O backend suportará uma transição suave: caso as chaves do Supabase não estejam preenchidas no primeiro instante, o sistema usará o banco SQLite local com todas as correções de integridade e constraints aplicadas.
+
+---
+
+## Proposed Changes
+
+---
+
+### 1. Camada de Conexão & Configuração do Banco de Dados
+
+#### [MODIFY] [package.json](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/package.json)
+- Adicionar dependência oficial `@supabase/supabase-js`.
+
+#### [MODIFY] [.env.example](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/.env.example) e [.env](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/.env)
+- Adicionar variáveis de ambiente para `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY`.
+
+#### [NEW] [server/db/supabase.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase.ts)
+- Inicializar os clientes Supabase (Cliente Admin com `SERVICE_ROLE_KEY` e Cliente Público com `ANON_KEY`).
+- Fornecer utilitários de consulta e transações compatíveis.
+
+#### [NEW] [server/db/supabase_schema.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql)
+- Script SQL DDL contendo:
+  - Tabela `empresas` (CNPJ Completo único, índice em CNPJ Raiz para suportar matriz e filiais).
+  - Tabela `usuarios` e vínculo com `auth.users` do Supabase.
+  - Tabela `usuario_empresa` com matriz de permissões granulares.
+  - Tabela `diretorios_config` com chave primária por CNPJ Raiz.
+  - Tabela `certificados` com cofre criptografado AES-256-GCM.
+  - Tabela `aliquotas_referencia` com suporte a `ON CONFLICT (competencia_inicio, tipo_tributo) DO UPDATE`.
+  - Tabela `cclasstrib_regras` padronizada com validação de 6 dígitos (`CHECK (length(cclasstrib) = 6)`).
+  - Tabela `cfop_tratamento` e `regras_elegibilidade`.
+  - Tabelas de auditoria (`audit_log`) e documentos (`dfe_documentos`, `dfe_itens`, `eventos_transmitidos`).
+  - Habilitação de **Row Level Security (RLS)** para isolamento de dados entre CNPJs.
+
+#### [NEW] [server/db/seed_supabase.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed_supabase.ts)
+- Script para popular o Supabase com:
+  - Usuário Administrador Master padrão.
+  - Empresa Inicial de Homologação vinculada ao Administrador.
+  - Tabela de Alíquotas de Referência CBS (8.8%), IBS (17.7%) e CBS Teste 2026 (0.9%).
+  - Tabela oficial de cClassTrib com códigos de **6 dígitos** (`000001`, `100001`, `200001`, etc.).
+  - Matriz de CFOPs completa com regras de elegibilidade e onerosidade.
+
+---
+
+### 2. Módulo de Acesso & Gestão de Usuários
+
+#### [MODIFY] [server/routes/auth.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/auth.ts)
+- Conectar autenticação e geração de tokens JWT compatíveis com Supabase Auth.
+- Implementar fluxo de troca de empresa ativa (`/api/auth/switch-empresa`) com atualização das permissões e CNPJs autorizados no token.
+
+#### [MODIFY] [server/routes/users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)
+- **Correção do Hash:** Eliminar o `'HASH_DEFAULT'`. Novos usuários passam a ter hash bcrypt válido com senha inicial ou convite por e-mail via Supabase.
+- **Vínculo Automático de Empresa:** Ao cadastrar um usuário, gravar permissões na tabela `usuario_empresa` para os CNPJs selecionados (ou `*` para todos).
+- **CRUD Completo:** Listar, Criar, Editar e Desativar usuários sincronizando as permissões por empresa.
+
+#### [MODIFY] [AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx)
+- Permitir ao Admin selecionar a quais CNPJs da carteira o usuário tem acesso no formulário de cadastro/edição.
+- Exibir os CNPJs reais autorizados na tabela de usuários.
+
+#### [MODIFY] [Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)
+- Adicionar componente dropdown de **Seletor de Empresa Ativa / Filial** no cabeçalho superior.
+- Exibir razão social e CNPJ ativo com chamada à função `switchEmpresa` do [AuthContext.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/contexts/AuthContext.tsx).
+
+---
+
+### 3. Módulo de Cadastros Multi-Tenant & Diretórios
+
+#### [MODIFY] [server/routes/tenants.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts)
+- **Correção Matriz vs Filiais:** Mudar a validação de duplicidade: permitir múltiplos registros com o mesmo `cnpj_raiz` (agrupamento de filiais) desde que o `cnpj_completo` seja único.
+- Conectar criação e exclusão às tabelas do Supabase/PostgreSQL com limpeza em cascata de certificados e vínculos.
+
+#### [MODIFY] [server/routes/directories.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/directories.ts)
+- Implementar persistência `UPSERT` por `cnpj_raiz` na tabela `diretorios_config`.
+
+#### [MODIFY] [ConfigDiretorioModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConfigDiretorioModal.tsx)
+- Integrar com o hook [useApi.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/hooks/useApi.ts) para carregar (`GET /api/directories`), salvar (`POST /api/directories`) e excluir (`DELETE /api/directories/:id`) as regras de diretório no banco de dados.
+- Garantir que as configurações persistam após fechar o modal ou recarregar a página (F5).
+
+#### [MODIFY] [CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- Sincronizar a empresa selecionada com o estado global `AuthContext.empresaAtiva`.
+- Habilitar edição e exclusão imediata com feedback em tempo real.
+
+---
+
+### 4. Módulo de Dados Mestres & Tabelas Fiscais
+
+#### [MODIFY] [server/routes/tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts)
+- **UPSERT de Alíquotas:** Corrigir a rota `POST /api/tables/aliquotas` para realizar `INSERT ... ON CONFLICT (competencia_inicio, tipo_tributo) DO UPDATE`, eliminando o erro de constraint `UNIQUE`.
+- **Padronização cClassTrib:** Exigir e formatar códigos com **6 dígitos** (ex: `000001` a `999999`).
+- **CRUD Completo de CFOP:** Implementar rotas `POST`, `PUT` e `DELETE` completas para a tabela `cfop_tratamento`.
+
+#### [MODIFY] [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx)
+- Adicionar botões e modais de **Novo CFOP** e **Editar CFOP** na aba "Matriz de CFOP vs Crédito".
+- Corrigir a gravação de alíquotas para exibir notificação de sucesso sem travamentos.
+- Adicionar aba dedicada para consulta e parametrização das **Regras de Elegibilidade de Crédito** (`regras_elegibilidade`).
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. **TypeScript Typecheck:**
+   ```bash
+   npx tsc --noEmit
+   ```
+2. **Build do Frontend:**
+   ```bash
+   npm run build
+   ```
+3. **Teste de Conexão e Queries do Banco:**
+   Executar script de validação de conectividade e integridade relacional.
+
+### Manual Verification
+1. **Acesso:**
+   - Cadastrar um novo usuário no painel Admin.
+   - Fazer logout e autenticar com o novo usuário recém-criado.
+   - Testar a troca de empresa ativa no dropdown do Header e verificar se o JWT atualiza o tenant ativo.
+2. **Cadastro Multi-Tenant:**
+   - Cadastrar uma Matriz (`XX.XXX.XXX/0001-YY`) e uma Filial (`XX.XXX.XXX/0002-ZZ`) com o mesmo CNPJ Raiz, confirmando que ambas são salvas sem conflito.
+   - Abrir o modal de Diretórios de XMLs, alterar os caminhos de Entrada/Saída, salvar e recarregar a página (F5) para validar a persistência.
+3. **Dados Mestres:**
+   - Salvar novas alíquotas CBS/IBS na data atual duas vezes seguidas, verificando que a atualização ocorre sem erro de constraint.
+   - Cadastrar um novo código cClassTrib de 6 dígitos e criar um novo CFOP na matriz de crédito.

@@ -1,0 +1,35 @@
+# Auditoria e Implementação — Fase 1 Concluída
+
+Executei com sucesso o plano para as **4 vulnerabilidades críticas** apontadas, estruturando um backend sólido para o sistema.
+
+## 1. Segurança e Credenciais Isoladas
+Todas as chaves sensíveis (API Key SAP, CGIBS, Token RFB, URLs, Segredos JWT) foram **removidas do frontend** e movidas para variáveis de ambiente seguras no backend (`.env`).
+O frontend agora consome a API própria de forma segura.
+
+## 2. Transmissão de Eventos Reais (SEFAZ Homologação)
+O painel de eventos da Reforma Tributária (`EventosDfePanel.tsx`) agora **chama o backend real** via `POST /api/sefaz/evento`.
+O backend `sefazService.ts` foi implementado para:
+- Montar o envelope SOAP do XML (NT 2025.002-RTC).
+- Ler o Certificado A1 do cofre criptografado.
+- Enviar para o ambiente de homologação (SVRS tpAmb=2).
+- Gravar o retorno e manter o histórico rastreável.
+
+## 3. Sessão por Empresa (JWT + Multi-tenant)
+Criei o **AuthContext** no frontend. O acesso ao sistema agora exige login (`admin@radarfiscal.com.br`).
+O backend possui:
+- Banco SQLite embarcado (já pronto para conversão para PostgreSQL).
+- Proteção JWT.
+- Rotas de login e *switch-empresa* para controlar dinamicamente o `empresaAtivaId`.
+
+## 4. Tabelas de Base de Dados 
+O schema do banco (`schema.ts`) foi inicializado com 11 tabelas:
+- **`aliquotas_referencia`**: Vigência e transição de IBS/CBS.
+- **`cfop_tratamento`**: Regras de apropriação e exigência de crédito por CFOP.
+- **`cclasstrib_regras`**: Mapa da nova tag `<cClassTrib>`.
+- **`regras_elegibilidade`**: Configurações de cruzamento.
+Criei a API de CRUD para gerenciá-las de forma definitiva.
+
+### Próximos Passos (Fase 2)
+As integrações em lote no frontend (como os relatórios fiscais) agora precisam ser atualizadas para buscar as regras e as alíquotas na API em vez de usarem valores hardcoded no parser.
+
+**Sinta-se à vontade para testar e prosseguir!**

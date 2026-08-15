@@ -1,0 +1,108 @@
+Integração SAP/ERP
+
+Manual Técnico & Operacional — Módulo de Integração SAP / ERP
+Este manual descreve a arquitetura, as rotinas de configuração e os fluxos de dados do Módulo de Integração SAP / ERP da plataforma. O módulo foi desenvolvido para automatizar o fluxo fiscal entre a SEFAZ / Ambiente Dados Nacional (ADN) e o seu ambiente corporativo de ERP (SAP S/4HANA, SAP ECC, TOTVS Protheus, Senior Sistemas e Webhooks REST).
+1. Visão Geral da Arquitetura de Integração
+O módulo atua como um Barramento Fiscal Inteligente (Fiscal Integration Bus) que conecta os dados capturados da SEFAZ diretamente às tabelas e parceiros de negócio do ERP.
+code
+Code
+┌───────────────────────────┐      ┌──────────────────────────────┐      ┌───────────────────────────┐
+│     SEFAZ / ADN / CCC     │ ───> │  PLATAFORMA FISCAL (SaaS)   │ ───> │   SAP / TOTVS / ERP / DB  │
+│ (DF-e, XMLs, IE, Eventos) │      │ (Validação, CBS/IBS, 2FA)    │      │ (BAPIs, Business Partners)│
+└───────────────────────────┘      └──────────────────────────────┘      └───────────────────────────┘
+2. Conectores e Protocolos Suportados
+A plataforma disponibiliza três conectores nativos pré-configurados:
+Conector ERP	Protocolo / Interface	Utilização Principal
+SAP S/4HANA / ECC	RFC / OData v4 / SOAP	Atualização de Business Partners (BP / KNA1 / LFA1), Cockpit MIGO/MIRO e Entrada de Notas Fiscais (Inbound).
+TOTVS Protheus	ADVPL REST / WS	Alimentação automática do TOTVS Colaboração, Tabela SF1 (Cabeçalho de NF Entrada) e SD1 (Itens).
+Senior Sistemas / Linx	JSON Webhook / REST	Recepção de XMLs de Entrada e espelhamento de eventos fiscais.
+Webhook REST Universal	HTTPS / OAuth2 / API Key	Integração customizada com qualquer ERP proprietário, sistemas legados ou banco de dados relacional.
+3. Principais Funcionalidades e Regras de Sincronização
+A. Sincronização de Cadastro Fiscais de Parceiros (Business Partners)
+Origem dos Dados: Consulta em Lote ou Direta no CCC SEFAZ (Cadastro Centralizado de Contribuintes).
+Tabelas do SAP Impactadas: KNA1 (Clientes), LFA1 (Fornecedores), KNVL (Inscrição Estadual por UF) ou objeto BusinessPartner no S/4HANA.
+Regra de Negócio: Se a Inscrição Estadual (IE) de um fornecedor ou cliente mudar de estado para Não Habilitado, Baixado ou Suspenso, o sistema pode sinalizar a trava de compras/vendas automaticamente no ERP.
+B. Entrada de Documentos Fiscais (NF-e, CT-e, NFS-e)
+Transmite o XML completo, chave de acesso e resumo dos impostos calculados (incluindo destaque da Reforma Tributária PLP 68/2024 — CBS / IBS).
+Transmitem-se também os itens detalhados da nota (código do produto, NCM/SH, CFOP, quantidade, valor unitário, valor total, ICMS, IPI, CBS e IBS).
+C. Sincronização de Eventos de Manifestação do Destinatário
+Envia em tempo real para o ERP os eventos fiscais registrados na SEFAZ:
+Ciência da Emissão (210210)
+Confirmação da Operação (210200)
+Desconhecimento da Operação (210220)
+Operação não Realizada (210240)
+Comprovante de Entrega do CT-e
+4. Estrutura do Payload de Envio (Exemplo JSON / REST API)
+Abaixo está o exemplo do payload padronizado transmitido via Webhook / Endpoint REST para o ERP quando um novo documento é capturado ou um parceiro é atualizado:
+code
+JSON
+{
+  "event_type": "DFE_INBOUND_CAPTURED",
+  "timestamp": "2026-08-05T20:05:00Z",
+  "tenant_cnpj": "33.000.167/0001-01",
+  "documento": {
+    "tipo": "NFe",
+    "chave_acesso": "3526081721307100017555001000012345678901234",
+    "numero": "000.104.920",
+    "serie": "1",
+    "data_emissao": "2026-08-05 14:30",
+    "emitente": {
+      "cnpj": "17.213.071/0001-20",
+      "razao_social": "LOGISTICA & TRANSPORTES SAO PAULO LTDA",
+      "ie": "110293847112",
+      "uf": "SP",
+      "status_ccc": "Habilitado"
+    },
+    "destinatario": {
+      "cnpj": "33.000.167/0001-01",
+      "razao_social": "PETROBRAS DISTRIBUIDORA S.A.",
+      "uf": "RJ"
+    },
+    "totais": {
+      "valor_total": 28450.00,
+      "valor_icms": 5121.00,
+      "valor_ipi": 0.00,
+      "reforma_tributaria_dual_tax": {
+        "valor_cbs_federal": 2503.60,
+        "valor_ibs_estadual": 5035.65,
+        "aliquotas": {
+          "cbs_percent": 8.8,
+          "ibs_percent": 17.7
+        }
+      }
+    },
+    "itens": [
+      {
+        "numero_item": 1,
+        "codigo_produto": "DELL-R750-01",
+        "descricao": "MODULO SERVIDOR DE REDE DELL POWEREDGE R750 32GB RAM 1TB SSD",
+        "ncm": "8471.50.10",
+        "cfop": "5102",
+        "unidade": "UN",
+        "quantidade": 2,
+        "valor_unitario": 12000.00,
+        "valor_total": 24000.00,
+        "valor_cbs": 2112.00,
+        "valor_ibs": 4248.00
+      }
+    ]
+  }
+}
+5. Passo a Passo de Configuração no Sistema
+Acessar o Módulo de Integração:
+No menu lateral, navegue até a seção Conectores & Integração ERP.
+Selecionar o Sistema de Destino:
+Escolha entre SAP S/4HANA, TOTVS Protheus, Senior Sistemas ou Webhook REST Universal.
+Informar o ID do Mandante (Mandant / Client):
+Para ambientes SAP, informe o mandante (ex: 100 em Produção, 200 em QAS).
+Configurar a URL do Endpoint / Webhook:
+Informe a URL de destino (Exemplo SAP RFC/OData: https://sap-s4hana-prd.empresa.com.br/sap/bc/srt/rfc/sap/z_dfe_sync).
+Marcar as Regras de Automotivação:
+[X] Sincronizar eventos de Manifestação em tempo real para o SAP.
+[X] Atualizar status cadastral IE (CCC SEFAZ) nos parceiros de negócio (Business Partners / KNA1 / LFA1).
+Executar o Teste de Conectividade:
+Clique no botão Testar Conectividade com SAP. O sistema enviará um handshake ping/pong e validará o código de resposta HTTP 200 OK com o status Conectado com Sucesso.
+6. Segurança e Auditoria de Transmissão
+Criptografia: Todas as chamadas trafegam via protocolo HTTPS com TLS 1.3 obrigatório.
+Autenticação: Suporte a Bearer Tokens OAuth2, Basic Auth com credenciais de serviço dedicadas ou API Key em Header personalizado (X-Fiscal-API-Key).
+Trilha de Auditoria: O sistema armazena o histórico dos últimos 90 dias de envios com status de confirmação (sincronizado ou pendente) e código de resposta retornado pelo ERP.

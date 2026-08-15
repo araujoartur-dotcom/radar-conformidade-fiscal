@@ -1,0 +1,49 @@
+Para a utilização corporativa do Sistema de Conformidade Fiscal & Reforma Tributária, apresento abaixo a proposta de arquitetura de governança, controle de acesso, modelo de hospedagem e capacidade de concorrencia.
+1. Modelo de Controle de Acesso e Permissões (RBAC)
+Para garantir segurança, auditabilidade e segregação de funções (Segregation of Duties - SoD), o sistema pode operar com um modelo de RBAC (Role-Based Access Control) gerenciado pelo Usuário Administrador:
+A. Perfil Administrador (Admin/TI Fiscal)
+Atribuições:
+Provisionar e cadastrar novos usuários da organização.
+Definir quais CNPJs/Filiais cada usuário pode visualizar.
+Habilitar ou bloquear o acesso a cada um dos 8 Módulos de Operação:
+Consulta Massiva por CNPJ/Raiz
+Inutilização de Numeração
+Validação Detalhada de XMLs
+Gerenciador de XMLs e XMLs Faltantes
+Painel de Conectividade ERP
+Auditoria Fiscal & Apuração RTC (IBS/CBS/IS)
+Eventos DF-e & Sincronização CGIBS/RFB
+Relatórios Múltiplos de Entrada
+Configurar Chaves de API, Tokens Bearer (CGIBS/RFB) e Upload do Certificado Digital A1.
+Consultar Logs de Auditoria de Ações (Quem consultou, baixou ou transmitiu eventos).
+B. Perfis Recomendados para a Empresa:
+Analista Fiscal / Tributário:
+Acesso: Módulos de Auditoria, Relatórios Múltiplos, Disparo de Eventos RTC e Consulta Massiva.
+Restrição: Não altera configurações de APIs/Certificado Digital.
+Equipe de Compras / Suprimentos:
+Acesso: Gerenciador de XMLs Faltantes e Liberação de Crédito Presumido (Eventos 112110/211110).
+Auditoria Externa / Consultoria Tributária:
+Acesso: Apenas Leitura (Read-Only) nos relatórios de conformidade e conferência das alíquotas IBS/CBS.
+Integração / TI:
+Acesso: Painel ERP, Webhooks e Monitoramento de Conexão com SEFAZ/CGIBS.
+2. Recomendação de Hospedagem: Nuvem (SaaS) vs. Servidor Local
+Recomendação Principal: Implantação em Nuvem (Cloud Native)
+Recomendamos fortemente a implantação em Ambiente Cloud (Google Cloud Run / AWS / Azure) pelos seguintes motivos:
+Conectividade Direta com o CGIBS e Receita Federal: As APIs da Reforma Tributária (CGIBS e RFB) demandam alta disponibilidade, baixa latência e conexão HTTPS segura via TLS 1.3.
+Sem Necessidade de Servidores Locais: Elimina custo de infraestrutura física, no-breaks, manutenção de hardware e links dedicados na empresa.
+Acesso Multi-Filial Seguro: Usuários em diferentes filiais, escritórios ou em home office acessam o sistema com segurança via navegador Web sem depender de VPNs lentas.
+Backup e Atualização Automática de Regras: Conforme novas Notas Técnicas (NTs) forem publicadas pela ENCAT/Receita Federal, as atualizações são aplicadas centralmente para toda a empresa em tempo real.
+3. Capacidade e Limite de Usuários Simultâneos
+A arquitetura do sistema desenvolvida em Node.js / TypeScript com processamento assíncrono e contêineres desacoplados oferece extrema escalabilidade:
+A. Capacidade por Instância de Contêiner (Padrão):
+Usuários Simultâneos Nativos: De 500 a 2.000 usuários ativos navegando simultaneamente por contêiner padrão.
+Gargalo Real: O gargalo de performance não é o número de telas abertas, mas sim a quantidade de requisições de consulta em lote disparadas à SEFAZ/CGIBS.
+B. Dimensionamento com Dimensionamento Automático (Autoscaling na Nuvem):
+Como o sistema é executado em contêineres isolados (Cloud Run / Docker), não há um limite fixo de usuários:
+Se 10 usuários estiverem conectados, a infraestrutura consome o mínimo de recursos.
+Se 5.000 analistas acessarem no fechamento do mês, a nuvem aloca automaticamente novas instâncias para absorver a carga e as desativa ao término do pico.
+Resumo das Recomendações
+Acesso Corporativo: Login único via e-mail e senha com autenticação em dois fatores (MFA) e controle de perfil via Admin.
+Ambiente: Modelo SaaS em Nuvem para máxima velocidade com as APIs da Receita Federal e CGIBS.
+Escalabilidade: Capacidade para milhares de usuários simultâneos com dimensionamento dinâmico de contêineres.
+

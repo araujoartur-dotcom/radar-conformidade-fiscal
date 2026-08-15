@@ -1,0 +1,159 @@
+/**
+ * ============================================================
+ * SEED — DADOS INICIAIS DO BANCO DE DADOS
+ * ============================================================
+ * Popula tabelas com dados essenciais para o funcionamento
+ * inicial do sistema: admin padrão, alíquotas de referência,
+ * mapa CFOP e mapa cClassTrib.
+ * ============================================================
+ */
+
+import { getDatabase } from './database';
+import bcrypt from 'bcryptjs';
+import { v4 as uuid } from 'uuid';
+import { AUTH } from '../config';
+
+export function seedDatabase(): void {
+  const db = getDatabase();
+
+  // Verificar se já foi populado
+  const existingUsers = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as any;
+  if (existingUsers.count > 0) {
+    console.log('ℹ️  Banco já possui dados. Seed ignorado.');
+    return;
+  }
+
+  console.log('🌱 Populando banco de dados com dados iniciais...');
+
+  // =========================================================
+  // USUÁRIO ADMIN PADRÃO
+  // =========================================================
+  const adminId = uuid();
+  const senhaHash = bcrypt.hashSync('Admin@RadarFiscal2026!', AUTH.BCRYPT_ROUNDS);
+
+  db.prepare(`
+    INSERT INTO usuarios (id, nome, email, senha_hash, perfil, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(adminId, 'Administrador Master', 'admin@radarfiscal.com.br', senhaHash, 'admin_master', 'ativo');
+
+  // =========================================================
+  // EMPRESA PADRÃO INICIAL
+  // =========================================================
+  const empresaId = uuid();
+  db.prepare(`
+    INSERT OR IGNORE INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, status)
+    VALUES (?, '19791896', '19.791.896/0001-00', 'SUPERGASBRAS ENERGIA LTDA', 'SUPERGASBRAS ENERGIA LTDA', 'SP', 'Lucro Real', 'ativo')
+  `).run(empresaId);
+
+  // Vincular admin à empresa padrão
+  db.prepare(`
+    INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
+    VALUES (?, ?, ?, 'total', '*')
+  `).run(uuid(), adminId, empresaId);
+
+  // =========================================================
+  // ALÍQUOTAS DE REFERÊNCIA CBS / IBS (Transição 2026–2033)
+  // =========================================================
+  const aliquotas = [
+    // 2026 — Fase teste (CBS Test 0.9%)
+    { inicio: '2026-01-01', fim: '2026-12-31', tipo: 'CBS', aliq: 0.9, fase: 'teste_2026', desc: 'CBS Teste (Art. 342 LC 214/25) — Alíquota de teste do período de adaptação', base: 'LC 214/2025, Art. 342' },
+    { inicio: '2026-01-01', fim: '2026-12-31', tipo: 'IBS', aliq: 0.1, fase: 'teste_2026', desc: 'IBS Teste (Art. 342 LC 214/25) — Alíquota de teste do período de adaptação', base: 'LC 214/2025, Art. 342' },
+
+    // 2027 — Início transição
+    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'CBS', aliq: 8.8, fase: 'transicao_2027', desc: 'CBS Referência — Substituição integral de PIS/COFINS', base: 'LC 214/2025' },
+    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'IBS', aliq: 17.7, fase: 'transicao_2027', desc: 'IBS Referência — Substituição progressiva do ICMS/ISS', base: 'LC 214/2025' },
+
+    // 2029–2032 — Transição progressiva
+    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'CBS', aliq: 8.8, fase: 'transicao_progressiva', desc: 'CBS durante período de transição com redução progressiva de PIS/COFINS', base: 'LC 214/2025, Art. 343-348' },
+    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'IBS', aliq: 17.7, fase: 'transicao_progressiva', desc: 'IBS durante período de transição com redução progressiva de ICMS/ISS', base: 'LC 214/2025, Art. 343-348' },
+
+    // 2033+ — Regime definitivo
+    { inicio: '2033-01-01', fim: null, tipo: 'CBS', aliq: 8.8, fase: 'definitiva', desc: 'CBS definitiva — PIS/COFINS extintos', base: 'LC 214/2025' },
+    { inicio: '2033-01-01', fim: null, tipo: 'IBS', aliq: 17.7, fase: 'definitiva', desc: 'IBS definitiva — ICMS/ISS extintos', base: 'LC 214/2025' },
+
+    // Imposto Seletivo
+    { inicio: '2027-01-01', fim: null, tipo: 'IS', aliq: 0, fase: 'definitiva', desc: 'Imposto Seletivo — Alíquota específica por produto (bebidas, fumo, etc.)', base: 'LC 214/2025, Art. 393-406' },
+  ];
+
+  const stmtAliq = db.prepare(`
+    INSERT OR REPLACE INTO aliquotas_referencia (id, competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const a of aliquotas) {
+    stmtAliq.run(uuid(), a.inicio, a.fim, a.tipo, a.aliq, a.desc, a.base, a.fase);
+  }
+
+  // =========================================================
+  // MAPA CFOP x TRATAMENTO (Regras Globais)
+  // =========================================================
+  const cfops = [
+    { cfop: '1102', desc: 'Compra para comercialização (Estado)', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'XML NF-e com Chave Válida + GRN Recebimento' },
+    { cfop: '2102', desc: 'Compra para comercialização (Outro Estado)', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'XML NF-e com Chave Válida + Conhecimento de Frete CT-e' },
+    { cfop: '1551', desc: 'Compra de bem para o ativo imobilizado', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'Fatura de Ativo + Laudo de CIAP/Apropriação' },
+    { cfop: '1910', desc: 'Entrada de bonificação, doação ou brinde', cat: 'Remessa', trat: 'Não elegível', oner: 1, valid: 1, evid: 'Nota Fiscal de Bonificação (Verificar Regra Específica)' },
+    { cfop: '1915', desc: 'Entrada de mercadoria em conserto ou reparo', cat: 'Remessa', trat: 'Não elegível', oner: 1, valid: 0, evid: 'Ordem de Serviço / Remessa para Conserto' },
+    { cfop: '1202', desc: 'Devolução de venda de mercadoria adquirida', cat: 'Devolução', trat: 'Depende', oner: 1, valid: 1, evid: 'NF-e de Devolução Espelho com Chave da Origem' },
+    { cfop: '1352', desc: 'Aquisição de serviço de transporte por estabelecimento industrial', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'CT-e Vinculado à Nota Fiscal de Mercadoria' },
+    { cfop: '5102', desc: 'Venda de mercadoria adquirida de terceiros', cat: 'Outros', trat: 'Não elegível', oner: 0, valid: 1, evid: 'NF-e de Saída' },
+    { cfop: '6102', desc: 'Venda interestadual de mercadoria adquirida', cat: 'Outros', trat: 'Não elegível', oner: 0, valid: 1, evid: 'NF-e de Saída Interestadual' },
+    { cfop: '5101', desc: 'Venda de produção do estabelecimento', cat: 'Outros', trat: 'Não elegível', oner: 0, valid: 1, evid: 'NF-e de Saída' },
+    { cfop: '6352', desc: 'Prestação de serviço de transporte interestadual', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'CT-e autorizado e vinculado ao DACTE' },
+    { cfop: '3102', desc: 'Compra para comercialização (Importação)', cat: 'Compra', trat: 'Elegível', oner: 1, valid: 1, evid: 'DI + NF-e de Entrada de Importação' },
+  ];
+
+  const stmtCfop = db.prepare(`
+    INSERT INTO cfop_tratamento (id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima)
+    VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const c of cfops) {
+    stmtCfop.run(uuid(), c.cfop, c.desc, c.cat, c.trat, c.oner, c.valid, c.evid);
+  }
+
+  // =========================================================
+  // MAPA cClassTrib x ALÍQUOTA / REGRA (6 Dígitos)
+  // =========================================================
+  const cclasstrib = [
+    { code: '000001', desc: 'Operação Tributada Integralmente IBS/CBS', trat: 'tributado', cred: 'Sim', aliq: '26.5% (8.8% CBS + 17.7% IBS)', alertas: 'Verificar se houver destaque zerado em documento tributado.' },
+    { code: '100001', desc: 'Alíquota Reduzida de Cesta Básica / Saúde', trat: 'aliquota_reduzida', cred: 'Sim', aliq: '10.6% (60% de Redução IBS/CBS)', alertas: 'Conferir enquadramento NCM na lista anexa do regulamento.' },
+    { code: '200001', desc: 'Isenção / Imunidade Constitucional', trat: 'isento', cred: 'Não', aliq: '0.00%', alertas: 'Crédito bloqueado por ausência de incidência na entrada.' },
+    { code: '300001', desc: 'Não Incidência / Exportação', trat: 'nao_incidencia', cred: 'Não', aliq: '0.00%', alertas: 'Não gera crédito de entrada.' },
+    { code: '900001', desc: 'Regime Específico Monofásico (Combustíveis/Bebidas)', trat: 'monofasico', cred: 'Depende', aliq: 'Alíquota Ad Valorem Específica', alertas: 'Exige regra de diferimento e retenção na origem.' },
+    { code: '100002', desc: 'Alíquota Reduzida 30% — Educação', trat: 'aliquota_reduzida', cred: 'Sim', aliq: '18.55% (30% de Redução IBS/CBS)', alertas: 'Aplicável a serviços educacionais conforme Art. 262 LC 214/25.' },
+    { code: '400001', desc: 'Suspensão — Regime Drawback', trat: 'isento', cred: 'Depende', aliq: '0.00% (Suspensão)', alertas: 'Tributação suspensa conforme regime aduaneiro especial.' },
+  ];
+
+  const stmtCClass = db.prepare(`
+    INSERT INTO cclasstrib_regras (id, empresa_id, cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas)
+    VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const c of cclasstrib) {
+    stmtCClass.run(uuid(), c.code, c.desc, c.trat, c.cred, c.aliq, c.alertas);
+  }
+
+  // =========================================================
+  // REGRAS DE ELEGIBILIDADE
+  // =========================================================
+  const regras = [
+    { codigo: 'ELEG_001', nome: 'Compra de insumo com documento idôneo e oneroso', desc: 'Aquisição de insumo vinculada à atividade produtiva com NF-e válida e evidência de pagamento', tipo: 'insumo', cfops: '["1102","2102"]', result: 'Elegível', evid: 'XML NFe válido + GRN + Fatura', base: 'LC 214/2025, Art. 28-32' },
+    { codigo: 'ELEG_002', nome: 'Frete sobre aquisição creditável', desc: 'CT-e vinculado a NF-e de aquisição elegível ao crédito', tipo: 'frete', cfops: '["1352","6352"]', result: 'Elegível', evid: 'CT-e autorizado + vinculação à NF-e de entrada', base: 'LC 214/2025, Art. 28' },
+    { codigo: 'ELEG_004', nome: 'Serviço tomado com retenção CBS/IBS', desc: 'NFS-e de serviço tomado com retenção obrigatória na fonte', tipo: 'servico', cfops: '[]', result: 'Pendente', evid: 'NFS-e + Comprovante de retenção ISS/CBS', base: 'LC 214/2025 + NT 009 NFS-e' },
+    { codigo: 'ELEG_015', nome: 'Ativo imobilizado — crédito em 1/48 avos', desc: 'Aquisição de bem para ativo imobilizado com crédito proporcional mensal', tipo: 'imobilizado', cfops: '["1551"]', result: 'Elegível', evid: 'Laudo CIAP + Fatura + Contrato', base: 'LC 214/2025, Art. 40' },
+    { codigo: 'ELEG_050', nome: 'Devolução gera estorno de crédito', desc: 'NF-e de devolução é espelho para estorno, não gera crédito novo', tipo: 'revenda', cfops: '["1202"]', result: 'Não elegível', evid: 'NF-e de origem vinculada na tag refNFe', base: 'LC 214/2025, Art. 36' },
+    { codigo: 'ELEG_099', nome: 'Bonificação/Brinde — Operação não onerosa', desc: 'CFOP de remessa não onerosa — crédito vedado', tipo: 'revenda', cfops: '["1910"]', result: 'Não elegível', evid: 'NF-e de bonificação sem contraprestação financeira', base: 'LC 214/2025, Art. 28, §2º' },
+  ];
+
+  const stmtRegra = db.prepare(`
+    INSERT INTO regras_elegibilidade (id, empresa_id, codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal)
+    VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const r of regras) {
+    stmtRegra.run(uuid(), r.codigo, r.nome, r.desc, r.tipo, r.cfops, r.result, r.evid, r.base);
+  }
+  
+  console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas, CFOP, cClassTrib (6 Dígitos), Regras.');
+}
+

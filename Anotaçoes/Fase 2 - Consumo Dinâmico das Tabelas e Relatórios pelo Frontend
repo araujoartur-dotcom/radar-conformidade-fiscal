@@ -1,0 +1,40 @@
+# Fase 2: Consumo Dinâmico das Tabelas e Relatórios pelo Frontend
+
+Este plano detalha como migraremos os relatórios e mapas tributários (CFOP, cClassTrib e Regras) no frontend, que atualmente usam constantes `hardcoded` em `src/utils/reportsData.ts`, para passarem a consumir as APIs criadas no backend (`/api/tables/*`).
+
+## Proposed Changes
+
+### Componente `RelatorioMapaCfop.tsx`
+- **[MODIFY]** Remover o uso de `INITIAL_MAPA_CFOP`.
+- **[MODIFY]** Importar e utilizar o `useAuth()` para obter o token JWT.
+- **[MODIFY]** Implementar um `useEffect` para realizar um `GET /api/tables/cfop`.
+- **[MODIFY]** Alterar a função `handleAddRule` para realizar um `POST /api/tables/cfop`.
+- **[MODIFY]** Alterar a função `handleDeleteRule` para realizar um `DELETE /api/tables/cfop/:id`.
+
+### Componente `RelatorioMapaCClassTrib.tsx`
+- **[MODIFY]** Remover o uso de `INITIAL_MAPA_CCLASSTRIB`.
+- **[MODIFY]** Importar e utilizar o `useAuth()` para obter o token JWT.
+- **[MODIFY]** Implementar o CRUD integrado às rotas:
+  - `GET /api/tables/cclasstrib`
+  - `POST /api/tables/cclasstrib`
+  - `DELETE /api/tables/cclasstrib/:id`
+
+### Interface Types (`src/types.ts`)
+- **[MODIFY]** Ajustar ou confirmar que os tipos `MapaCfopItem` e `MapaCClassTribItem` possuem os campos `id`, `empresa_id` (opcionais) para facilitar as remoções e atualizações via API.
+
+## User Review Required
+
+> [!WARNING]
+> Ao mudar para o backend dinâmico, se o banco de dados local (`radar_fiscal.db`) estiver vazio, as tabelas aparecerão vazias inicialmente (sem dados `mock`). Eu posso criar um script para popular os dados padrões nas tabelas do banco de dados na inicialização ou migração, caso desejado. O script `seed.ts` atual faz isso, mas preciso confirmar que ele já foi rodado. Se não, basta cadastrar pela tela.
+
+## Open Questions
+
+- Você gostaria que os relatórios principais (como `RelatorioRazaoEntradas`) também buscassem dados através de chamadas à uma API do backend (migrando `INITIAL_XML_ITEM_REPORTS`), ou mantemos eles estáticos por agora para focarmos apenas nas regras e tabelas de parametrização (CFOP, cClassTrib, etc.)?
+
+## Verification Plan
+
+### Testes Manuais
+- Abrir as telas "6) Mapa CFOP" e "7) Mapa cClassTrib".
+- Verificar o carregamento dos itens (Spinner).
+- Adicionar um novo CFOP / cClassTrib e verificar se a API retorna sucesso e a lista atualiza.
+- Excluir um item e confirmar a remoção na interface e no backend.

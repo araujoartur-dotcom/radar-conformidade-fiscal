@@ -1,0 +1,40 @@
+# Organização Automática de XMLs em Diretórios
+
+Este plano descreve a implementação da inteligência de organização de diretórios para os XMLs recebidos. Conforme solicitado, o sistema armazenará fisicamente os arquivos de forma automática na máquina local, garantindo retenção segura e escalabilidade.
+
+## User Review Required
+
+> [!IMPORTANT]
+> O sistema fará a escrita dos arquivos na unidade **`C:\Radar Conformidade Fiscal\`**. O Windows pode ocasionalmente exigir permissões de administrador para criar pastas diretamente na raiz do `C:\`. Recomendamos garantir que o terminal que executa o backend tenha as devidas permissões, ou o sistema rodará em um caminho que não seja bloqueado por UAC.
+> 
+> A data baseada para organizar o Ano e Mês será a **Data de Emissão** do documento fiscal (extraída do próprio XML).
+
+Por favor, revise o plano abaixo e clique em **Proceed** para aprovação.
+
+## Proposed Changes
+
+### Backend (Servidor)
+
+A responsabilidade do backend será capturar a string original do XML no momento do upload (ou captura automática futura), processar as pastas recursivamente e salvar o arquivo no disco com o nome baseado na chave de acesso.
+
+#### [NEW] `server/utils/fileStorage.ts`
+- Criaremos um arquivo utilitário dedicado a gerenciar a gravação física no disco.
+- Conterá a função `salvarXmlLocalmente(xmlString, cnpjRaiz, tipoOperacao, dataEmissao, chaveAcesso)`.
+- A função fará o "parse" da `dataEmissao` para extrair o **Ano (YYYY)** e o **Mês (MM)**.
+- Mapeará a estrutura: 
+  - `C:\Radar Conformidade Fiscal\[CNPJ_Raiz]\ENTRADA\[Ano]\[Mês]\`
+  - `C:\Radar Conformidade Fiscal\[CNPJ_Raiz]\SAIDAS\[Ano]\[Mês]\`
+- Utilizará a biblioteca nativa `fs` (Node.js) com `mkdirSync({ recursive: true })` para construir toda a árvore de diretórios automaticamente caso não exista.
+- Salvará o arquivo como `[chaveAcesso].xml`.
+
+#### [MODIFY] `server/routes/upload.ts`
+- Após processar as tags com `xml2js`, identificar o `tipoOperacao` (Entrada/Saída), e ler o `dhEmi` (Data de Emissão), a rota importará o utilitário `fileStorage.ts`.
+- Invocará a função para salvar no disco de forma assíncrona/síncrona passando o `xmlContent` (o texto puro do XML original).
+
+## Verification Plan
+
+### Testes
+1. O backend será reiniciado.
+2. Faremos um novo upload manual de um XML pelo painel.
+3. Abriremos o Explorador de Arquivos do Windows no caminho `C:\Radar Conformidade Fiscal\`.
+4. Verificaremos a criação automática da pasta com o CNPJ Raiz, subpasta (ENTRADA ou SAIDAS), Ano e Mês, e certificaremos que o arquivo `.xml` (com a respectiva chave de acesso) está devidamente salvo lá.

@@ -1,0 +1,335 @@
+# Análise Diagnóstica & Plano de Implementação — Radar de Conformidade Fiscal
+
+## 1. Objetivo e Contexto
+
+O **Radar de Conformidade Fiscal** é um sistema de conformidade tributária que visa gerenciar certificados digitais A1, consultar inscrições estaduais, capturar/organizar XMLs fiscais, transmitir manifestações para a SEFAZ, e gerar relatórios de crédito IBS/CBS da Reforma Tributária.
+
+**Estado Atual:** O sistema possui um backend Express + SQLite robusto com autenticação JWT, schema de banco completo, e um frontend React com ~12 módulos de UI. Entretanto, existe uma **desconexão crítica** entre frontend e backend: a maioria dos módulos do frontend opera com **estado local `useState()`** sem comunicação com a API REST, fazendo com que dados se percam ao recarregar a página.
+
+**Estado Desejado:** Todas as funcionalidades da UI devem persistir dados no banco SQLite via API REST e sobreviver ao reload do navegador.
+
+---
+
+## 2. Entendimento dos Requisitos e Restrições
+
+### Restrições do Usuário (Já Documentadas)
+- ❌ **Nenhum dado fictício pré-carregado** — CNPJs, certificados e XMLs só aparecem quando registrados pelo usuário
+- ✅ **Trabalhar apenas com dados reais** de Homologação e Produção
+- ✅ **Persistência local em disco** para XMLs: `C:\Radar Conformidade Fiscal\<CNPJ>\ENTRADA|SAIDAS\Ano\Mês\`
+- ✅ **Retenção de 5 anos** conforme legislação fiscal
+- ❌ **Não implementar CRUD no módulo DfeManager** (XMLs) — excluído explicitamente pelo usuário
+
+### Problema Central Identificado
+O frontend inteiro funciona como um **SPA stateful puro** — todos os dados vivem em `useState()` dentro de `App.tsx` e componentes filhos. Ao recarregar a página, **tudo se perde**.
+
+---
+
+## 3. Diagnóstico Detalhado por Módulo
+
+### Legenda de Severidade
+| Ícone | Severidade | Descrição |
+|-------|-----------|-----------|
+| 🔴 | **Crítico** | Funcionalidade completamente quebrada ou dados se perdem |
+| 🟡 | **Parcial** | Funciona parcialmente mas com falhas significativas |
+| 🟢 | **Funcional** | Backend e frontend conectados e operando |
+
+---
+
+### 🔴 Módulo 1: Carteira de CNPJs / Empresas (`CarteiraCnpjsPanel.tsx`)
+
+**Estado Atual:**
+- O frontend cria empresas com `useState` local → **dados somem ao recarregar**
+- O backend tem rotas REST completas (`GET/POST/PUT/DELETE /api/tenants`) ✅
+- O backend **não exige autenticação** nestas rotas (sem `requireAuth`) ⚠️
+- O `seed.ts` cria uma empresa demo `19.791.896/0001-00` no banco, mas o frontend não carrega do banco
+
+**O que falta:**
+- [ ] Conectar `CarteiraCnpjsPanel` ao `GET /api/tenants` no `useEffect` de montagem
+- [ ] Chamar `POST /api/tenants` ao criar empresa (em vez de só `setTenants`)
+- [ ] Chamar `PUT /api/tenants/:id` ao editar
+- [ ] Chamar `DELETE /api/tenants/:id` ao excluir
+- [ ] Enviar JWT `Authorization: Bearer <token>` em todas as chamadas
+
+---
+
+### 🔴 Módulo 2: Upload de Certificado Digital A1 (`.PFX`)
+
+**Estado Atual:**
+- O frontend permite upload de `.PFX` + senha → **apenas salva no estado local**
+- O backend **NÃO tem rota** para receber upload de certificado `.PFX` 
+- A tabela `certificados` no banco existe e tem campos para armazenar o `.PFX` criptografado
+- O `sefazService.ts` tenta ler o certificado do banco via `descriptografarCertificado()` — mas nunca encontra dados
+
+**O que falta:**
+- [ ] Criar rota `POST /api/config/certificate/upload` com `multer` para receber `.PFX`
+- [ ] Implementar criptografia AES-256-GCM da senha do `.PFX` antes de gravar
+- [ ] Salvar arquivo `.PFX` no diretório seguro (`CERT_STORAGE_DIR`)
+- [ ] Inserir registro na tabela `certificados`
+- [ ] Conectar o frontend (`CarteiraCnpjsPanel`) a esta nova rota
+- [ ] Criar rota `DELETE /api/config/certificate/:id` para remoção segura
+
+---
+
+### 🔴 Módulo 3: Consulta IE em Lote (Excel) (`ConsultaLotePanel.tsx`)
+
+**Estado Atual:**
+- O frontend usa `queryCnpjsData()` em [src/utils/cnpj.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/cnpj.ts) — que é uma **simulação local com dados hardcoded**
+- Não existe nenhuma rota REST no backend para consultar Inscrições Estaduais
+- O resultado do processamento em lote vive em `useState` → perde-se ao recarregar
+
+**O que falta:**
+- [ ] Criar rota `POST /api/sefaz/consulta-ie` que use o certificado A1 para consultar `CadConsultaCadastro4` da SEFAZ
+- [ ] Implementar chamada SOAP real para `NfeConsultaCadastro4.asmx` via mTLS
+- [ ] Salvar resultados no banco (`consultas_ie` — nova tabela)
+- [ ] Conectar frontend ao endpoint real em vez da simulação
+- [ ] Implementar fallback de simulação quando certificado não disponível
+
+---
+
+### 🔴 Módulo 4: Consulta Rápida Direta (`ConsultaAvulsaPanel.tsx` / modo `detalhada`)
+
+**Estado Atual:**
+- Mesma situação da Consulta em Lote — usa `queryCnpjsData()` simulada
+- Sem conexão real com SEFAZ
+
+**O que falta:**
+- Idem ao Módulo 3 (mesma rota backend serve ambos os modos)
+
+---
+
+### 🟡 Módulo 5: Gerenciador de XMLs (`DfeManagerPanel.tsx`)
+
+**Estado Atual:**
+- O upload de XML **funciona parcialmente**: o frontend faz parse local via `parseDfeXmlString()` e adiciona ao `useState`
+- A rota `POST /api/upload/xml` **existe e funciona no backend** — parse XML, grava em `dfe_documentos` + `dfe_itens`, e salva arquivo em disco ✅
+- Porém o frontend **não chama esta rota** — faz tudo local
+- A lista de XMLs (`dfeList`) vive em `useState([])` → perde ao recarregar
+- O módulo `ConsultaNsuModal` (Consulta NSU/SEFAZ) é **simulação visual** — não faz chamada real
+
+**O que falta:**
+- [ ] Após parse local, enviar XML para `POST /api/upload/xml` com JWT
+- [ ] Criar rota `GET /api/upload/xml` para listar documentos do banco
+- [ ] Carregar `dfeList` do banco no `useEffect` de montagem
+- [ ] Implementar `GET /api/sefaz/distribuicao-dfe` para consulta NSU real (DistribuiçãoDFe)
+
+---
+
+### 🟡 Módulo 6: Eventos DF-e / Manifestação (`EventosDfePanel.tsx`)
+
+**Estado Atual:**
+- A rota `POST /api/sefaz/evento` **existe e funciona** — inclusive com modo simulação ✅
+- A rota `GET /api/sefaz/eventos` **existe** para listar histórico ✅
+- O frontend **chama a API corretamente** usando `fetch` + JWT ✅
+- Porém o log de eventos transmitidos é **inicializado com dados hardcoded** no `useState`
+- O histórico **não carrega do banco** ao montar o componente
+
+**O que falta:**
+- [ ] Carregar histórico de eventos via `GET /api/sefaz/eventos` no `useEffect`
+- [ ] Remover os dados hardcoded do `useState` de `transmittedLog`
+
+---
+
+### 🔴 Módulo 7: Relatórios XML (8 Relatórios) (`RelatoriosXmlPanel.tsx`)
+
+**Estado Atual:**
+- Os 8 relatórios usam dados de [src/utils/reportsData.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts) — que são **dados hardcoded de exemplo**
+- A rota `GET /api/relatorios/xml` **existe no backend** mas é raramente consumida
+- Os relatórios deveriam consultar `dfe_documentos` + `dfe_itens` reais do banco
+
+**O que falta:**
+- [ ] Implementar queries SQL nos relatórios que cruzem `dfe_documentos` + `dfe_itens` + `cclasstrib_regras` + `cfop_tratamento`
+- [ ] Conectar cada sub-relatório à API para dados reais
+- [ ] Manter dados de exemplo apenas quando não houver XMLs importados
+
+---
+
+### 🟡 Módulo 8: Tabelas & Parâmetros Fiscais (`TabelasFiscaisPanel.tsx`)
+
+**Estado Atual:**
+- As rotas REST CRUD `GET/POST/PUT/DELETE /api/tables/cclasstrib` **existem** ✅
+- As rotas REST CRUD `GET/POST /api/tables/cfop` **existem** ✅
+- As rotas REST CRUD `GET/POST /api/tables/aliquotas` **existem** ✅
+- O seed popula tabelas tributárias no banco ✅
+- Porém o frontend usa **dados hardcoded locais** e não consulta a API
+- CRUD funciona **apenas na memória do `useState`**, perde-se ao recarregar
+
+**O que falta:**
+- [ ] Carregar dados via API `GET /api/tables/*` no `useEffect`
+- [ ] Chamar `POST/PUT/DELETE` no backend ao criar/editar/excluir
+- [ ] Passar JWT em todas as chamadas
+
+---
+
+### 🔴 Módulo 9: Acesso Corporativo / Usuários (`AcessoCorporativoModal.tsx`)
+
+**Estado Atual:**
+- O `INITIAL_USERS` é hardcoded no componente com dados fictícios
+- As rotas `GET/POST/PUT/DELETE /api/users` **existem no backend** ✅
+- O frontend **não carrega dados do banco**
+
+**O que falta:**
+- [ ] Carregar lista de usuários via `GET /api/users` no `useEffect`
+- [ ] Chamar `POST /api/users` ao criar usuário
+- [ ] Chamar `PUT /api/users/:id` ao editar
+- [ ] Chamar `DELETE /api/users/:id` ao excluir
+- [ ] Remover `INITIAL_USERS` hardcoded
+
+---
+
+### 🟡 Módulo 10: Integração SAP/ERP (`ErpIntegrationPanel.tsx`)
+
+**Estado Atual:**
+- A rota `POST /api/config/test-erp` **existe** para testar conectividade ✅
+- O frontend tem UI completa mas as configurações são visuais
+- Sem persistência real das configurações de integração
+
+**O que falta:**
+- [ ] Criar tabela `integracoes_erp` para salvar configurações
+- [ ] Criar CRUD REST para configurações ERP
+- [ ] Conectar frontend
+
+---
+
+### 🟡 Módulo 11: Auditoria & Conformidade (`AuditoriaFiscalPanel.tsx`)
+
+**Estado Atual:**
+- A tabela `audit_log` **existe e é populada** em toda ação autenticada ✅
+- O painel exibe dados visuais hardcoded, sem consulta ao `audit_log`
+
+**O que falta:**
+- [ ] Criar rota `GET /api/audit/logs` com filtros
+- [ ] Conectar frontend para exibir logs reais
+
+---
+
+### 🟡 Módulo 12: Observabilidade & DLQ (`ObservabilidadeDlqPanel.tsx`)
+
+**Estado Atual:**
+- Módulo inteiramente visual/conceitual com dados simulados
+- Útil para demonstração da arquitetura mas sem backend real
+
+**Ação:** Módulo de baixa prioridade — manter como demonstração visual por enquanto.
+
+---
+
+## 4. Roteiro de Implementação com Fases
+
+### Fase 1: Fundação — Persistência da Carteira e Autenticação (Prioridade CRÍTICA)
+**Pré-requisito:** Backend rodando (`npx tsx server/index.ts`)  
+**Duração estimada:** 1 sessão de trabalho
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 1.1 | Criar hook `useApi()` centralizado com JWT | `src/hooks/useApi.ts` [NEW] | Todas as chamadas incluem `Authorization: Bearer` automaticamente |
+| 1.2 | Conectar CarteiraCnpjsPanel ao `GET /api/tenants` | `CarteiraCnpjsPanel.tsx` | Ao abrir a tela, empresas do banco aparecem |
+| 1.3 | Conectar `POST /api/tenants` ao cadastrar empresa | `CarteiraCnpjsPanel.tsx` | Empresa persiste no banco e sobrevive ao reload |
+| 1.4 | Conectar `PUT /api/tenants/:id` ao editar | `CarteiraCnpjsPanel.tsx` | Edições persistem |
+| 1.5 | Conectar `DELETE /api/tenants/:id` ao excluir | `CarteiraCnpjsPanel.tsx` | Exclusão remove do banco |
+
+**Métrica de Sucesso:** Cadastrar uma empresa, recarregar a página (F5) e ela continuar na listagem.
+
+---
+
+### Fase 2: Cofre de Certificados A1 (Prioridade ALTA)
+**Pré-requisito:** Fase 1 concluída  
+**Duração estimada:** 1 sessão de trabalho
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 2.1 | Criar rota de upload de certificado `.PFX` | `server/routes/certificates.ts` [NEW] | Recebe `.PFX` via `multer`, criptografa senha com AES-256-GCM, salva em disco e no banco |
+| 2.2 | Gerar `CERT_ENCRYPTION_KEY` automaticamente se não existir | `server/config.ts` | Key gerada e persistida no `.env` |
+| 2.3 | Conectar frontend ao upload real | `CarteiraCnpjsPanel.tsx` | Upload de `.PFX` + senha grava no banco e marca certificado como ativo |
+| 2.4 | Criar rota `GET /api/config/certificate/:empresaId` | `certificates.ts` | Retorna metadados do certificado (sem senha) |
+| 2.5 | Criar rota `DELETE /api/config/certificate/:id` | `certificates.ts` | Remove certificado do cofre |
+
+**Métrica de Sucesso:** Upload de `.PFX`, recarregar página, certificado continua ativo na empresa. `sefazService.ts` encontra o certificado ao transmitir evento.
+
+---
+
+### Fase 3: Tabelas Fiscais & Parâmetros Persistentes (Prioridade MÉDIA)
+**Pré-requisito:** Hook `useApi()` (Fase 1.1)  
+**Duração estimada:** 1 sessão de trabalho
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 3.1 | Conectar aba cClassTrib ao `GET/POST/PUT/DELETE /api/tables/cclasstrib` | `TabelasFiscaisPanel.tsx` | CRUD persiste no banco |
+| 3.2 | Conectar aba CFOP ao `GET/POST /api/tables/cfop` | `TabelasFiscaisPanel.tsx` | Carrega dados do seed |
+| 3.3 | Conectar aba Alíquotas ao `GET/POST /api/tables/aliquotas` | `TabelasFiscaisPanel.tsx` | Alíquotas vigentes carregam do banco |
+| 3.4 | Remover dados `INITIAL_CCLASSTRIB` e `INITIAL_CFOPS` hardcoded | `TabelasFiscaisPanel.tsx` | Iniciar com array vazio, popular do banco |
+
+**Métrica de Sucesso:** Criar cClassTrib `000002`, recarregar, e ele aparecer na lista com os dados do seed.
+
+---
+
+### Fase 4: XMLs & Documentos Fiscais — Persistência Real (Prioridade MÉDIA)
+**Pré-requisito:** Fase 2 (Certificados)  
+**Duração estimada:** 1 sessão de trabalho
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 4.1 | Criar rota `GET /api/upload/documentos` para listar XMLs do banco | `server/routes/upload.ts` | Retorna `dfe_documentos` + itens |
+| 4.2 | Conectar `DfeManagerPanel` para enviar XML ao backend | `DfeManagerPanel.tsx` | Após upload, XML vai para banco E disco |
+| 4.3 | Carregar `dfeList` do banco no `useEffect` do `App.tsx` | `App.tsx` | XMLs importados sobrevivem ao reload |
+| 4.4 | Carregar histórico de eventos via `GET /api/sefaz/eventos` | `EventosDfePanel.tsx` | Histórico real substitui hardcoded |
+
+**Métrica de Sucesso:** Importar XML, recarregar, XML aparece na lista. Transmitir evento, recarregar, evento aparece no histórico.
+
+---
+
+### Fase 5: Acesso Corporativo — Usuários Reais (Prioridade BAIXA)
+**Pré-requisito:** Hook `useApi()` (Fase 1.1)  
+**Duração estimada:** 0.5 sessão
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 5.1 | Conectar ao `GET /api/users` | `AcessoCorporativoModal.tsx` | Lista usuários do banco |
+| 5.2 | Remover `INITIAL_USERS` hardcoded | `AcessoCorporativoModal.tsx` | Sem dados fictícios |
+| 5.3 | Conectar CRUD `POST/PUT/DELETE /api/users` | `AcessoCorporativoModal.tsx` | Operações persistem |
+
+---
+
+### Fase 6: Auditoria Real & Relatórios do Banco (Prioridade BAIXA)
+**Pré-requisito:** Fase 4 (XMLs no banco)  
+**Duração estimada:** 1 sessão
+
+| # | Tarefa | Arquivo(s) | Critério de Aceitação |
+|---|--------|-----------|----------------------|
+| 6.1 | Criar rota `GET /api/audit/logs` com filtros | `server/routes/audit.ts` [NEW] | Retorna `audit_log` |
+| 6.2 | Conectar `AuditoriaFiscalPanel` à API | `AuditoriaFiscalPanel.tsx` | Exibe logs reais |
+| 6.3 | Conectar `RelatoriosXmlPanel` ao banco para dados reais | `RelatoriosXmlPanel.tsx` | 8 relatórios usam dados de `dfe_itens` |
+
+---
+
+## 5. Desafios Esperados e Soluções
+
+| Fase | Desafio | Solução Proposta |
+|------|---------|-----------------|
+| 1 | **Token JWT expira** e chamadas falham silenciosamente | Implementar interceptor no `useApi()` que faz refresh automático via `POST /api/auth/refresh` |
+| 1 | **Novas empresas cadastradas** não são vinculadas ao usuário logado | Após `POST /api/tenants`, inserir automaticamente registro em `usuario_empresa` vinculando o admin |
+| 2 | **`CERT_ENCRYPTION_KEY` não configurada** no `.env` → descriptografia falha | Gerar key automaticamente na primeira execução e persistir no `.env` |
+| 2 | **`multer`** não instalado no projeto | Instalar `multer` + `@types/multer` como dependência |
+| 3 | **Rotas de tabelas exigem `requireAuth`** mas frontend pode não enviar token | Garantir que `useApi()` sempre inclui Bearer token |
+| 4 | **Parse de XML no frontend** vs parse no backend — duplicação | Manter parse no frontend para preview instantâneo, mas enviar XML bruto ao backend para persistência definitiva |
+| 5 | **Rota `GET /api/users` não exige auth** | Adicionar `requireAuth` e `requirePerfil('admin_master')` |
+| 6 | Relatórios com **0 XMLs no banco** mostram tela vazia | Manter fallback visual "Nenhum documento importado" em vez de dados fictícios |
+
+---
+
+## 6. Critérios de Aceitação Globais
+
+| # | Critério | Como Verificar |
+|---|---------|---------------|
+| CA-1 | **Persistência total** — nenhum dado se perde ao recarregar (F5) | Cadastrar empresa, importar XML, criar cClassTrib → F5 → tudo presente |
+| CA-2 | **Autenticação JWT em todas as chamadas** | Nenhuma rota REST responde sem `Authorization: Bearer` |
+| CA-3 | **Build limpo** — `npx tsc --noEmit` = 0 erros | Executar após cada fase |
+| CA-4 | **Sem dados fictícios** — tela vazia quando nada foi cadastrado | Iniciar com banco limpo (deletar `data/radar_fiscal.db`) e verificar que tudo inicia zerado exceto admin |
+| CA-5 | **Certificado A1 funcional** — upload de `.PFX` permite transmissão real para SEFAZ homologação | Upload → Transmitir evento → receber protocolo real da SEFAZ |
+
+---
+
+> [!IMPORTANT]
+> **Prioridade recomendada de execução:** Fase 1 → Fase 2 → Fase 3 → Fase 4 → Fase 5 → Fase 6.
+> As Fases 1 e 2 são **bloqueantes** — sem elas, nenhuma funcionalidade real opera.
+
+> [!NOTE]
+> O módulo **Observabilidade & DLQ** (Módulo 12) e o módulo **Integração SAP/ERP** (Módulo 10) permanecem como módulos de demonstração visual por enquanto, pois dependem de infraestrutura externa (Redis, SAP, filas) que não existe neste ambiente local.
