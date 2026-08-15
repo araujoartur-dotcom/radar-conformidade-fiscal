@@ -1,8 +1,10 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import bcrypt from 'bcryptjs';
+import { createRequire } from 'module';
 import { getSupabase, verifyAuthToken, handleCors } from './_supabase';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const require = createRequire(import.meta.url);
+const bcrypt = require('bcryptjs');
+
+export default async function handler(req: any, res: any) {
   if (handleCors(req, res)) return;
 
   const authUser = verifyAuthToken(req);

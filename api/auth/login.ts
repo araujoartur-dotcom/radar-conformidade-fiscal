@@ -1,10 +1,12 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { v4 as uuid } from 'uuid';
+import { createRequire } from 'module';
 import { getSupabase, handleCors } from '../_supabase';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+const require = createRequire(import.meta.url);
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { v4: uuid } = require('uuid');
+
+export default async function handler(req: any, res: any) {
   if (handleCors(req, res)) return;
 
   if (req.method !== 'POST') {

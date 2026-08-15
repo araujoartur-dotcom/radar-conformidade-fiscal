@@ -1,5 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
-import jwt from 'jsonwebtoken';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const jwt = require('jsonwebtoken');
 
 export function getSupabase() {
   const url = (
@@ -18,7 +21,7 @@ export function getSupabase() {
   ).trim();
 
   if (!url || !key) {
-    throw new Error(`SUPABASE_URL ou Chave ausente no ambiente da Vercel. Verifique as Environment Variables do projeto.`);
+    throw new Error('SUPABASE_URL ou Chave ausente no ambiente da Vercel. Verifique as Environment Variables do projeto.');
   }
 
   return createClient(url, key, {

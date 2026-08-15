@@ -1,15 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { v4 as uuid } from 'uuid';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const { v4: uuid } = require('uuid');
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
     const hasSupabase = typeof createClient === 'function';
-    const hasBcrypt = typeof bcrypt.compareSync === 'function';
-    const hasJwt = typeof jwt.sign === 'function';
+    const hasBcrypt = typeof bcrypt?.compareSync === 'function';
+    const hasJwt = typeof jwt?.sign === 'function';
     const hasUuid = typeof uuid === 'function';
 
     const rawUrl = (process.env.SUPABASE_URL || '').trim();
@@ -38,8 +41,7 @@ export default async function handler(req: any, res: any) {
       hasJwt,
       hasUuid,
       supabaseUrlProvided: Boolean(cleanUrl),
-      supabaseUrlValue: cleanUrl ? cleanUrl.substring(0, 15) + '...' : 'empty',
-      supabaseKeyLength: key.length,
+      supabaseKeyProvided: Boolean(key),
       supabaseTest,
       userCount,
       timestamp: new Date().toISOString(),
