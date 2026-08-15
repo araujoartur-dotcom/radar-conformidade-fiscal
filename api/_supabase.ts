@@ -2,11 +2,25 @@ import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
 export function getSupabase() {
-  const url = (process.env.SUPABASE_URL || '').replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+  const url = (
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    ''
+  ).replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '');
+
+  const key = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
+
   if (!url || !key) {
-    throw new Error('SUPABASE_URL e SUPABASE_KEY não configuradas nas variáveis de ambiente.');
+    throw new Error(`SUPABASE_URL ou Chave ausente no ambiente da Vercel. Verifique as Environment Variables do projeto.`);
   }
+
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
