@@ -1,0 +1,13 @@
+# Migration Tasks: Netlify (Frontend) + Render (Backend)
+
+- [x] Remove Vercel-specific files and configurations.
+  - [x] Delete `api/` directory (serverless functions).
+  - [x] Delete `vercel.json`.
+- [x] Prepare Frontend for Netlify.
+  - [x] Create `netlify.toml` with SPA redirect.
+  - [x] Update frontend API calls to use `VITE_API_URL` directly.
+- [x] Prepare Backend for Render.
+  - [x] Ensure `package.json` has the correct `start` script for Render.
+  - [x] Verify `server/app.ts` and `server/index.ts` are intact and working.
+- [x] Local Testing.
+  - [x] Run both concurrently to ensure no regressions.

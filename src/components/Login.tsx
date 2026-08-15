@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ShieldCheck, Lock, Mail, Loader2, AlertTriangle } from 'lucide-react';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 export function Login() {
   const [email, setEmail] = useState('');
@@ -16,8 +17,7 @@ export function Login() {
     setError('');
 
     try {
-      const apiBase = import.meta.env.VITE_API_URL || '/api';
-      const response = await fetch(`${apiBase}/auth/login`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, senha }),

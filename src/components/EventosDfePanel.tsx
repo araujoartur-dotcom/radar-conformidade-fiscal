@@ -8,6 +8,7 @@ import { DfeXmlItem, EventoDfeRequest, TipoDFe } from '../types';
 import { CATALOGO_EVENTOS_DFE, getEventosPorTipoDfe } from '../utils/dfeEventsCatalog';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface EventosDfePanelProps {
   selectedDfe?: DfeXmlItem | null;
@@ -136,7 +137,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     setIsTransmitting(true);
 
     try {
-      const response = await fetch('/api/sefaz/evento', {
+      const response = await fetch(`${getApiBaseUrl()}/sefaz/evento`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

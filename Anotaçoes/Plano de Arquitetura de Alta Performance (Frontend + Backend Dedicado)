@@ -1,0 +1,53 @@
+# Plano de Arquitetura de Alta Performance (Frontend + Backend Dedicado)
+
+Com o volume que você mencionou (700 mil a 3 milhões de XMLs por mês), a abordagem Serverless (seja Vercel ou Netlify) **não funcionará para o backend**. Tentar processar milhares de XMLs em funções que "morrem" em 10 segundos resultará em gargalos, timeouts constantes e falhas no sistema. 
+
+Para esse cenário "nível Enterprise", precisamos da arquitetura padrão da indústria:
+1. **Frontend no Netlify:** O Netlify é perfeito, rápido e gratuito para hospedar a interface visual (React).
+2. **Backend em Servidor Dedicado (Render ou Railway):** O seu código original do `express` (`server/app.ts`) rodará 24 horas por dia, sem limite de tempo de execução, podendo processar os XMLs de forma robusta e contínua.
+3. **Banco de Dados no Supabase:** Já configurado, vai aguentar o volume de requisições.
+
+## Open Questions
+
+- Qual plataforma de hospedagem para o Backend você prefere criar uma conta? Recomendo fortemente o **Render.com** (tem um plano gratuito excelente para testes) ou o **Railway.app** (extremamente fácil de usar e muito robusto).
+
+## Proposed Changes
+
+---
+
+### Preparar o Frontend (Para Netlify)
+
+Garantir que o frontend saiba onde buscar os dados, sem tentar buscar da própria plataforma.
+
+#### [NEW] [netlify.toml](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/netlify.toml)
+Configurar o Netlify apenas para o Frontend (React SPA). Sem funções serverless. O redirecionamento será apenas para manter a navegação do React funcionando.
+
+#### [MODIFY] [.env](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/.env)
+Criar uma variável (ex: `VITE_API_URL`) para apontar dinamicamente para o seu backend no Render/Railway quando estiver em produção, ou para `localhost:3001` quando você estiver testando na sua máquina.
+
+#### [MODIFY] [Arquivos do Frontend (Vários)]
+Reverter as alterações da Vercel (que fixaram os caminhos para `/api/...`) e usar a variável `VITE_API_URL`, garantindo que o seu React no Netlify faça as requisições HTTP para a URL correta do seu Backend no Render/Railway.
+
+---
+
+### Preparar o Backend (Para Render/Railway)
+
+Vamos limpar as "gambiarras" feitas para a Vercel e voltar ao servidor original, que é robusto.
+
+#### [MODIFY] [package.json](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/package.json)
+Adicionar o comando `npm start` real apontando para o seu `server/index.ts`. Esse é o comando que o Render/Railway vai executar para manter seu servidor no ar.
+
+#### [DELETE] [vercel.json](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/vercel.json)
+O arquivo de configuração da Vercel não é mais necessário.
+
+#### [DELETE] [api/](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/api/)
+A pasta inteira será apagada. O servidor monolítico original `server/app.ts` voltará a ser a única fonte de verdade da sua API.
+
+## Verification Plan
+
+### Testes Locais
+- Subir o backend e o frontend simultaneamente na sua máquina e garantir que a comunicação e o login funcionem através da nova configuração.
+
+### Deploy
+1. **Frontend:** Faremos o deploy da pasta do React para o Netlify.
+2. **Backend:** Você conectará seu repositório no Render ou Railway, e nós colocaremos as variáveis de ambiente (`SUPABASE_URL`, `JWT_SECRET`, etc.) lá.

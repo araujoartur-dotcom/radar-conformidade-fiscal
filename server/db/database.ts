@@ -9,6 +9,9 @@
  * ============================================================
  */
 
+import Database from 'better-sqlite3';
+import fs from 'fs';
+import path from 'path';
 import { DATABASE } from '../config';
 
 let db: any = null;
@@ -16,11 +19,6 @@ let db: any = null;
 export function getDatabase(): any {
   if (!db) {
     try {
-      // Tenta carregar better-sqlite3 (só funciona localmente)
-      const Database = require('better-sqlite3');
-      const path = require('path');
-      const fs = require('fs');
-
       const dir = path.dirname(DATABASE.SQLITE_PATH);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -31,8 +29,8 @@ export function getDatabase(): any {
       db.pragma('foreign_keys = ON');
       db.pragma('busy_timeout = 5000');
       console.log(`✅ Banco SQLite conectado: ${DATABASE.SQLITE_PATH}`);
-    } catch {
-      // Serverless: retorna stub seguro — as rotas devem usar Supabase
+    } catch (err) {
+      console.error('Falha ao conectar SQLite:', err);
       db = {
         prepare: () => ({
           get: () => null,
@@ -42,6 +40,7 @@ export function getDatabase(): any {
         pragma: () => null,
         transaction: (fn: any) => (() => fn()),
         close: () => null,
+        exec: () => null,
       };
     }
   }
@@ -53,3 +52,4 @@ export function closeDatabase(): void {
     try { db.close(); } catch {}
   }
 }
+

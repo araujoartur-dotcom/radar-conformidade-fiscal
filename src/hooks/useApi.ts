@@ -10,8 +10,7 @@
 
 import { useAuth } from '../contexts/AuthContext';
 import { useCallback } from 'react';
-
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface ApiOptions extends Omit<RequestInit, 'body'> {
   body?: any;
@@ -53,7 +52,8 @@ export function useApi() {
     }
 
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, fetchOptions);
+      const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      const response = await fetch(`${getApiBaseUrl()}${cleanEndpoint}`, fetchOptions);
       const data = await response.json().catch(() => ({}));
 
       if (response.status === 401 && (data?.code === 'AUTH_TOKEN_EXPIRED' || data?.code === 'AUTH_USER_NOT_FOUND' || data?.code === 'AUTH_USER_BLOCKED')) {
@@ -110,7 +110,8 @@ export function useApi() {
     // NÃO definir Content-Type — o browser insere com boundary correto
 
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+      const response = await fetch(`${getApiBaseUrl()}${cleanEndpoint}`, {
         method: 'POST',
         headers,
         body: formData,

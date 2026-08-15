@@ -7,20 +7,11 @@
  */
 
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import path from 'path';
 
-// Carrega .env apenas em ambiente local
-function loadEnvFile() {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const dotenv = require('dotenv');
-    const path = require('path');
-    const envPath = path.resolve(__dirname || process.cwd(), '..', '.env');
-    dotenv.config({ path: envPath });
-  } catch {
-    // Em serverless, as variáveis vêm do painel da Vercel
-  }
-}
-loadEnvFile();
+dotenv.config();
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 // Gera CERT_ENCRYPTION_KEY em memória se não existir
 if (!process.env.CERT_ENCRYPTION_KEY) {

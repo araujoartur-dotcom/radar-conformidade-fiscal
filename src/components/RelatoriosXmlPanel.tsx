@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { XmlItemDetailReport, ReportFilterState, ReportTabType, DfeXmlItem } from '../types';
 import { exportReportToExcel } from '../utils/reportsData';
 import { useAuth } from '../contexts/AuthContext';
+import { getApiBaseUrl } from '../utils/apiConfig';
 import { RelatorioRazaoEntradas } from './relatorios/RelatorioRazaoEntradas';
 import { RelatorioMatrizElegibilidade } from './relatorios/RelatorioMatrizElegibilidade';
 import { RelatorioCalculoCreditoEsperado } from './relatorios/RelatorioCalculoCreditoEsperado';
@@ -83,7 +84,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
       if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
       if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
       
-      const response = await fetch(`${config?.apiUrl || ''}/api/relatorios/xml?${query.toString()}`, {
+      const response = await fetch(`${getApiBaseUrl()}/relatorios/xml?${query.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -118,7 +119,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
     setUploadLoading(true);
     try {
       const text = await file.text();
-      const response = await fetch(`${config?.apiUrl || ''}/api/upload/xml`, {
+      const response = await fetch(`${getApiBaseUrl()}/upload/xml`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

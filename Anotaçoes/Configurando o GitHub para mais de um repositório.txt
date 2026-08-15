@@ -1,0 +1,36 @@
+A imagem confirma: o Netlify está conectado ao GitHub, mas só tem autorização para acessar o repositório jesus-says-app. O projeto novo provavelmente ainda não foi liberado para o aplicativo Netlify ou está em outra conta/organização do GitHub.
+
+Faça assim no GitHub
+Abra o GitHub e entre na conta araujoartur-dotcom.
+Clique na sua foto de perfil → Settings.
+No menu lateral, abra Applications.
+Entre em Installed GitHub Apps.
+Procure Netlify e clique em Configure.
+Em Repository access, selecione:
+All repositories, ou
+Only select repositories e adicione o projeto novo, por exemplo radar-conformidade-fiscal.
+Salve a alteração.
+
+Depois:
+
+Volte ao Netlify.
+Atualize a página com Ctrl + R.
+Se ainda aparecer somente jesus-says-app, saia da conta do Netlify e entre novamente usando o mesmo GitHub.
+Acesse novamente Add new site → Import an existing project → GitHub.
+Pesquise pelo nome exato do repositório na caixa Search your repos.
+Confirme também no GitHub
+
+Abra o projeto novo diretamente no GitHub e verifique:
+
+Ele está dentro da conta araujoartur-dotcom?
+O código foi realmente enviado para o GitHub?
+O repositório não está em outra conta ou organização?
+O nome está exatamente igual ao que você está pesquisando?
+
+Se o repositório estiver em outra conta, o Netlify conectado a araujoartur-dotcom não o exibirá.
+
+Se o Netlify continuar mostrando apenas o projeto antigo
+
+Acesse as configurações do Netlify e reconecte o GitHub, autorizando novamente o acesso aos repositórios. Como alternativa, na própria tela de importação procure algum link semelhante a Configure Netlify on GitHub ou Manage repository access; ele normalmente leva diretamente à página correta de permissões.
+
+Não é necessário apagar o jesus-says-app nem limpar o GitHub. O problema é quase certamente de permissão, conta/organização ou sincronização da conexão entre Netlify e GitHub.

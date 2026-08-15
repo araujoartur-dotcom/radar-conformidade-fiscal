@@ -1,0 +1,40 @@
+# Conclusão da Migração Arquitetural
+
+Finalizei a refatoração completa do projeto para suportar a arquitetura dividida, preparando o terreno para lidar com segurança e estabilidade com a carga de **até 3 milhões de XMLs por mês**.
+
+## O que foi feito:
+
+### 1. Limpeza da Vercel (Backend Dedicado)
+- Apaguei a configuração `vercel.json`.
+- Apaguei o diretório inteiro `api/` criado na raiz do projeto.
+- Restaurei as conexões seguras no `server/db/database.ts` para que o servidor consiga rodar nativamente o SQLite/Supabase no modo de longos processamentos.
+- Adicionei o comando `"start": "tsx server/index.ts"` no `package.json`, que é o padrão esperado por plataformas como o Render.
+
+> [!TIP]
+> O seu servidor está novamente íntegro, rodando em um único processo Express. Sem mais dores de cabeça com *Serverless Functions* sendo instanciadas e mortas a todo momento. O limite de tempo (timeout de 10s) foi extinto!
+
+### 2. Frontend Independente (Para Netlify)
+- Criei o arquivo `netlify.toml` que configura como a aplicação React fará o roteamento no Netlify sem engasgar no React Router (redirecionando a navegação para o `index.html`).
+- Adicionei a variável de ambiente `VITE_API_URL` ao seu arquivo `.env` local.
+- **Importante:** Ajustei todos os componentes que usavam o `fetch()` internamente (ex: `Login.tsx`, `EventosDfePanel.tsx`, `RelatoriosXmlPanel.tsx`, etc) para se conectarem dinamicamente com a URL do Backend configurada no ambiente.
+
+## Próximos Passos (Como fazer o Deploy)
+
+Agora você precisa hospedar ambos separadamente:
+
+### Parte 1: Render.com (Backend)
+1. Crie sua conta gratuita em [Render.com](https://render.com/).
+2. Clique em **"New" -> "Web Service"** e conecte seu repositório do GitHub.
+3. Nas configurações, confirme se o *Build Command* é `npm install` e o *Start Command* é `npm start`.
+4. Adicione as Variáveis de Ambiente (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `JWT_SECRET`).
+5. Quando o deploy terminar, o Render vai te dar um link parecido com: `https://seu-backend.onrender.com`. Copie ele!
+
+### Parte 2: Netlify (Frontend)
+1. No seu painel do Netlify, faça o deploy conectando o GitHub como já sabe fazer.
+2. Vá em **Site Configuration > Environment Variables** e adicione a variável `VITE_API_URL`, colando nela o link que você copiou do Render no passo anterior (ex: `https://seu-backend.onrender.com`).
+3. Para garantir, faça um *Trigger Deploy / Clear Cache and Deploy Site* para que o Netlify injete essa variável no React.
+
+> [!IMPORTANT]
+> A conexão de banco de dados (Supabase) só precisa ser colocada nas variáveis do Backend (Render). O Frontend (Netlify) só precisa saber onde o backend está através da variável `VITE_API_URL`.
+
+O servidor backend já está rodando perfeitamente aqui na sua máquina de forma local! Pode testar e realizar os deploys quando se sentir pronto.

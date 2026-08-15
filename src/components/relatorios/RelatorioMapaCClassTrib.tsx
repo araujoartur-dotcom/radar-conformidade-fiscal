@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapaCClassTribItem } from '../../types';
 import { Tag, Plus, CheckCircle2, XCircle, HelpCircle, AlertTriangle, Trash2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { getApiBaseUrl } from '../../utils/apiConfig';
 
 export const RelatorioMapaCClassTrib: React.FC = () => {
   const { token, config } = useAuth();
@@ -22,7 +23,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
   const fetchMapaList = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
+      const response = await fetch(`${getApiBaseUrl()}/tables/cclasstrib`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -58,7 +59,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
     if (!newItem.cClassTrib || !newItem.descricaoInterna) return;
 
     try {
-      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
+      const response = await fetch(`${getApiBaseUrl()}/tables/cclasstrib`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -97,14 +98,14 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
 
   const handleDeleteItem = async (code: string) => {
     try {
-      const res = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
+      const res = await fetch(`${getApiBaseUrl()}/tables/cclasstrib`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       const itemToDelete = data.data.find((item: any) => item.cclasstrib === code);
       
       if (itemToDelete) {
-        await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib?id=${itemToDelete.id}`, {
+        await fetch(`${getApiBaseUrl()}/tables/cclasstrib?id=${itemToDelete.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });

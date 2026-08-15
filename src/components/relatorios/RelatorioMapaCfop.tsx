@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MapaCfopItem } from '../../types';
 import { BookOpen, Plus, ShieldCheck, CheckCircle2, XCircle, HelpCircle, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { getApiBaseUrl } from '../../utils/apiConfig';
 
 export const RelatorioMapaCfop: React.FC = () => {
   const { token, config } = useAuth();
@@ -24,7 +25,7 @@ export const RelatorioMapaCfop: React.FC = () => {
   const fetchMapaList = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
+      const response = await fetch(`${getApiBaseUrl()}/tables/cfop`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -62,7 +63,7 @@ export const RelatorioMapaCfop: React.FC = () => {
     if (!newRule.cfop || !newRule.descricao) return;
 
     try {
-      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
+      const response = await fetch(`${getApiBaseUrl()}/tables/cfop`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -108,14 +109,14 @@ export const RelatorioMapaCfop: React.FC = () => {
     // Para resolver agora: O endpoint DELETE /api/tables/cfop/:id espera um ID.
     // Vou buscar o ID diretamente.
     try {
-      const res = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
+      const res = await fetch(`${getApiBaseUrl()}/tables/cfop`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       const itemToDelete = data.data.find((item: any) => item.cfop === cfop);
       
       if (itemToDelete) {
-        await fetch(`${config?.apiUrl || ''}/api/tables/cfop?id=${itemToDelete.id}`, {
+        await fetch(`${getApiBaseUrl()}/tables/cfop?id=${itemToDelete.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
