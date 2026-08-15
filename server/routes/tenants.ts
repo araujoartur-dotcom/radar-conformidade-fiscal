@@ -2,9 +2,7 @@
  * ============================================================
  * ROTAS DE TENANTS (EMPRESAS) — CRUD PERSISTENTE
  * ============================================================
- * Gerencia empresas na carteira. Suporta Matrizes e Filiais
- * compartilhando o mesmo CNPJ Raiz (8 dígitos) com isolamento
- * por CNPJ Completo (14 dígitos).
+ * Gerencia empresas na carteira com suporte a Supabase e SQLite.
  * ============================================================
  */
 
@@ -12,13 +10,53 @@ import { Router, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
 
 const router = Router();
 
 // GET /api/tenants - Listar todas as empresas da carteira do usuário
-router.get('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: rows, error } = await supabase
+          .from('empresas')
+          .select('*, certificados (*)')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const formatted = (rows || []).map((r: any) => {
+          const cert = Array.isArray(r.certificados) ? r.certificados[0] : r.certificados;
+          return {
+            id: r.id,
+            cnpjRaiz: r.cnpj_raiz,
+            cnpjCompleto: r.cnpj_completo,
+            razaoSocial: r.razao_social,
+            nomeFantasia: r.nome_fantasia || r.razao_social,
+            grupoContabilCliente: 'Carteira Geral',
+            uf: r.uf,
+            regimeTributario: r.regime_tributario,
+            certificadoA1: cert ? {
+              fileName: cert.arquivo_nome,
+              validade: cert.validade,
+              status: cert.status_alerta === 'ok' ? 'valido' : (cert.status_alerta === 'expirado' ? 'expirado' : 'pendente'),
+              emissor: cert.emissor || 'AC Certificadora A1',
+              impressaoDigital: cert.impressao_digital || ''
+            } : undefined,
+            totalDocumentosCapturados: 0,
+            statusConexaoSefaz: cert ? 'ativo' : 'sem_certificado',
+            ultimaSincronizacao: cert ? 'Certificado Ativo' : 'Sem Certificado'
+          };
+        });
+
+        res.json({ success: true, data: formatted });
+        return;
+      }
+    }
+
     const db = getDatabase();
 
     const rows = db.prepare(`
@@ -58,12 +96,12 @@ router.get('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     res.json({ success: true, data: formatted });
   } catch (err: any) {
     console.error('❌ Erro ao listar tenants:', err.message);
-    res.status(500).json({ success: false, message: 'Erro ao listar empresas.' });
+    res.status(500).json({ success: false, message: 'Erro ao listar empresas: ' + err.message });
   }
 });
 
 // POST /api/tenants - Criar nova empresa (Matriz ou Filial)
-router.post('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente } = req.body;
     if (!cnpjCompleto || !razaoSocial) {
@@ -75,9 +113,57 @@ router.post('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     const cnpjRaiz = cleanCnpj.substring(0, 8);
     const id = uuid();
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: newEmp, error: insertErr } = await supabase
+          .from('empresas')
+          .insert({
+            cnpj_raiz: cnpjRaiz,
+            cnpj_completo: cnpjCompleto,
+            razao_social: razaoSocial.toUpperCase(),
+            nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
+            uf: uf || 'SP',
+            regime_tributario: regimeTributario || 'Lucro Real',
+            status: 'ativo'
+          })
+          .select()
+          .single();
+
+        if (insertErr) throw insertErr;
+
+        if (req.user?.userId) {
+          await supabase.from('usuario_empresa').insert({
+            usuario_id: req.user.userId,
+            empresa_id: newEmp.id,
+            permissao: 'total',
+            modulos_permitidos: '*'
+          });
+        }
+
+        res.status(201).json({
+          success: true,
+          message: 'Empresa cadastrada com sucesso.',
+          data: {
+            id: newEmp.id,
+            cnpjRaiz,
+            cnpjCompleto,
+            razaoSocial: razaoSocial.toUpperCase(),
+            nomeFantasia: (nomeFantasia || razaoSocial).toUpperCase(),
+            grupoContabilCliente: grupoContabilCliente || 'Carteira Geral',
+            uf: uf || 'SP',
+            regimeTributario: regimeTributario || 'Lucro Real',
+            statusConexaoSefaz: 'sem_certificado',
+            totalDocumentosCapturados: 0,
+            ultimaSincronizacao: 'Cadastrado agora'
+          }
+        });
+        return;
+      }
+    }
+
     const db = getDatabase();
 
-    // Verificar duplicidade de CNPJ COMPLETO (permite múltiplas filiais com o mesmo cnpj_raiz)
     const existing = db.prepare('SELECT id FROM empresas WHERE cnpj_completo = ?').get(cnpjCompleto) as any;
     if (existing) {
       res.status(409).json({ success: false, message: `CNPJ ${cnpjCompleto} já cadastrado no sistema.` });
@@ -85,13 +171,11 @@ router.post('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     }
 
     db.transaction(() => {
-      // 1. Inserir empresa
       db.prepare(`
         INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, status)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'ativo')
       `).run(id, cnpjRaiz, cnpjCompleto, razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf || 'SP', regimeTributario || 'Lucro Real');
 
-      // 2. Vincular ao usuário logado na tabela usuario_empresa
       if (req.user?.userId) {
         const vinculoId = uuid();
         db.prepare(`
@@ -127,10 +211,30 @@ router.post('/', requireAuth, (req: AuthenticatedRequest, res: Response) => {
 });
 
 // PUT /api/tenants/:id - Editar empresa
-router.put('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { razaoSocial, nomeFantasia, uf, regimeTributario } = req.body;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('empresas')
+          .update({
+            razao_social: razaoSocial.toUpperCase(),
+            nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
+            uf,
+            regime_tributario: regimeTributario,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
+        return;
+      }
+    }
 
     const db = getDatabase();
     const result = db.prepare(`
@@ -149,19 +253,31 @@ router.put('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) => {
     res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
   } catch (err: any) {
     console.error('❌ Erro ao atualizar tenant:', err.message);
-    res.status(500).json({ success: false, message: 'Erro ao atualizar empresa.' });
+    res.status(500).json({ success: false, message: 'Erro ao atualizar empresa: ' + err.message });
   }
 });
 
-// DELETE /api/tenants/:id - Excluir empresa com limpeza de certificados físicos
-router.delete('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+// DELETE /api/tenants/:id - Excluir empresa
+router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const db = getDatabase();
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('usuario_empresa').delete().eq('empresa_id', id);
+        await supabase.from('certificados').delete().eq('empresa_id', id);
+        const { error } = await supabase.from('empresas').delete().eq('id', id);
+        if (error) throw error;
+
+        res.json({ success: true, message: 'Empresa removida da carteira com sucesso.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
     const empresa = db.prepare('SELECT razao_social, cnpj_completo FROM empresas WHERE id = ?').get(id) as any;
 
-    // Buscar certificados para limpeza física em disco
     const certs = db.prepare('SELECT arquivo_path_enc FROM certificados WHERE empresa_id = ?').all(id) as any[];
     for (const c of certs) {
       if (c.arquivo_path_enc && fs.existsSync(c.arquivo_path_enc)) {
@@ -176,7 +292,6 @@ router.delete('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) =>
       return;
     }
 
-    // Limpar vínculos
     db.prepare('DELETE FROM usuario_empresa WHERE empresa_id = ?').run(id);
     db.prepare('DELETE FROM certificados WHERE empresa_id = ?').run(id);
 
@@ -185,7 +300,7 @@ router.delete('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) =>
     res.json({ success: true, message: 'Empresa removida da carteira com sucesso.' });
   } catch (err: any) {
     console.error('❌ Erro ao excluir tenant:', err.message);
-    res.status(500).json({ success: false, message: 'Erro ao excluir empresa.' });
+    res.status(500).json({ success: false, message: 'Erro ao excluir empresa: ' + err.message });
   }
 });
 

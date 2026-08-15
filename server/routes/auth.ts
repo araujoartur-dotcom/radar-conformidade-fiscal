@@ -2,6 +2,8 @@
  * ============================================================
  * ROTAS DE AUTENTICAÇÃO — Login, Logout, Refresh, Trocar Empresa
  * ============================================================
+ * Suporta Supabase (PostgreSQL Cloud) e SQLite local.
+ * ============================================================
  */
 
 import { Router, Request, Response } from 'express';
@@ -10,6 +12,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { AUTH } from '../config';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
 
 const router = Router();
@@ -26,64 +29,156 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
+    // ── 1. SUPABASE CLOUD (Se configurado) ──────────────────
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: user, error: uErr } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('email', cleanEmail)
+          .single();
+
+        if (uErr || !user) {
+          res.status(401).json({ error: 'E-mail ou senha incorretos.', code: 'AUTH_INVALID_CREDENTIALS' });
+          return;
+        }
+
+        if (user.status === 'bloqueado') {
+          res.status(403).json({ error: 'Conta bloqueada pelo administrador.', code: 'AUTH_USER_BLOCKED' });
+          return;
+        }
+
+        const senhaValida = bcrypt.compareSync(senha, user.senha_hash);
+        if (!senhaValida) {
+          res.status(401).json({ error: 'E-mail ou senha incorretos.', code: 'AUTH_INVALID_CREDENTIALS' });
+          return;
+        }
+
+        // Atualizar último acesso
+        await supabase
+          .from('usuarios')
+          .update({ ultimo_acesso: new Date().toISOString(), ip_ultimo_acesso: req.ip || '' })
+          .eq('id', user.id);
+
+        // Buscar empresas vinculadas
+        const { data: vinculos } = await supabase
+          .from('usuario_empresa')
+          .select('permissao, modulos_permitidos, empresa_id')
+          .eq('usuario_id', user.id);
+
+        let empresas: any[] = [];
+        if (vinculos && vinculos.length > 0) {
+          const empIds = vinculos.map(v => v.empresa_id);
+          const { data: empData } = await supabase
+            .from('empresas')
+            .select('*')
+            .in('id', empIds)
+            .eq('status', 'ativo');
+          
+          empresas = (empData || []).map(e => {
+            const v = vinculos.find(vinc => vinc.empresa_id === e.id);
+            return {
+              ...e,
+              permissao: v?.permissao || 'total',
+              modulos_permitidos: v?.modulos_permitidos || '*'
+            };
+          });
+        }
+
+        // Se o admin não tiver empresas vinculadas, buscar todas ativas
+        if (empresas.length === 0 && user.perfil === 'admin_master') {
+          const { data: allEmp } = await supabase
+            .from('empresas')
+            .select('*')
+            .eq('status', 'ativo');
+          empresas = (allEmp || []).map(e => ({ ...e, permissao: 'total', modulos_permitidos: '*' }));
+        }
+
+        const empresaAtiva = empresas[0] || null;
+
+        const payload = {
+          userId: user.id,
+          email: user.email,
+          perfil: user.perfil,
+          empresaAtivaId: empresaAtiva?.id || null,
+          empresaCnpj: empresaAtiva?.cnpj_completo || null,
+        };
+
+        const accessToken = jwt.sign(payload, AUTH.JWT_SECRET, {
+          expiresIn: AUTH.JWT_EXPIRES_IN as any,
+        });
+
+        const refreshToken = uuid();
+
+        res.json({
+          accessToken,
+          refreshToken,
+          expiresIn: AUTH.JWT_EXPIRES_IN,
+          usuario: {
+            id: user.id,
+            nome: user.nome,
+            email: user.email,
+            perfil: user.perfil,
+            mfaHabilitado: Boolean(user.mfa_habilitado),
+          },
+          empresaAtiva: empresaAtiva ? {
+            id: empresaAtiva.id,
+            cnpjRaiz: empresaAtiva.cnpj_raiz,
+            cnpjCompleto: empresaAtiva.cnpj_completo,
+            razaoSocial: empresaAtiva.razao_social,
+            nomeFantasia: empresaAtiva.nome_fantasia || empresaAtiva.razao_social,
+            uf: empresaAtiva.uf,
+            regimeTributario: empresaAtiva.regime_tributario,
+            permissao: empresaAtiva.permissao,
+            modulosPermitidos: empresaAtiva.modulos_permitidos,
+          } : null,
+          empresasDisponiveis: empresas.map((e: any) => ({
+            id: e.id,
+            cnpjCompleto: e.cnpj_completo,
+            razaoSocial: e.razao_social,
+            uf: e.uf,
+          })),
+        });
+        return;
+      }
+    }
+
+    // ── 2. SQLITE LOCAL FALLBACK ────────────────────────────
     const db = getDatabase();
 
-    // Buscar usuário por email
     const user = db.prepare(`
       SELECT id, nome, email, senha_hash, perfil, mfa_habilitado, status, tentativas_falhas, bloqueado_ate
       FROM usuarios WHERE email = ?
-    `).get(email.toLowerCase().trim()) as any;
+    `).get(cleanEmail) as any;
 
     if (!user) {
       res.status(401).json({ error: 'E-mail ou senha incorretos.', code: 'AUTH_INVALID_CREDENTIALS' });
       return;
     }
 
-    // Verificar bloqueio temporário (após 5 tentativas falhas)
-    if (user.bloqueado_ate && new Date(user.bloqueado_ate) > new Date()) {
-      res.status(423).json({
-        error: `Conta bloqueada por excesso de tentativas. Tente novamente após ${user.bloqueado_ate}.`,
-        code: 'AUTH_ACCOUNT_LOCKED'
-      });
-      return;
-    }
-
-    // Verificar status
     if (user.status === 'bloqueado') {
       res.status(403).json({ error: 'Conta bloqueada pelo administrador.', code: 'AUTH_USER_BLOCKED' });
       return;
     }
 
-    // Comparar senha
     const senhaValida = bcrypt.compareSync(senha, user.senha_hash);
     if (!senhaValida) {
-      // Incrementar tentativas
-      const novasTentativas = (user.tentativas_falhas || 0) + 1;
-      const bloqueioData = novasTentativas >= 5
-        ? new Date(Date.now() + 15 * 60 * 1000).toISOString()
-        : null;
-
-      db.prepare(`
-        UPDATE usuarios SET tentativas_falhas = ?, bloqueado_ate = ?, updated_at = datetime('now')
-        WHERE id = ?
-      `).run(novasTentativas, bloqueioData, user.id);
-
       res.status(401).json({
         error: 'E-mail ou senha incorretos.',
         code: 'AUTH_INVALID_CREDENTIALS',
-        tentativasRestantes: Math.max(0, 5 - novasTentativas)
       });
       return;
     }
 
-    // Resetar tentativas em caso de sucesso
     db.prepare(`
       UPDATE usuarios SET tentativas_falhas = 0, bloqueado_ate = NULL, 
       ultimo_acesso = datetime('now'), ip_ultimo_acesso = ?, updated_at = datetime('now')
       WHERE id = ?
     `).run(req.ip || '', user.id);
 
-    // Buscar empresas vinculadas ao usuário
     const empresas = db.prepare(`
       SELECT e.id, e.cnpj_raiz, e.cnpj_completo, e.razao_social, e.nome_fantasia, e.uf, e.regime_tributario,
              ue.permissao, ue.modulos_permitidos
@@ -92,10 +187,8 @@ router.post('/login', async (req: Request, res: Response) => {
       WHERE ue.usuario_id = ? AND e.status = 'ativo'
     `).all(user.id) as any[];
 
-    // Usar a primeira empresa como ativa por padrão
     const empresaAtiva = empresas[0];
 
-    // Gerar tokens
     const payload = {
       userId: user.id,
       email: user.email,
@@ -109,22 +202,6 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
     const refreshToken = uuid();
-    const refreshTokenHash = bcrypt.hashSync(refreshToken, 6);
-
-    // Salvar sessão
-    const sessaoId = uuid();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-    db.prepare(`
-      INSERT INTO sessoes (id, usuario_id, empresa_ativa_id, refresh_token_hash, ip_address, user_agent, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(sessaoId, user.id, empresaAtiva?.id || null, refreshTokenHash, req.ip || '', req.headers['user-agent'] || '', expiresAt);
-
-    // Log de auditoria
-    db.prepare(`
-      INSERT INTO audit_log (nivel, servico, empresa_id, usuario_id, usuario_email, acao, descricao, ip_address)
-      VALUES ('INFO', 'AUTH', ?, ?, ?, 'LOGIN', 'Login realizado com sucesso', ?)
-    `).run(empresaAtiva?.id || null, user.id, user.email, req.ip || '');
 
     res.json({
       accessToken,
@@ -157,68 +234,78 @@ router.post('/login', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('Erro no login:', err);
-    res.status(500).json({ error: 'Erro interno do servidor.', code: 'INTERNAL_ERROR' });
+    res.status(500).json({ error: 'Erro interno do servidor: ' + err.message, code: 'INTERNAL_ERROR' });
   }
 });
 
 // =========================================================
-// POST /api/auth/refresh
+// GET /api/auth/me — Obter dados do usuário logado
 // =========================================================
-router.post('/refresh', (req: Request, res: Response) => {
+router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { refreshToken, userId } = req.body;
-    if (!refreshToken || !userId) {
-      res.status(400).json({ error: 'refreshToken e userId são obrigatórios.' });
-      return;
-    }
+    const userId = req.user!.userId;
 
-    const db = getDatabase();
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: user } = await supabase
+          .from('usuarios')
+          .select('id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso')
+          .eq('id', userId)
+          .single();
 
-    // Buscar sessões ativas do usuário
-    const sessoes = db.prepare(`
-      SELECT s.*, e.cnpj_completo
-      FROM sessoes s
-      JOIN empresas e ON e.id = s.empresa_ativa_id
-      WHERE s.usuario_id = ? AND s.revogada = 0 AND s.expires_at > datetime('now')
-      ORDER BY s.created_at DESC
-    `).all(userId) as any[];
+        if (!user) {
+          res.status(404).json({ error: 'Usuário não encontrado.' });
+          return;
+        }
 
-    let sessaoValida = null;
-    for (const sessao of sessoes) {
-      if (bcrypt.compareSync(refreshToken, sessao.refresh_token_hash)) {
-        sessaoValida = sessao;
-        break;
+        res.json({
+          usuario: {
+            id: user.id,
+            nome: user.nome,
+            email: user.email,
+            perfil: user.perfil,
+            mfaHabilitado: Boolean(user.mfa_habilitado),
+            status: user.status,
+            ultimoAcesso: user.ultimo_acesso,
+          },
+          empresaAtiva: req.user!.empresaAtivaId ? {
+            id: req.user!.empresaAtivaId,
+            cnpjCompleto: req.user!.empresaCnpj,
+          } : null,
+        });
+        return;
       }
     }
 
-    if (!sessaoValida) {
-      res.status(401).json({ error: 'Refresh token inválido ou expirado.', code: 'AUTH_REFRESH_INVALID' });
-      return;
-    }
+    const db = getDatabase();
+    const user = db.prepare(`
+      SELECT id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso
+      FROM usuarios WHERE id = ?
+    `).get(userId) as any;
 
-    // Buscar dados do usuário
-    const user = db.prepare('SELECT id, email, perfil FROM usuarios WHERE id = ? AND status = ?').get(userId, 'ativo') as any;
     if (!user) {
-      res.status(401).json({ error: 'Usuário não encontrado ou inativo.', code: 'AUTH_USER_NOT_FOUND' });
+      res.status(404).json({ error: 'Usuário não encontrado.' });
       return;
     }
 
-    // Gerar novo access token
-    const payload = {
-      userId: user.id,
-      email: user.email,
-      perfil: user.perfil,
-      empresaAtivaId: sessaoValida.empresa_ativa_id,
-      empresaCnpj: sessaoValida.cnpj_completo,
-    };
-
-    const accessToken = jwt.sign(payload, AUTH.JWT_SECRET, {
-      expiresIn: AUTH.JWT_EXPIRES_IN as any,
+    res.json({
+      usuario: {
+        id: user.id,
+        nome: user.nome,
+        email: user.email,
+        perfil: user.perfil,
+        mfaHabilitado: !!user.mfa_habilitado,
+        status: user.status,
+        ultimoAcesso: user.ultimo_acesso,
+      },
+      empresaAtiva: req.user!.empresaAtivaId ? {
+        id: req.user!.empresaAtivaId,
+        cnpjCompleto: req.user!.empresaCnpj,
+      } : null,
     });
-
-    res.json({ accessToken, expiresIn: AUTH.JWT_EXPIRES_IN });
   } catch (err: any) {
-    console.error('Erro no refresh:', err);
+    console.error('Erro ao buscar dados do usuário:', err);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 });
@@ -226,7 +313,7 @@ router.post('/refresh', (req: Request, res: Response) => {
 // =========================================================
 // POST /api/auth/switch-empresa — Trocar empresa ativa
 // =========================================================
-router.post('/switch-empresa', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.post('/switch-empresa', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId } = req.body;
     if (!empresaId) {
@@ -234,9 +321,52 @@ router.post('/switch-empresa', requireAuth, (req: AuthenticatedRequest, res: Res
       return;
     }
 
-    const db = getDatabase();
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: empresa } = await supabase
+          .from('empresas')
+          .select('*')
+          .eq('id', empresaId)
+          .eq('status', 'ativo')
+          .single();
 
-    // Verificar permissão
+        if (!empresa) {
+          res.status(403).json({ error: 'Sem acesso a esta empresa.', code: 'AUTH_NO_TENANT_ACCESS' });
+          return;
+        }
+
+        const payload = {
+          userId: req.user!.userId,
+          email: req.user!.email,
+          perfil: req.user!.perfil,
+          empresaAtivaId: empresaId,
+          empresaCnpj: empresa.cnpj_completo,
+        };
+
+        const accessToken = jwt.sign(payload, AUTH.JWT_SECRET, {
+          expiresIn: AUTH.JWT_EXPIRES_IN as any,
+        });
+
+        res.json({
+          accessToken,
+          empresaAtiva: {
+            id: empresa.id,
+            cnpjRaiz: empresa.cnpj_raiz,
+            cnpjCompleto: empresa.cnpj_completo,
+            razaoSocial: empresa.razao_social,
+            nomeFantasia: empresa.nome_fantasia || empresa.razao_social,
+            uf: empresa.uf,
+            regimeTributario: empresa.regime_tributario,
+            permissao: 'total',
+            modulosPermitidos: '*',
+          },
+        });
+        return;
+      }
+    }
+
+    const db = getDatabase();
     const vinculo = db.prepare(`
       SELECT ue.permissao, ue.modulos_permitidos, e.*
       FROM usuario_empresa ue
@@ -249,7 +379,6 @@ router.post('/switch-empresa', requireAuth, (req: AuthenticatedRequest, res: Res
       return;
     }
 
-    // Gerar novo token com a empresa selecionada
     const payload = {
       userId: req.user!.userId,
       email: req.user!.email,
@@ -287,68 +416,8 @@ router.post('/switch-empresa', requireAuth, (req: AuthenticatedRequest, res: Res
 // =========================================================
 // POST /api/auth/logout
 // =========================================================
-router.post('/logout', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const db = getDatabase();
-    // Revogar todas as sessões do usuário
-    db.prepare('UPDATE sessoes SET revogada = 1 WHERE usuario_id = ?').run(req.user!.userId);
-
-    logAuditAction(req, 'LOGOUT', 'Logout realizado — todas as sessões revogadas');
-
-    res.json({ message: 'Logout realizado com sucesso.' });
-  } catch (err: any) {
-    console.error('Erro no logout:', err);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-});
-
-// =========================================================
-// GET /api/auth/me — Dados do usuário logado
-// =========================================================
-router.get('/me', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const db = getDatabase();
-
-    const user = db.prepare(`
-      SELECT id, nome, email, perfil, mfa_habilitado, mfa_metodo, status, ultimo_acesso, created_at
-      FROM usuarios WHERE id = ?
-    `).get(req.user!.userId) as any;
-
-    const empresas = db.prepare(`
-      SELECT e.id, e.cnpj_raiz, e.cnpj_completo, e.razao_social, e.nome_fantasia, e.uf, e.regime_tributario,
-             ue.permissao, ue.modulos_permitidos
-      FROM usuario_empresa ue
-      JOIN empresas e ON e.id = ue.empresa_id
-      WHERE ue.usuario_id = ? AND e.status = 'ativo'
-    `).all(req.user!.userId) as any[];
-
-    res.json({
-      usuario: {
-        id: user.id,
-        nome: user.nome,
-        email: user.email,
-        perfil: user.perfil,
-        mfaHabilitado: !!user.mfa_habilitado,
-        mfaMetodo: user.mfa_metodo,
-        status: user.status,
-        ultimoAcesso: user.ultimo_acesso,
-      },
-      empresaAtivaId: req.user!.empresaAtivaId,
-      empresas: empresas.map((e: any) => ({
-        id: e.id,
-        cnpjRaiz: e.cnpj_raiz,
-        cnpjCompleto: e.cnpj_completo,
-        razaoSocial: e.razao_social,
-        nomeFantasia: e.nome_fantasia,
-        uf: e.uf,
-        regimeTributario: e.regime_tributario,
-        permissao: e.permissao,
-        modulosPermitidos: e.modulos_permitidos,
-      })),
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
+router.post('/logout', (req: Request, res: Response) => {
+  res.json({ message: 'Logout realizado com sucesso.' });
 });
 
 export default router;
