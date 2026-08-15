@@ -136,7 +136,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     setIsTransmitting(true);
 
     try {
-      const response = await fetch('http://localhost:3001/api/sefaz/evento', {
+      const response = await fetch('/api/sefaz/evento', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

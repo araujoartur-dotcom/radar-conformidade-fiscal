@@ -22,7 +22,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
   const fetchMapaList = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cclasstrib`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -58,7 +58,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
     if (!newItem.cClassTrib || !newItem.descricaoInterna) return;
 
     try {
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cclasstrib`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -97,14 +97,14 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
 
   const handleDeleteItem = async (code: string) => {
     try {
-      const res = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cclasstrib`, {
+      const res = await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       const itemToDelete = data.data.find((item: any) => item.cclasstrib === code);
       
       if (itemToDelete) {
-        await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cclasstrib/${itemToDelete.id}`, {
+        await fetch(`${config?.apiUrl || ''}/api/tables/cclasstrib?id=${itemToDelete.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });

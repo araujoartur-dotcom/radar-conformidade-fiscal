@@ -1,0 +1,67 @@
+# Auditoria Completa — Deploy Vercel
+
+## 🔍 Causa Raiz Identificada
+
+O problema **NÃO** é o código do login. O problema é **estrutural**: a Vercel não consegue executar a Serverless Function porque o backend inteiro depende do `better-sqlite3`, que é um **módulo nativo C++** que **não compila** no ambiente Lambda/Serverless da Vercel.
+
+### Cadeia de Falhas
+
+```mermaid
+graph TD
+  A["Vercel recebe POST /api/auth/login"] --> B["Importa api/index.ts"]
+  B --> C["Importa server/app.ts"]
+  C --> D["Importa server/config.ts"]
+  D --> E["❌ import.meta.url + fs.appendFileSync → crash em filesystem read-only"]
+  C --> F["Importa server/routes/sefaz.ts"]
+  F --> G["Importa server/services/sefazService.ts"]
+  G --> H["❌ import { getDatabase } → require('better-sqlite3') → NATIVE ADDON FAIL"]
+  C --> I["Importa server/routes/audit.ts"]
+  I --> J["❌ Chama getDatabase() diretamente sem Supabase fallback"]
+  C --> K["Importa server/routes/directories.ts"]
+  K --> L["❌ Chama getDatabase() diretamente sem Supabase fallback"]
+  C --> M["Importa server/routes/relatorios.ts"]
+  M --> N["❌ Chama getDatabase() diretamente sem Supabase fallback"]
+  C --> O["Importa server/routes/upload.ts"]
+  O --> P["❌ Importa fileStorage.ts → fs operations no Lambda"]
+```
+
+### Arquivos com Problemas Identificados
+
+| Arquivo | Problema | Status |
+|---------|----------|--------|
+| `server/config.ts` | `import.meta.url` + `fs.appendFileSync` crash em read-only FS | ⚠️ Parcialmente corrigido |
+| `server/db/database.ts` | `require('better-sqlite3')` — addon nativo impossível no Lambda | ⚠️ Mock frágil |
+| `server/routes/auth.ts` | ✅ Já tem fallback Supabase | ✅ OK |
+| `server/routes/tenants.ts` | ✅ Já tem fallback Supabase | ✅ OK |
+| `server/routes/tables.ts` | ✅ Já tem fallback Supabase | ✅ OK |
+| `server/routes/users.ts` | Misto — GET lista do SQLite, POST do Supabase | ❌ Precisa corrigir |
+| `server/routes/audit.ts` | 100% SQLite, zero Supabase | ❌ Precisa corrigir |
+| `server/routes/directories.ts` | 100% SQLite, zero Supabase | ❌ Precisa corrigir |
+| `server/routes/relatorios.ts` | 100% SQLite, zero Supabase | ❌ Precisa corrigir |
+| `server/routes/upload.ts` | SQLite + `fileStorage.ts` (fs local) | ❌ Precisa corrigir |
+| `server/routes/sefaz.ts` | SQLite + certificados locais | ❌ Precisa corrigir |
+| `server/routes/certificates.ts` | SQLite + `multer` + fs local | ❌ Precisa corrigir |
+| `server/services/sefazService.ts` | SQLite + fs local | ❌ Precisa corrigir |
+| `server/middleware/auth.ts` | ✅ Corrigido — só JWT decode | ✅ OK |
+| `src/components/Login.tsx` | ✅ Campos limpos, API dinâmica | ✅ OK |
+| `api/index.ts` | Handler OK | ✅ OK |
+
+> [!CAUTION]
+> **11 dos 15 arquivos do backend** tentam usar SQLite. Mesmo com o mock, o `require('better-sqlite3')` pode causar crash antes do mock entrar em ação porque o bundler da Vercel tenta resolver e compilar o addon nativo durante o build.
+
+## 🛠️ Correções Aplicadas
+
+### 1. Eliminar `better-sqlite3` do build da Vercel
+Usar `serverComponentsExternalPackages` no `vercel.json` para excluir o pacote nativo.
+
+### 2. Tornar `config.ts` 100% serverless-safe
+Remover toda escrita em disco (`fs.appendFileSync`).
+
+### 3. Adicionar fallback Supabase nos 6 arquivos restantes
+- `audit.ts`, `directories.ts`, `relatorios.ts`, `upload.ts`, `sefaz.ts`, `certificates.ts`
+
+### 4. Corrigir `users.ts` GET para usar Supabase
+
+## Verificação
+- Teste local simulando handler serverless com `npx tsx`
+- Teste de health check no endpoint `/api/health`

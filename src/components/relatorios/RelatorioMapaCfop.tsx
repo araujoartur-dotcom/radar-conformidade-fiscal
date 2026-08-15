@@ -24,7 +24,7 @@ export const RelatorioMapaCfop: React.FC = () => {
   const fetchMapaList = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cfop`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.ok) {
@@ -62,7 +62,7 @@ export const RelatorioMapaCfop: React.FC = () => {
     if (!newRule.cfop || !newRule.descricao) return;
 
     try {
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cfop`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${token}`,
@@ -108,14 +108,14 @@ export const RelatorioMapaCfop: React.FC = () => {
     // Para resolver agora: O endpoint DELETE /api/tables/cfop/:id espera um ID.
     // Vou buscar o ID diretamente.
     try {
-      const res = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cfop`, {
+      const res = await fetch(`${config?.apiUrl || ''}/api/tables/cfop`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       const itemToDelete = data.data.find((item: any) => item.cfop === cfop);
       
       if (itemToDelete) {
-        await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/tables/cfop/${itemToDelete.id}`, {
+        await fetch(`${config?.apiUrl || ''}/api/tables/cfop?id=${itemToDelete.id}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });

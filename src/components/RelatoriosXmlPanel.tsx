@@ -83,7 +83,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
       if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
       if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
       
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/relatorios/xml?${query.toString()}`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/relatorios/xml?${query.toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -118,7 +118,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
     setUploadLoading(true);
     try {
       const text = await file.text();
-      const response = await fetch(`${config?.apiUrl || 'http://localhost:3001'}/api/upload/xml`, {
+      const response = await fetch(`${config?.apiUrl || ''}/api/upload/xml`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
