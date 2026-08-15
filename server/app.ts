@@ -3,7 +3,7 @@
  * EXPRESS APP — RADAR DE CONFORMIDADE FISCAL
  * ============================================================
  * Criação e configuração de middlewares e rotas do Express.
- * Exportado para servir tanto localmente quanto na Vercel (Serverless).
+ * Compatível com execução standalone e Vercel Serverless.
  * ============================================================
  */
 
@@ -49,24 +49,24 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // =========================================================
-// ROTAS DA API
+// ROTAS DA API (Compatível com /api/* e /*)
 // =========================================================
-app.use('/api/auth', authRoutes);
-app.use('/api/sefaz', sefazRoutes);
-app.use('/api/tables', tablesRoutes);
-app.use('/api/relatorios', relatoriosRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/config', credentialsRoutes);
-app.use('/api/config/certificate', certificatesRoutes);
-app.use('/api/tenants', tenantsRoutes);
-app.use('/api/directories', directoriesRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/audit', auditRoutes);
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/sefaz', '/sefaz'], sefazRoutes);
+app.use(['/api/tables', '/tables'], tablesRoutes);
+app.use(['/api/relatorios', '/relatorios'], relatoriosRoutes);
+app.use(['/api/upload', '/upload'], uploadRoutes);
+app.use(['/api/config/certificate', '/config/certificate'], certificatesRoutes);
+app.use(['/api/config', '/config'], credentialsRoutes);
+app.use(['/api/tenants', '/tenants'], tenantsRoutes);
+app.use(['/api/directories', '/directories'], directoriesRoutes);
+app.use(['/api/users', '/users'], usersRoutes);
+app.use(['/api/audit', '/audit'], auditRoutes);
 
 // =========================================================
 // HEALTH CHECK
 // =========================================================
-app.get('/api/health', (req, res) => {
+app.get(['/api/health', '/health'], (req, res) => {
   res.json({
     status: 'ok',
     version: '2.5.0',

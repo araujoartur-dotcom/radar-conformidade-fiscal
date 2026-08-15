@@ -3,8 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { ShieldCheck, Lock, Mail, Loader2, AlertTriangle } from 'lucide-react';
 
 export function Login() {
-  const [email, setEmail] = useState('admin@radarfiscal.com.br');
-  const [senha, setSenha] = useState('Admin@RadarFiscal2026!');
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
