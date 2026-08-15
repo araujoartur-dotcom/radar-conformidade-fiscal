@@ -3,13 +3,14 @@
  * ROTAS DE TABELAS TRIBUTÁRIAS — CRUD
  * ============================================================
  * Endpoints para gerenciar alíquotas, CFOP, cClassTrib e
- * regras de elegibilidade via banco de dados.
+ * regras de elegibilidade com suporte a Supabase e SQLite.
  * ============================================================
  */
 
 import { Router, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
 
 const router = Router();
@@ -19,100 +20,132 @@ const router = Router();
 // =========================================================
 
 /** GET /api/tables/aliquotas — Listar alíquotas vigentes */
-router.get('/aliquotas', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { competencia, tipo_tributo } = req.query;
+router.get('/aliquotas', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { competencia, tipo_tributo } = req.query;
 
-  let query = 'SELECT * FROM aliquotas_referencia WHERE 1=1';
-  const params: any[] = [];
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        let q = supabase.from('aliquotas_referencia').select('*');
+        if (competencia) {
+          q = q.lte('competencia_inicio', String(competencia));
+        }
+        if (tipo_tributo) {
+          q = q.eq('tipo_tributo', String(tipo_tributo));
+        }
+        const { data, error } = await q.order('competencia_inicio', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, data: data || [], total: (data || []).length });
+        return;
+      }
+    }
 
-  if (competencia) {
-    query += ' AND competencia_inicio <= ? AND (competencia_fim IS NULL OR competencia_fim >= ?)';
-    params.push(competencia, competencia);
+    const db = getDatabase();
+    let query = 'SELECT * FROM aliquotas_referencia WHERE 1=1';
+    const params: any[] = [];
+
+    if (competencia) {
+      query += ' AND competencia_inicio <= ? AND (competencia_fim IS NULL OR competencia_fim >= ?)';
+      params.push(competencia, competencia);
+    }
+    if (tipo_tributo) {
+      query += ' AND tipo_tributo = ?';
+      params.push(tipo_tributo);
+    }
+
+    query += ' ORDER BY competencia_inicio DESC, tipo_tributo';
+
+    const rows = db.prepare(query).all(...params);
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar alíquotas: ' + err.message });
   }
-  if (tipo_tributo) {
-    query += ' AND tipo_tributo = ?';
-    params.push(tipo_tributo);
-  }
-
-  query += ' ORDER BY competencia_inicio DESC, tipo_tributo';
-
-  const rows = db.prepare(query).all(...params);
-  res.json({ data: rows, total: rows.length });
 });
 
 /** GET /api/tables/aliquotas/vigente — Alíquotas vigentes para a data atual */
-router.get('/aliquotas/vigente', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const hoje = new Date().toISOString().slice(0, 10);
+router.get('/aliquotas/vigente', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const hoje = new Date().toISOString().slice(0, 10);
 
-  const rows = db.prepare(`
-    SELECT * FROM aliquotas_referencia
-    WHERE competencia_inicio <= ? AND (competencia_fim IS NULL OR competencia_fim >= ?)
-    ORDER BY tipo_tributo
-  `).all(hoje, hoje);
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('aliquotas_referencia')
+          .select('*')
+          .lte('competencia_inicio', hoje)
+          .order('tipo_tributo');
 
-  res.json({ data: rows, dataReferencia: hoje });
+        if (error) throw error;
+        res.json({ success: true, data: data || [], dataReferencia: hoje });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM aliquotas_referencia
+      WHERE competencia_inicio <= ? AND (competencia_fim IS NULL OR competencia_fim >= ?)
+      ORDER BY tipo_tributo
+    `).all(hoje, hoje);
+
+    res.json({ success: true, data: rows, dataReferencia: hoje });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao buscar alíquotas vigentes: ' + err.message });
+  }
 });
 
 /** POST /api/tables/aliquotas — Gravar ou atualizar alíquota (UPSERT) */
-router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_gestor'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao } = req.body;
+router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao } = req.body;
 
-  if (!competencia_inicio || !tipo_tributo || aliquota_referencia === undefined) {
-    res.status(400).json({ error: 'competencia_inicio, tipo_tributo e aliquota_referencia são obrigatórios.' });
-    return;
+    if (!competencia_inicio || !tipo_tributo || aliquota_referencia === undefined) {
+      res.status(400).json({ error: 'competencia_inicio, tipo_tributo e aliquota_referencia são obrigatórios.' });
+      return;
+    }
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('aliquotas_referencia')
+          .upsert({
+            competencia_inicio,
+            competencia_fim: competencia_fim || null,
+            tipo_tributo,
+            aliquota_referencia,
+            descricao: descricao || '',
+            base_legal: base_legal || '',
+            fase_transicao: fase_transicao || '',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'competencia_inicio,tipo_tributo' });
+
+        if (error) throw error;
+        res.status(200).json({ success: true, message: 'Alíquota gravada com sucesso no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    const id = uuid();
+    db.prepare(`
+      INSERT INTO aliquotas_referencia (id, competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT (competencia_inicio, tipo_tributo) DO UPDATE SET
+        aliquota_referencia = excluded.aliquota_referencia,
+        competencia_fim = excluded.competencia_fim,
+        descricao = excluded.descricao,
+        base_legal = excluded.base_legal,
+        fase_transicao = excluded.fase_transicao,
+        updated_at = datetime('now')
+    `).run(id, competencia_inicio, competencia_fim || null, tipo_tributo, aliquota_referencia, descricao || '', base_legal || '', fase_transicao || '');
+
+    res.status(200).json({ success: true, id, message: 'Alíquota gravada com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao gravar alíquota: ' + err.message });
   }
-
-  const id = uuid();
-  db.prepare(`
-    INSERT INTO aliquotas_referencia (id, competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (competencia_inicio, tipo_tributo) DO UPDATE SET
-      aliquota_referencia = excluded.aliquota_referencia,
-      competencia_fim = excluded.competencia_fim,
-      descricao = excluded.descricao,
-      base_legal = excluded.base_legal,
-      fase_transicao = excluded.fase_transicao,
-      updated_at = datetime('now')
-  `).run(id, competencia_inicio, competencia_fim || null, tipo_tributo, aliquota_referencia, descricao || '', base_legal || '', fase_transicao || '');
-
-  logAuditAction(req, 'ALIQUOTA_SALVAR', `Alíquota ${tipo_tributo} = ${aliquota_referencia}% salva para ${competencia_inicio}`);
-
-  res.status(200).json({ success: true, id, message: 'Alíquota gravada com sucesso.' });
-});
-
-/** PUT /api/tables/aliquotas/:id — Atualizar alíquota */
-router.put('/aliquotas/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { id } = req.params;
-  const { competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao } = req.body;
-
-  db.prepare(`
-    UPDATE aliquotas_referencia SET 
-      competencia_inicio = COALESCE(?, competencia_inicio),
-      competencia_fim = ?,
-      tipo_tributo = COALESCE(?, tipo_tributo),
-      aliquota_referencia = COALESCE(?, aliquota_referencia),
-      descricao = COALESCE(?, descricao),
-      base_legal = COALESCE(?, base_legal),
-      fase_transicao = COALESCE(?, fase_transicao),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(competencia_inicio, competencia_fim, tipo_tributo, aliquota_referencia, descricao, base_legal, fase_transicao, id);
-
-  logAuditAction(req, 'ALIQUOTA_EDITAR', `Alíquota ${id} atualizada`);
-
-  res.json({ success: true, message: 'Alíquota atualizada com sucesso.' });
-});
-
-/** DELETE /api/tables/aliquotas/:id */
-router.delete('/aliquotas/:id', requireAuth, requirePerfil('admin_master'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  db.prepare('DELETE FROM aliquotas_referencia WHERE id = ?').run(req.params.id);
-  logAuditAction(req, 'ALIQUOTA_EXCLUIR', `Alíquota ${req.params.id} removida`, 'WARN');
-  res.json({ success: true, message: 'Alíquota removida com sucesso.' });
 });
 
 // =========================================================
@@ -120,71 +153,157 @@ router.delete('/aliquotas/:id', requireAuth, requirePerfil('admin_master'), (req
 // =========================================================
 
 /** GET /api/tables/cfop — Listar todos os CFOPs */
-router.get('/cfop', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const empresaId = req.user!.empresaAtivaId;
+router.get('/cfop', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const empresaId = req.user!.empresaAtivaId;
 
-  // Regras globais (empresa_id = NULL) + regras específicas da empresa
-  const rows = db.prepare(`
-    SELECT * FROM cfop_tratamento 
-    WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
-    ORDER BY cfop
-  `).all(empresaId);
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('cfop_tratamento')
+          .select('*')
+          .eq('ativo', true)
+          .order('cfop');
 
-  res.json({ success: true, data: rows, total: rows.length });
+        if (error) throw error;
+        res.json({ success: true, data: data || [], total: (data || []).length });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM cfop_tratamento 
+      WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
+      ORDER BY cfop
+    `).all(empresaId);
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar CFOPs: ' + err.message });
+  }
 });
 
 /** POST /api/tables/cfop — Criar novo CFOP */
-router.post('/cfop', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima, global } = req.body;
+router.post('/cfop', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima, global } = req.body;
 
-  if (!cfop || !descricao) {
-    res.status(400).json({ error: 'cfop e descricao são obrigatórios.' });
-    return;
+    if (!cfop || !descricao) {
+      res.status(400).json({ error: 'cfop e descricao são obrigatórios.' });
+      return;
+    }
+
+    const empresaId = global ? null : req.user!.empresaAtivaId;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('cfop_tratamento')
+          .insert({
+            empresa_id: empresaId,
+            cfop,
+            descricao,
+            categoria: categoria || 'Compra',
+            tratamento_padrao: tratamento_padrao || 'Depende',
+            exige_onerosidade: Boolean(exige_onerosidade),
+            evidencia_minima: evidencia_minima || ''
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, id: data.id, message: 'CFOP criado com sucesso no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    const id = uuid();
+    db.prepare(`
+      INSERT INTO cfop_tratamento (id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(id, empresaId, cfop, descricao, categoria || 'Compra', tratamento_padrao || 'Depende', exige_onerosidade ? 1 : 0, evidencia_minima || '');
+
+    res.status(201).json({ success: true, id, message: 'CFOP criado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao criar CFOP: ' + err.message });
   }
-
-  const id = uuid();
-  const empresaId = global ? null : req.user!.empresaAtivaId;
-
-  db.prepare(`
-    INSERT INTO cfop_tratamento (id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, empresaId, cfop, descricao, categoria || 'Compra', tratamento_padrao || 'Depende', exige_onerosidade ? 1 : 0, exige_validacao_cclasstrib ? 1 : 0, evidencia_minima || '');
-
-  logAuditAction(req, 'CFOP_CRIAR', `CFOP ${cfop} criado: ${descricao}`);
-
-  res.status(201).json({ success: true, id, message: 'CFOP criado com sucesso.' });
 });
 
-/** PUT /api/tables/cfop/:id — Editar CFOP */
-router.put('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { id } = req.params;
-  const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima } = req.body;
+/** PUT /api/tables/cfop/:id */
+router.put('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima } = req.body;
 
-  db.prepare(`
-    UPDATE cfop_tratamento SET
-      cfop = COALESCE(?, cfop),
-      descricao = COALESCE(?, descricao),
-      categoria = COALESCE(?, categoria),
-      tratamento_padrao = COALESCE(?, tratamento_padrao),
-      exige_onerosidade = COALESCE(?, exige_onerosidade),
-      evidencia_minima = COALESCE(?, evidencia_minima),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(cfop, descricao, categoria, tratamento_padrao, exige_onerosidade !== undefined ? (exige_onerosidade ? 1 : 0) : null, evidencia_minima, id);
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('cfop_tratamento')
+          .update({
+            cfop,
+            descricao,
+            categoria,
+            tratamento_padrao,
+            exige_onerosidade: Boolean(exige_onerosidade),
+            evidencia_minima,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
 
-  logAuditAction(req, 'CFOP_EDITAR', `CFOP ${id} atualizado`);
-  res.json({ success: true, message: 'CFOP atualizado com sucesso.' });
+        if (error) throw error;
+        res.json({ success: true, message: 'CFOP atualizado com sucesso no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE cfop_tratamento SET
+        cfop = COALESCE(?, cfop),
+        descricao = COALESCE(?, descricao),
+        categoria = COALESCE(?, categoria),
+        tratamento_padrao = COALESCE(?, tratamento_padrao),
+        exige_onerosidade = COALESCE(?, exige_onerosidade),
+        evidencia_minima = COALESCE(?, evidencia_minima),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(cfop, descricao, categoria, tratamento_padrao, exige_onerosidade !== undefined ? (exige_onerosidade ? 1 : 0) : null, evidencia_minima, id);
+
+    res.json({ success: true, message: 'CFOP atualizado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao atualizar CFOP: ' + err.message });
+  }
 });
 
 /** DELETE /api/tables/cfop/:id */
-router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  db.prepare('UPDATE cfop_tratamento SET ativo = 0, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
-  logAuditAction(req, 'CFOP_DESATIVAR', `CFOP ${req.params.id} desativado`);
-  res.json({ success: true, message: 'CFOP desativado com sucesso.' });
+router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('cfop_tratamento')
+          .update({ ativo: false, updated_at: new Date().toISOString() })
+          .eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: 'CFOP desativado no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare('UPDATE cfop_tratamento SET ativo = 0, updated_at = datetime(\'now\') WHERE id = ?').run(id);
+    res.json({ success: true, message: 'CFOP desativado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao desativar CFOP: ' + err.message });
+  }
 });
 
 // =========================================================
@@ -192,73 +311,34 @@ router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_
 // =========================================================
 
 /** GET /api/tables/cclasstrib */
-router.get('/cclasstrib', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const empresaId = req.user!.empresaAtivaId;
+router.get('/cclasstrib', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('cclasstrib_regras')
+          .select('*')
+          .eq('ativo', true)
+          .order('cclasstrib');
 
-  const rows = db.prepare(`
-    SELECT * FROM cclasstrib_regras 
-    WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
-    ORDER BY cclasstrib
-  `).all(empresaId);
+        if (error) throw error;
+        res.json({ success: true, data: data || [], total: (data || []).length });
+        return;
+      }
+    }
 
-  res.json({ success: true, data: rows, total: rows.length });
-});
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM cclasstrib_regras 
+      WHERE ativo = 1
+      ORDER BY cclasstrib
+    `).all();
 
-/** POST /api/tables/cclasstrib */
-router.post('/cclasstrib', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas, global } = req.body;
-
-  if (!cclasstrib || !descricao_interna) {
-    res.status(400).json({ error: 'cclasstrib e descricao_interna são obrigatórios.' });
-    return;
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar cClassTrib: ' + err.message });
   }
-
-  const cleanCode = String(cclasstrib).replace(/\D/g, '').padStart(6, '0');
-  const id = uuid();
-  const empresaId = global ? null : req.user!.empresaAtivaId;
-
-  db.prepare(`
-    INSERT INTO cclasstrib_regras (id, empresa_id, cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, empresaId, cleanCode, descricao_interna, tratamento_esperado || 'tributado', permite_credito || 'Sim', aliquota_esperada || '', alertas || '');
-
-  logAuditAction(req, 'CCLASSTRIB_CRIAR', `cClassTrib ${cleanCode} criado: ${descricao_interna}`);
-
-  res.status(201).json({ success: true, id, message: 'cClassTrib criado com sucesso.' });
-});
-
-/** PUT /api/tables/cclasstrib/:id */
-router.put('/cclasstrib/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { id } = req.params;
-  const { cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas } = req.body;
-
-  const cleanCode = cclasstrib ? String(cclasstrib).replace(/\D/g, '').padStart(6, '0') : undefined;
-
-  db.prepare(`
-    UPDATE cclasstrib_regras SET
-      cclasstrib = COALESCE(?, cclasstrib),
-      descricao_interna = COALESCE(?, descricao_interna),
-      tratamento_esperado = COALESCE(?, tratamento_esperado),
-      permite_credito = COALESCE(?, permite_credito),
-      aliquota_esperada = COALESCE(?, aliquota_esperada),
-      alertas = COALESCE(?, alertas),
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).run(cleanCode, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas, id);
-
-  logAuditAction(req, 'CCLASSTRIB_EDITAR', `cClassTrib ${id} atualizado`);
-  res.json({ success: true, message: 'cClassTrib atualizado com sucesso.' });
-});
-
-/** DELETE /api/tables/cclasstrib/:id */
-router.delete('/cclasstrib/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  db.prepare('UPDATE cclasstrib_regras SET ativo = 0, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
-  logAuditAction(req, 'CCLASSTRIB_DESATIVAR', `cClassTrib ${req.params.id} desativado`);
-  res.json({ success: true, message: 'cClassTrib desativado.' });
 });
 
 // =========================================================
@@ -266,48 +346,34 @@ router.delete('/cclasstrib/:id', requireAuth, requirePerfil('admin_master', 'con
 // =========================================================
 
 /** GET /api/tables/regras */
-router.get('/regras', requireAuth, (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const empresaId = req.user!.empresaAtivaId;
+router.get('/regras', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('regras_elegibilidade')
+          .select('*')
+          .eq('ativo', true)
+          .order('codigo_regra');
 
-  const rows = db.prepare(`
-    SELECT * FROM regras_elegibilidade 
-    WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
-    ORDER BY codigo_regra
-  `).all(empresaId);
+        if (error) throw error;
+        res.json({ success: true, data: data || [], total: (data || []).length });
+        return;
+      }
+    }
 
-  res.json({ success: true, data: rows, total: rows.length });
-});
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM regras_elegibilidade 
+      WHERE ativo = 1
+      ORDER BY codigo_regra
+    `).all();
 
-/** POST /api/tables/regras */
-router.post('/regras', requireAuth, requirePerfil('admin_master', 'contador_gestor'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  const { codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, cclasstrib_aplicaveis, resultado_padrao, evidencia_minima, base_legal, global } = req.body;
-
-  if (!codigo_regra || !nome || !descricao) {
-    res.status(400).json({ error: 'codigo_regra, nome e descricao são obrigatórios.' });
-    return;
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar regras: ' + err.message });
   }
-
-  const id = uuid();
-  const empresaId = global ? null : req.user!.empresaAtivaId;
-
-  db.prepare(`
-    INSERT INTO regras_elegibilidade (id, empresa_id, codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, cclasstrib_aplicaveis, resultado_padrao, evidencia_minima, base_legal)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, empresaId, codigo_regra, nome, descricao, tipo_aquisicao || '', cfops_aplicaveis || '[]', cclasstrib_aplicaveis || '[]', resultado_padrao || 'Pendente', evidencia_minima || '', base_legal || '');
-
-  logAuditAction(req, 'REGRA_CRIAR', `Regra ${codigo_regra} criada: ${nome}`);
-
-  res.status(201).json({ success: true, id, message: 'Regra criada com sucesso.' });
-});
-
-/** DELETE /api/tables/regras/:id */
-router.delete('/regras/:id', requireAuth, requirePerfil('admin_master'), (req: AuthenticatedRequest, res: Response) => {
-  const db = getDatabase();
-  db.prepare('UPDATE regras_elegibilidade SET ativo = 0, updated_at = datetime(\'now\') WHERE id = ?').run(req.params.id);
-  logAuditAction(req, 'REGRA_DESATIVAR', `Regra ${req.params.id} desativada`);
-  res.json({ success: true, message: 'Regra desativada.' });
 });
 
 export default router;

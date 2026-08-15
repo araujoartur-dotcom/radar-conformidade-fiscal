@@ -11,6 +11,7 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AUTH } from '../config';
 import { getDatabase } from '../db/database';
+import { isSupabaseConfigured } from '../db/supabase';
 
 export interface JwtPayload {
   userId: string;
@@ -43,67 +44,24 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
   try {
     const decoded = jwt.verify(token, AUTH.JWT_SECRET) as JwtPayload;
 
-    // Verificar se o usuário ainda existe e está ativo
-    const db = getDatabase();
-    const user = db.prepare('SELECT id, status FROM usuarios WHERE id = ?').get(decoded.userId) as any;
-
-    if (!user) {
-      res.status(401).json({ error: 'Usuário não encontrado.', code: 'AUTH_USER_NOT_FOUND' });
+    if (!decoded || !decoded.userId) {
+      res.status(401).json({ error: 'Token inválido.', code: 'AUTH_INVALID_TOKEN' });
       return;
-    }
-
-    if (user.status === 'bloqueado') {
-      res.status(403).json({ error: 'Usuário bloqueado. Contate o administrador.', code: 'AUTH_USER_BLOCKED' });
-      return;
-    }
-
-    // Verificar se o usuário tem permissão para a empresa ativa (se houver)
-    if (decoded.empresaAtivaId) {
-      const vinculo = db.prepare(`
-        SELECT permissao, modulos_permitidos 
-        FROM usuario_empresa 
-        WHERE usuario_id = ? AND empresa_id = ?
-      `).get(decoded.userId, decoded.empresaAtivaId) as any;
-
-      if (!vinculo) {
-        // O tenant ativo no token não existe mais ou o usuário perdeu o acesso.
-        // Vamos remover o tenant ativo da requisição em vez de bloquear a API inteira.
-        decoded.empresaAtivaId = null;
-      }
     }
 
     req.user = decoded;
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {
-      res.status(401).json({ error: 'Token expirado. Faça login novamente.', code: 'AUTH_TOKEN_EXPIRED' });
+      res.status(401).json({ error: 'Token de acesso expirado.', code: 'AUTH_TOKEN_EXPIRED' });
       return;
     }
-    res.status(401).json({ error: 'Token inválido.', code: 'AUTH_INVALID_TOKEN' });
+    res.status(401).json({ error: 'Token inválido ou assinatura incorreta.', code: 'AUTH_INVALID_TOKEN' });
   }
 }
 
 /**
- * Middleware opcional — injeta user se token válido, mas não bloqueia
- */
-export function optionalAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    next();
-    return;
-  }
-
-  try {
-    const token = authHeader.slice(7);
-    req.user = jwt.verify(token, AUTH.JWT_SECRET) as JwtPayload;
-  } catch {
-    // Token inválido — seguir sem autenticação
-  }
-  next();
-}
-
-/**
- * Middleware de perfil mínimo
+ * Middleware para validar perfis específicos
  */
 export function requirePerfil(...perfisPermitidos: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
@@ -135,21 +93,23 @@ export function logAuditAction(
   dadosExtras: Record<string, any> = {}
 ): void {
   try {
-    const db = getDatabase();
-    db.prepare(`
-      INSERT INTO audit_log (nivel, servico, empresa_id, usuario_id, usuario_email, acao, descricao, ip_address, dados_extras)
-      VALUES (?, 'API', ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      nivel,
-      req.user?.empresaAtivaId || '',
-      req.user?.userId || '',
-      req.user?.email || '',
-      acao,
-      descricao,
-      req.ip || req.socket.remoteAddress || '',
-      JSON.stringify(dadosExtras)
-    );
+    if (!isSupabaseConfigured()) {
+      const db = getDatabase();
+      db.prepare(`
+        INSERT INTO audit_log (nivel, servico, empresa_id, usuario_id, usuario_email, acao, descricao, ip_address, dados_extras)
+        VALUES (?, 'API', ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        nivel,
+        req.user?.empresaAtivaId || '',
+        req.user?.userId || '',
+        req.user?.email || '',
+        acao,
+        descricao,
+        req.ip || req.socket.remoteAddress || '',
+        JSON.stringify(dadosExtras)
+      );
+    }
   } catch (err) {
-    console.error('Falha ao registrar log de auditoria:', err);
+    // Audit logging failure should not break request flow
   }
 }
