@@ -1,14 +1,14 @@
 /**
  * ============================================================
- * BANCO DE DADOS — CONEXÃO SQLite COM FALLBACK SEGURO
+ * BANCO DE DADOS — SQLite (Local) ou Supabase (Serverless)
  * ============================================================
- * Carrega better-sqlite3 localmente. No ambiente serverless (Vercel),
- * o Supabase (PostgreSQL) assume o banco de dados principal.
+ * Em serverless (Vercel), better-sqlite3 NÃO funciona.
+ * Todas as rotas devem verificar isSupabaseConfigured() primeiro.
+ * O mock aqui evita crashes na importação das rotas que ainda
+ * referenciam getDatabase().
  * ============================================================
  */
 
-import path from 'path';
-import fs from 'fs';
 import { DATABASE } from '../config';
 
 let db: any = null;
@@ -16,23 +16,23 @@ let db: any = null;
 export function getDatabase(): any {
   if (!db) {
     try {
-      // Dynamic import/require para evitar crash em ambiente serverless
-      const DatabaseConstructor = require('better-sqlite3');
-      
+      // Tenta carregar better-sqlite3 (só funciona localmente)
+      const Database = require('better-sqlite3');
+      const path = require('path');
+      const fs = require('fs');
+
       const dir = path.dirname(DATABASE.SQLITE_PATH);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      db = new DatabaseConstructor(DATABASE.SQLITE_PATH);
+      db = new Database(DATABASE.SQLITE_PATH);
       db.pragma('journal_mode = WAL');
       db.pragma('foreign_keys = ON');
       db.pragma('busy_timeout = 5000');
-
       console.log(`✅ Banco SQLite conectado: ${DATABASE.SQLITE_PATH}`);
-    } catch (err: any) {
-      console.warn('⚠️ SQLite nativo não disponível neste ambiente. Usando fallback:', err.message);
-      // Retorna mock seguro para evitar quebras em serverless
+    } catch {
+      // Serverless: retorna stub seguro — as rotas devem usar Supabase
       db = {
         prepare: () => ({
           get: () => null,
@@ -40,7 +40,7 @@ export function getDatabase(): any {
           run: () => ({ changes: 0, lastInsertRowid: 0 }),
         }),
         pragma: () => null,
-        transaction: (fn: any) => fn,
+        transaction: (fn: any) => (() => fn()),
         close: () => null,
       };
     }
@@ -49,10 +49,7 @@ export function getDatabase(): any {
 }
 
 export function closeDatabase(): void {
-  if (db && typeof db.close === 'function') {
-    try {
-      db.close();
-      console.log('🔒 Banco de dados fechado.');
-    } catch {}
+  if (db && db.close) {
+    try { db.close(); } catch {}
   }
 }
