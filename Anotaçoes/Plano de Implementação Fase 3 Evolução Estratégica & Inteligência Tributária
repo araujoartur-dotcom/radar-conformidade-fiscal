@@ -1,0 +1,77 @@
+# 📋 Plano de Implementação — Fase 3: Evolução Estratégica & Inteligência Tributária
+
+A **Fase 3** do Master Plan tem como foco transformar o Radar de Conformidade Fiscal em um motor preditivo e executivo da Reforma Tributária do Consumo (EC 132/2023 e LC 214/2025), adicionando a modelagem temporal de transição (2026 a 2033), o motor de **Split Payment**, a custódia imutável com **Object Lock / WORM (SHA-256)**, e as blindagens arquiteturais (RLS no PostgreSQL e Dockerfile).
+
+---
+
+## 🎯 Escopo da Fase 3
+
+### 1. Motor de Alíquotas do Período de Transição (2026–2033)
+- **Tabela Cronológica da Reforma:**
+  * **2026 (Teste):** CBS 0,90% | IBS 0,10% (Estadual 0,05% + Municipal 0,05%) | PIS/Cofins e ICMS/ISS vigentes.
+  * **2027–2028 (CBS Plena):** CBS 8,80% (extinção de PIS/Cofins) | IBS 0,00%.
+  * **2029 (Transição 10%):** CBS 8,80% | IBS 1,77% (Redução de 10% no ICMS/ISS).
+  * **2030 (Transição 20%):** CBS 8,80% | IBS 3,54% (Redução de 20% no ICMS/ISS).
+  * **2031 (Transição 30%):** CBS 8,80% | IBS 5,31% (Redução de 30% no ICMS/ISS).
+  * **2032 (Transição 40%):** CBS 8,80% | IBS 7,08% (Redução de 40% no ICMS/ISS).
+  * **2033 (Vigência Plena):** CBS 8,80% | IBS 17,70% (Estadual 10,62% + Municipal 7,08%) = **IVA Total 26,50%**.
+- **Seletor Temporal Global:**
+  * Componente de seleção de Ano de Vigência (2026 a 2033) no cabeçalho dos painéis e no `CentralKpisPanel.tsx`, permitindo ao gestor simular instantaneamente a carga tributária em qualquer ano da transição.
+
+### 2. Motor de Split Payment (LC 214/2025)
+- Cálculo da segregação financeira automática por modalidade de liquidação (Pix Dinâmico com QR Code tributário, Boleto Bancário com split, Cartão e TED).
+- Detalhamento do valor retido na fonte para o Comitê Gestor do IBS + Receita Federal (CBS) vs. Valor Líquido transferido ao fornecedor.
+- Indicadores visuais nos cards de documentos fiscais e modal explicativo de Split Payment.
+
+### 3. Custódia Imutável de XMLs (Object Lock / WORM — 5 Anos)
+- Geração automática de hash SHA-256 criptográfico para cada XML processado.
+- Metadados de guarda fiscal com cálculo da data de expiração legal (5 anos a partir do 1º dia do exercício seguinte conforme Art. 173 do CTN).
+- Painel/Aba de Custódia Fiscal WORM com status de imutabilidade e exportação de laudo de integridade.
+
+### 4. Row-Level Security (RLS) PostgreSQL & Script de Ativação
+- Criação do script `server/db/rls_policies.sql` com as políticas de isolamento por `empresa_id` / `tenant_id` para tabelas `empresas`, `documentos_fiscais`, `certificados` e `eventos_transmitidos`.
+
+### 5. Dockerfile Multi-Stage & Pipeline CI/CD
+- `Dockerfile` multi-stage otimizado para Node.js 20 Alpine (build + runner de produção).
+- Workflow do GitHub Actions `.github/workflows/ci.yml` para validação de build e tipagem.
+
+---
+
+## 📂 Arquivos a Serem Criados / Modificados
+
+### [NEW] `src/utils/reformaTransicao.ts`
+- Engine com o cronograma 2026–2033, funções de cálculo temporal `calcularTributosTransicao(valor, ano, cClassTrib, regime)`, e motor de `calcularSplitPayment(valorTotal, ano, metodo)`.
+
+### [NEW] `src/components/SplitPaymentModal.tsx`
+- Modal interativo para visualização e simulação do Split Payment de uma NF-e, demonstrando a divisão entre conta do Comitê Gestor e conta bancária do emitente.
+
+### [NEW] `server/db/rls_policies.sql`
+- Script SQL com as regras de Row-Level Security para PostgreSQL / Supabase.
+
+### [NEW] `Dockerfile` & `.github/workflows/ci.yml`
+- Containerização e automação de integração contínua.
+
+### [MODIFY] `src/types.ts`
+- Inclusão dos tipos de `RegraTransicaoAno`, `SplitPaymentInfo`, e `CustodiaWormItem`.
+
+### [MODIFY] `src/components/CentralKpisPanel.tsx`
+- Inclusão do Seletor de Ano da Transição (2026–2033) e recálculo dinâmico das projeções de CBS e IBS conforme o ano escolhido.
+
+### [MODIFY] `src/components/DfeManagerPanel.tsx` & `src/components/DanfeModal.tsx`
+- Exibição da badge de Split Payment e link para o simulador de retenção financeira.
+
+### [MODIFY] `src/utils/xmlParser.ts`
+- Integração com `reformaTransicao.ts` e cálculo de SHA-256 para cada XML.
+
+---
+
+## 🧪 Plano de Verificação
+
+1. **Testes Unitários de Alíquotas:**
+   - Verificar cálculo de uma NF-e de R$ 67.200,00 em 2026 (CBS R$ 604,80 + IBS R$ 67,20) vs. 2033 (CBS R$ 5.913,60 + IBS R$ 11.894,40).
+2. **Teste do Split Payment:**
+   - Validar se o valor bruto menos as retenções CBS/IBS resulta exatamente no valor líquido do fornecedor.
+3. **Build TypeScript:**
+   - Executar `npm run build` e certificar saída com Exit Code 0.
+4. **Deploy:**
+   - O deploy permanecerá pausado conforme solicitação do usuário.

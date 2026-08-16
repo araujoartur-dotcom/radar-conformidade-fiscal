@@ -7,7 +7,6 @@ interface ConsultaLotePanelProps {
   onFileUpload: (file: File) => void;
   fileName?: string;
   stats: BatchStats;
-  onLoadDemoBatch: () => void;
   rateLimit: number;
   setRateLimit: (limit: number) => void;
   isProcessing: boolean;
@@ -23,7 +22,6 @@ export const ConsultaLotePanel: React.FC<ConsultaLotePanelProps> = ({
   onFileUpload,
   fileName,
   stats,
-  onLoadDemoBatch,
   rateLimit,
   setRateLimit,
   isProcessing,
@@ -72,14 +70,6 @@ export const ConsultaLotePanel: React.FC<ConsultaLotePanelProps> = ({
           >
             <Download className="w-3.5 h-3.5 text-cyan-400" />
             <span>Baixar Planilha Exemplo</span>
-          </button>
-
-          <button
-            onClick={onLoadDemoBatch}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-950/70 hover:bg-blue-900/80 text-blue-300 text-xs font-bold border border-blue-700/60 transition-all cursor-pointer shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" />
-            <span>Carregar Lote Demo</span>
           </button>
         </div>
       </div>

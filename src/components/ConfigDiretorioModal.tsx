@@ -570,7 +570,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                   type="text"
                   value={newRazaoSocialInput}
                   onChange={(e) => setNewRazaoSocialInput(e.target.value)}
-                  placeholder="Ex: PETROBRAS MATRIZ"
+                  placeholder="Ex: MINHA EMPRESA MATRIZ"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>

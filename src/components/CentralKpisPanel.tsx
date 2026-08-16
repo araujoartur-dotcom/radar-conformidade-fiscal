@@ -8,6 +8,7 @@ import {
 import { DfeXmlItem, ClienteEmpresaTenant } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { exportToExcel } from '../utils/excel';
+import { ANOS_TRANSICAO, getRegraTransicaoAno } from '../utils/reformaTransicao';
 
 interface CentralKpisPanelProps {
   dfeList: DfeXmlItem[];
@@ -20,164 +21,19 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
 }) => {
   const { empresaAtiva } = useAuth();
 
-  // Filters
+  // Filters & Transition Year Simulation
+  const [anoSimulado, setAnoSimulado] = useState<number>(2026);
   const [periodoFilter, setPeriodoFilter] = useState<'mes' | 'trimestre' | 'ano'>('mes');
   const [operacaoFilter, setOperacaoFilter] = useState<'todas' | 'entradas' | 'saidas'>('todas');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Alíquotas de Referência da Reforma Tributária (EC 132/2023)
-  const ALIQUOTA_CBS = 0.088; // 8.8% Federal
-  const ALIQUOTA_IBS_UF = 0.1062; // 10.62% Estadual (60% do IBS de 17.7%)
-  const ALIQUOTA_IBS_MUN = 0.0708; // 7.08% Municipal (40% do IBS de 17.7%)
-  const ALIQUOTA_IBS_TOTAL = ALIQUOTA_IBS_UF + ALIQUOTA_IBS_MUN; // 17.7%
+  // Regra de Alíquotas do Ano Selecionado (EC 132/2023 & LC 214/2025)
+  const regraAno = useMemo(() => getRegraTransicaoAno(anoSimulado), [anoSimulado]);
 
-  // Fallback demo data if dfeList is empty so the user can immediately interact with the dashboard
+  // Use real data only — no fallback demo data
   const baseItems: DfeXmlItem[] = useMemo(() => {
-    if (dfeList && dfeList.length > 0) {
-      return dfeList;
-    }
-    // Rich simulated dataset for immediate BI experience
-    return [
-      {
-        id: 'doc-1',
-        chaveAcesso: '35260833000167000101550010000458921892345812',
-        tipo: 'NFe',
-        numero: '45892',
-        serie: '1',
-        dataEmissao: '2026-08-14T10:30:00Z',
-        emitenteCnpj: '33.000.167/0001-01',
-        emitenteNome: 'PETROLEO BRASILEIRO S A PETROBRAS',
-        emitenteUf: 'RJ',
-        destinatarioCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        destinatarioNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        destinatarioUf: empresaAtiva?.uf || 'SP',
-        valorTotal: 145800.00,
-        valorIcms: 26244.00,
-        valorIpi: 0,
-        valorPis: 2405.70,
-        valorCofins: 11080.80,
-        aliquotaCbs: 8.8,
-        valorCbs: 145800.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 145800.00 * ALIQUOTA_IBS_TOTAL
-      },
-      {
-        id: 'doc-2',
-        chaveAcesso: '35260860746948000112550020000124891982347123',
-        tipo: 'NFe',
-        numero: '12489',
-        serie: '2',
-        dataEmissao: '2026-08-13T14:15:00Z',
-        emitenteCnpj: '60.746.948/0001-12',
-        emitenteNome: 'VALE S.A. LOGISTICA E MINERACAO',
-        emitenteUf: 'MG',
-        destinatarioCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        destinatarioNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        destinatarioUf: empresaAtiva?.uf || 'SP',
-        valorTotal: 89450.00,
-        valorIcms: 16101.00,
-        valorIpi: 4472.50,
-        valorPis: 1475.92,
-        valorCofins: 6798.20,
-        aliquotaCbs: 8.8,
-        valorCbs: 89450.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 89450.00 * ALIQUOTA_IBS_TOTAL
-      },
-      {
-        id: 'doc-3',
-        chaveAcesso: '35260847113020000188650010000981241198234567',
-        tipo: 'NFCe',
-        numero: '98124',
-        serie: '1',
-        dataEmissao: '2026-08-15T09:20:00Z',
-        emitenteCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        emitenteNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        emitenteUf: empresaAtiva?.uf || 'SP',
-        destinatarioCnpj: '00.000.000/0000-00',
-        destinatarioNome: 'CONSUMIDOR FINAL VAREJO',
-        destinatarioUf: 'SP',
-        valorTotal: 34200.00,
-        valorIcms: 6156.00,
-        valorIpi: 0,
-        valorPis: 564.30,
-        valorCofins: 2599.20,
-        aliquotaCbs: 8.8,
-        valorCbs: 34200.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 34200.00 * ALIQUOTA_IBS_TOTAL
-      },
-      {
-        id: 'doc-4',
-        chaveAcesso: '35260802345678000155570010000045121982348911',
-        tipo: 'CTe',
-        numero: '4512',
-        serie: '1',
-        dataEmissao: '2026-08-12T16:40:00Z',
-        emitenteCnpj: '02.345.678/0001-55',
-        emitenteNome: 'RODONAVES TRANSPORTES E LOGISTICA LTDA',
-        emitenteUf: 'SP',
-        destinatarioCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        destinatarioNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        destinatarioUf: empresaAtiva?.uf || 'SP',
-        valorTotal: 18750.00,
-        valorIcms: 2250.00,
-        valorIpi: 0,
-        valorPis: 309.37,
-        valorCofins: 1425.00,
-        aliquotaCbs: 8.8,
-        valorCbs: 18750.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 18750.00 * ALIQUOTA_IBS_TOTAL
-      },
-      {
-        id: 'doc-5',
-        chaveAcesso: '35260809876543000122000000000001234198234999',
-        tipo: 'NFSe',
-        numero: '1234',
-        serie: 'E',
-        dataEmissao: '2026-08-10T11:00:00Z',
-        emitenteCnpj: '09.876.543/0001-22',
-        emitenteNome: 'TECH CLOUD CONSULTORIA & SOFTWARE S/A',
-        emitenteUf: 'SP',
-        destinatarioCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        destinatarioNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        destinatarioUf: empresaAtiva?.uf || 'SP',
-        valorTotal: 22600.00,
-        valorIcms: 0,
-        valorIpi: 0,
-        valorPis: 372.90,
-        valorCofins: 1717.60,
-        aliquotaCbs: 8.8,
-        valorCbs: 22600.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 22600.00 * ALIQUOTA_IBS_TOTAL
-      },
-      {
-        id: 'doc-6',
-        chaveAcesso: '35260833000167000101550010000459991892345899',
-        tipo: 'NFe',
-        numero: '45999',
-        serie: '1',
-        dataEmissao: '2026-08-08T18:00:00Z',
-        emitenteCnpj: '33.000.167/0001-01',
-        emitenteNome: 'PETROLEO BRASILEIRO S A PETROBRAS',
-        emitenteUf: 'RJ',
-        destinatarioCnpj: empresaAtiva?.cnpjCompleto || '12.345.678/0001-90',
-        destinatarioNome: empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
-        destinatarioUf: empresaAtiva?.uf || 'SP',
-        valorTotal: 210400.00,
-        valorIcms: 37872.00,
-        valorIpi: 0,
-        valorPis: 3471.60,
-        valorCofins: 15990.40,
-        aliquotaCbs: 8.8,
-        valorCbs: 210400.00 * ALIQUOTA_CBS,
-        aliquotaIbs: 17.7,
-        valorIbs: 210400.00 * ALIQUOTA_IBS_TOTAL
-      }
-    ];
-  }, [dfeList, empresaAtiva]);
+    return dfeList || [];
+  }, [dfeList]);
 
   // Filtragem
   const filteredItems = useMemo(() => {
@@ -194,12 +50,13 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
     });
   }, [baseItems, operacaoFilter, empresaAtiva]);
 
-  // Agregações Gerais
+  // Agregações Gerais Dinâmicas por Ano da Transição
   const totalValor = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorTotal || 0), 0), [filteredItems]);
-  const totalCbs = useMemo(() => totalValor * ALIQUOTA_CBS, [totalValor]);
-  const totalIbsUf = useMemo(() => totalValor * ALIQUOTA_IBS_UF, [totalValor]);
-  const totalIbsMun = useMemo(() => totalValor * ALIQUOTA_IBS_MUN, [totalValor]);
+  const totalCbs = useMemo(() => (totalValor * regraAno.aliquotaCbs) / 100, [totalValor, regraAno]);
+  const totalIbsUf = useMemo(() => (totalValor * regraAno.aliquotaIbsEstadual) / 100, [totalValor, regraAno]);
+  const totalIbsMun = useMemo(() => (totalValor * regraAno.aliquotaIbsMunicipal) / 100, [totalValor, regraAno]);
   const totalIbsTotal = useMemo(() => totalIbsUf + totalIbsMun, [totalIbsUf, totalIbsMun]);
+  const totalIvaDual = useMemo(() => totalCbs + totalIbsTotal, [totalCbs, totalIbsTotal]);
   const totalQtd = filteredItems.length;
 
   // Agregações por Modelo de DF-e
@@ -367,6 +224,75 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
         </div>
       </div>
 
+      {/* Empty State Banner if no documents are loaded */}
+      {filteredItems.length === 0 && (
+        <div className="p-5 rounded-3xl bg-slate-900/50 border border-slate-800 flex items-center gap-4 text-xs">
+          <div className="w-10 h-10 rounded-2xl bg-cyan-950/60 border border-cyan-800/60 flex items-center justify-center text-cyan-400 shrink-0">
+            <Info className="w-5 h-5" />
+          </div>
+          <div className="space-y-0.5">
+            <h4 className="font-bold text-white text-sm">Nenhum Documento Fiscal (DF-e) carregado</h4>
+            <p className="text-slate-400">
+              O sistema está operando em modo de conformidade com dados 100% reais. Para visualizar métricas de CBS/IBS e gráficos por tipo de DF-e, realize o upload de XMLs ou sincronize via WebService SEFAZ.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── BARRA DE SIMULAÇÃO TEMPORAL DA TRANSIÇÃO (2026 - 2033) ── */}
+      <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-cyan-400" />
+            <span className="text-xs font-extrabold text-white">Simulador Temporal da Reforma Tributária (EC 132/2023 & LC 214/2025):</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
+              {regraAno.badge}
+            </span>
+            <span className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-950 text-slate-300 border border-slate-800">
+              Carga IVA Total: <strong className="text-white font-mono">{regraAno.aliquotaIvaTotal.toFixed(2)}%</strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Botoes de Anos da Transição */}
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+          {ANOS_TRANSICAO.map((ano) => {
+            const isSelected = anoSimulado === ano;
+            const r = getRegraTransicaoAno(ano);
+            return (
+              <button
+                key={ano}
+                type="button"
+                onClick={() => setAnoSimulado(ano)}
+                className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-gradient-to-r from-cyan-600 to-blue-600 border-cyan-400 text-white shadow-lg shadow-cyan-900/50'
+                    : 'bg-slate-950/80 border-slate-800/90 text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                }`}
+              >
+                <div className="font-extrabold text-xs">{ano}</div>
+                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-cyan-100' : 'text-slate-500'}`}>
+                  {r.aliquotaIvaTotal.toFixed(1)}%
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
+          <span>
+            ℹ️ <strong className="text-slate-300">{regraAno.faseNome}:</strong> {regraAno.observacoes}
+          </span>
+          {regraAno.percentualReducaoIcmsIss > 0 && (
+            <span className="text-emerald-400 font-bold hidden md:inline-block">
+              📉 ICMS/ISS reduzidos em {regraAno.percentualReducaoIcmsIss}%
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* ── TOP KPI METRIC CARDS ────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
@@ -393,7 +319,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              CBS Federal (8,8%)
+              CBS Federal ({regraAno.aliquotaCbs.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400">
               <Building2 className="w-4 h-4" />
@@ -403,7 +329,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}
           </div>
           <div className="text-[11px] text-slate-400 font-medium">
-            União • Contribuição sobre Bens & Serviços
+            União • {anoSimulado === 2026 ? 'Alíquota de Teste (0,9%)' : 'Contribuição sobre Bens & Serviços'}
           </div>
         </div>
 
@@ -411,7 +337,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Estadual (10,62%)
+              IBS Estadual ({regraAno.aliquotaIbsEstadual.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-800 flex items-center justify-center text-indigo-400">
               <Layers className="w-4 h-4" />
@@ -421,7 +347,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}
           </div>
           <div className="text-[11px] text-slate-400 font-medium">
-            Estados • Destino / Origem da Operação
+            Estados • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 
@@ -429,7 +355,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Municipal (7,08%)
+              IBS Municipal ({regraAno.aliquotaIbsMunicipal.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-purple-400">
               <Percent className="w-4 h-4" />
@@ -439,7 +365,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}
           </div>
           <div className="text-[11px] text-slate-400 font-medium">
-            Municípios • Parcela dos Entes Locais
+            Municípios • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 
@@ -637,40 +563,48 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {topParceiros.map((p, idx) => {
-                const cbsVal = p.total * ALIQUOTA_CBS;
-                const ibsVal = p.total * ALIQUOTA_IBS_TOTAL;
-                return (
-                  <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-white">{p.razao}</div>
-                      <div className="font-mono text-cyan-400 text-[11px]">{p.cnpj}</div>
-                    </td>
+              {topParceiros.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-slate-500 font-medium text-xs">
+                    Nenhum documento fiscal processado. Importe XMLs para gerar o ranking de parceiros e apuração tributária.
+                  </td>
+                </tr>
+              ) : (
+                topParceiros.map((p, idx) => {
+                  const cbsVal = p.total * ALIQUOTA_CBS;
+                  const ibsVal = p.total * ALIQUOTA_IBS_TOTAL;
+                  return (
+                    <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-white">{p.razao}</div>
+                        <div className="font-mono text-cyan-400 text-[11px]">{p.cnpj}</div>
+                      </td>
 
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-bold px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 text-[11px]">
-                        {p.uf}
-                      </span>
-                    </td>
+                      <td className="py-3 px-3">
+                        <span className="font-mono font-bold px-2 py-0.5 rounded bg-slate-950 text-slate-300 border border-slate-800 text-[11px]">
+                          {p.uf}
+                        </span>
+                      </td>
 
-                    <td className="py-3 px-3 text-center font-mono font-bold text-slate-200">
-                      {p.qtd} notas
-                    </td>
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-200">
+                        {p.qtd} notas
+                      </td>
 
-                    <td className="py-3 px-3 text-right font-mono font-extrabold text-white">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.total)}
-                    </td>
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-white">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.total)}
+                      </td>
 
-                    <td className="py-3 px-3 text-right font-mono font-bold text-cyan-300">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cbsVal)}
-                    </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-cyan-300">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cbsVal)}
+                      </td>
 
-                    <td className="py-3 px-3 text-right font-mono font-bold text-indigo-300">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ibsVal)}
-                    </td>
-                  </tr>
-                );
-              })}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-indigo-300">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ibsVal)}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

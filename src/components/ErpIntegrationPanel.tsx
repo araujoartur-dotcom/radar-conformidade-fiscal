@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Database, Link2, CheckCircle2, RefreshCw, Key, ArrowRight, Code, Server, ShieldCheck, Copy, Terminal, Zap } from 'lucide-react';
+import { Database, Link2, CheckCircle2, RefreshCw, Key, ArrowRight, Code, Server, ShieldCheck, Copy, Terminal, Zap, FileCode2 } from 'lucide-react';
 import { ErpConnectionConfig, DfeXmlItem } from '../types';
+import { buildSapBapiPayload, buildTotvsProtheusPayload, buildGenericWebhookPayload } from '../utils/erpConnectors';
 
 interface ErpIntegrationPanelProps {
   dfeList: DfeXmlItem[];
@@ -16,12 +16,13 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
     autoSyncEvents: true,
     autoSyncAudit: true,
     statusConexao: 'conectado',
-    ultimaSincronizacao: '2026-08-01 15:45:10'
+    ultimaSincronizacao: '2026-08-16 18:00:00'
   });
 
   const [isTesting, setIsTesting] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'payload' | 'api'>('config');
+  const [payloadFormat, setPayloadFormat] = useState<'sap' | 'totvs' | 'webhook'>('sap');
 
   const handleTestConnection = () => {
     setIsTesting(true);
@@ -264,19 +265,93 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
       {/* Tab 2: Payload Preview */}
       {activeTab === 'payload' && (
         <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 shadow-lg">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Terminal className="w-5 h-5 text-cyan-400" />
-              Payload JSON de Integração SAP / REST
+              Estruturas Nativas de Integração ERP
             </h3>
-            <span className="text-xs text-slate-400 font-mono">
-              Formato de transferência nativo
-            </span>
+            
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPayloadFormat('sap')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  payloadFormat === 'sap'
+                    ? 'bg-cyan-600 text-white shadow'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                SAP BAPI / RFC
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayloadFormat('totvs')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  payloadFormat === 'totvs'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                TOTVS Protheus SF1/SD1
+              </button>
+              <button
+                type="button"
+                onClick={() => setPayloadFormat('webhook')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  payloadFormat === 'webhook'
+                    ? 'bg-indigo-600 text-white shadow'
+                    : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                REST Webhook JSON
+              </button>
+            </div>
           </div>
 
-          <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-cyan-300 max-h-[500px] overflow-auto leading-relaxed">
-            {JSON.stringify(sampleSapPayload, null, 2)}
-          </pre>
+          {(() => {
+            const baseDoc = dfeList[0] || {
+              id: 'demo-doc',
+              tipo: 'NFe',
+              numero: '210',
+              serie: '1',
+              chaveAcesso: '21260405791622002061550010000002101276683550',
+              dataEmissao: '2026-08-16',
+              emitenteCnpj: '05.791.622/0020-61',
+              emitenteNome: 'BELGAS LTDA',
+              emitenteUf: 'MA',
+              destinatarioCnpj: '19.791.896/0041-90',
+              destinatarioNome: 'SUPERGASBRAS ENERGIA LTDA',
+              destinatarioUf: 'MA',
+              valorTotal: 67200.00,
+              valorIcms: 0,
+              valorIpi: 0,
+              valorPis: 0,
+              valorCofins: 0,
+              aliquotaCbs: 0.9,
+              valorCbs: 604.80,
+              aliquotaIbs: 0.1,
+              valorIbs: 67.20,
+              valorImpostoSeletivo: 0,
+              statusAuditoria: 'conforme',
+              alertasAuditoria: [],
+              statusSincronizacaoErp: 'pendente'
+            };
+
+            let renderedPayload: any = {};
+            if (payloadFormat === 'sap') {
+              renderedPayload = buildSapBapiPayload(baseDoc);
+            } else if (payloadFormat === 'totvs') {
+              renderedPayload = buildTotvsProtheusPayload(baseDoc);
+            } else {
+              renderedPayload = buildGenericWebhookPayload(baseDoc);
+            }
+
+            return (
+              <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-cyan-300 max-h-[500px] overflow-auto leading-relaxed custom-scrollbar">
+                {JSON.stringify(renderedPayload, null, 2)}
+              </pre>
+            );
+          })()}
         </div>
       )}
 

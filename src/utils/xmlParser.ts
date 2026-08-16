@@ -1,4 +1,5 @@
 import { DfeXmlItem, TipoDFe } from '../types';
+import { calcularTributosTransicao } from './reformaTransicao';
 
 /**
  * Parses raw XML text string into a structured DfeXmlItem object.
@@ -26,27 +27,6 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     tipo = 'NFSe';
   }
 
-  // Extract Chave de Acesso (44 digits for NFe/CTe, 50 positions for NFSe Padrão Nacional)
-  const infNfeNode = xmlDoc.getElementsByTagName('infNfe')[0] || xmlDoc.getElementsByTagName('infCte')[0] || xmlDoc.getElementsByTagName('infNfse')[0];
-  let chaveAcesso = '';
-  if (infNfeNode) {
-    const rawId = infNfeNode.getAttribute('Id') || infNfeNode.getAttribute('id') || '';
-    chaveAcesso = rawId.replace(/[^0-9A-Za-z]/g, '');
-  }
-
-  if (tipo === 'NFSe') {
-    if (!chaveAcesso || chaveAcesso.length !== 50) {
-      // 50-position National NFS-e Access Key
-      chaveAcesso = '35503082608607011900001041000000000098110123456789';
-    }
-  } else {
-    if (!chaveAcesso || chaveAcesso.length < 44) {
-      // Generate fallback 44-digit structured access key for NF-e / CT-e
-      const seed = Math.floor(Math.random() * 89999999999) + 10000000000;
-      chaveAcesso = `35260817213071000175550010000${seed}`;
-    }
-  }
-
   // Helper to safely get tag value
   const getTagValue = (parent: Element | Document, tagName: string): string => {
     const el = parent.getElementsByTagName(tagName)[0];
@@ -60,47 +40,73 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     return getTagValue(parent, tagName);
   };
 
-  const numero = getTagValue(xmlDoc, 'nNF') || getTagValue(xmlDoc, 'nCT') || '1042';
+  // Extract Chave de Acesso (44 digits for NFe/CTe/MDFe, 50 positions for NFSe Padrão Nacional)
+  let chaveAcesso = getTagValue(xmlDoc, 'chNFe') || getTagValue(xmlDoc, 'chCTe') || getTagValue(xmlDoc, 'chMDFe') || '';
+  if (!chaveAcesso) {
+    const infNode = xmlDoc.getElementsByTagName('infNFe')[0] 
+      || xmlDoc.getElementsByTagName('infNfe')[0] 
+      || xmlDoc.getElementsByTagName('infCTe')[0] 
+      || xmlDoc.getElementsByTagName('infCte')[0]
+      || xmlDoc.getElementsByTagName('infMDFe')[0]
+      || xmlDoc.getElementsByTagName('infMdfe')[0]
+      || xmlDoc.getElementsByTagName('infNFSe')[0]
+      || xmlDoc.getElementsByTagName('infNfse')[0];
+    if (infNode) {
+      const rawId = infNode.getAttribute('Id') || infNode.getAttribute('id') || '';
+      chaveAcesso = rawId.replace(/^[A-Za-z]+/, '').replace(/[^0-9]/g, '');
+    }
+  }
+
+  if (tipo === 'NFSe') {
+    if (chaveAcesso.length !== 50) {
+      chaveAcesso = chaveAcesso || '';
+    }
+  } else {
+    if (chaveAcesso.length !== 44) {
+      chaveAcesso = chaveAcesso || '';
+    }
+  }
+
+  const numero = getTagValue(xmlDoc, 'nNF') || getTagValue(xmlDoc, 'nCT') || '';
   const serie = getTagValue(xmlDoc, 'serie') || '1';
   const dataEmissaoRaw = getTagValue(xmlDoc, 'dhEmi') || getTagValue(xmlDoc, 'dEmi') || new Date().toISOString();
   const dataEmissao = dataEmissaoRaw.split('T')[0];
 
   // Emitente
-  const emitenteCnpj = getSubTagValue('emit', 'CNPJ') || '17.213.071/0001-75';
-  const emitenteNome = getSubTagValue('emit', 'xNome') || 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE';
-  const emitenteUf = getSubTagValue('enderEmit', 'UF') || 'DF';
-  const emitenteIe = getSubTagValue('emit', 'IE') || '832208100120';
+  const emitenteCnpj = getSubTagValue('emit', 'CNPJ') || '';
+  const emitenteNome = getSubTagValue('emit', 'xNome') || '';
+  const emitenteUf = getSubTagValue('enderEmit', 'UF') || '';
+  const emitenteIe = getSubTagValue('emit', 'IE') || '';
 
   // Destinatário
-  const destinatarioCnpj = getSubTagValue('dest', 'CNPJ') || '00.000.000/0001-91';
-  const destinatarioNome = getSubTagValue('dest', 'xNome') || 'BANCO DO BRASIL SA';
-  const destinatarioUf = getSubTagValue('enderDest', 'UF') || 'DF';
-  const destinatarioIe = getSubTagValue('dest', 'IE') || 'ISENTO';
+  const destinatarioCnpj = getSubTagValue('dest', 'CNPJ') || '';
+  const destinatarioNome = getSubTagValue('dest', 'xNome') || '';
+  const destinatarioUf = getSubTagValue('enderDest', 'UF') || '';
+  const destinatarioIe = getSubTagValue('dest', 'IE') || '';
 
   // Total Values
-  const vNFStr = getSubTagValue('ICMSTot', 'vNF') || getSubTagValue('vTotal', 'vPag') || '15480.00';
-  const valorTotal = parseFloat(vNFStr) || 15480.00;
+  const vNFStr = getSubTagValue('ICMSTot', 'vNF') || getSubTagValue('vTotal', 'vPag') || '0';
+  const valorTotal = parseFloat(vNFStr) || 0;
 
-  const vICMSStr = getSubTagValue('ICMSTot', 'vICMS') || '2786.40';
+  const vICMSStr = getSubTagValue('ICMSTot', 'vICMS') || '0';
   const valorIcms = parseFloat(vICMSStr) || 0;
 
   const vIPIStr = getSubTagValue('ICMSTot', 'vIPI') || '0';
   const valorIpi = parseFloat(vIPIStr) || 0;
 
-  const vPISStr = getSubTagValue('ICMSTot', 'vPIS') || '255.42';
+  const vPISStr = getSubTagValue('ICMSTot', 'vPIS') || '0';
   const valorPis = parseFloat(vPISStr) || 0;
 
-  const vCOFINSStr = getSubTagValue('ICMSTot', 'vCOFINS') || '1176.48';
+  const vCOFINSStr = getSubTagValue('ICMSTot', 'vCOFINS') || '0';
   const valorCofins = parseFloat(vCOFINSStr) || 0;
 
-  // Projeção da Reforma Tributária (PLP 68/2024)
-  // Alíquota de referência CBS (Federal) ~ 8.8%
-  // Alíquota de referência IBS (Estadual/Municipal) ~ 17.7%
-  const aliquotaCbs = 8.8;
-  const valorCbs = Number(((valorTotal * aliquotaCbs) / 100).toFixed(2));
-
-  const aliquotaIbs = 17.7;
-  const valorIbs = Number(((valorTotal * aliquotaIbs) / 100).toFixed(2));
+  // Projeção da Reforma Tributária (EC 132/2023 & LC 214/2025)
+  const docAno = dataEmissao ? new Date(dataEmissao).getFullYear() : 2026;
+  const tributosTransicao = calcularTributosTransicao(valorTotal, docAno);
+  const aliquotaCbs = tributosTransicao.aliquotaCbs;
+  const valorCbs = tributosTransicao.valorCbs;
+  const aliquotaIbs = tributosTransicao.aliquotaIbsTotal;
+  const valorIbs = tributosTransicao.valorIbsTotal;
 
   // Imposto Seletivo (Apenas para bens específicos)
   const valorImpostoSeletivo = 0;
@@ -365,286 +371,8 @@ export function generateDfeXmlContent(item: DfeXmlItem): string {
 </nfeProc>`;
 }
 
-/** Demo DFe XML Items for instant demonstration */
-export const DEMO_DFE_ITEMS: DfeXmlItem[] = [
-  {
-    id: 'dfe-demo-1',
-    chaveAcesso: '3526081721307100017555001000083220810012001',
-    tipo: 'NFe',
-    numero: '000.104.892',
-    serie: '1',
-    dataEmissao: '2026-07-28',
-    emitenteCnpj: '17.213.071/0001-75',
-    emitenteNome: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-    emitenteUf: 'DF',
-    emitenteIe: '832208100120',
-    destinatarioCnpj: '00.000.000/0001-91',
-    destinatarioNome: 'BANCO DO BRASIL SA',
-    destinatarioUf: 'DF',
-    destinatarioIe: 'ISENTO',
-    valorTotal: 28450.00,
-    valorIcms: 5121.00,
-    valorIpi: 0,
-    valorPis: 469.42,
-    valorCofins: 2162.20,
-    aliquotaCbs: 8.8,
-    valorCbs: 2503.60,
-    aliquotaIbs: 17.7,
-    valorIbs: 5035.65,
-    valorImpostoSeletivo: 0,
-    statusAuditoria: 'conforme',
-    alertasAuditoria: ['Emitente possui IE Não Contribuinte ativa no CCC SEFAZ RS/DF'],
-    eventoUltimo: 'Ciência da Emissão',
-    statusSincronizacaoErp: 'sincronizado',
-    itens: [
-      {
-        numeroItem: 1,
-        codigo: 'DELL-R750-01',
-        descricao: 'MODULO SERVIDOR DE REDE DELL POWEREDGE R750 32GB RAM 1TB SSD',
-        ncmCts: '8471.50.10 / 000',
-        cfop: '5102',
-        unidade: 'UN',
-        quantidade: 2,
-        valorUnitario: 12000.00,
-        valorTotal: 24000.00,
-        valorIcms: 4320.00,
-        valorIpi: 0,
-        valorCbs: 2112.00,
-        valorIbs: 4248.00
-      },
-      {
-        numeroItem: 2,
-        codigo: 'MS-WS2025-DC',
-        descricao: 'LICENCA SOFTWARE WINDOWS SERVER 2025 DATACENTER 16-CORE OEM',
-        ncmCts: '8523.49.90 / 000',
-        cfop: '5102',
-        unidade: 'UN',
-        quantidade: 1,
-        valorUnitario: 4450.00,
-        valorTotal: 4450.00,
-        valorIcms: 801.00,
-        valorIpi: 0,
-        valorCbs: 391.60,
-        valorIbs: 787.65
-      }
-    ]
-  },
-  {
-    id: 'dfe-demo-2',
-    chaveAcesso: '3326083300016700010155001000099882211009802',
-    tipo: 'NFe',
-    numero: '000.542.100',
-    serie: '3',
-    dataEmissao: '2026-07-30',
-    emitenteCnpj: '33.000.167/0001-01',
-    emitenteNome: 'PETROLEO BRASILEIRO S A PETROBRAS',
-    emitenteUf: 'RJ',
-    emitenteIe: '81200451',
-    destinatarioCnpj: '60.701.190/0001-04',
-    destinatarioNome: 'ITAU UNIBANCO S.A.',
-    destinatarioUf: 'SP',
-    destinatarioIe: '109382019110',
-    valorTotal: 185000.00,
-    valorIcms: 33300.00,
-    valorIpi: 18500.00,
-    valorPis: 3052.50,
-    valorCofins: 14060.00,
-    aliquotaCbs: 8.8,
-    valorCbs: 16280.00,
-    aliquotaIbs: 17.7,
-    valorIbs: 32745.00,
-    valorImpostoSeletivo: 1850.00,
-    statusAuditoria: 'conforme',
-    alertasAuditoria: [],
-    eventoUltimo: 'Confirmação da Operação',
-    statusSincronizacaoErp: 'sincronizado',
-    itens: [
-      {
-        numeroItem: 1,
-        codigo: 'VLV-IND-12P',
-        descricao: 'VALVULA INDUSTRIAL DE FLUXO PARA REFINARIA DE ALTA PRESSAO 12 POL',
-        ncmCts: '8481.80.99 / 000',
-        cfop: '5101',
-        unidade: 'UN',
-        quantidade: 5,
-        valorUnitario: 25000.00,
-        valorTotal: 125000.00,
-        valorIcms: 22500.00,
-        valorIpi: 12500.00,
-        valorCbs: 11000.00,
-        valorIbs: 22125.00
-      },
-      {
-        numeroItem: 2,
-        codigo: 'TUB-INOX-316L',
-        descricao: 'CONJUNTO DE TUBULACAO DE ACO INOXIDAVEL 316L DUPLEX 6 METROS',
-        ncmCts: '7304.41.00 / 000',
-        cfop: '5101',
-        unidade: 'CX',
-        quantidade: 10,
-        valorUnitario: 6000.00,
-        valorTotal: 60000.00,
-        valorIcms: 10800.00,
-        valorIpi: 6000.00,
-        valorCbs: 5280.00,
-        valorIbs: 10620.00
-      }
-    ]
-  },
-  {
-    id: 'dfe-demo-3',
-    chaveAcesso: '35503082608607011900001041000000000098110123456789', // 50 posições Padrão Nacional
-    tipo: 'NFSe',
-    numero: '000.009.811',
-    serie: 'E',
-    dataEmissao: '2026-08-01',
-    emitenteCnpj: '60.701.190/0001-04',
-    emitenteNome: 'ITAU UNIBANCO S.A.',
-    emitenteUf: 'SP',
-    emitenteIe: '109382019110',
-    destinatarioCnpj: '17.213.071/0001-75',
-    destinatarioNome: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-    destinatarioUf: 'DF',
-    destinatarioIe: '832208100120',
-    valorTotal: 4200.00,
-    valorIcms: 0,
-    valorIpi: 0,
-    valorPis: 69.30,
-    valorCofins: 319.20,
-    aliquotaCbs: 8.8,
-    valorCbs: 369.60,
-    aliquotaIbs: 17.7,
-    valorIbs: 743.40,
-    valorImpostoSeletivo: 0,
-    statusAuditoria: 'inconsistente',
-    alertasAuditoria: ['NFS-e sem retenção na fonte de ISS/CBS prevista'],
-    eventoUltimo: 'Nenhum',
-    statusSincronizacaoErp: 'pendente',
-    itens: [
-      {
-        numeroItem: 1,
-        codigo: 'SRV-1701-01',
-        descricao: 'SERVIÇOS DE CONSULTORIA E AUDITORIA EM CONFORMIDADE FISCAL SEFAZ E SUITE DE INTEGRAÇÃO DE ARQUIVOS XML CONFORME LEI COMPLEMENTAR 116/2003',
-        ncmCts: '17.01 / LC116',
-        cfop: '0000',
-        unidade: 'UN',
-        quantidade: 1,
-        valorUnitario: 4200.00,
-        valorTotal: 4200.00,
-        valorIcms: 0,
-        valorIpi: 0,
-        valorCbs: 369.60,
-        valorIbs: 743.40
-      }
-    ]
-  },
-  {
-    id: 'dfe-demo-4',
-    chaveAcesso: '4126084750841100015657001000045612310010044',
-    tipo: 'CTe',
-    numero: '000.045.612',
-    serie: '1',
-    dataEmissao: '2026-07-29',
-    emitenteCnpj: '47.508.411/0001-56',
-    emitenteNome: 'LOGISTICA E TRANSPORTES EXPRES S.A.',
-    emitenteUf: 'PR',
-    emitenteIe: '9012384712',
-    destinatarioCnpj: '33.000.167/0001-01',
-    destinatarioNome: 'PETROLEO BRASILEIRO S A PETROBRAS',
-    destinatarioUf: 'RJ',
-    destinatarioIe: '81200451',
-    valorTotal: 12800.00,
-    valorIcms: 1536.00,
-    valorIpi: 0,
-    valorPis: 83.20,
-    valorCofins: 384.00,
-    aliquotaCbs: 8.8,
-    valorCbs: 1126.40,
-    aliquotaIbs: 17.7,
-    valorIbs: 2265.60,
-    valorImpostoSeletivo: 0,
-    statusAuditoria: 'conforme',
-    alertasAuditoria: [],
-    eventoUltimo: 'Comprovante de Entrega',
-    statusSincronizacaoErp: 'sincronizado',
-    itens: [
-      {
-        numeroItem: 1,
-        codigo: 'CTE-FRETE-01',
-        descricao: 'PRESTAÇÃO DE SERVIÇO DE TRANSPORTE RODOVIÁRIO DE CARGA GERAL INTERESTADUAL (CURITIBA/PR -> RIO DE JANEIRO/RJ)',
-        ncmCts: 'MODAL-ROD',
-        cfop: '6352',
-        unidade: 'VIAGEM',
-        quantidade: 1,
-        valorUnitario: 12800.00,
-        valorTotal: 12800.00,
-        valorIcms: 1536.00,
-        valorIpi: 0,
-        valorCbs: 1126.40,
-        valorIbs: 2265.60
-      }
-    ]
-  },
-  {
-    id: 'dfe-demo-5',
-    chaveAcesso: '3526081234567800019065002000008899110077889',
-    tipo: 'NFCe',
-    numero: '000.088.991',
-    serie: '2',
-    dataEmissao: '2026-08-01',
-    emitenteCnpj: '12.345.678/0001-90',
-    emitenteNome: 'SUPERMERCADOS VAREJO & CIA LTDA',
-    emitenteUf: 'SP',
-    emitenteIe: '110293847561',
-    destinatarioCnpj: '999.999.999-99',
-    destinatarioNome: 'CONSUMIDOR FINAL',
-    destinatarioUf: 'SP',
-    destinatarioIe: 'ISENTO',
-    valorTotal: 385.50,
-    valorIcms: 69.39,
-    valorIpi: 0,
-    valorPis: 6.36,
-    valorCofins: 29.30,
-    aliquotaCbs: 8.8,
-    valorCbs: 33.92,
-    aliquotaIbs: 17.7,
-    valorIbs: 68.23,
-    valorImpostoSeletivo: 0,
-    statusAuditoria: 'conforme',
-    alertasAuditoria: [],
-    eventoUltimo: 'Nenhum',
-    statusSincronizacaoErp: 'pendente',
-    itens: [
-      {
-        numeroItem: 1,
-        codigo: 'PAP-A4-CX',
-        descricao: 'CAIXA PAPEL A4 ALCALINO 75G CHAMECO (5 REAMS X 500 FLS)',
-        ncmCts: '4802.56.10 / 000',
-        cfop: '5102',
-        unidade: 'CX',
-        quantidade: 2,
-        valorUnitario: 140.00,
-        valorTotal: 280.00,
-        valorIcms: 50.40,
-        valorIpi: 0,
-        valorCbs: 24.64,
-        valorIbs: 49.56
-      },
-      {
-        numeroItem: 2,
-        codigo: 'TONER-HP-BLK',
-        descricao: 'CARTUCHO TONER HP LASERJET BLACK COMPATIVEL 2000 FLS',
-        ncmCts: '8443.99.23 / 000',
-        cfop: '5102',
-        unidade: 'UN',
-        quantidade: 1,
-        valorUnitario: 105.50,
-        valorTotal: 105.50,
-        valorIcms: 18.99,
-        valorIpi: 0,
-        valorCbs: 9.28,
-        valorIbs: 18.67
-      }
-    ]
-  }
-];
+/** 
+ * DEMO_DFE_ITEMS removed — system works exclusively with real data.
+ * Import real XMLs via upload or NFeDistribuicaoDFe WebService.
+ */
+export const DEMO_DFE_ITEMS: DfeXmlItem[] = [];

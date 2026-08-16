@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server } from 'lucide-react';
+import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles } from 'lucide-react';
 import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
 import { parseDfeXmlString } from '../utils/xmlParser';
 import { DanfeModal } from './DanfeModal';
 import { XmlViewerModal } from './XmlViewerModal';
 import { ConsultaNsuModal } from './ConsultaNsuModal';
+import { SplitPaymentModal } from './SplitPaymentModal';
 import { useApi } from '../hooks/useApi';
 
 interface DfeManagerPanelProps {
@@ -29,10 +30,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   ambienteSefaz
 }) => {
   const [selectedDfe, setSelectedDfe] = useState<DfeXmlItem | null>(dfeList[0] || null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
   const [danfeModalItem, setDanfeModalItem] = useState<DfeXmlItem | null>(null);
   const [xmlModalItem, setXmlModalItem] = useState<DfeXmlItem | null>(null);
+  const [splitModalDoc, setSplitModalDoc] = useState<DfeXmlItem | null>(null);
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
 
@@ -449,6 +449,15 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                         </strong>
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSplitModalDoc(selectedDfe)}
+                      className="w-full mt-2 py-2 px-3 bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900 hover:to-blue-900 border border-cyan-700/60 rounded-xl text-cyan-300 hover:text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow cursor-pointer"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Simular Split Payment (LC 214/2025)</span>
+                    </button>
                   </div>
 
                 </div>
@@ -490,6 +499,13 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
       <XmlViewerModal
         item={xmlModalItem}
         onClose={() => setXmlModalItem(null)}
+      />
+
+      {/* Split Payment Simulator Modal (LC 214/2025) */}
+      <SplitPaymentModal
+        isOpen={!!splitModalDoc}
+        onClose={() => setSplitModalDoc(null)}
+        documento={splitModalDoc}
       />
 
       {/* SEFAZ NSU Destination & Issued Search Modal */}

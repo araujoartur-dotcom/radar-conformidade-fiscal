@@ -74,6 +74,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [newPerfilSped, setNewPerfilSped] = useState<'A' | 'B' | 'C'>('A');
   const [newIndAtiv, setNewIndAtiv] = useState<'0' | '1'>('0');
   const [newSuframa, setNewSuframa] = useState('');
+  const [newManifestarCiencia, setNewManifestarCiencia] = useState(true);
 
   // Endereço (SPED 0005)
   const [newCep, setNewCep] = useState('');
@@ -157,29 +158,35 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     try {
       const data = await lookupCnpj(raw, ufInput);
       if (data) {
+        if (data.statusConsulta === 'erro') {
+          setQuickSearchError(data.mensagemErro || 'CNPJ não localizado ou inválido.');
+          return;
+        }
+
         // Preenche todos os estados do formulário com fidelidade
-        setNewCnpj(formatCNPJ(data.cnpj));
+        setNewCnpj(formatCNPJ(data.cnpj || raw));
         setNewRazaoSocial(data.razaoSocial || '');
         setNewNomeFantasia(data.nomeFantasia || data.razaoSocial || '');
         setNewUf(data.uf || ufInput || 'SP');
         setNewCnae(data.cnaePrincipal || '');
         setNewIe(data.ie || '');
         
-        // Mapear Regime Tributário
+        // Mapear Regime Tributário de forma segura
+        const regStr = (data.regimeTributario || '').toLowerCase();
         let regimeMapped: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' = 'Real';
-        if (data.mei) {
+        if (regStr.includes('mei')) {
           regimeMapped = 'MEI';
-        } else if (data.simplesNacional) {
+        } else if (regStr.includes('simples')) {
           regimeMapped = 'Simples Nacional';
-        } else if (data.regimeTributario.includes('Presumido')) {
+        } else if (regStr.includes('presumido')) {
           regimeMapped = 'Presumido';
         }
         setNewRegime(regimeMapped);
 
         // Endereço
         setNewCep(data.cep || '');
-        setNewLogradouro(data.logradouro || '');
-        setNewNumero(data.numero || '');
+        setNewLogradouro(data.logradouro || data.enderecoCompleto || '');
+        setNewNumero(data.numero || 'S/N');
         setNewComplemento(data.complemento || '');
         setNewBairro(data.bairro || '');
         setNewMunicipio(data.municipio || '');
@@ -274,6 +281,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       uf: newUf,
       regimeTributario: newRegime,
       grupoContabilCliente: newGrupo,
+      manifestarCienciaAutomatica: newManifestarCiencia,
       ie: newIe,
       im: newIm,
       cnaePrincipal: newCnae,
@@ -1259,6 +1267,29 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
                       />
                     </div>
+                  </div>
+
+                  {/* PARÂMETRO: MANIFESTAÇÃO AUTOMÁTICA DE CIÊNCIA (SEFAZ - 210210) */}
+                  <div className="p-4 bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-slate-950 border border-cyan-800/50 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-2">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-cyan-400" />
+                        <span className="font-bold text-white text-xs">Manifestação Automática de Ciência da Operação (SEFAZ - 210210)</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">Recomendado</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Ao consultar novos documentos via WebService <code className="text-cyan-300 font-mono">NFeDistribuicaoDFe</code>, manifesta automaticamente a Ciência da Emissão para liberar o download do XML completo com produtos e tributos.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={newManifestarCiencia}
+                        onChange={(e) => setNewManifestarCiencia(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                    </label>
                   </div>
                 </div>
               )}

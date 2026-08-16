@@ -57,18 +57,8 @@ export function formatCurrency(value?: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
-// Verified real sample CNPJs for demonstration
-export const DEMO_CNPJS = [
-  { cnpj: '05.652.956/0001-91', uf: 'DF', name: 'CONDOMINIO DA SQN 310 BLOCO K' },
-  { cnpj: '19.791.896/0046-02', uf: 'PR', name: 'SUPERGASBRAS ENERGIA LTDA' },
-  { cnpj: '17.213.071/0001-75', uf: 'DF', name: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE' },
-  { cnpj: '00.000.000/0001-91', uf: 'DF', name: 'BANCO DO BRASIL SA' },
-  { cnpj: '33.000.167/0001-01', uf: 'RJ', name: 'PETROLEO BRASILEIRO S A PETROBRAS' },
-  { cnpj: '60.701.190/0001-04', uf: 'SP', name: 'ITAU UNIBANCO S.A.' },
-  { cnpj: '06.057.223/0001-71', uf: 'SP', name: 'NUBANK - NU PAGAMENTOS S.A.' },
-  { cnpj: '02.558.157/0001-62', uf: 'PR', name: 'MAGAZINE LUIZA S.A.' },
-  { cnpj: '00.360.305/0001-04', uf: 'DF', name: 'CAIXA ECONOMICA FEDERAL' },
-];
+// Verified real sample CNPJs for demonstration — removed for production integrity
+export const DEMO_CNPJS: { cnpj: string; uf: string; name: string }[] = [];
 
 /**
  * Fetch CNPJ data using multi-API fallback (BrasilAPI -> MinhaReceita -> CNPJ.ws).
@@ -86,100 +76,12 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
     };
   }
 
-  // Exact database records from Portal CCC SEFAZ / Receita Federal
-  if (clean === '05652956000191') {
-    return {
-      cnpj: '05.652.956/0001-91',
-      uf: 'DF',
-      ie: '819434000118',
-      tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
-      situaçaoIE: 'Habilitado',
-      situaçaoCNPJ: 'ATIVA',
-      naturezaJuridica: '308-5 - Condomínio Edilício',
-      razaoSocial: 'CONDOMINIO DA SQN 310 BLOCO K',
-      nomeFantasia: 'CONDOMINIO DA SQN 310 BLOCO K',
-      cnaePrincipal: '8112500',
-      cnaeDescricao: 'Condomínios prediais',
-      dataAbertura: '2003-05-10',
-      regimeTributario: 'Imune / Isento',
-      capitalSocial: 0,
-      enderecoCompleto: 'SQN 310 BLOCO K - ASA NORTE',
-      municipio: 'BRASÍLIA',
-      cep: '70757-110',
-      telefone: '(61) 3328-0000',
-      email: 'sqn310blocok@condominio.com.br',
-      socios: [
-        { nome: 'SÍNDICO DO CONDOMÍNIO', qualificacao: '16 - Síndico' }
-      ],
-      statusConsulta: 'sucesso',
-      dataConsulta: new Date().toISOString()
-    };
-  }
-
-  if (clean === '33000167000101') {
-    return {
-      cnpj: '33.000.167/0001-01',
-      uf: 'RJ',
-      ie: '81281882',
-      tipoIE: 'CONTRIBUINTE NORMAL (LUCRO REAL)',
-      situaçaoIE: 'Habilitado',
-      situaçaoCNPJ: 'ATIVA',
-      naturezaJuridica: '203-8 - Sociedade de Economia Mista',
-      razaoSocial: 'PETROLEO BRASILEIRO S A PETROBRAS',
-      nomeFantasia: 'PETROBRAS - EDISE',
-      cnaePrincipal: '0600001',
-      cnaeDescricao: 'Extração de petróleo e gás natural',
-      dataAbertura: '1966-09-28',
-      regimeTributario: 'Lucro Real',
-      capitalSocial: 205431960000,
-      enderecoCompleto: 'AVENIDA REPUBLICA DO CHILE, 65 - CENTRO',
-      municipio: 'RIO DE JANEIRO',
-      cep: '20031-170',
-      telefone: '(21) 2166-0000',
-      email: 'cc-rfisc@petrobras.com.br',
-      socios: [
-        { nome: 'MAGDA MARIA DE REGINA CHAMBRIARD', qualificacao: '16 - Presidente' },
-        { nome: 'FERNANDO SABBI MELGAREJO', qualificacao: '10 - Diretor' }
-      ],
-      statusConsulta: 'sucesso',
-      dataConsulta: new Date().toISOString()
-    };
-  }
-
-  if (clean === '17213071000175') {
-    return {
-      cnpj: '17.213.071/0001-75',
-      uf: 'DF',
-      ie: '832208100120',
-      tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
-      situaçaoIE: 'Habilitado',
-      situaçaoCNPJ: 'ATIVA',
-      naturezaJuridica: '399-9 - Associação Privada',
-      razaoSocial: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-      nomeFantasia: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-      cnaePrincipal: '9499-5/00',
-      cnaeDescricao: 'Atividades de organizações associativas não especificadas anteriormente',
-      dataAbertura: '2012-10-17',
-      regimeTributario: 'Imune / Isento',
-      capitalSocial: 0,
-      enderecoCompleto: 'SHCES QUADRA 1105 BLOCO A, LOTE 10 - CRUZEIRO NOVO',
-      municipio: 'BRASÍLIA',
-      cep: '70658-151',
-      telefone: '(61) 3361-0000',
-      email: 'costaverde@condominio.com.br',
-      socios: [
-        { nome: 'PRESIDENTE DA ASSOCIAÇÃO', qualificacao: '16 - Presidente' }
-      ],
-      statusConsulta: 'sucesso',
-      dataConsulta: new Date().toISOString()
-    };
-  }
-
   // 1. BrasilAPI Lookup
   let resultItem: Partial<CnpjLookupItem> | null = null;
   try {
     const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`, {
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000)
     });
 
     if (res.ok) {
@@ -194,7 +96,8 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   if (!resultItem) {
     try {
       const res = await fetch(`https://minhareceita.org/${clean}`, {
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000)
       });
 
       if (res.ok) {
@@ -210,7 +113,8 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   if (!resultItem) {
     try {
       const res = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`, {
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000)
       });
 
       if (res.ok) {
@@ -226,7 +130,8 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   if (resultItem && (!resultItem.ie || resultItem.ie === 'Consultar SEFAZ Estadual')) {
     try {
       const resWs = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`, {
-        headers: { 'Accept': 'application/json' }
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(4000)
       });
       if (resWs.ok) {
         const dataWs = await resWs.json();
@@ -355,6 +260,10 @@ function parseBrasilApiResponse(data: any, formattedCnpj: string, defaultUf: str
     regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
+    logradouro: data.logradouro || '',
+    numero: data.numero || '',
+    complemento: data.complemento || '',
+    bairro: data.bairro || '',
     municipio: data.municipio || '',
     cep: data.cep || '',
     telefone: data.ddd_telefone_1 ? `(${data.ddd_telefone_1.slice(0, 2)}) ${data.ddd_telefone_1.slice(2)}` : '',
@@ -397,6 +306,10 @@ function parseMinhaReceitaResponse(data: any, formattedCnpj: string, defaultUf: 
     regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
+    logradouro: data.logradouro || '',
+    numero: data.numero || '',
+    complemento: data.complemento || '',
+    bairro: data.bairro || '',
     municipio: data.municipio || '',
     cep: data.cep || '',
     telefone: data.ddd_telefone_1 || '',
@@ -427,6 +340,8 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
       })).filter((s: any) => Boolean(s.nome))
     : [];
 
+  const logradouroParsed = [est.tipo_logradouro, est.logradouro].filter(Boolean).join(' ');
+
   return {
     cnpj: formattedCnpj,
     uf: uf,
@@ -442,7 +357,11 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
     dataAbertura: est.data_inicio_atividade || '',
     regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
-    enderecoCompleto: [est.tipo_logradouro, est.logradouro, est.numero, est.complemento, est.bairro].filter(Boolean).join(' '),
+    enderecoCompleto: [logradouroParsed, est.numero, est.complemento, est.bairro].filter(Boolean).join(' '),
+    logradouro: logradouroParsed || '',
+    numero: est.numero || '',
+    complemento: est.complemento || '',
+    bairro: est.bairro || '',
     municipio: est.cidade?.nome || '',
     cep: est.cep || '',
     telefone: est.telefone1 || '',

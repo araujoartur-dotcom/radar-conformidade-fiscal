@@ -951,8 +951,8 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               &nbsp;&nbsp;&lt;infEvento Id="ID{activeEventoDef.codigoEvento}{activeChave.slice(0, 30)}01"&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;cOrgao&gt;91&lt;/cOrgao&gt; &lt;!-- SVRS / Ambiente Nacional --&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;tpAmb&gt;1&lt;/tpAmb&gt; &lt;!-- 1=Producao, 2=Homologacao --&gt;<br />
-              &nbsp;&nbsp;&nbsp;&nbsp;&lt;CNPJ&gt;17213071000175&lt;/CNPJ&gt;<br />
-              &nbsp;&nbsp;&nbsp;&nbsp;&lt;chNFe&gt;{activeChave || '3526081721307100017555001000083220810012001'}&lt;/chNFe&gt;<br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&lt;CNPJ&gt;{(empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '') || 'CNPJ_AUTOR'}&lt;/CNPJ&gt;<br />
+              &nbsp;&nbsp;&nbsp;&nbsp;&lt;chNFe&gt;{activeChave || 'CHAVE_DE_ACESSO_44_DIGITOS'}&lt;/chNFe&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;dhEvento&gt;{new Date().toISOString()}&lt;/dhEvento&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;tpEvento&gt;{activeEventoDef.codigoEvento}&lt;/tpEvento&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;nSeqEvento&gt;1&lt;/nSeqEvento&gt;<br />

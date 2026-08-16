@@ -3,3 +3,8 @@ login: admin@radarfiscal.com.br
 senha: Admin@RadarFiscal2026!
 
 BI & Inteligência Fiscal (Tax Analytics)
+
+31758338000100
+
+Token Github
+[CONFIGURADO_NO_GITHUB_SECRETS]

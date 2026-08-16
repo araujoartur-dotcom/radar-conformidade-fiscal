@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -77,6 +77,9 @@ export interface ClienteEmpresaTenant {
   };
   totalDocumentosCapturados: number;
   statusConexaoSefaz: 'ativo' | 'alerta' | 'sem_certificado';
+  manifestarCienciaAutomatica?: boolean; // Manifesta automaticamente Ciência da Operação (210210) para liberação de XMLs completos
+  ultimoNsu?: string; // Último NSU sincronizado no WebService SEFAZ
+  maxNsu?: string; // Maior NSU disponível na SEFAZ
   ultimaSincronizacao?: string;
 }
 
@@ -112,6 +115,10 @@ export interface CnpjLookupItem {
   regimeTributario?: string;
   capitalSocial?: number;
   enderecoCompleto?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
   municipio?: string;
   cep?: string;
   telefone?: string;
@@ -173,6 +180,10 @@ export interface DfeXmlItem {
   // Status do Evento de Manifestação
   eventoUltimo?: string;
   statusSincronizacaoErp: 'pendente' | 'sincronizado' | 'erro';
+  // Fase 3: Custódia Fiscal & Split Payment
+  sha256?: string;
+  splitPayment?: SplitPaymentInfo;
+  custodiaWorm?: CustodiaWormItem;
 }
 
 export interface EventoDfeDefinition {
@@ -599,5 +610,56 @@ export interface SimulacaoFiscalParceiro {
   observacoesFiscais: string[];
 }
 
+// =========================================================
+// FASE 3: REFORMA TRIBUTÁRIA — TRANSIÇÃO 2026-2033 & SPLIT PAYMENT
+// =========================================================
 
+export interface RegraTransicaoAno {
+  ano: number;
+  faseNome: string;
+  badge: string;
+  aliquotaCbs: number; // Federal (%)
+  aliquotaIbsEstadual: number; // Subnacional Estadual (%)
+  aliquotaIbsMunicipal: number; // Subnacional Municipal (%)
+  aliquotaIbsTotal: number; // IBS Total (%)
+  aliquotaIvaTotal: number; // CBS + IBS Total (%)
+  percentualReducaoIcmsIss: number; // Redução gradual de ICMS/ISS (%)
+  observacoes: string;
+}
 
+export type MetodoSplitPayment = 'PIX_DINAMICO' | 'BOLETO_BANCARIO' | 'ARRANJO_CARTAO' | 'TED_DOC';
+
+export interface SplitPaymentInfo {
+  valorTotalOperacao: number;
+  aliquotaCbsAplicada: number;
+  valorCbsRetido: number;
+  aliquotaIbsAplicada: number;
+  valorIbsRetido: number;
+  valorTotalTributosRetidos: number;
+  valorLiquidoFornecedor: number;
+  metodoLiquidacao: MetodoSplitPayment;
+  statusLiquidacao: 'retencao_automatica_pendente' | 'liquidado_com_split' | 'dispensado_regime_especial';
+  chaveAcesso: string;
+  dataCalculo: string;
+  destinatarioSplit: {
+    comiteGestorIbs: string;
+    receitaFederalCbs: string;
+    fornecedorNome: string;
+    fornecedorCnpj: string;
+  };
+}
+
+export interface CustodiaWormItem {
+  id: string;
+  chaveAcesso: string;
+  numero: string;
+  tipoDfe: string;
+  hashSha256: string;
+  dataEmissao: string;
+  dataCaptura: string;
+  dataExpiracaoGuarda5Anos: string; // Art. 173 do CTN (5 anos)
+  statusImutabilidade: 'bloqueado_worm_ativo' | 'em_custodia';
+  tamanhoBytes: number;
+  emissorCnpj: string;
+  destinatarioCnpj: string;
+}

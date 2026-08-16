@@ -8,88 +8,21 @@ import { DlqTaskItem, CircuitBreakerState, CofreCertificadoSecurity, StructuredA
 import { exportToExcel } from '../utils/excel';
 import { useApi } from '../hooks/useApi';
 
-// Demo Initial Data for DLQ Tasks
-export const DEMO_DLQ_TASKS: DlqTaskItem[] = [
-  {
-    id: 'job-dlq-001',
-    correlationId: 'req-sefaz-98123-abf8',
-    queueName: 'capture.execute',
-    organizationId: 'ORG-PETROBRAS-BR',
-    companyCnpj: '33.000.167/0001-01',
-    companyName: 'PETROLEO BRASILEIRO S A PETROBRAS',
-    taskType: 'Consulta Web Service SEFAZ NSU #10489',
-    priority: 'alta',
-    createdAt: '2026-08-06 09:10:12',
-    startedAt: '2026-08-06 09:10:15',
-    finishedAt: '2026-08-06 09:12:45',
-    currentAttempt: 3,
-    maxAttempts: 3,
-    status: 'dlq_retido',
-    errorMessage: 'HTTP 503 Service Unavailable: SEFAZ-AN WebService indisponível por timeout no lote 4492.',
-    errorCategory: 'timeout_sefaz',
-    errorDetails: 'Error: Timeout of 30000ms exceeded at SefazSoapAdapter.sendQuery (sefaz.client.ts:142)\n    at QueueWorker.processJob (capture-worker.ts:88)\n    at BullMQWorker.execute (worker-engine.ts:210)',
-    payloadHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-    retryBackoffMs: 120000,
-    isIdempotent: true
-  },
-  {
-    id: 'job-dlq-002',
-    correlationId: 'req-ibs-77102-c901',
-    queueName: 'ibs-cbs.calculate',
-    organizationId: 'ORG-BANCO-BB',
-    companyCnpj: '00.000.000/0001-91',
-    companyName: 'BANCO DO BRASIL SA (MATRIZ CCC)',
-    taskType: 'Apuração Assistida Reforma Tributária PLP 68/2024',
-    priority: 'alta',
-    createdAt: '2026-08-06 09:15:00',
-    startedAt: '2026-08-06 09:15:02',
-    finishedAt: '2026-08-06 09:15:10',
-    currentAttempt: 3,
-    maxAttempts: 3,
-    status: 'dlq_retido',
-    errorMessage: 'cClassTrib "999999" não reconhecido no catálogo de regras IBS/CBS versão 2026.2.',
-    errorCategory: 'schema_xml_invalido',
-    errorDetails: 'ValidationError: Field cClassTrib in item #3 has value "999999" which is not defined in TaxRuleRegistry v2026.2.\n    at IbsCbsValidator.validateItem (ibs-cbs.validator.ts:64)',
-    payloadHash: '4a8a08f09d37b73795649038080b080c98f98c8c7f7d7e7f8a9b0c1d2e3f4a5b',
-    retryBackoffMs: 300000,
-    isIdempotent: true
-  },
-  {
-    id: 'job-dlq-003',
-    correlationId: 'req-sign-55410-0982',
-    queueName: 'certificate.sign',
-    organizationId: 'ORG-COSTA-VERDE',
-    companyCnpj: '17.213.071/0001-75',
-    companyName: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-    taskType: 'Assinatura XMLDSig Manifestação do Destinatário',
-    priority: 'normal',
-    createdAt: '2026-08-06 09:20:00',
-    startedAt: '2026-08-06 09:20:01',
-    finishedAt: '2026-08-06 09:20:05',
-    currentAttempt: 2,
-    maxAttempts: 3,
-    status: 'erro_reprocessavel',
-    errorMessage: 'Agente local A3 desconectado durante a inicialização do token HSM/ICP-Brasil.',
-    errorCategory: 'certificado_invalido',
-    errorDetails: 'CertError: SmartCardReaderNotResponding: Device disconnected on USB port /dev/ttyUSB0\n    at CertificateSignerWorker.signXml (certificate-worker.ts:112)',
-    payloadHash: '8f9e0d1c2b3a4f5e6d7c8b9a0f1e2d3c4b5a6f7e8d9c0b1a2f3e4d5c6b7a8f9e',
-    retryBackoffMs: 60000,
-    isIdempotent: true
-  }
-];
+// Initial Data for DLQ Tasks (starts empty — populates with real failed jobs)
+export const DEMO_DLQ_TASKS: DlqTaskItem[] = [];
 
-// Initial Circuit Breaker State
+// Initial Circuit Breaker State (Service names only)
 export const INITIAL_CIRCUIT_BREAKERS: CircuitBreakerState[] = [
   {
     serviceName: 'API Oficial SEFAZ NFe (Ambiente de Produção TP=1)',
     status: 'CLOSED',
-    failureCount: 1,
+    failureCount: 0,
     failureThreshold: 5,
-    lastFailureTime: '09:12:45',
-    successRate: 99.4,
-    averageLatencyMs: 340,
+    lastFailureTime: '-',
+    successRate: 100.0,
+    averageLatencyMs: 250,
     rateLimitReqSec: 8,
-    currentActiveWorkers: 4
+    currentActiveWorkers: 0
   },
   {
     serviceName: 'API Apuração Assistida IBS/CBS (Receita Federal)',
@@ -99,104 +32,26 @@ export const INITIAL_CIRCUIT_BREAKERS: CircuitBreakerState[] = [
     successRate: 100.0,
     averageLatencyMs: 190,
     rateLimitReqSec: 15,
-    currentActiveWorkers: 2
+    currentActiveWorkers: 0
   },
   {
     serviceName: 'Serviço de Consulta Cadastro Centralizado (CCC/SEFAZ)',
-    status: 'HALF_OPEN',
-    failureCount: 2,
+    status: 'CLOSED',
+    failureCount: 0,
     failureThreshold: 5,
-    lastFailureTime: '09:21:00',
-    successRate: 94.2,
-    averageLatencyMs: 820,
+    lastFailureTime: '-',
+    successRate: 100.0,
+    averageLatencyMs: 320,
     rateLimitReqSec: 5,
-    currentActiveWorkers: 1
+    currentActiveWorkers: 0
   }
 ];
 
-// Initial Certificate Vault State
-export const INITIAL_CERTIFICATE_VAULT: CofreCertificadoSecurity[] = [
-  {
-    id: 'cert-sec-01',
-    cnpjOwner: '33.000.167/0001-01',
-    razaoSocial: 'PETROLEO BRASILEIRO S A PETROBRAS',
-    tipoCertificado: 'A1_PKCS12',
-    algoritmoCriptografia: 'AES-256-GCM',
-    validadeData: '2028-12-31',
-    diasParaVencimento: 878,
-    statusAlerta: 'ok',
-    chavePublicaFingerprint: 'SHA256: 7F:8A:2B:9C:1D:3E:4F:5A:6B:7C:8D:9E:0F:1A:2B:3C',
-    ultimaVerificacao: 'Há 5 min'
-  },
-  {
-    id: 'cert-sec-02',
-    cnpjOwner: '17.213.071/0001-75',
-    razaoSocial: 'ASSOCIACAO DOS MORADORES DO EDIFICIO COSTA VERDE',
-    tipoCertificado: 'A3_LOCAL_AGENT',
-    algoritmoCriptografia: 'AES-256-GCM',
-    validadeData: '2026-09-01',
-    diasParaVencimento: 26,
-    statusAlerta: 'alerta_30_dias',
-    chavePublicaFingerprint: 'SHA256: 1A:2B:3C:4D:5E:6F:7A:8B:9C:0D:1E:2F:3A:4B:5C:6D',
-    agenteA3Status: 'online',
-    ultimaVerificacao: 'Há 1 min'
-  },
-  {
-    id: 'cert-sec-03',
-    cnpjOwner: '00.000.000/0001-91',
-    razaoSocial: 'BANCO DO BRASIL SA (MATRIZ CCC)',
-    tipoCertificado: 'A1_PKCS12',
-    algoritmoCriptografia: 'AES-256-GCM',
-    validadeData: '2028-10-15',
-    diasParaVencimento: 801,
-    statusAlerta: 'ok',
-    chavePublicaFingerprint: 'SHA256: 9E:8D:7C:6B:5A:4F:3E:2D:1C:0B:9A:8F:7E:6D:5C:4B',
-    ultimaVerificacao: 'Há 12 min'
-  }
-];
+// Initial Certificate Vault State (starts empty — populates when certificates are uploaded)
+export const INITIAL_CERTIFICATE_VAULT: CofreCertificadoSecurity[] = [];
 
-// Initial Structured JSON Logs
-export const INITIAL_AUDIT_LOGS: StructuredAuditLog[] = [
-  {
-    timestamp: '2026-08-06T09:21:04.102Z',
-    level: 'INFO',
-    service: 'capture-worker',
-    correlationId: 'req-sefaz-98123-abf8',
-    jobId: 'job-dlq-001',
-    organizationId: 'ORG-PETROBRAS-BR',
-    companyCnpj: '33.000.167/0001-01',
-    userId: 'usr-admin-01',
-    action: 'CAPTURE_SEFAZ_CHECKPOINT_UPDATED',
-    message: 'Checkpoint de captura NSU atualizado para 104892 com sucesso. 0 novos documentos.',
-    ipAddress: '186.204.12.98'
-  },
-  {
-    timestamp: '2026-08-06T09:20:05.882Z',
-    level: 'ERROR',
-    service: 'certificate-worker',
-    correlationId: 'req-sign-55410-0982',
-    jobId: 'job-dlq-003',
-    organizationId: 'ORG-COSTA-VERDE',
-    companyCnpj: '17.213.071/0001-75',
-    userId: 'usr-analista-02',
-    action: 'CERTIFICATE_SIGN_FAILURE',
-    message: 'Falha na assinatura do evento de manifestação com certificado A3. Erro retido na fila com backoff de 60s.',
-    ipAddress: '201.88.45.12'
-  },
-  {
-    timestamp: '2026-08-06T09:18:22.410Z',
-    level: 'WARN',
-    service: 'ibs-cbs-adapter',
-    correlationId: 'req-ibs-77102-c901',
-    jobId: 'job-dlq-002',
-    organizationId: 'ORG-BANCO-BB',
-    companyCnpj: '00.000.000/0001-91',
-    userId: 'usr-admin-01',
-    action: 'TAX_CALCULATION_SCHEMA_WARNING',
-    message: 'Atributo cClassTrib desconhecido detectado no item #3. Tarefa movida para Dead-Letter Queue (DLQ).',
-    ipAddress: '189.12.33.104'
-  }
-];
+// Initial Structured JSON Logs (starts empty)
+export const INITIAL_AUDIT_LOGS: StructuredAuditLog[] = [];
 
 export const ObservabilidadeDlqPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dlq' | 'filas' | 'resiliencia' | 'cofre' | 'logs'>('dlq');

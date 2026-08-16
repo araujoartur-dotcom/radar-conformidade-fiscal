@@ -13,9 +13,73 @@ import { Router, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
 import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
-import { transmitirEventoSefaz, testarConexaoSefaz, EventoSefazRequest } from '../services/sefazService';
+import { transmitirEventoSefaz, testarConexaoSefaz, consultarDistribuicaoDFe, EventoSefazRequest } from '../services/sefazService';
 
 const router = Router();
+
+// =========================================================
+// POST /api/sefaz/distribui-dfe — Consulta NFeDistribuicaoDFe
+// =========================================================
+router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, fluxo } = req.body;
+
+    if (!cnpj) {
+      res.status(400).json({ success: false, message: 'CNPJ é obrigatório para consulta no WebService SEFAZ.' });
+      return;
+    }
+
+    const cleanCnpj = cnpj.replace(/\D/g, '');
+    const db = getDatabase();
+
+    // 1. Localizar a empresa no banco de dados para recuperar o ID e o certificado vinculado
+    let empresa = req.user?.empresaAtivaId 
+      ? db.prepare('SELECT * FROM empresas WHERE id = ?').get(req.user.empresaAtivaId) as any
+      : null;
+
+    if (!empresa) {
+      empresa = db.prepare('SELECT * FROM empresas WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, ".", ""), "/", ""), "-", "") = ?').get(cleanCnpj) as any;
+    }
+
+    const empresaId = empresa?.id || req.user?.empresaAtivaId || '';
+    const ufAutor = empresa?.uf || 'SP';
+    const manifestarCienciaAutomatica = empresa?.manifestar_ciencia_automatica !== undefined 
+      ? Boolean(empresa.manifestar_ciencia_automatica) 
+      : true;
+
+    // 2. Chamar o serviço de comunicação SOAP com mTLS
+    const resultado = await consultarDistribuicaoDFe({
+      cnpj: cleanCnpj,
+      ultNSU: ultNSU || empresa?.ultimo_nsu || '000000000000000',
+      chNFe,
+      nsuEspecifico,
+      tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',
+      empresaId,
+      ufAutor,
+      fluxo: fluxo || 'entrada',
+      manifestarCienciaAutomatica,
+    });
+
+    logAuditAction(
+      req, 
+      'SEFAZ_DISTRIBUICAO_DFE', 
+      `Consulta NFeDistribuicaoDFe para CNPJ ${cleanCnpj} (ultNSU=${resultado.ultNSU}, docs=${resultado.docs.length}): cStat=${resultado.cStat} - ${resultado.xMotivo}`
+    );
+
+    res.json({
+      success: resultado.success,
+      cStat: resultado.cStat,
+      xMotivo: resultado.xMotivo,
+      ultNSU: resultado.ultNSU,
+      maxNSU: resultado.maxNSU,
+      tpAmb: resultado.tpAmb,
+      docs: resultado.docs,
+    });
+  } catch (err: any) {
+    console.error('❌ Erro na rota /api/sefaz/distribui-dfe:', err.message);
+    res.status(500).json({ success: false, message: 'Erro interno ao consultar SEFAZ: ' + err.message });
+  }
+});
 
 // =========================================================
 // POST /api/sefaz/evento — Transmitir evento fiscal

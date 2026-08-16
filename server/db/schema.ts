@@ -26,6 +26,9 @@ export function initializeSchema(): void {
       nome_fantasia         TEXT DEFAULT '',
       uf                    TEXT NOT NULL DEFAULT 'SP',
       regime_tributario      TEXT NOT NULL DEFAULT 'Lucro Real',
+      manifestar_ciencia_automatica INTEGER NOT NULL DEFAULT 1, -- 1=Sim, 0=Não
+      ultimo_nsu            TEXT NOT NULL DEFAULT '000000000000000',
+      max_nsu               TEXT NOT NULL DEFAULT '000000000000000',
       status                TEXT NOT NULL DEFAULT 'ativo', -- ativo | suspenso | inativo
       created_at            TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
@@ -314,6 +317,23 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_eventos_chave ON eventos_transmitidos(chave_acesso);
     CREATE INDEX IF NOT EXISTS idx_audit_log_empresa ON audit_log(empresa_id, timestamp);
   `);
+
+  // Safe migrations for newly added columns on existing SQLite databases
+  try {
+    db.exec(`
+      ALTER TABLE empresas ADD COLUMN manifestar_ciencia_automatica INTEGER NOT NULL DEFAULT 1;
+    `);
+  } catch {}
+  try {
+    db.exec(`
+      ALTER TABLE empresas ADD COLUMN ultimo_nsu TEXT NOT NULL DEFAULT '000000000000000';
+    `);
+  } catch {}
+  try {
+    db.exec(`
+      ALTER TABLE empresas ADD COLUMN max_nsu TEXT NOT NULL DEFAULT '000000000000000';
+    `);
+  } catch {}
 
   console.log('✅ Schema do banco de dados inicializado com sucesso.');
 }

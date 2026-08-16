@@ -39,6 +39,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             grupoContabilCliente: 'Carteira Geral',
             uf: r.uf,
             regimeTributario: r.regime_tributario,
+            manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
+            ultimoNsu: r.ultimo_nsu || '000000000000000',
+            maxNsu: r.max_nsu || '000000000000000',
             certificadoA1: cert ? {
               fileName: cert.arquivo_nome,
               validade: cert.validade,
@@ -81,6 +84,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       grupoContabilCliente: 'Carteira Geral',
       uf: r.uf,
       regimeTributario: r.regime_tributario,
+      manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
+      ultimoNsu: r.ultimo_nsu || '000000000000000',
+      maxNsu: r.max_nsu || '000000000000000',
       certificadoA1: r.cert_file_name ? {
         fileName: r.cert_file_name,
         validade: r.cert_validade,
@@ -103,7 +109,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 // POST /api/tenants - Criar nova empresa (Matriz ou Filial)
 router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente } = req.body;
+    const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente, manifestarCienciaAutomatica } = req.body;
     if (!cnpjCompleto || !razaoSocial) {
       res.status(400).json({ success: false, message: 'CNPJ e Razão Social são obrigatórios.' });
       return;
@@ -112,6 +118,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
     const cleanCnpj = cnpjCompleto.replace(/\D/g, '');
     const cnpjRaiz = cleanCnpj.substring(0, 8);
     const id = uuid();
+    const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -125,6 +132,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
             nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
             uf: uf || 'SP',
             regime_tributario: regimeTributario || 'Lucro Real',
+            manifestar_ciencia_automatica: autoCiencia,
             status: 'ativo'
           })
           .select()
@@ -153,6 +161,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
             grupoContabilCliente: grupoContabilCliente || 'Carteira Geral',
             uf: uf || 'SP',
             regimeTributario: regimeTributario || 'Lucro Real',
+            manifestarCienciaAutomatica: Boolean(autoCiencia),
             statusConexaoSefaz: 'sem_certificado',
             totalDocumentosCapturados: 0,
             ultimaSincronizacao: 'Cadastrado agora'
@@ -172,9 +181,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
 
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'ativo')
-      `).run(id, cnpjRaiz, cnpjCompleto, razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf || 'SP', regimeTributario || 'Lucro Real');
+        INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, manifestar_ciencia_automatica, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ativo')
+      `).run(id, cnpjRaiz, cnpjCompleto, razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf || 'SP', regimeTributario || 'Lucro Real', autoCiencia);
 
       if (req.user?.userId) {
         const vinculoId = uuid();
@@ -199,6 +208,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
         grupoContabilCliente: grupoContabilCliente || 'Carteira Geral',
         uf: uf || 'SP',
         regimeTributario: regimeTributario || 'Lucro Real',
+        manifestarCienciaAutomatica: Boolean(autoCiencia),
         statusConexaoSefaz: 'sem_certificado',
         totalDocumentosCapturados: 0,
         ultimaSincronizacao: 'Cadastrado agora'
@@ -214,7 +224,8 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
 router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { razaoSocial, nomeFantasia, uf, regimeTributario } = req.body;
+    const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica } = req.body;
+    const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -226,6 +237,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
             nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
             uf,
             regime_tributario: regimeTributario,
+            manifestar_ciencia_automatica: autoCiencia,
             updated_at: new Date().toISOString()
           })
           .eq('id', id);
@@ -239,9 +251,9 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const db = getDatabase();
     const result = db.prepare(`
       UPDATE empresas
-      SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, updated_at = datetime('now')
+      SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf, regimeTributario, id);
+    `).run(razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf, regimeTributario, autoCiencia, id);
 
     if (result.changes === 0) {
       res.status(404).json({ success: false, message: 'Empresa não encontrada.' });

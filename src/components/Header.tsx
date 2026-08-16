@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User, Lock
+  ChevronDown, Check, User, Lock, FileCheck2
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -96,6 +96,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Cadastro de Empresas', icon: Building2, color: 'text-emerald-400' };
       case 'parceiros_negocio':
         return { title: 'Parceiros de Negócio (MDM Fiscal)', icon: Users, color: 'text-cyan-400' };
+      case 'cruzamento_sped':
+        return { title: 'Conciliação SPED Fiscal x SEFAZ', icon: FileCheck2, color: 'text-indigo-400' };
       case 'observabilidade_dlq':
         return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
       default:

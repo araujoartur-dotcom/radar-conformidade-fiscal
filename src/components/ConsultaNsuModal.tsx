@@ -37,16 +37,17 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   defaultFluxo = 'entrada'
 }) => {
   const [fluxo, setFluxo] = useState<'entrada' | 'saida'>(defaultFluxo);
-  const [ultNSU, setUltNSU] = useState<string>('000000000018420');
+  const [ultNSU, setUltNSU] = useState<string>('000000000000000');
   const [isConsulting, setIsConsulting] = useState<boolean>(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<DfeXmlItem[] | null>(null);
   const [cStat, setCStat] = useState<string>('');
   const [xMotivo, setXMotivo] = useState<string>('');
+  const [consultaError, setConsultaError] = useState<string>('');
 
   // Editable CNPJ and Razao Social in Modal
-  const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || '19.791.896/0001-00');
-  const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || 'MINHA EMPRESA (HOMOLOGAÇÃO)');
+  const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || '');
+  const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || '');
 
   React.useEffect(() => {
     if (certificado?.cnpj) setCnpjInput(certificado.cnpj);
@@ -55,192 +56,127 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleStartConsultaDFe = () => {
+  const handleStartConsultaDFe = async () => {
     setIsConsulting(true);
     setLogs([]);
     setResults(null);
     setCStat('');
     setXMotivo('');
+    setConsultaError('');
 
-    const currentCnpj = cnpjInput || certificado?.cnpj || '19.791.896/0001-00';
-    const currentRazao = razaoInput || certificado?.razãoSocial || 'MINHA EMPRESA (HOMOLOGAÇÃO)';
+    const currentCnpj = cnpjInput || certificado?.cnpj || '';
+    const currentRazao = razaoInput || certificado?.razãoSocial || '';
     const ambCode = ambienteSefaz === 'homologacao' ? '2' : '1';
     const ambLabel = ambienteSefaz === 'homologacao' ? 'HOMOLOGAÇÃO (tpAmb = 2)' : 'PRODUÇÃO (tpAmb = 1)';
+    const wsName = fluxo === 'entrada' ? 'NFeDistribuicaoDFe' : 'NFeDistribuicaoDFe';
 
     const addLog = (msg: string) => {
       setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('pt-BR')}] ${msg}`]);
     };
 
-    if (fluxo === 'entrada') {
-      addLog(`Iniciando consulta de XMLs DESTINADOS ao CNPJ ${currentCnpj}...`);
-      if (certificado?.status === 'valido' && certificado?.fileName) {
-        addLog(`WebService: nfeDistribuicaoDFe (SEFAZ Nacional) | Certificado A1: ${certificado.fileName}`);
-      } else {
-        addLog(`⚠️ ATENÇÃO: Nenhum Certificado A1 ativo para o CNPJ ${currentCnpj}. (Simulação de Homologação)`);
+    if (!currentCnpj || currentCnpj.replace(/\D/g, '').length < 14) {
+      addLog(`❌ CNPJ não informado ou inválido. Informe o CNPJ da empresa.`);
+      setConsultaError('CNPJ não informado ou inválido.');
+      setIsConsulting(false);
+      return;
+    }
+
+    if (certificado?.status !== 'valido' || !certificado?.fileName) {
+      addLog(`❌ Nenhum Certificado Digital A1 ativo para o CNPJ ${currentCnpj}.`);
+      addLog(`A comunicação com o WebService ${wsName} da SEFAZ requer certificado A1 (.pfx) vinculado.`);
+      addLog(`Vincule um certificado A1 válido na Carteira de CNPJs antes de consultar.`);
+      setConsultaError('Certificado Digital A1 não configurado. Vincule um .pfx válido na Carteira de CNPJs.');
+      setIsConsulting(false);
+      return;
+    }
+
+    addLog(`Iniciando consulta de XMLs ${fluxo === 'entrada' ? 'DESTINADOS ao' : 'EMITIDOS pelo'} CNPJ ${currentCnpj}...`);
+    addLog(`WebService: ${wsName} (SEFAZ Nacional - Ambiente Nacional AN) | Certificado A1: ${certificado.fileName}`);
+    addLog(`Autenticando CNPJ no ambiente ${ambLabel}`);
+
+    const endpointUrl = ambienteSefaz === 'homologacao'
+      ? 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
+      : 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx';
+
+    addLog(`Enviando envelope SOAP 1.2 para ${endpointUrl}`);
+    addLog(`Parâmetros: tpAmb=${ambCode}, cOrgaoAuthor=91 (AN), ultNSU=${ultNSU}`);
+
+    try {
+      // Retrieve auth token from localStorage
+      const token = localStorage.getItem('radar_fiscal_token') || '';
+
+      const response = await fetch('/api/sefaz/distribui-dfe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          cnpj: currentCnpj.replace(/\D/g, ''),
+          ultNSU,
+          tpAmb: ambCode,
+          fluxo,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+        const errorMsg = errorData.error || `Erro HTTP ${response.status}`;
+        addLog(`❌ Erro na comunicação com o backend: ${errorMsg}`);
+
+        if (response.status === 404) {
+          addLog(`⚠️ Endpoint /api/sefaz/distribui-dfe ainda não implementado no backend.`);
+          addLog(`O endpoint de Distribuição DF-e (consulta NSU real via SOAP+mTLS) será adicionado na Fase 2.`);
+          setConsultaError('Endpoint de Distribuição DF-e ainda não implementado no servidor backend. Fase 2 pendente.');
+        } else {
+          setConsultaError(errorMsg);
+        }
+
+        setCStat(errorData.cStat || '999');
+        setXMotivo(errorMsg);
+        setIsConsulting(false);
+        return;
       }
-      addLog(`Autenticando CNPJ no ambiente ${ambLabel}`);
 
-      setTimeout(() => {
-        addLog(`Enviando envelope SOAP 1.2 para https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx`);
-        addLog(`Parâmetros: tpAmb=${ambCode}, cOrgaoAuthor=91 (AN), ultNSU=${ultNSU}`);
-      }, 500);
+      const data = await response.json();
 
-      setTimeout(() => {
-        addLog(`Resposta SEFAZ recebida com sucesso! HTTP 200 OK.`);
-        setCStat('138');
-        setXMotivo('Documentos localizados para o CNPJ destinatário.');
-        addLog(`cStat: 138 - Documentos localizados para o CNPJ destinatário.`);
+      addLog(`Resposta SEFAZ recebida com sucesso! HTTP 200 OK.`);
+      setCStat(data.cStat || '138');
+      setXMotivo(data.xMotivo || 'Documentos localizados.');
+      addLog(`cStat: ${data.cStat} - ${data.xMotivo}`);
+
+      if (data.docs && data.docs.length > 0) {
         addLog(`Descompactando lote de XMLs (GZip Base64)...`);
-      }, 1200);
+        const folderCode = currentCnpj.replace(/\D/g, '').substring(0, 8) || '00000000';
+        addLog(`Download concluído: ${data.docs.length} novo(s) XML(s) de ${fluxo === 'entrada' ? 'ENTRADA (Compras)' : 'SAÍDA (Vendas)'}.`);
+        addLog(`Diretório Alvo: C:\\SEFAZ\\XMLs\\${folderCode}\\${fluxo === 'entrada' ? 'Entrada' : 'Saida'}\\`);
 
-      setTimeout(() => {
-        const fetchedItems: DfeXmlItem[] = [
-          {
-            id: `nsu-ent-01-${Date.now()}`,
-            tipo: 'NFe',
-            numero: '000.912.480',
-            serie: '1',
-            chaveAcesso: '352608330001675500100091248010827391',
-            dataEmissao: new Date().toISOString().split('T')[0],
-            emitenteNome: 'AMBEV S.A. DISTRIBUIDORA NACIONAL',
-            emitenteCnpj: '02.808.708/0001-07',
-            emitenteUf: 'SP',
-            destinatarioNome: currentRazao,
-            destinatarioCnpj: currentCnpj,
-            destinatarioUf: 'SP',
-            valorTotal: 145800.00,
-            valorIcms: 26244.00,
-            valorIpi: 7290.00,
-            valorPis: 2405.70,
-            valorCofins: 11080.80,
-            aliquotaCbs: 0.088,
-            valorCbs: 12830.40,
-            aliquotaIbs: 0.177,
-            valorIbs: 25806.60,
-            valorImpostoSeletivo: 0,
-            statusAuditoria: 'conforme',
-            alertasAuditoria: [],
-            statusSincronizacaoErp: 'pendente'
-          },
-          {
-            id: `nsu-ent-02-${Date.now()}`,
-            tipo: 'NFe',
-            numero: '000.410.092',
-            serie: '2',
-            chaveAcesso: '352608000000005500200041009210928374',
-            dataEmissao: new Date().toISOString().split('T')[0],
-            emitenteNome: 'VALE S.A. INSUMOS INDUSTRIAIS',
-            emitenteCnpj: '33.592.510/0001-54',
-            emitenteUf: 'RJ',
-            destinatarioNome: currentRazao,
-            destinatarioCnpj: currentCnpj,
-            destinatarioUf: 'SP',
-            valorTotal: 89400.00,
-            valorIcms: 10728.00,
-            valorIpi: 4470.00,
-            valorPis: 1475.10,
-            valorCofins: 6794.40,
-            aliquotaCbs: 0.088,
-            valorCbs: 7867.20,
-            aliquotaIbs: 0.177,
-            valorIbs: 15823.80,
-            valorImpostoSeletivo: 0,
-            statusAuditoria: 'conforme',
-            alertasAuditoria: [],
-            statusSincronizacaoErp: 'pendente'
-          }
-        ];
+        if (data.ultNSU) {
+          setUltNSU(data.ultNSU);
+        }
 
-        const folderCode = (currentCnpj || '').replace(/\D/g, '').substring(0, 8) || '00000000';
-        addLog(`Download e descompactação concluídos: 2 novos XMLs de ENTRADA (Compras).`);
-        addLog(`Diretório Alvo: C:\\SEFAZ\\XMLs\\${folderCode}\\Entrada\\`);
-        
-        setUltNSU('000000000018422');
-        setResults(fetchedItems);
-        setIsConsulting(false);
-      }, 1800);
-    } else {
-      addLog(`Iniciando sincronização de XMLs EMITIDOS pelo CNPJ ${currentCnpj}...`);
-      addLog(`Conectando ao Repositório SEFAZ de Documentos Emitidos (NFeConsultaProtocolo / ERP Spool)`);
-      addLog(`Certificado A1: ${certificado?.fileName || 'certificado.pfx'} | Ambiente: ${ambLabel}`);
+        setResults(data.docs);
+      } else {
+        addLog(`ℹ️ Nenhum novo documento encontrado após NSU ${ultNSU}.`);
+        if (data.cStat === '137') {
+          addLog(`cStat 137: Nenhum documento localizado para o CNPJ destinatário.`);
+        }
+        setResults([]);
+      }
 
-      setTimeout(() => {
-        addLog(`Consultando lote de NF-e/NFC-e autorizadas com CNPJ Emitente = ${currentCnpj}`);
-        addLog(`Enviando requisição de download de pacotes autorizados (chaves autorizadas no período)`);
-      }, 500);
-
-      setTimeout(() => {
-        addLog(`Servidor SEFAZ respondeu: cStat: 100 - Autorizado o uso da NF-e / Lote localizado.`);
-        setCStat('100');
-        setXMotivo('Lote de XMLs emitidos pelo CNPJ recuperado com sucesso.');
-        addLog(`Descompactando pacotes de XMLs completos com protocolo de autorização (<nfeProc>)...`);
-      }, 1200);
-
-      setTimeout(() => {
-        const fetchedItems: DfeXmlItem[] = [
-          {
-            id: `nsu-sai-01-${Date.now()}`,
-            tipo: 'NFe',
-            numero: '000.088.105',
-            serie: '1',
-            chaveAcesso: '35260817213071000175550010000881051003829182',
-            dataEmissao: new Date().toISOString().split('T')[0],
-            emitenteNome: currentRazao,
-            emitenteCnpj: currentCnpj,
-            emitenteUf: 'SP',
-            destinatarioNome: 'PETROLEO BRASILEIRO S A PETROBRAS',
-            destinatarioCnpj: '33.000.167/0001-01',
-            destinatarioUf: 'RJ',
-            valorTotal: 215000.00,
-            valorIcms: 38700.00,
-            valorIpi: 10750.00,
-            valorPis: 3547.50,
-            valorCofins: 16340.00,
-            aliquotaCbs: 0.088,
-            valorCbs: 18920.00,
-            aliquotaIbs: 0.177,
-            valorIbs: 38055.00,
-            valorImpostoSeletivo: 0,
-            statusAuditoria: 'conforme',
-            alertasAuditoria: [],
-            statusSincronizacaoErp: 'sincronizado'
-          },
-          {
-            id: `nsu-sai-02-${Date.now()}`,
-            tipo: 'NFe',
-            numero: '000.088.106',
-            serie: '1',
-            chaveAcesso: '35260817213071000175550010000881061009182736',
-            dataEmissao: new Date().toISOString().split('T')[0],
-            emitenteNome: currentRazao,
-            emitenteCnpj: currentCnpj,
-            emitenteUf: 'SP',
-            destinatarioNome: 'BANCO DO BRASIL S.A. MATRIZ',
-            destinatarioCnpj: '00.000.000/0001-91',
-            destinatarioUf: 'DF',
-            valorTotal: 64200.00,
-            valorIcms: 7704.00,
-            valorIpi: 3210.00,
-            valorPis: 1059.30,
-            valorCofins: 4879.20,
-            aliquotaCbs: 0.088,
-            valorCbs: 5649.60,
-            aliquotaIbs: 0.177,
-            valorIbs: 11363.40,
-            valorImpostoSeletivo: 0,
-            statusAuditoria: 'conforme',
-            alertasAuditoria: [],
-            statusSincronizacaoErp: 'sincronizado'
-          }
-        ];
-
-        const folderCode = (currentCnpj || '').replace(/\D/g, '').substring(0, 8) || '00000000';
-        addLog(`Download e gravação concluídos: 2 XMLs de SAÍDA (Vendas/Emitidas).`);
-        addLog(`Diretório Alvo de Saída: C:\\SEFAZ\\XMLs\\${folderCode}\\Saida\\`);
-        
-        setResults(fetchedItems);
-        setIsConsulting(false);
-      }, 1800);
+    } catch (err: any) {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        addLog(`❌ Timeout: A SEFAZ não respondeu dentro de 60 segundos.`);
+        setConsultaError('Timeout na comunicação com a SEFAZ (60s).');
+      } else {
+        addLog(`❌ Erro de rede: ${err.message}`);
+        setConsultaError(`Erro de rede: ${err.message}`);
+      }
+      setCStat('999');
+      setXMotivo(`Erro de comunicação: ${err.message}`);
+    } finally {
+      setIsConsulting(false);
     }
   };
 

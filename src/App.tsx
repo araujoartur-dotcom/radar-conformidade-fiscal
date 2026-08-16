@@ -17,9 +17,9 @@ import { ParceirosNegocioPanel } from './components/ParceirosNegocioPanel';
 import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
+import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, CnpjRaizDirectoryConfig, AmbienteSefaz, UsuarioCorporativo } from './types';
-import { DEMO_CNPJS, queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
-import { DEMO_DFE_ITEMS } from './utils/xmlParser';
+import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
 import { Search, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
 
@@ -134,20 +134,6 @@ export default function App() {
       loadDocumentos();
     }
   }, [empresaAtiva?.id]);
-
-  const loadDemoBatch = () => {
-    const demoList: CnpjLookupItem[] = DEMO_CNPJS.map((item, idx) => ({
-      id: `demo-${idx + 1}-${Date.now()}`,
-      cnpj: item.cnpj,
-      uf: item.uf,
-      statusConsulta: 'pendente'
-    }));
-
-    setItems(demoList);
-    setSelectedFileName('Lote_Exemplo_Demonstrativo.xlsx');
-    setCurrentCnpjIndex(0);
-    setElapsedSeconds(0);
-  };
 
   // Stopwatch effect
   useEffect(() => {
@@ -385,7 +371,6 @@ export default function App() {
                 onFileUpload={handleFileUpload}
                 fileName={selectedFileName}
                 stats={stats}
-                onLoadDemoBatch={loadDemoBatch}
                 rateLimit={rateLimit}
                 setRateLimit={setRateLimit}
                 isProcessing={isProcessing}
@@ -431,6 +416,11 @@ export default function App() {
             {/* Mode 6: Integração ERP (SAP, Webhooks) */}
             {activeMode === 'integracao_erp' && (
               <ErpIntegrationPanel dfeList={dfeList} />
+            )}
+
+            {/* Mode: Conciliação e Cruzamento SPED Fiscal x SEFAZ */}
+            {activeMode === 'cruzamento_sped' && (
+              <SpedCruzamentoPanel dfeList={dfeList} />
             )}
 
             {/* Mode 0: Central de KPIs & Dashboards Executivos (BI Fiscal) */}

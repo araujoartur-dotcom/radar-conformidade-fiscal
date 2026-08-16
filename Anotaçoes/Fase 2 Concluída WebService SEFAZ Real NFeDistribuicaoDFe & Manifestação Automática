@@ -1,0 +1,45 @@
+# 🚀 Fase 2 Concluída: WebService SEFAZ Real `NFeDistribuicaoDFe` & Manifestação Automática
+
+Implementamos com sucesso a comunicação oficial com o WebService **`NFeDistribuicaoDFe`** (Ambiente Nacional / SEFAZ), a descompactação em memória de lotes `docZip` (GZip Base64) e o recurso inteligente de **Manifestação Automática de Ciência da Operação (evento 210210)**.
+
+---
+
+## 🛠️ O Que Foi Implementado
+
+### 1. Parâmetro no Cadastro da Empresa (Tenant)
+- **Campo `manifestarCienciaAutomatica`:**
+  - Adicionado no schema do banco de dados (`empresas.manifestar_ciencia_automatica`), nas rotas de CRUD (`server/routes/tenants.ts`), nas interfaces TypeScript (`src/types.ts`) e no formulário de Cadastro da Empresa (`CarteiraCnpjsPanel.tsx`).
+  - **Interface do Usuário:** Switch elegante na aba de identificação da empresa:
+    * *"⚡ Manifestação Automática de Ciência da Operação (SEFAZ - 210210)"* com badge *Recomendado*.
+
+### 2. Serviço SOAP `NFeDistribuicaoDFe` (`server/services/sefazService.ts`)
+- **Montagem do Envelope SOAP 1.2:**
+  - Suporte a consultas por:
+    1. **`distNSU` (com `ultNSU`):** Busca incremental de novos documentos.
+    2. **`consNSU` (com `NSU` específico):** Busca de um NSU pontual.
+    3. **`consChNFe` (com `chNFe` de 44 dígitos):** Consulta direta por chave de acesso.
+- **Comunicação Segura mTLS:**
+  - Conexão direta HTTPS mTLS aos endpoints oficiais do Ambiente Nacional:
+    * **Homologação:** `https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx`
+    * **Produção:** `https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx`
+  - Utiliza o Certificado Digital A1 (`.PFX`) descriptografado em memória.
+- **Descompactador de Lote `docZip`:**
+  - Extração de múltiplos blocos `<docZip schema="...">` na resposta SOAP.
+  - Decodificação Base64 -> `zlib.gunzipSync` -> XML legível em UTF-8.
+- **Automação de Ciência da Emissão:**
+  - Ao identificar um Resumo de Nota Fiscal (`<resNFe>`), se o parâmetro `manifestarCienciaAutomatica` estiver ativo para a empresa, o backend dispara imediatamente o evento `210210 (Ciência da Operação)` via `NFeRecepcaoEvento4`, permitindo que a SEFAZ libere o XML completo (`<nfeProc>`) nas consultas subsequentes.
+- **Atualização Automática de Checkpoint:**
+  - Persiste no banco de dados o `ultimo_nsu` e `max_nsu` retornados pela SEFAZ para evitar consultas redundantes e garantir sincronização contínua.
+
+### 3. Endpoint REST `POST /api/sefaz/distribui-dfe` (`server/routes/sefaz.ts`)
+- Rota protegida por autenticação JWT consumida pelo modal de consulta `ConsultaNsuModal.tsx`.
+- Valida o CNPJ, recupera a empresa e o certificado ativo, executa o fluxo e retorna os documentos fiscais extraídos no formato unificado `DfeXmlItem`.
+
+### 4. Refinamento do Parser XML (`xmlParser.ts`)
+- Suporte a tags da Reforma Tributária (`<IBSCBS>`, `<CST>`, `<cClassTrib>`, `<IBSCBSTot>`) presentes em XMLs reais.
+- Extração precisa de chaves de 44 dígitos via `<chNFe>`, `<infNFe Id="...">` e `<protNFe>`.
+
+---
+
+## 🧪 Validação de Compilação
+- `npm run build` executado com **0 erros** (**Exit Code 0**).
