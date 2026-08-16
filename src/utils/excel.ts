@@ -76,34 +76,39 @@ export async function parseExcelFile(file: File): Promise<ParsedExcelRow[]> {
 }
 
 /** Export results to Excel (.xlsx) */
-export function exportToExcel(items: CnpjLookupItem[], filename: string = 'Consulta_CNPJ_IE_CCC.xlsx') {
-  const exportData = items.map(item => ({
-    'CNPJ': item.cnpj,
-    'UF': item.uf,
-    'Inscrição Estadual (IE)': item.ie || 'ISENTO',
-    'Tipo IE': item.tipoIE || '-',
-    'Situação IE (CCC)': item.situaçaoIE || '-',
-    'Situação CNPJ': item.situaçaoCNPJ || '-',
-    'Natureza Jurídica': item.naturezaJuridica || '-',
-    'Razão Social': item.razaoSocial || '-',
-    'Nome Fantasia': item.nomeFantasia || '-',
-    'CNAE Principal': item.cnaePrincipal || '-',
-    'Descrição CNAE': item.cnaeDescricao || '-',
-    'Data de Abertura': item.dataAbertura || '-',
-    'Regime Tributário': item.regimeTributario || '-',
-    'Capital Social (R$)': item.capitalSocial || 0,
-    'Endereço Completo': item.enderecoCompleto || '-',
-    'Município': item.municipio || '-',
-    'CEP': item.cep || '-',
-    'Telefone': item.telefone || '-',
-    'E-mail': item.email || '-',
-    'Status Consulta': item.statusConsulta.toUpperCase(),
-    'Data da Consulta': item.dataConsulta ? new Date(item.dataConsulta).toLocaleString('pt-BR') : '-'
-  }));
+export function exportToExcel(items: any[], filename: string = 'Consulta_CNPJ_IE_CCC.xlsx') {
+  if (!items || items.length === 0) return;
+
+  const isCustomObjects = items.length > 0 && !('cnpj' in items[0]);
+  const exportData = isCustomObjects
+    ? items
+    : items.map((item: any) => ({
+        'CNPJ': item.cnpj,
+        'UF': item.uf,
+        'Inscrição Estadual (IE)': item.ie || 'ISENTO',
+        'Tipo IE': item.tipoIE || '-',
+        'Situação IE (CCC)': item.situaçaoIE || '-',
+        'Situação CNPJ': item.situaçaoCNPJ || '-',
+        'Natureza Jurídica': item.naturezaJuridica || '-',
+        'Razão Social': item.razaoSocial || '-',
+        'Nome Fantasia': item.nomeFantasia || '-',
+        'CNAE Principal': item.cnaePrincipal || '-',
+        'Descrição CNAE': item.cnaeDescricao || '-',
+        'Data de Abertura': item.dataAbertura || '-',
+        'Regime Tributário': item.regimeTributario || '-',
+        'Capital Social (R$)': item.capitalSocial || 0,
+        'Endereço Completo': item.enderecoCompleto || '-',
+        'Município': item.municipio || '-',
+        'CEP': item.cep || '-',
+        'Telefone': item.telefone || '-',
+        'E-mail': item.email || '-',
+        'Status Consulta': (item.statusConsulta || '').toUpperCase(),
+        'Data da Consulta': item.dataConsulta ? new Date(item.dataConsulta).toLocaleString('pt-BR') : '-'
+      }));
 
   const worksheet = XLSX.utils.json_to_sheet(exportData);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Consulta Cadastral CCC');
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
 
   // Auto column widths
   const colWidths = Object.keys(exportData[0] || {}).map(key => ({
@@ -111,7 +116,8 @@ export function exportToExcel(items: CnpjLookupItem[], filename: string = 'Consu
   }));
   worksheet['!cols'] = colWidths;
 
-  XLSX.writeFile(workbook, filename);
+  const actualFilename = filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`;
+  XLSX.writeFile(workbook, actualFilename);
 }
 
 /** Export results to CSV */

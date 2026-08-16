@@ -104,6 +104,22 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   // Modal Editar CNPJ
   const [editingTenant, setEditingTenant] = useState<ClienteEmpresaTenant | null>(null);
 
+  const handleOpenEdit = (tenant: ClienteEmpresaTenant) => {
+    setEditingTenant(tenant);
+    setNewCnpj(tenant.cnpjCompleto);
+    setNewRazaoSocial(tenant.razaoSocial);
+    setNewNomeFantasia(tenant.nomeFantasia || tenant.razaoSocial);
+    setNewUf(tenant.uf);
+    setNewRegime(tenant.regimeTributario);
+    setNewGrupo(tenant.grupoContabilCliente || 'Carteira Geral');
+    setNewIe(tenant.ie || '');
+    setNewIm(tenant.im || '');
+    setNewCnae(tenant.cnaePrincipal || '');
+    setNewCodMunIbge(tenant.codMunicipioIbge || '3550308');
+    setNewManifestarCiencia(tenant.manifestarCienciaAutomatica ?? true);
+    setShowAddModal(true);
+  };
+
   // Modal Ativar Certificado A1 (.PFX)
   const [certModalTenant, setCertModalTenant] = useState<ClienteEmpresaTenant | null>(null);
   const [certFile, setCertFile] = useState<File | null>(null);
@@ -358,13 +374,13 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     const r0000 = `|0000|017|0|${dataIni}|${dataFim}|${t.razaoSocial || 'EMPRESA EXEMPLO LTDA'}|${cleanCnpj}|${t.uf || 'SP'}|${cleanIe}|${codMun}|${im}|${suframa}|${perfil}|${indAtiv}|`;
 
     // |0005|FANTASIA|CEP|END|NUM|COMPL|BAIRRO|FONE|FAX|EMAIL|
-    const end = t.endereco || {};
+    const end: any = t.endereco || {};
     const cleanCep = (end.cep || '').replace(/\D/g, '');
     const fone = (end.telefone || '').replace(/\D/g, '');
     const r0005 = `|0005|${t.nomeFantasia || t.razaoSocial || ''}|${cleanCep}|${end.logradouro || ''}|${end.numero || 'S/N'}|${end.complemento || ''}|${end.bairro || ''}|${fone}||${end.email || ''}|`;
 
     // |0100|NOME|CPF|CRC|CNPJ|CEP|END|NUM|COMPL|BAIRRO|FONE|FAX|EMAIL|COD_MUN|
-    const cont = t.contador || {};
+    const cont: any = t.contador || {};
     const cleanCpf = (cont.cpf || '').replace(/\D/g, '');
     const crc = cont.crc || (cont.ufCrc ? `${cont.ufCrc}-${cont.crc || '000000'}` : 'SP-000000/O-0');
     const cnpjEsc = (cont.cnpjEscritorio || '').replace(/\D/g, '');

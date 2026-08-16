@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { Database, Link2, CheckCircle2, RefreshCw, Key, ArrowRight, Code, Server, ShieldCheck, Copy, Terminal, Zap, FileCode2 } from 'lucide-react';
 import { ErpConnectionConfig, DfeXmlItem } from '../types';
 import { buildSapBapiPayload, buildTotvsProtheusPayload, buildGenericWebhookPayload } from '../utils/erpConnectors';

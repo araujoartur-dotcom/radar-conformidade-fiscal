@@ -351,7 +351,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                       multiple
                       value={newCnpjs}
                       onChange={(e) => {
-                        const selected = Array.from(e.target.selectedOptions, option => option.value);
+                        const selected = Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value);
                         setNewCnpjs(selected);
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none h-20 font-mono text-[11px]"
@@ -635,7 +635,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                   multiple
                   value={editCnpjs}
                   onChange={(e) => {
-                    const selected = Array.from(e.target.selectedOptions, option => option.value);
+                    const selected = Array.from(e.target.selectedOptions, (option: HTMLOptionElement) => option.value);
                     setEditCnpjs(selected);
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none h-20 font-mono text-[11px]"

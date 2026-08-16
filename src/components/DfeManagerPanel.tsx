@@ -35,6 +35,8 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [splitModalDoc, setSplitModalDoc] = useState<DfeXmlItem | null>(null);
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
 
   const { get, post } = useApi();
 

@@ -3,7 +3,7 @@ import {
   BarChart3, TrendingUp, DollarSign, FileText, Layers, Download,
   Filter, Calendar, RefreshCw, ArrowUpRight, ArrowDownRight, Building2,
   PieChart, ShieldCheck, Sparkles, CheckCircle2, AlertCircle, Percent,
-  ArrowRight, FileSpreadsheet, Printer
+  ArrowRight, FileSpreadsheet, Printer, Info
 } from 'lucide-react';
 import { DfeXmlItem, ClienteEmpresaTenant } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +13,15 @@ import { ANOS_TRANSICAO, getRegraTransicaoAno } from '../utils/reformaTransicao'
 interface CentralKpisPanelProps {
   dfeList: DfeXmlItem[];
   selectedTenantCnpj: string;
+}
+
+interface DfeTypeStat {
+  label: string;
+  qtd: number;
+  valor: number;
+  color: string;
+  bg: string;
+  border: string;
 }
 
 export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
@@ -60,8 +69,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
   const totalQtd = filteredItems.length;
 
   // Agregações por Modelo de DF-e
-  const dfeTypeCounts = useMemo(() => {
-    const counts: Record<string, { label: string; qtd: number; valor: number; color: string; bg: string; border: string }> = {
+  const dfeTypeCounts = useMemo<Record<string, DfeTypeStat>>(() => {
+    const counts: Record<string, DfeTypeStat> = {
       'NFe': { label: 'NF-e (Mod 55) Mercadorias', qtd: 0, valor: 0, color: 'text-cyan-400', bg: 'bg-cyan-500', border: 'border-cyan-500/30' },
       'NFCe': { label: 'NFC-e (Mod 65) Varejo', qtd: 0, valor: 0, color: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-500/30' },
       'CTe': { label: 'CT-e (Mod 57) Transportes', qtd: 0, valor: 0, color: 'text-indigo-400', bg: 'bg-indigo-500', border: 'border-indigo-500/30' },
@@ -83,7 +92,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
     return counts;
   }, [filteredItems]);
 
-  const maxQtdType = Math.max(...Object.values(dfeTypeCounts).map(c => c.qtd), 1);
+  const maxQtdType = Math.max(...Object.values(dfeTypeCounts).map((c: DfeTypeStat) => c.qtd), 1);
   const maxValorTributario = Math.max(totalValor, 1);
 
   // Top 5 Parceiros
@@ -118,10 +127,10 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
       'Destinatário Razão': item.destinatarioNome,
       'Destinatário UF': item.destinatarioUf,
       'Valor Total (R$)': item.valorTotal,
-      'CBS Estimada (8.8% R$)': (item.valorTotal * ALIQUOTA_CBS),
-      'IBS UF (10.62% R$)': (item.valorTotal * ALIQUOTA_IBS_UF),
-      'IBS MUN (7.08% R$)': (item.valorTotal * ALIQUOTA_IBS_MUN),
-      'IBS Total (17.7% R$)': (item.valorTotal * ALIQUOTA_IBS_TOTAL)
+      [`CBS Estimada (${regraAno.aliquotaCbs}% R$)`]: (item.valorTotal * (regraAno.aliquotaCbs / 100)),
+      [`IBS UF (${regraAno.aliquotaIbsEstadual}% R$)`]: (item.valorTotal * (regraAno.aliquotaIbsEstadual / 100)),
+      [`IBS MUN (${regraAno.aliquotaIbsMunicipal}% R$)`]: (item.valorTotal * (regraAno.aliquotaIbsMunicipal / 100)),
+      [`IBS Total (${regraAno.aliquotaIbsTotal}% R$)`]: (item.valorTotal * (regraAno.aliquotaIbsTotal / 100))
     }));
 
     exportToExcel(rows, `CENTRAL_KPIS_DFE_${(empresaAtiva?.cnpjCompleto || 'EMPRESA').replace(/\D/g, '')}`);
@@ -395,7 +404,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
 
           {/* Bar Chart Container */}
           <div className="space-y-4 pt-2">
-            {Object.entries(dfeTypeCounts).map(([key, data]) => {
+            {(Object.entries(dfeTypeCounts) as [string, DfeTypeStat][]).map(([key, data]) => {
               const pct = totalQtd > 0 ? (data.qtd / totalQtd) * 100 : 0;
               const barWidth = totalQtd > 0 ? (data.qtd / maxQtdType) * 100 : 0;
 
@@ -571,8 +580,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({
                 </tr>
               ) : (
                 topParceiros.map((p, idx) => {
-                  const cbsVal = p.total * ALIQUOTA_CBS;
-                  const ibsVal = p.total * ALIQUOTA_IBS_TOTAL;
+                  const cbsVal = p.total * (regraAno.aliquotaCbs / 100);
+                  const ibsVal = p.total * (regraAno.aliquotaIbsTotal / 100);
                   return (
                     <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4">

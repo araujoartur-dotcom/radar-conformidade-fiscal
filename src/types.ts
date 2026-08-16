@@ -133,8 +133,10 @@ export interface ItemDfeDetail {
   numeroItem: number;
   codigo: string;
   descricao: string;
+  ncm?: string;
   ncmCts?: string;
   cfop?: string;
+  cClassTrib?: string;
   unidade: string;
   quantidade: number;
   valorUnitario: number;

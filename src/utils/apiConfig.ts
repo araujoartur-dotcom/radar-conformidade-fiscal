@@ -9,7 +9,7 @@
  */
 
 export function getApiBaseUrl(): string {
-  const envUrl = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
+  const envUrl = (((import.meta as any).env?.VITE_API_URL as string) || '').trim().replace(/\/+$/, '');
   
   // Se não foi configurado (ex: desenvolvimento local com proxy Vite)
   if (!envUrl) {
