@@ -1,0 +1,34 @@
+Como o CNPJ Alfanumérico funciona e como o modelo o contempla:
+1. Formato e Estrutura Oficial (14 caracteres)
+A estrutura mantém exatamente 14 posições (sem máscara) e 18 posições (com máscara XX.XXX.XXX/XXXX-99), divididas em:
+
+Posições 1 a 8 (CNPJ_RAIZ): Aceita letras maiúsculas de A a Z e algarismos de 0 a 9 (ex: 12.ABC.345).
+Posições 9 a 12 (CNPJ_ORDEM / Filial): Aceita letras e algarismos (ex: /0001 ou /00A1).
+Posições 13 e 14 (CNPJ_DV): Permanecem estritamente numéricos (0 a 9).
+2. Regras Técnicas de Banco de Dados e Frontend
+Para garantir compatibilidade total sem quebras de sistema:
+
+Tipo de Dado no Banco de Dados:
+
+O campo CPF_CNPJ é definido como VARCHAR(14) (ou VARCHAR(18) com máscara), nunca utilizando tipos numéricos puros (BIGINT ou INTEGER), o que causaria erro de conversão com letras.
+Campos segregados para governança: CNPJ_RAIZ VARCHAR(8), CNPJ_ORDEM VARCHAR(4) e CNPJ_DV VARCHAR(2).
+Tratamento de Máscaras e Validações de Frontend:
+
+A máscara e sanitização deixam de usar o clássico value.replace(/\D/g, '') e passam a usar:
+ts
+// Suporta tanto CPF (11 numéricos) quanto CNPJ Alfanumérico (14 caracteres A-Z e 0-9)
+const clean = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 14);
+Cálculo do Dígito Verificador (Módulo 11 Ponderado Adaptado pela RFB):
+
+Para o cálculo dos dois DVs, cada caractere alfanumérico tem seu valor convertido pelo padrão ASCII - 48:
+'0' a '9' ➔ valores 0 a 9
+'A' ➔ valor 17 (ASCII 65 - 48)
+'B' ➔ valor 18 (ASCII 66 - 48) ... 'Z' ➔ valor 42 (ASCII 90 - 48).
+Aplica-se a multiplicação pelos pesos decrescentes (5,4,3,2,9,8,7,6,5,4,3,2) e a regra do resto por 11.
+3. Compatibilidade com SPED e DF-e (NF-e, NFC-e, CT-e)
+Registro 0150 do SPED: O campo CNPJ já é do tipo caractere com tamanho de até 14 posições no layout do SPED, não exigindo mudança de tamanho, apenas aceitando a nova cadeia alfanumérica.
+Tags de XML (<CNPJ>): Os novos schemas de validação da SEFAZ (NTs de transição) já preveem [A-Z0-9]{14}.
+A especificação técnica detalhada do cálculo e armazenamento do CNPJ Alfa foi documentada na Seção 1.2 do arquivo:
+👉 
+
+CADASTRO_MESTRE_FISCAL_PARCEIROS.md

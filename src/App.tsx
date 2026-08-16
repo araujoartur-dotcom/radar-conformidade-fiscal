@@ -13,6 +13,7 @@ import { RelatoriosXmlPanel } from './components/RelatoriosXmlPanel';
 import { ConfigDiretorioModal } from './components/ConfigDiretorioModal';
 import { AcessoCorporativoModal } from './components/AcessoCorporativoModal';
 import { CarteiraCnpjsPanel, INITIAL_TENANTS } from './components/CarteiraCnpjsPanel';
+import { ParceirosNegocioPanel } from './components/ParceirosNegocioPanel';
 import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, CnpjRaizDirectoryConfig, AmbienteSefaz, UsuarioCorporativo } from './types';
@@ -85,12 +86,12 @@ export default function App() {
 
   // Sync selected tenant with active empresa in context
   useEffect(() => {
-    if (empresaAtiva) {
+    if (empresaAtiva?.cnpjCompleto) {
       setSelectedTenantCnpj(empresaAtiva.cnpjCompleto);
     } else {
       setSelectedTenantCnpj('');
     }
-  }, [empresaAtiva]);
+  }, [empresaAtiva?.cnpjCompleto]);
 
   const loadDocumentos = async () => {
     if (!empresaAtiva) return;
@@ -128,10 +129,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (empresaAtiva) {
+    if (empresaAtiva?.id) {
       loadDocumentos();
     }
-  }, [empresaAtiva]);
+  }, [empresaAtiva?.id]);
 
   const loadDemoBatch = () => {
     const demoList: CnpjLookupItem[] = DEMO_CNPJS.map((item, idx) => ({
@@ -472,6 +473,11 @@ export default function App() {
                 certificado={certificado}
                 setCertificado={setCertificado}
               />
+            )}
+
+            {/* Mode: Dados Mestres & Cadastro Fiscal de Parceiros de Negócio (MDM) */}
+            {activeMode === 'parceiros_negocio' && (
+              <ParceirosNegocioPanel />
             )}
 
             {/* Mode 3: Quick Single Search Bar */}

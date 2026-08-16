@@ -207,6 +207,7 @@ export const ObservabilidadeDlqPanel: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<DlqTaskItem | null>(null);
   const [logFilterText, setLogFilterText] = useState<string>('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [processingTaskId, setProcessingTaskId] = useState<string | null>(null);
   
   const { get } = useApi();
 
@@ -235,19 +236,25 @@ export const ObservabilidadeDlqPanel: React.FC = () => {
 
   // Reprocess Task from DLQ
   const handleReprocessTask = (taskId: string) => {
-    setDlqTasks(prev => prev.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          status: 'reprocessado',
-          finishedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-          currentAttempt: t.currentAttempt + 1
-        };
-      }
-      return t;
-    }));
-    setActionNotice(`Tarefa ${taskId} reenviada para a fila ativa de processamento com sucesso (idempotente).`);
-    setTimeout(() => setActionNotice(null), 4000);
+    if (processingTaskId) return;
+    setProcessingTaskId(taskId);
+
+    setTimeout(() => {
+      setDlqTasks(prev => prev.map(t => {
+        if (t.id === taskId) {
+          return {
+            ...t,
+            status: 'reprocessado',
+            finishedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
+            currentAttempt: t.currentAttempt + 1
+          };
+        }
+        return t;
+      }));
+      setProcessingTaskId(null);
+      setActionNotice(`Tarefa ${taskId} reenviada para a fila ativa de processamento com sucesso (idempotente).`);
+      setTimeout(() => setActionNotice(null), 4000);
+    }, 400);
   };
 
   // Reprocess All Tasks in DLQ
@@ -481,10 +488,11 @@ export const ObservabilidadeDlqPanel: React.FC = () => {
                     {task.status !== 'reprocessado' && (
                       <button
                         onClick={() => handleReprocessTask(task.id)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-950 hover:bg-emerald-900 text-emerald-200 border border-emerald-800 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        disabled={processingTaskId === task.id}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-950 hover:bg-emerald-900 disabled:opacity-50 disabled:cursor-not-allowed text-emerald-200 border border-emerald-800 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Reprocessar
+                        <RefreshCw className={`w-3.5 h-3.5 ${processingTaskId === task.id ? 'animate-spin' : ''}`} />
+                        {processingTaskId === task.id ? 'Enfileirando...' : 'Reprocessar'}
                       </button>
                     )}
                   </div>

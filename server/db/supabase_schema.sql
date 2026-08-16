@@ -298,6 +298,46 @@ CREATE TABLE IF NOT EXISTS public.eventos_transmitidos (
 );
 
 -- ============================================================
+-- PARCEIROS DE NEGÓCIO (MDM FISCAL & SPED / SCANC)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.parceiros_negocio (
+    id VARCHAR(100) PRIMARY KEY,
+    empresa_id UUID REFERENCES public.empresas(id) ON DELETE CASCADE,
+    tipo_pessoa VARCHAR(2) NOT NULL DEFAULT 'PJ',
+    papel VARCHAR(20) NOT NULL DEFAULT 'fornecedor',
+    cpf_cnpj VARCHAR(20) NOT NULL,
+    cnpj_raiz VARCHAR(8),
+    cnpj_ordem VARCHAR(4),
+    cnpj_dv VARCHAR(2),
+    id_estrangeiro VARCHAR(50),
+    razao_social VARCHAR(200) NOT NULL,
+    nome_fantasia VARCHAR(150),
+    natureza_juridica VARCHAR(10) DEFAULT '2062',
+    regime_tributario VARCHAR(5) DEFAULT '04',
+    esfera_publica VARCHAR(5) DEFAULT 'NA',
+    segmento VARCHAR(10) DEFAULT 'IND',
+    cnae_principal VARCHAR(10),
+    cnaes_secundarios JSONB DEFAULT '[]'::jsonb,
+    status_cadastro VARCHAR(2) DEFAULT 'A',
+    endereco JSONB NOT NULL DEFAULT '{}'::jsonb,
+    fiscal JSONB NOT NULL DEFAULT '{}'::jsonb,
+    retencoes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    contabil JSONB NOT NULL DEFAULT '{}'::jsonb,
+    situacao_cadastral_sefaz VARCHAR(50) DEFAULT 'Habilitado',
+    data_ultima_consulta_sefaz TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_parceiros_cpf_cnpj ON public.parceiros_negocio(cpf_cnpj);
+CREATE INDEX IF NOT EXISTS idx_parceiros_razao ON public.parceiros_negocio(razao_social);
+CREATE INDEX IF NOT EXISTS idx_parceiros_papel ON public.parceiros_negocio(papel);
+CREATE INDEX IF NOT EXISTS idx_parceiros_regime ON public.parceiros_negocio(regime_tributario);
+
+ALTER TABLE public.parceiros_negocio ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Permitir acesso completo aos parceiros de negócio" ON public.parceiros_negocio FOR ALL USING (true);
+
+-- ============================================================
 -- 13. SEED INICIAL DE DADOS MESTRES (PostgreSQL)
 -- ============================================================
 

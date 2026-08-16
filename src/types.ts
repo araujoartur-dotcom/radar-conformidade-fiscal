@@ -1,4 +1,4 @@
-export type QueryMode = 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais';
+export type QueryMode = 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -429,5 +429,134 @@ export interface StructuredAuditLog {
   message: string;
   ipAddress: string;
 }
+
+// ==========================================
+// DADOS MESTRES & CADASTRO FISCAL DE PARCEIROS (MDM)
+// ==========================================
+
+export type TipoPessoaParceiro = 'PJ' | 'PF' | 'EX';
+export type PapelParceiro = 'cliente' | 'fornecedor' | 'prestador' | 'transportador' | 'ambos';
+export type RegimeTributarioParceiro = '01' | '02' | '03' | '04' | '05' | '06'; // 01-Simples, 02-Simples(Excesso), 03-Presumido, 04-Real, 05-Imune/Isento, 06-MEI
+export type EsferaPublica = 'NA' | 'FE' | 'ES' | 'MU';
+export type SegmentoMercadologico = 'IND' | 'COM' | 'SER' | 'CON' | 'RUR' | 'FIN' | 'SAU' | 'EDU';
+
+export interface EnderecoParceiro {
+  cep: string;
+  logradouro: string;
+  numero: string;
+  complemento?: string;
+  bairro: string;
+  codMunicipioIbge: string; // 7 dígitos (ex: 3550308)
+  municipio: string;
+  uf: string;
+  codPaisBacen: string; // 1058 Brasil
+  nomePais: string;
+}
+
+export interface FiscalParceiro {
+  inscricaoEstadual?: string;
+  indIeDestinatario: '1' | '2' | '9'; // 1-Contribuinte, 2-Isento, 9-Não Contribuinte
+  inscricaoMunicipal?: string;
+  indContribuinteIpi: boolean;
+  indSubstitutoTrib: boolean;
+  indProdutorRural: boolean;
+  indCooperativa: boolean;
+  indOptanteSimples: boolean;
+  aliquotaIcmsSimples?: number; // Percentual de aproveitamento de crédito
+  suframa?: string;
+}
+
+export interface RetencoesParceiro {
+  retemIrrf: boolean;
+  aliquotaIrrf?: number; // Ex: 1.5 ou 1.0
+  codigoReceitaIrrf?: string; // Ex: 1708, 8045
+  retemCrf: boolean; // PIS/COFINS/CSLL Lei 10.833
+  aliquotaCrf?: number; // 4.65%
+  retemInss: boolean; // Lei 8.212 / EFD-Reinf
+  aliquotaInss?: number; // 11% ou 3.5%
+  indicadorCprb?: boolean; // Desoneração da folha
+  retemIss: boolean;
+  aliquotaIss?: number; // 2% a 5%
+  codigoServicoMunicipal?: string;
+  regimeRetencaoPublica?: 'NA' | 'IN_1234_AMPLA' | 'LEI_9430';
+}
+
+export interface ContabilParceiro {
+  contaContabilCliente?: string; // Código Plano Referencial SPED
+  contaContabilFornecedor?: string;
+  centroCustoDefault?: string;
+  centroLucroDefault?: string;
+  condicaoPagamentoDias?: number;
+  limiteCredito?: number;
+  dadosBancarios?: {
+    bancoCodigo: string;
+    bancoNome: string;
+    agencia: string;
+    contaCorrente: string;
+    chavePix?: string;
+    tipoChavePix?: 'CNPJ' | 'CPF' | 'EMAIL' | 'TELEFONE' | 'ALEATORIA';
+  };
+  contatoFiscal?: {
+    nome: string;
+    email: string;
+    telefone: string;
+    crcContador?: string;
+  };
+}
+
+export interface ParceiroNegocio {
+  id: string;
+  tenantId?: string; // ID da empresa proprietária deste parceiro
+  tipoPessoa: TipoPessoaParceiro;
+  papel: PapelParceiro;
+  cpfCnpj: string; // Suporta CNPJ Numérico (14) ou CNPJ Alfanumérico (14 caracteres)
+  cnpjRaiz?: string; // 8 caracteres A-Z0-9
+  cnpjOrdem?: string; // 4 caracteres A-Z0-9
+  cnpjDv?: string; // 2 dígitos numéricos
+  idEstrangeiro?: string;
+  razaoSocial: string;
+  nomeFantasia?: string;
+  naturezaJuridica: string; // Ex: 2062, 2054, 2135, 1015
+  regimeTributario: RegimeTributarioParceiro;
+  esferaPublica: EsferaPublica;
+  segmento: SegmentoMercadologico;
+  cnaePrincipal: string;
+  cnaesSecundarios?: string[];
+  statusCadastro: 'A' | 'I' | 'B'; // Ativo, Inativo, Bloqueado
+  endereco: EnderecoParceiro;
+  fiscal: FiscalParceiro;
+  retencoes: RetencoesParceiro;
+  contabil: ContabilParceiro;
+  situacaoCadastralSefaz?: 'Habilitado' | 'Não Habilitado' | 'Baixado' | 'Inapto' | 'Não Consultado';
+  dataUltimaConsultaSefaz?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SimulacaoFiscalParceiro {
+  tipoOperacao: 'venda_mercadoria' | 'compra_insumo' | 'prestacao_servico' | 'tomada_servico' | 'remessa_industrializacao';
+  ufOrigem: string;
+  ufDestino: string;
+  cfopSugerido: string;
+  cstIcmsSugerido: string;
+  csosnSugerido?: string;
+  cstPisSugerido: string;
+  cstCofinsSugerido: string;
+  cstIpiSugerido?: string;
+  aliquotaIcms: number;
+  exigeDifalPartilha: boolean;
+  exigeFcp: boolean;
+  retencoesAplicadas: {
+    irrf: number;
+    pis: number;
+    cofins: number;
+    csll: number;
+    inss: number;
+    iss: number;
+    totalRetencoes: number;
+  };
+  observacoesFiscais: string[];
+}
+
 
 

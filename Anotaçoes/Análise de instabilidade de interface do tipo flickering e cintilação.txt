@@ -1,0 +1,35 @@
+Analise todo o sistema (frontend e, se aplicável, backend) em busca de 
+ocorrências de instabilidade de interface do tipo "flickering/cintilação 
+com falha no processamento de clique", que ocorre quando um botão, campo, 
+barra de rolagem ou componente interativo pisca, tremula ou re-renderiza 
+repetidamente, e o evento de clique/interação não é processado corretamente.
+
+Escopo da análise:
+1. Componentes de UI: botões, inputs, barras de rolagem, modais, dropdowns, 
+   listas com scroll infinito, tabelas com paginação.
+2. Padrões de código a investigar:
+   - Re-renderizações desnecessárias (ex.: useEffect sem dependências corretas, 
+     setState em loop, watchers mal configurados).
+	- Velocidade de Logar no sistema
+   - Conflitos de eventos (click, mousedown, mouseup, touchstart).
+   - Disputa ou perda de foco (focus/blur mal tratados).
+   - Sobreposição de elementos (z-index, position absolute/fixed).
+   - Requisições assíncronas concorrentes que atualizam o mesmo estado.
+   - Animações/transições CSS que conflitam com atualização de estado.
+   - Debounce/throttle ausente em eventos de scroll ou resize.
+
+Metodologia:
+1. Faça uma varredura estática no código-fonte procurando os padrões acima.
+2. Liste cada ocorrência com: arquivo, linha, trecho de código, e o padrão 
+   problemático identificado.
+3. Classifique cada ocorrência por severidade (Alta/Média/Baixa) considerando 
+   o impacto no usuário.
+4. Para cada ocorrência, sugira uma causa raiz provável e uma correção proposta.
+5. Agrupe os resultados por módulo/tela do sistema.
+
+Formato de saída esperado:
+- Tabela ou lista com: Módulo | Arquivo/Linha | Componente | Padrão problemático 
+  | Severidade | Causa raiz provável | Sugestão de correção.
+- Resumo executivo no topo com a quantidade total de ocorrências por severidade.
+
+Não corrija o código ainda — apenas gere o relatório de análise para revisão.

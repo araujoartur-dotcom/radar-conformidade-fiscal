@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Building2, ShieldCheck, Key, FileCheck, Layers, Plus, Search,
   CheckCircle2, AlertTriangle, Lock, RefreshCw, Upload, Sparkles, Filter,
-  Users, Trash2, ArrowUpRight, Database, FolderCheck, Check, Edit3
+  Users, Trash2, ArrowUpRight, Database, FolderCheck, Check, Edit3, Eye, EyeOff
 } from 'lucide-react';
 import { ClienteEmpresaTenant, CertificadoA1 } from '../types';
 import { useApi } from '../hooks/useApi';
@@ -51,10 +51,13 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   // Modal Editar CNPJ
   const [editingTenant, setEditingTenant] = useState<ClienteEmpresaTenant | null>(null);
 
-  // Certificate Upload Handling
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const [tenantForCert, setTenantForCert] = useState<string | null>(null);
-  const [certPasswords, setCertPasswords] = useState<Record<string, string>>({});
+  // Modal Ativar Certificado A1 (.PFX)
+  const [certModalTenant, setCertModalTenant] = useState<ClienteEmpresaTenant | null>(null);
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPassword, setCertPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isCertSubmitting, setIsCertSubmitting] = useState(false);
+  const certFileInputRef = React.useRef<HTMLInputElement>(null);
 
   // ── CARREGAR EMPRESAS DO BANCO DE DADOS ─────────────────
   const loadTenants = async () => {
@@ -89,34 +92,25 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     loadTenants();
   }, []);
 
-  const handleCertUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !tenantForCert) return;
-
-    const password = certPasswords[tenantForCert];
-    if (!password) {
-      alert('Por favor, informe a senha do certificado A1 no campo ao lado antes de selecionar o arquivo .PFX.');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-
-    const targetTenant = tenants.find(t => t.cnpjCompleto === tenantForCert);
-    if (!targetTenant) return;
+  // ── SUBMIT CERTIFICADO A1 (Arquivo + Senha Juntos) ─────────
+  const handleCertSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!certFile || !certModalTenant || !certPassword) return;
 
     const formData = new FormData();
-    formData.append('certificado', file);
-    formData.append('tenantId', targetTenant.id);
-    formData.append('senha', password);
+    formData.append('certificado', certFile);
+    formData.append('tenantId', certModalTenant.id);
+    formData.append('senha', certPassword);
 
-    setIsLoading(true);
+    setIsCertSubmitting(true);
     const res = await uploadFile('/config/certificate/upload', formData);
-    setIsLoading(false);
+    setIsCertSubmitting(false);
 
     if (res.ok && res.data?.data) {
       const certData = res.data.data;
 
       setTenants(prev => prev.map(t => {
-        if (t.cnpjCompleto === tenantForCert) {
+        if (t.id === certModalTenant.id || t.cnpjCompleto === certModalTenant.cnpjCompleto) {
           return {
             ...t,
             certificadoA1: certData,
@@ -126,30 +120,34 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         return t;
       }));
 
-      onSelectTenantCnpj(tenantForCert);
+      onSelectTenantCnpj(certModalTenant.cnpjCompleto);
       setCertificado({
         fileName: certData.fileName,
         status: certData.status,
         validade: certData.validade,
-        cnpj: tenantForCert,
-        razãoSocial: targetTenant.razaoSocial,
+        cnpj: certModalTenant.cnpjCompleto,
+        razãoSocial: certModalTenant.razaoSocial,
         tipo: 'e-CNPJ A1'
       });
 
-      setTenantForCert(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setCertModalTenant(null);
+      setCertFile(null);
+      setCertPassword('');
+      alert('Certificado A1 vinculado e ativado com sucesso!');
     } else {
-      alert(res.error || 'Erro ao enviar certificado.');
+      alert(res.error || 'Erro ao enviar e ativar certificado.');
     }
   };
+
+  const deferredSearchTerm = React.useDeferredValue(searchTerm);
 
   const groupsAvailable = Array.from(new Set(tenants.map(t => t.grupoContabilCliente || 'Sem Grupo')));
 
   const tenantsFiltered = tenants.filter(t => {
     const matchesSearch =
-      t.cnpjCompleto.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.razaoSocial.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      t.nomeFantasia.toLowerCase().includes(searchTerm.toLowerCase());
+      t.cnpjCompleto.toLowerCase().includes(deferredSearchTerm.toLowerCase()) ||
+      t.razaoSocial.toLowerCase().includes(deferredSearchTerm.toLowerCase()) ||
+      t.nomeFantasia.toLowerCase().includes(deferredSearchTerm.toLowerCase());
     const matchesGroup = selectedGroupFilter === 'todos' || t.grupoContabilCliente === selectedGroupFilter;
     return matchesSearch && matchesGroup;
   });
@@ -257,14 +255,6 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Hidden File Input for Certificate */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pfx,.p12,.pem"
-        className="hidden"
-        onChange={handleCertUpload}
-      />
 
       {/* Filters & Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
@@ -459,52 +449,49 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
               {/* Certificate A1 Status Box */}
               <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center justify-between text-xs mt-3">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <Key className={`w-4 h-4 ${tenant.certificadoA1 ? 'text-emerald-400' : 'text-amber-400'}`} />
                   <div>
                     <div className="font-bold text-white text-[11px]">
-                      {tenant.certificadoA1 ? 'Certificado Vinculado' : 'Certificado Pendente'}
+                      {tenant.certificadoA1 ? 'Certificado Digital A1 Ativo' : 'Certificado A1 Pendente'}
                     </div>
                     <div className="text-[10px] text-slate-400 font-mono">
-                      {tenant.certificadoA1 ? `${tenant.certificadoA1.fileName} (Venc: ${tenant.certificadoA1.validade})` : 'Certificado A1'}
+                      {tenant.certificadoA1 ? `${tenant.certificadoA1.fileName} (Venc: ${tenant.certificadoA1.validade})` : 'Nenhum certificado .PFX vinculado'}
                     </div>
                   </div>
                 </div>
 
                 {!tenant.certificadoA1 ? (
-                  <div className="flex items-center gap-2" data-form-type="other">
-                    <div className="relative w-32">
-                      <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1.5" />
-                      <input
-                        type="password"
-                        name={`pfx_password_field_${tenant.id}`}
-                        autoComplete="new-password"
-                        data-lpignore="true"
-                        data-1p-ignore="true"
-                        data-bwignore="true"
-                        data-form-type="other"
-                        placeholder="Senha"
-                        value={certPasswords[tenant.cnpjCompleto] || ''}
-                        onChange={(e) => setCertPasswords({ ...certPasswords, [tenant.cnpjCompleto]: e.target.value })}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-                      />
-                    </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCertModalTenant(tenant);
+                      setCertFile(null);
+                      setCertPassword('');
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer shrink-0"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>Ativar Certificado A1</span>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      Ativo
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
-                        setTenantForCert(tenant.cnpjCompleto);
-                        fileInputRef.current?.click();
+                        setCertModalTenant(tenant);
+                        setCertFile(null);
+                        setCertPassword('');
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
+                      title="Substituir por um novo certificado A1"
                     >
-                      <Upload className="w-3.5 h-3.5" />
-                      Ativar A1
+                      Trocar .PFX
                     </button>
                   </div>
-                ) : (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold font-mono bg-emerald-950 text-emerald-300 border border-emerald-800">
-                    A1 Ativo
-                  </span>
                 )}
               </div>
             </div>
@@ -728,6 +715,150 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                   className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold"
                 >
                   Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ativar / Vincular Certificado Digital A1 */}
+      {certModalTenant && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-950 border border-indigo-800 text-indigo-400">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white">
+                    Vincular Certificado Digital A1
+                  </h3>
+                  <p className="text-xs text-cyan-300 font-mono">
+                    {certModalTenant.razaoSocial} ({certModalTenant.cnpjCompleto})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCertModalTenant(null)}
+                className="text-slate-400 hover:text-white text-sm font-bold p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCertSubmit} className="space-y-4 text-xs">
+              {/* Step 1: File selection */}
+              <div>
+                <label className="font-bold text-slate-300 block mb-1.5 flex items-center justify-between">
+                  <span>1. Selecione o arquivo do Certificado (.PFX ou .P12) *</span>
+                  {certFile && (
+                    <span className="text-[10px] text-emerald-400 font-normal flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Arquivo pronto
+                    </span>
+                  )}
+                </label>
+                <div
+                  onClick={() => certFileInputRef.current?.click()}
+                  className={`p-5 border-2 border-dashed rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center gap-2 text-center ${
+                    certFile
+                      ? 'border-emerald-500/60 bg-emerald-950/20 text-emerald-300 shadow-inner'
+                      : 'border-slate-700 hover:border-indigo-500 bg-slate-950/60 hover:bg-slate-950 text-slate-400'
+                  }`}
+                >
+                  <input
+                    ref={certFileInputRef}
+                    type="file"
+                    accept=".pfx,.p12,.pem"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setCertFile(e.target.files[0]);
+                    }}
+                  />
+                  {certFile ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        <FileCheck className="w-5 h-5 text-emerald-400" />
+                        <span className="font-mono">{certFile.name}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Tamanho: {(certFile.size / 1024).toFixed(1)} KB (Clique para trocar de arquivo)
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="w-7 h-7 text-indigo-400" />
+                      <span className="text-xs font-semibold text-slate-200">
+                        Clique aqui para escolher o arquivo .PFX ou .P12
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        Padrão ICP-Brasil (e-CNPJ A1)
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Step 2: Password */}
+              <div>
+                <label className="font-bold text-slate-300 block mb-1.5">
+                  2. Senha do Certificado Digital A1 *
+                </label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-bwignore="true"
+                    placeholder="Digite a senha de proteção do arquivo..."
+                    value={certPassword}
+                    onChange={(e) => setCertPassword(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 font-mono focus:outline-none focus:border-indigo-500"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer p-1"
+                    title={showPassword ? 'Ocultar senha' : 'Ver senha'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1.5 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>A senha e a chave privada são criptografadas com AES-256-GCM no cofre seguro.</span>
+                </p>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setCertModalTenant(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={!certFile || !certPassword || isCertSubmitting}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-indigo-600/30 transition-all cursor-pointer disabled:opacity-40 flex items-center gap-2"
+                >
+                  {isCertSubmitting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Validando e Ativando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-cyan-300" />
+                      <span>Validar e Ativar Certificado</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

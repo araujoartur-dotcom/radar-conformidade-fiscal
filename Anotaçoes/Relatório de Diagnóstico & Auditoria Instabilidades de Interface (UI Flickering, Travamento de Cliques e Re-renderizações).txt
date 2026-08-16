@@ -1,0 +1,87 @@
+Relatório de Diagnóstico & Auditoria: Instabilidades de Interface (UI Flickering, Travamento de Cliques e Re-renderizações)
+📊 Resumo Executivo
+Severidade	Quantidade	Impacto Principal
+🔴 Alta	4	Perda de cliques em botões, travamento no login (cold start), layout shifts que movem o alvo do clique e cadeia de re-renders em cascata no App.tsx.
+🟡 Média	5	Falta de debounce em campos de busca causando travamento de digitação, dropdowns sem outside-click handler e disputa de eventos entre linha de tabela e botões de ação.
+🟢 Baixa	3	Paint loops por animações CSS contínuas (animate-pulse) e ausência de scrollbar-gutter: stable.
+TOTAL	12	Ocorrências mapeadas e diagnosticadas
+🔍 Tabela Consolidada de Ocorrências
+Módulo / Tela	Arquivo / Linha	Componente / Elemento	Padrão Problemático	Severidade	Causa Raiz Provável	Sugestão de Correção
+Autenticação & Sessão	
+
+Login.tsx:14-44
+Botão "Entrar no Sistema" e Form de Login	Falha no clique por Cold Start assíncrono sem feedback de conexão ou timeout	🔴 Alta	No Render gratuito, o servidor entra em suspensão (sleep mode). A requisição demora até 50s para responder, sem timeout ou indicador de reconexão, gerando cliques repetidos e sensação de congelamento.	Inserir timeout de 15s com mensagem amigável de "Acordando servidor em nuvem..." e desabilitar o botão com estado isSubmitting imediato.
+Arquitetura Global / Raiz	
+
+App.tsx:71-86, 150-160
+Timer de Lote (elapsedSeconds) e Re-render Raiz	Re-renderização global desnecessária a cada segundo	🔴 Alta	O estado elapsedSeconds reside no componente raiz App.tsx. A cada 1.000ms de processamento, o App inteiro e todas as suas abas filhas re-renderizam, gerando cintilação e descartando cliques em andamento.	Mover o estado do cronômetro exclusivamente para dentro de ConsultaLotePanel.tsx ou isolá-lo com React.memo.
+Layout & Rolagem Global	
+
+App.tsx:358, 378
+, 
+
+index.css
+Containers independentes .custom-scrollbar	Layout Shift repentino no surgimento da barra de rolagem	🔴 Alta	Quando o conteúdo ultrapassa a altura da tela, a barra de rolagem (5px a 15px) surge repentinamente, deslocando os elementos horizontalmente e fazendo o clique do mouse errar o botão alvo (click misfire).	Adicionar a regra CSS scrollbar-gutter: stable; nos containers com rolagem independente.
+Cabeçalho & Multi-Tenant	
+
+Header.tsx:123-176
+Dropdown de Seleção de Empresa Ativa	Disputa de foco e ausência de outside-click listener	🔴 Alta	Ao abrir o dropdown de empresas e clicar em outro botão adjacente (ex: ambiente SEFAZ), o dropdown não fecha via listener global, interceptando cliques ou deixando a lista suspensa.	Implementar listener de mousedown no document para fechar o dropdown ao clicar fora ou usar overlay transparente.
+Gestão de Empresas	
+
+CarteiraCnpjsPanel.tsx:63-87
+loadTenants() e setEmpresaAtiva()	Cascata de efeitos cíclicos (State Thrashing)	🟡 Média	loadTenants dispara setEmpresaAtiva no AuthContext, que por sua vez aciona o useEffect de loadDocumentos no App.tsx, gerando requisições duplicadas e piscadas nos cards.	Condicionar a atualização de setEmpresaAtiva apenas quando o ID da empresa ativa realmente tiver sido alterado (prev?.id !== next.id).
+Buscas & Filtros Gerais	
+
+CarteiraCnpjsPanel.tsx:280-320
+, 
+
+ParceirosNegocioPanel.tsx:120-140
+Inputs de Busca em Tempo Real	Falta de Debounce causando travamento de digitação	🟡 Média	A cada tecla digitada (onChange), a lista inteira é filtrada de forma síncrona, travando a thread principal de UI em computadores mais lentos e causando perda de foco no input.	Implementar useDeferredValue (React 19) ou debounce de 250ms no filtro de busca.
+Gestão de XMLs (DF-e)	
+
+DfeManagerPanel.tsx:83-125
+Upload em Lote de Arquivos XML	Concorrência assíncrona sem Abort Controller	🟡 Média	O loop de leitura de múltiplos arquivos XML dispara post() e setDfeList() assincronamente sem cancelamento caso o usuário mude de módulo durante o upload.	Utilizar Promise.allSettled() em lote único e verificar se o componente ainda está montado antes de atualizar o estado.
+Tabelas & Seleção de Linhas	
+
+ResultadosTable.tsx:110-180
+, 
+
+EventosDfePanel.tsx:450-520
+Linhas da Tabela vs Botões de Ação	Propagação de eventos não tratada (Event Bubbling)	🟡 Média	Clicar em botões internos de ação da linha (ex: Ver DANFE, Baixar XML) propaga o evento de clique para a linha pai <tr>, disparando seleção de linha e fechamento indesejado de modais.	Adicionar e.stopPropagation() em todos os botões de ação situados dentro de linhas clicáveis de tabelas.
+Observabilidade & DLQ	
+
+ObservabilidadeDlqPanel.tsx:237-251
+Botão "Reprocessar Tarefa DLQ"	Ausência de desabilitação imediata de botão (Double Click Race)	🟡 Média	Clicar rapidamente duas vezes no botão de reprocessar dispara duas chamadas concorrentes antes que o estado status: 'reprocessado' seja consolidado.	Adicionar estado local processingTaskIds: Set<string> e desabilitar o botão com spinner durante o processamento.
+Animações CSS & Cabeçalho	
+
+Header.tsx:101
+Indicador Verde de Status Conectado	Paint Loop contínuo com animate-pulse em elemento fixo	🟢 Baixa	A classe animate-pulse força o navegador a recalcular camadas de composição gráfica constantemente no topo da tela, gerando micro-cintilação em monitores de alta taxa (120Hz/144Hz).	Substituir por animação via CSS GPU opacity estática ou transform: translateZ(0) otimizado.
+Modais & Transições	Modais com Tailwind animate-in fade-in	Modais de Cadastro e Certificado	Interceptação de clique durante transição CSS	🟢 Baixa	Nos primeiros 200ms da animação de abertura do modal, cliques em inputs ou botões podem falhar se a matriz de escala (zoom-in) estiver recalculando dimensões.	Utilizar pointer-events-auto explícito e garantir foco automático (autoFocus) no primeiro campo após a montagem.
+Tabelas & Parâmetros Fiscais	
+
+TabelasFiscaisPanel.tsx:140-190
+Abas de Parâmetros Fiscais	Re-renderização completa da lista de regras ao trocar de aba	🟢 Baixa	Ao alternar entre as abas cClassTrib, Alíquotas e CFOP, todas as tabelas são reconstruídas do zero sem reaproveitamento de DOM.	Utilizar display: none ou abas com React.memo para preservar o estado de rolagem e renderização anterior.
+🎯 Detalhamento das 4 Principais Causas Raízes & Soluções Recomendadas
+1. Re-renderização Global do App.tsx pelo Cronômetro de Lote
+Diagnóstico: O cronômetro de consulta em lote (elapsedSeconds) está declarado no escopo de App.tsx e dispara um setInterval a cada 1 segundo. Isso força a árvore de componentes inteira a re-renderizar 60 vezes por minuto, mesmo quando o usuário está digitando em outro módulo.
+Correção Proposta: Mover o timerRef e elapsedSeconds exclusivamente para o componente 
+
+ConsultaLotePanel.tsx
+.
+2. Deslocamento de Layout (Layout Shift) nas Barras de Rolagem
+Diagnóstico: Quando uma lista é filtrada ou expandida, a barra de rolagem surge dinamicamente e empurra o conteúdo 10px para a esquerda no exato milissegundo em que o usuário clica com o mouse, fazendo o clique "errar" o botão.
+Correção Proposta: Inserir no 
+
+src/index.css
+:
+css
+html, .custom-scrollbar {
+  scrollbar-gutter: stable;
+}
+3. Falta de Fechamento Externo no Dropdown do Cabeçalho
+Diagnóstico: Ao abrir a lista de empresas ativas e clicar fora, o dropdown permanece aberto e intercepta os cliques em outros botões.
+Correção Proposta: Adicionar um hook useOutsideClick ou um backdrop transparente com z-index inferior que feche o menu ao primeiro toque fora.
+4. Double Click e Falta de Debounce nas Listas de Busca
+Diagnóstico: Em telas com grande volume de dados (como Parceiros de Negócio e DF-e XMLs), a digitação direta sem debounce dispara filtragens pesadas de arrays a cada caractere, congelando o frame rate da tela.
+Correção Proposta: Utilizar o hook useDeferredValue(search) nativo do React 19 para adiar o recálculo da lista sem travar o input de digitação.
+(Conforme solicitado, nenhum código foi modificado nesta etapa. Este relatório está pronto para sua avaliação das correções a serem priorizadas!)

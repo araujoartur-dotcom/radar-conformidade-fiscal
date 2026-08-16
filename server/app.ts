@@ -25,6 +25,7 @@ import directoriesRoutes from './routes/directories';
 import usersRoutes from './routes/users';
 import certificatesRoutes from './routes/certificates';
 import auditRoutes from './routes/audit';
+import partnersRoutes from './routes/partners';
 
 export const app = express();
 
@@ -60,6 +61,7 @@ app.use('/api/tenants', tenantsRoutes);
 app.use('/api/directories', directoriesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/partners', partnersRoutes);
 
 // =========================================================
 // HEALTH CHECK

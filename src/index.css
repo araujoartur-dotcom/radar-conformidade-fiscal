@@ -7,6 +7,10 @@
   }
 }
 
+html, body {
+  scrollbar-gutter: stable;
+}
+
 /* Custom sleek discrete scrollbar styling */
 ::-webkit-scrollbar {
   width: 5px;
@@ -30,6 +34,7 @@
 .custom-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(51, 65, 85, 0.5) transparent;
+  scrollbar-gutter: stable;
 }
 
 .custom-scrollbar::-webkit-scrollbar {

@@ -1,0 +1,201 @@
+Created CADASTRO_MESTRE_FISCAL_PARCEIROS.md
+
+# 🏛️ Modelo de Arquitetura de Dados Mestres & Cadastro Fiscal de Parceiros de Negócio (Tax Business Partner)
+
+Para atender a **todas as naturezas jurídicas, regimes tributários e segmentos econômicos do Brasil** sem retrabalho manual em ERPs de grande porte (*SAP S/4HANA BP, Oracle ERP Cloud, Microsoft Dynamics 365*), o cadastro de parceiros de negócio deve operar como o **coração do motor de regras fiscais (Tax Engine)**.
+
+O modelo completo foi projetado e documentado no arquivo de especificação técnica:  
+👉 [`CADASTRO_MESTRE_FISCAL_PARCEIROS.md`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/CADASTRO_MESTRE_FISCAL_PARCEIROS.md)
+
+Abaixo está o detalhamento estruturado das 6 dimensões do modelo:
+
+---
+
+## 1. IDENTIFICAÇÃO E CLASSIFICAÇÃO
+
+### 1.1 Entidade Central: `PARCEIRO_NEGOCIO`
+| Campo | Tipo / Tamanho | Domínio / Regras | Validação & Papel Fiscal |
+| :--- | :--- | :--- | :--- |
+| **`ID_PARCEIRO`** | UUID | Chave primária imutável | Identificador unificado para SPED e ERP. |
+| **`TIPO_PESSOA`** | VARCHAR(2) | `PJ` (Jurídica), `PF` (Física), `EX` (Estrangeiro) | Direciona os blocos de validação de CPF/CNPJ ou Tax ID. |
+| **`CPF_CNPJ`** | VARCHAR(14) | 11 dígitos (PF) ou 14 dígitos (PJ) | Validação por algoritmo Módulo 11 oficial da RFB. |
+| **`ID_ESTRANGEIRO`** | VARCHAR(20) | Alfanumérico (Passaporte/VAT/Tax ID) | Obrigatório para tipo `EX` (importação/exportação). |
+| **`RAZAO_SOCIAL`** | VARCHAR(150) | Texto oficial na Receita Federal | Nome completo sem abreviações arbitrárias. |
+| **`NOME_FANTASIA`**| VARCHAR(100) | Nome comercial / marca | Exibição em DANFE e relatórios operacionais. |
+| **`NATUREZA_JURIDICA`**| VARCHAR(4) | Tabela oficial CONCLA/RFB (`2062`, `2054`, `2135`, `1015`, etc.) | Determina se é Órgão Público, S/A, MEI, Associação ou LTDA. |
+| **`REGIME_TRIBUTARIO`**| VARCHAR(2) | `01` - Simples Nacional<br>`02` - Simples (Excesso Sublimite)<br>`03` - Lucro Presumido<br>`04` - Lucro Real<br>`05` - Imune/Isento<br>`06` - MEI | **Crítico:** Define se a operação gera crédito de PIS/COFINS, se exige CSOSN ou CST e alíquotas de retenção. |
+| **`ESFERA_PUBLICA`**| VARCHAR(2) | `NA` (Não Aplicável), `FE` (Federal), `ES` (Estadual), `MU` (Municipal) | Obrigatório para Natureza Jurídica `1xxx`. Aplica IN RFB 1.234/2012 e imunidade recíproca. |
+| **`SEGMENTO`** | VARCHAR(3) | `IND` (Indústria), `COM` (Comércio), `SER` (Serviços), `CON` (Construção), `RUR` (Produtor Rural), `FIN` (Financeiro), `SAU` (Saúde), `EDU` (Educação) | Direciona regras de apropriação de créditos e benefícios fiscais. |
+| **`CNAE_PRINCIPAL`**| VARCHAR(7) | Numérico (7 dígitos) | CNAE primário registrado no CNPJ. |
+| **`CNAES_SECUNDARIOS`**| JSON Array | `["6201501", "6202300"]` | Validação de retenções para notas de serviços mistos. |
+| **`SUFRAMA`** | VARCHAR(9) | Numérico (9 dígitos) | Desoneração de PIS/COFINS e ICMS em ZFM e Áreas de Livre Comércio. |
+
+---
+
+## 2. DADOS FISCAIS, ENQUADRAMENTOS E RETENÇÕES
+
+### 2.1 Inscrições e Indicadores de Contribuinte
+- **Inscrição Estadual (`INSCRICAO_ESTADUAL`):** Validada via **CCC SEFAZ** por UF. Se não contribuinte, preencher `ISENTO` ou nulo.
+- **Indicador da IE (`IND_IE_DESTINATARIO`):**
+  - `1 - Contribuinte de ICMS`: Exige IE válida no CCC. Habilita cálculo de ICMS interestadual padrão e ST.
+  - `2 - Contribuinte Isento`: Possui IE, mas é isento de inscrição em cadastro próprio.
+  - `9 - Não Contribuinte`: **Ativa o cálculo automático de DIFAL Partilha (EC 87/2015)** em operações interestaduais e FCP (Fundo de Combate à Pobreza).
+- **Indicador de Contribuinte IPI (`IND_CONTRIBUINTE_IPI`):** Define destaque de IPI ou suspensão por equiparação industrial.
+- **Substituto Tributário (`IND_SUBSTITUTO_TRIB`):** Habilita apuração por MVA/IVA-ST e emissão com CST `10`, `30` ou `70`.
+- **Produtor Rural (`IND_PRODUTOR_RURAL`):** Aplica regras de Funrural, emissão via NF-e Avulsa (NFA-e) e diferimento.
+
+### 2.2 Motor de Retenções na Fonte (Parceiro como Fornecedor/Prestador)
+```
+┌────────────────────────┬────────────────────────────────┬────────────────────────────────────────────────────────┐
+│ Tributo Retido         │ Base Legal                     │ Regra e Tratamento no Cadastro                         │
+├────────────────────────┼────────────────────────────────┼────────────────────────────────────────────────────────┤
+│ IRRF (Serviços)        │ RIR/2018 (Arts. 647 e 714)     │ 1,5% (serviços intelectuais) ou 1,0% (limpeza/vigilância). Disparado por CNAE/Código de Serviço. │
+│ PIS/COFINS/CSLL (CRF)  │ Lei 10.833/2003 (Art. 30)      │ 4,65% (0,65% PIS + 3,0% COFINS + 1,0% CSLL). Travado em FALSE para optantes pelo Simples/MEI.  │
+│ INSS Retenção          │ Lei 8.212/91 / IN RFB 2.110    │ 11% (ou 3,5% com CPRB) para cessão de mão de obra e empreitada. Vinculado a EFD-Reinf R-2010.   │
+│ ISS Retido na Fonte    │ LC 116/2003 (Art. 3º e 6º)     │ 2% a 5% retido conforme local da prestação vs. domicílio do tomador (CPOM/DDA).       │
+│ Retenção Órgão Público │ IN RFB 1.234/2012              │ Retenção ampla combinada (IR + CSLL + PIS + COFINS) no pagamento.                      │
+└────────────────────────┴────────────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. MAPEAMENTO COMPLETO PARA OBRIGAÇÕES ACESSÓRIAS (SPED & SCANC)
+
+### 3.1 SPED Fiscal (EFD ICMS/IPI)
+| Registro SPED | Campo Destino no SPED | Origem no Cadastro do Parceiro | Regra de Preenchimento |
+| :--- | :--- | :--- | :--- |
+| **0150** | `COD_PART` | `ID_PARCEIRO` ou Código ERP | Código único e imutável do participante. |
+| **0150** | `NOME` | `RAZAO_SOCIAL` | Razão Social oficial. |
+| **0150** | `COD_PAIS` | `COD_PAIS_BACEN` | Código BACEN (`1058` para Brasil). |
+| **0150** | `CNPJ` / `CPF` | `CPF_CNPJ` | Formatado apenas com números (14 ou 11 posições). |
+| **0150** | `IE` | `INSCRICAO_ESTADUAL` | Formatado sem pontuação ou `ISENTO`. |
+| **0150** | `COD_MUN` | `COD_MUNICIPIO_IBGE` | Código IBGE oficial de 7 dígitos do município fiscal. |
+| **0150** | `SUFRAMA` | `SUFRAMA` | Código Suframa (9 dígitos). |
+| **0150** | `END`, `NUM`, `BAIRRO` | Endereço Fiscal | Dados cadastrais validados via CEP/Correios. |
+| **0175** | Alteração Cadastral | Histórico de Log | Gerado automaticamente quando Razão Social ou Endereço mudar na competência. |
+| **0400** | Natureza da Operação | `SEGMENTO` + `REGIME` | Vincula a CFOPs de Compra/Venda/Remessa/Devolução. |
+| **C100/C190** | CFOP e CST ICMS | `UF_PARCEIRO` vs `UF_EMITENTE` | Operação interna (`1xxx`/`5xxx`), interestadual (`2xxx`/`6xxx`) ou exterior (`3xxx`/`7xxx`). |
+
+### 3.2 SPED Contribuições (EFD PIS/COFINS)
+| Registro SPED | Campo Destino no SPED | Origem no Cadastro do Parceiro | Regra de Preenchimento |
+| :--- | :--- | :--- | :--- |
+| **0150** | `COD_PART` | `ID_PARCEIRO` | Mesma chave de participante usada no SPED Fiscal. |
+| **C100 / C170** | `CST_PIS` e `CST_COFINS`| `REGIME_TRIBUTARIO` | **Lucro Real:** CSTs `50 a 66` (crédito básico). **Simples Nacional:** Crédito vedado (Art. 3º Lei 10.833/03). |
+| **F500 / F550** | Regime de Caixa/Competência | `REGIME_TRIBUTARIO` | Escrituração de receitas para optantes pelo Lucro Presumido. |
+
+### 3.3 SCANC (Sistema de Captação e Auditoria dos Anexos de Combustíveis)
+- **Código de Distribuidor/TRR ANP (`COD_ANP_DISTRIBUIDOR`):** Obrigatório no cadastro para refinarias, distribuidoras e TRRs.
+- **Inscrição Estadual de Substituto Tributário por UF (`IE_ST_DESTINO`):** Permite a emissão e repasse de ICMS Monofásico interestadual nos termos do Convênio ICMS 110/2007 e LC 192/2022.
+- **Identificação do Consumidor Final (`IND_CONSUMIDOR_FINAL`):** Fundamental para segregação de relatórios SCANC entre vendas destinadas a consumo e operações para revenda/redistribuição.
+
+### 3.4 EFD-Reinf & DCTFWeb
+- **Evento R-2010 / R-2020 (INSS Retenção):** Disparado quando `RETEM_INSS = TRUE`, indicando o CNPJ do prestador e a alíquota (11% ou 3,5% no caso de desoneração da folha/CPRB).
+- **Evento R-4010 / R-4020 (IRRF e CRF PIS/COFINS/CSLL):** Vincula as retenções à Natureza do Rendimento (Ex: `17001` - Serviços de consultoria/TI prestados por PJ) gerando os débitos automáticos para a DCTFWeb.
+
+---
+
+## 4. MATRIZ DE REGRAS DE NEGÓCIO E SELETORES INTELIGENTES
+
+O formulário de cadastro deve conter regras lógicas automáticas para evitar erros tributários:
+
+```
+[Seleção de Natureza Jurídica: 2135 - MEI]
+  ├──> Regime Tributário: TRAVADO em "06 - MEI"
+  ├──> Contribuinte IPI: TRAVADO em "FALSE"
+  ├──> Retenção CRF (Lei 10.833): TRAVADO em "FALSE" (Isento por lei)
+  └──> Alerta de Teto: Limite de R$ 81.000,00/ano monitorado nas compras/vendas.
+
+[Seleção de Natureza Jurídica: 1015 / 1023 / 1031 - Órgão Público]
+  ├──> Esfera Pública: OBRIGATÓRIA ("Federal", "Estadual" ou "Municipal")
+  ├──> Indicador de IE: "9 - Não Contribuinte" (ou Isento)
+  ├──> Retenção na Fonte ao Pagar: Habilitar "IN RFB 1.234/2012 Ampla"
+  └──> Destaque de ICMS em Vendas: Isenção / Imunidade Recíproca (Art. 150, VI, 'a' da CF/88).
+
+[Seleção de Natureza Jurídica: 2046 / 2054 - Sociedade Anônima (S/A)]
+  ├──> Regime Tributário: BLOQUEADO para "01 - Simples Nacional"
+  └──> Regime Permitido: "03 - Lucro Presumido" ou "04 - Lucro Real".
+```
+
+---
+
+## 5. EXEMPLOS PRÁTICOS EM FORMATO JSON (INTEGRAÇÃO COM ERP)
+
+### Exemplo A: Prestador de Serviços de TI (Lucro Real)
+```json
+{
+  "id": "bp-99410-ti",
+  "tipoPessoa": "PJ",
+  "cnpj": "12.345.678/0001-90",
+  "razaoSocial": "CLOUD TECH CONSULTORIA EM SOFTWARE LTDA",
+  "naturezaJuridica": "2062",
+  "regimeTributario": "04",
+  "segmento": "SER",
+  "cnaePrincipal": "6201501",
+  "inscricaoMunicipal": "981273-0",
+  "indContribuinteIcms": "9",
+  "retemIrrf": true,
+  "retemCrf": true,
+  "retemInss": false,
+  "retemIss": false,
+  "codigoServicoLc116": "01.01",
+  "endereco": {
+    "logradouro": "Av. Paulista",
+    "numero": "1000",
+    "bairro": "Bela Vista",
+    "codMunicipioIbge": "3550308",
+    "municipio": "São Paulo",
+    "uf": "SP",
+    "cep": "01310100"
+  },
+  "contabil": {
+    "contaFornecedor": "2.01.01.02.0041",
+    "centroCustoDefault": "CC_TECNOLOGIA"
+  }
+}
+```
+
+### Exemplo B: MEI (Microempreendedor Individual)
+```json
+{
+  "id": "bp-88123-mei",
+  "tipoPessoa": "PJ",
+  "cnpj": "34.567.890/0001-12",
+  "razaoSocial": "JOSE DA SILVA MANUTENCOES ELETRICAS 12345678900",
+  "nomeFantasia": "SILVA ELETRICA",
+  "naturezaJuridica": "2135",
+  "regimeTributario": "06",
+  "segmento": "SER",
+  "cnaePrincipal": "4321500",
+  "inscricaoMunicipal": "54321-8",
+  "indContribuinteIcms": "9",
+  "retemIrrf": false,
+  "retemCrf": false,
+  "retemInss": false,
+  "retemIss": false,
+  "endereco": {
+    "logradouro": "Rua Central",
+    "numero": "45",
+    "bairro": "Bairro Novo",
+    "codMunicipioIbge": "3550308",
+    "municipio": "São Paulo",
+    "uf": "SP",
+    "cep": "02000000"
+  }
+}
+```
+
+---
+
+## 6. WORKFLOW DE GOVERNANÇA E QUALIDADE DE DADOS (MDM)
+
+Para garantir **compliance contínuo e zero retrabalho**:
+1. **Esteira de 4 Etapas:**  
+   `Solicitação Inicial (Portal/Compras)` ➔ `Validação Automatizada por API (RFB + CCC SEFAZ)` ➔ `Aprovação Fiscal / MDM` ➔ `Ativação no ERP`.
+2. **Auditoria Periódica de Inaptidão:**  
+   O sistema executa rotinas quinzenais via API do CCC SEFAZ para auditar o status das Inscrições Estaduais da carteira, bloqueando automaticamente parceiros com IE suspensa ou baixada para evitar multas em emissão de notas.
+3. **Versionamento e Trilha de Auditoria (Registro 0175 do SPED):**  
+   Todas as alterações de Razão Social, Endereço ou Regime geram um histórico com `Data de Início`, `Data de Fim` e `Justificativa`, alimentando automaticamente o Registro 0175 da EFD.
+
+---
+
+> ℹ️ **Nota:** Nenhuma alteração foi commitada ou enviada para deploy, conforme a sua instrução. O documento completo foi registrado em [`CADASTRO_MESTRE_FISCAL_PARCEIROS.md`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/CADASTRO_MESTRE_FISCAL_PARCEIROS.md). Quando tiver as próximas orientações ou ajustes, é só me avisar!

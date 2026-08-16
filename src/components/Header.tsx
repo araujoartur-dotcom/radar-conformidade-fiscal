@@ -30,6 +30,22 @@ export const Header: React.FC<HeaderProps> = ({
   const { post } = useApi();
   const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
+  const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  // Outside click listener for tenant dropdown
+  React.useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsTenantDropdownOpen(false);
+      }
+    };
+    if (isTenantDropdownOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [isTenantDropdownOpen]);
 
   const handleSelectEmpresa = async (empresa: any) => {
     if (empresa.id === empresaAtiva?.id) {
@@ -78,6 +94,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Gestão de Acessos', icon: Lock, color: 'text-indigo-400' };
       case 'carteira_cnpjs':
         return { title: 'Cadastro de Empresas', icon: Building2, color: 'text-emerald-400' };
+      case 'parceiros_negocio':
+        return { title: 'Parceiros de Negócio (MDM Fiscal)', icon: Users, color: 'text-cyan-400' };
       case 'observabilidade_dlq':
         return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
       default:
@@ -118,7 +136,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-3 shrink-0">
           
           {/* Tenant / Empresa Ativa Switcher Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsTenantDropdownOpen(prev => !prev)}
               disabled={isSwitching}

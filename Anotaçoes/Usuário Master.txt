@@ -1,0 +1,3 @@
+Usuário Master
+login: admin@radarfiscal.com.br
+senha: Admin@RadarFiscal2026!

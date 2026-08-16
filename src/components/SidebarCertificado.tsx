@@ -45,6 +45,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       items: [
         { id: 'acesso_corporativo' as QueryMode, label: 'Gestão de Acessos', icon: Lock, accent: 'cyan' },
         { id: 'carteira_cnpjs' as QueryMode, label: 'Cadastro de Empresas', icon: Building2, accent: 'emerald' },
+        { id: 'parceiros_negocio' as QueryMode, label: 'Parceiros de Negócio (MDM)', icon: Users, accent: 'cyan' },
       ]
     },
     {

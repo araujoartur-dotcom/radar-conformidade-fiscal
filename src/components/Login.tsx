@@ -8,20 +8,36 @@ export function Login() {
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isWakingServer, setIsWakingServer] = useState(false);
   
   const { login } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     setLoading(true);
     setError('');
+    setIsWakingServer(false);
+
+    // Timeout alert for cold start (5s timer)
+    const wakeTimer = setTimeout(() => {
+      setIsWakingServer(true);
+    }, 4000);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     try {
       const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, senha }),
+        signal: controller.signal
       });
+
+      clearTimeout(wakeTimer);
+      clearTimeout(timeoutId);
 
       const text = await response.text();
       let data: any = {};
@@ -37,8 +53,15 @@ export function Login() {
 
       login(data.accessToken, data.usuario, data.empresaAtiva, data.empresasDisponiveis);
     } catch (err: any) {
-      setError(err.message);
+      clearTimeout(wakeTimer);
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        setError('O servidor demorou para responder (Cold Start da nuvem). Por favor, tente novamente em alguns segundos.');
+      } else {
+        setError(err.message || 'Falha de conexão com o servidor.');
+      }
     } finally {
+      setIsWakingServer(false);
       setLoading(false);
     }
   };
@@ -59,8 +82,15 @@ export function Login() {
             </p>
           </div>
 
+          {isWakingServer && !error && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 mb-6 flex gap-3 text-amber-300 text-xs items-center animate-pulse">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0 text-amber-400" />
+              <p>Conectando e inicializando servidor em nuvem (Render)... aguarde alguns instantes.</p>
+            </div>
+          )}
+
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-6 flex gap-3 text-red-400 text-sm items-start">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-6 flex gap-3 text-red-400 text-sm items-start">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <p>{error}</p>
             </div>
