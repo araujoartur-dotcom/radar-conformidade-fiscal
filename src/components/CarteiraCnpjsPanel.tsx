@@ -86,38 +86,30 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [newTelefone, setNewTelefone] = useState('');
   const [newEmail, setNewEmail] = useState('');
 
-  // Contador (SPED 0100)
-  const [newContadorNome, setNewContadorNome] = useState('SILVA & ASSOCIADOS AUDITORIA CONTABIL');
-  const [newContadorCpf, setNewContadorCpf] = useState('123.456.789-00');
-  const [newContadorCrc, setNewContadorCrc] = useState('SP-123456/O-0');
+  // Contador (SPED 0100) — Campos Opcionais
+  const [newContadorNome, setNewContadorNome] = useState('');
+  const [newContadorCpf, setNewContadorCpf] = useState('');
+  const [newContadorCrc, setNewContadorCrc] = useState('');
   const [newContadorUfCrc, setNewContadorUfCrc] = useState('SP');
-  const [newContadorCnpjEscritorio, setNewContadorCnpjEscritorio] = useState('00.123.456/0001-99');
-  const [newContadorCep, setNewContadorCep] = useState('01310-100');
-  const [newContadorLogradouro, setNewContadorLogradouro] = useState('Avenida Paulista');
-  const [newContadorNumero, setNewContadorNumero] = useState('1000');
-  const [newContadorComplemento, setNewContadorComplemento] = useState('Conjunto 501');
-  const [newContadorBairro, setNewContadorBairro] = useState('Bela Vista');
-  const [newContadorCodMun, setNewContadorCodMun] = useState('3550308');
-  const [newContadorTelefone, setNewContadorTelefone] = useState('(11) 3250-0000');
-  const [newContadorEmail, setNewContadorEmail] = useState('contabilidade@silvaauditoria.com.br');
+  const [newContadorCnpjEscritorio, setNewContadorCnpjEscritorio] = useState('');
+  const [newContadorCep, setNewContadorCep] = useState('');
+  const [newContadorLogradouro, setNewContadorLogradouro] = useState('');
+  const [newContadorNumero, setNewContadorNumero] = useState('');
+  const [newContadorComplemento, setNewContadorComplemento] = useState('');
+  const [newContadorBairro, setNewContadorBairro] = useState('');
+  const [newContadorCodMun, setNewContadorCodMun] = useState('');
+  const [newContadorTelefone, setNewContadorTelefone] = useState('');
+  const [newContadorEmail, setNewContadorEmail] = useState('');
 
   // Modal Editar CNPJ
   const [editingTenant, setEditingTenant] = useState<ClienteEmpresaTenant | null>(null);
 
   const handleOpenEdit = (tenant: ClienteEmpresaTenant) => {
-    setEditingTenant(tenant);
-    setNewCnpj(tenant.cnpjCompleto);
-    setNewRazaoSocial(tenant.razaoSocial);
-    setNewNomeFantasia(tenant.nomeFantasia || tenant.razaoSocial);
-    setNewUf(tenant.uf);
-    setNewRegime(tenant.regimeTributario);
-    setNewGrupo(tenant.grupoContabilCliente || 'Carteira Geral');
-    setNewIe(tenant.ie || '');
-    setNewIm(tenant.im || '');
-    setNewCnae(tenant.cnaePrincipal || '');
-    setNewCodMunIbge(tenant.codMunicipioIbge || '3550308');
-    setNewManifestarCiencia(tenant.manifestarCienciaAutomatica ?? true);
-    setShowAddModal(true);
+    setEditingTenant({
+      ...tenant,
+      manifestarCienciaAutomatica: tenant.manifestarCienciaAutomatica !== false
+    });
+    setModalTab('identificacao');
   };
 
   // Modal Ativar Certificado A1 (.PFX)
@@ -424,6 +416,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       nomeFantasia: editingTenant.nomeFantasia,
       uf: editingTenant.uf,
       regimeTributario: editingTenant.regimeTributario,
+      manifestarCienciaAutomatica: editingTenant.manifestarCienciaAutomatica !== false,
       ie: editingTenant.ie,
       im: editingTenant.im,
       cnaePrincipal: editingTenant.cnaePrincipal,
@@ -1441,10 +1434,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-300 block mb-1">Nome do Contador Responsável *</label>
+                      <label className="font-bold text-slate-300 block mb-1">Nome do Contador Responsável (Opcional)</label>
                       <input
                         type="text"
-                        placeholder="Nome Completo do Contador..."
+                        placeholder="Nome Completo do Contador (Opcional)..."
                         value={newContadorNome}
                         onChange={(e) => setNewContadorNome(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
@@ -1452,7 +1445,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">CPF do Contador *</label>
+                      <label className="font-bold text-slate-300 block mb-1">CPF do Contador (Opcional)</label>
                       <input
                         type="text"
                         placeholder="000.000.000-00"
@@ -1465,7 +1458,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Registro no CRC *</label>
+                      <label className="font-bold text-slate-300 block mb-1">Registro no CRC (Opcional)</label>
                       <input
                         type="text"
                         placeholder="Ex: SP-123456/O-0"
@@ -1933,6 +1926,33 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       />
                     </div>
                   </div>
+
+                  {/* Opção Manifestação Automática de Ciência da Operação */}
+                  <div className="p-3.5 bg-cyan-950/30 border border-cyan-800/60 rounded-2xl flex items-center justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                        <span className="font-bold text-slate-100 text-xs">
+                          Manifestar Ciência da Emissão Automaticamente (Evento 210210 na SEFAZ)
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Quando ativado, a SEFAZ autoriza o download do XML completo (<code className="text-cyan-300">procNFe</code>) automaticamente sem retenção fiscal.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={editingTenant.manifestarCienciaAutomatica !== false}
+                        onChange={(e) => setEditingTenant({
+                          ...editingTenant,
+                          manifestarCienciaAutomatica: e.target.checked
+                        })}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -2098,10 +2118,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="font-bold text-slate-300 block mb-1">Nome do Contador Responsável *</label>
+                      <label className="font-bold text-slate-300 block mb-1">Nome do Contador Responsável (Opcional)</label>
                       <input
                         type="text"
-                        placeholder="Nome Completo do Contador..."
+                        placeholder="Nome Completo do Contador (Opcional)..."
                         value={editingTenant.contador?.nome || ''}
                         onChange={(e) => setEditingTenant({
                           ...editingTenant,
@@ -2112,7 +2132,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">CPF do Contador *</label>
+                      <label className="font-bold text-slate-300 block mb-1">CPF do Contador (Opcional)</label>
                       <input
                         type="text"
                         placeholder="000.000.000-00"
@@ -2128,7 +2148,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Registro no CRC *</label>
+                      <label className="font-bold text-slate-300 block mb-1">Registro no CRC (Opcional)</label>
                       <input
                         type="text"
                         placeholder="Ex: SP-123456/O-0"

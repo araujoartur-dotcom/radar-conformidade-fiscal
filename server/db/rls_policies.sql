@@ -6,6 +6,9 @@
 -- a nível de banco de dados (Kernel do PostgreSQL).
 -- ============================================================
 
+-- 0. GARANTIR COLUNAS RECENTES
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS manifestar_ciencia_automatica INTEGER DEFAULT 1;
+
 -- 1. HABILITAR ROW LEVEL SECURITY EM TODAS AS TABELAS MULTI-TENANT
 ALTER TABLE empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE certificados ENABLE ROW LEVEL SECURITY;
