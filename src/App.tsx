@@ -16,6 +16,7 @@ import { CarteiraCnpjsPanel, INITIAL_TENANTS } from './components/CarteiraCnpjsP
 import { ParceirosNegocioPanel } from './components/ParceirosNegocioPanel';
 import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
+import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, CnpjRaizDirectoryConfig, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { DEMO_CNPJS, queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { DEMO_DFE_ITEMS } from './utils/xmlParser';
@@ -430,6 +431,14 @@ export default function App() {
             {/* Mode 6: Integração ERP (SAP, Webhooks) */}
             {activeMode === 'integracao_erp' && (
               <ErpIntegrationPanel dfeList={dfeList} />
+            )}
+
+            {/* Mode 0: Central de KPIs & Dashboards Executivos (BI Fiscal) */}
+            {activeMode === 'central_kpis' && (
+              <CentralKpisPanel
+                dfeList={dfeList}
+                selectedTenantCnpj={selectedTenantCnpj}
+              />
             )}
 
             {/* Mode 7: Auditoria Fiscal & Cruzamento Cadastral */}

@@ -1,4 +1,4 @@
-export type QueryMode = 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -18,6 +18,37 @@ export interface UsuarioCorporativo {
   ultimoAcesso?: string;
 }
 
+export interface ContadorSped {
+  nome: string;
+  cpf: string;
+  crc: string; // Ex: SP-123456/O-0
+  ufCrc?: string;
+  cnpjEscritorio?: string;
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  codMunicipioIbge?: string; // 7 dígitos IBGE
+  municipio?: string;
+  uf?: string;
+  telefone?: string;
+  email?: string;
+}
+
+export interface EnderecoEmpresa {
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  codMunicipioIbge?: string;
+  municipio?: string;
+  uf?: string;
+  telefone?: string;
+  email?: string;
+}
+
 export interface ClienteEmpresaTenant {
   id: string;
   cnpjRaiz: string; // Primeiros 8 dígitos do CNPJ
@@ -26,7 +57,17 @@ export interface ClienteEmpresaTenant {
   nomeFantasia: string;
   grupoContabilCliente?: string; // Nome da Carteira / Cliente da Contabilidade
   uf: string;
-  regimeTributario: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI';
+  regimeTributario: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | string;
+  ie?: string; // Inscrição Estadual (SPED 0000)
+  im?: string; // Inscrição Municipal
+  cnaePrincipal?: string;
+  cnaeDescricao?: string;
+  codMunicipioIbge?: string; // 7 dígitos IBGE
+  suframa?: string;
+  perfilSped?: 'A' | 'B' | 'C'; // Perfil EFD Fiscal
+  indAtiv?: '0' | '1'; // 0 = Industrial ou equiparado, 1 = Outros
+  endereco?: EnderecoEmpresa; // SPED 0005
+  contador?: ContadorSped; // SPED 0100
   certificadoA1?: {
     fileName: string;
     validade: string; // YYYY-MM-DD

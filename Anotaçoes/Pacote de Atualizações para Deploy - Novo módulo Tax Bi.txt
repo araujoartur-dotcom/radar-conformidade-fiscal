@@ -1,0 +1,34 @@
+### 📦 Pacote de Atualizações para Deploy
+
+#### 1. 📊 Central de KPIs & Dashboards Fiscais (Tax Analytics BI) — **NOVO MÓDULO**
+* **Localização no Topo:** Adicionado como primeiro grupo do menu lateral (**`Painel Executivo & BI Fiscal`**).
+* **Gráfico de Volume de DF-e por Modelo:** Barras interativas com quantitativo e percentual de **NF-e (Mod 55)**, **NFC-e (Mod 65)**, **CT-e (Mod 57)**, **NFS-e** e **MDF-e (Mod 58)**.
+* **Decomposição da Reforma Tributária (EC 132/2023):** Gráficos comparativos de **Valor Total das Operações**, **CBS Federal (8,80%)**, **IBS Estadual (10,62%)** e **IBS Municipal (7,08%)**.
+* **Top 5 Parceiros Comerciais:** Tabela analítica com os maiores volumes e impacto financeiro/tributário.
+* **Filtros & Exportação:** Filtros por operação (Entradas/Saídas), períodos e botão **`Exportar Excel`**.
+
+---
+
+#### 2. ⚡ Fast Onboarding & Cadastro de Empresas em 1 Clique
+* **Banner de Consulta Rápida:** No topo do módulo de Cadastro de Empresas, o usuário digita o CNPJ e com 1 clique (`⚡ Consultar na Receita & Cadastrar`) o sistema busca na base oficial e abre o formulário com **100% dos dados pré-preenchidos**.
+* **Modal Cadastral em 4 Abas:**
+  1. 🏢 **Identificação & Fisco (0000)**
+  2. 📍 **Endereço & Contato (0005)**
+  3. 👨‍💼 **Contador Responsável (0100)** — com CPF, CRC e dados do escritório
+  4. 📑 **Automatismo SPED Bloco 0** — com pré-visualização e download do `BLOCO_0.TXT`
+* **Layout Modernizado:** Cards de KPIs no topo e alternador de visualização (**Grid de Cards** vs. **Tabela Executiva**).
+
+---
+
+#### 3. 🎯 Fidelidade Cadastral & Eliminação de Dados Fictícios
+* **Status Tributário e IE Reais:** Correção do algoritmo de parsing para respeitar o CNAE principal. Empresas de serviço puro (ex: Corretoras - CNAE 6622-3/00, Associações e Condomínios) não exibem mais `Habilitado` ou `CONTRIBUINTE NORMAL` indevidamente, refletindo com precisão o status de **Não Contribuinte / Isento**.
+
+---
+
+### 🛡️ Status de Validação
+* ✅ **Compilação do Frontend (`vite build`):** Executado e validado com **100% de sucesso (Código de saída 0)**.
+* ✅ **Integridade do Código:** 0 erros de TypeScript e sem quebras de dependência.
+
+---
+
+Deseja que eu execute o commit no Git e realize o **Deploy** agora?

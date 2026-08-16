@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import {
   Shield, Lock, Upload, Play, Pause, Square, Trash2, Download, Sliders, CheckCircle2, KeyRound, RefreshCw,
   FileSpreadsheet, Layers, Search, FileCode, Send, Database, ShieldAlert, ChevronRight, FileBarChart,
-  Building2, Users
+  Building2, Users, BarChart3, TrendingUp, Sparkles
 } from 'lucide-react';
 import { CertificadoA1, BatchStats, QueryMode } from '../types';
 
@@ -40,6 +40,12 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
   onExport,
 }) => {
   const navGroups = [
+    {
+      title: 'Painel Executivo & BI Fiscal',
+      items: [
+        { id: 'central_kpis' as QueryMode, label: 'Central de KPIs & Dashboards', icon: BarChart3, accent: 'cyan', badge: 'BI' },
+      ]
+    },
     {
       title: 'Acesso & Multi-Tenant CNPJ',
       items: [

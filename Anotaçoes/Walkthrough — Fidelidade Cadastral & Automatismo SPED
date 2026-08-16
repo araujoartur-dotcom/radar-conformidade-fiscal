@@ -1,0 +1,41 @@
+# Walkthrough — Fidelidade Cadastral & Automatismo SPED Bloco 0 (|0000|, |0005|, |0100|, |0150|)
+
+---
+
+## 1. O que foi Implementado e Corrigido
+
+### A. Correção da Fidelidade Cadastral no Parser de CNPJ e no Modal de Detalhes
+* **Eliminação de Dados Fictícios:** O sistema não assume mais `Habilitado` ou `CONTRIBUINTE NORMAL` para empresas que não possuem Inscrição Estadual (como corretoras, serviços de TI, consultorias e empresas puras do ISS).
+* **Detecção Inteligente de CNAE de Serviços:** Adicionada a função `isPureServiceCnae()` que mapeia divisões de CNAE puramente prestadoras de serviços (62, 63, 64, 65, 66, 68, 69, 70, 71, etc.).
+* **Status Preciso no CCC:** Se a empresa não tiver IE no retorno ou tiver CNAE de serviços, o sistema rotula claramente como:
+  * **Situação IE:** `Não Contribuinte (Isento de IE)` / `Não Consta no CCC`.
+  * **Tipo IE:** `NÃO CONTRIBUINTE`.
+* **Classificação Tributária Correta:** Separação fiel entre `Simples Nacional`, `MEI`, `Imune / Isento` (associações, condomínios, fundações) e `Regime Geral (Lucro Presumido / Real)`.
+
+---
+
+### B. Gestão Cadastral Avançada & Automatismo SPED Bloco 0
+No módulo de Gestão de Empresas/Clientes (`src/components/CarteiraCnpjsPanel.tsx`), foi implementada uma **Ficha Cadastral Enterprise em 4 Abas**:
+
+1. 🏢 **1. Identificação & Fisco (SPED 0000):**
+   * CNPJ, Razão Social, Nome Fantasia, UF, Grupo Contábil, Regime Tributário.
+   * Inscrição Estadual (IE), Inscrição Municipal (IM), CNAE Principal, Suframa.
+   * **Perfil SPED Fiscal:** `Perfil A (Mais Detalhado)`, `Perfil B (Médio)`, `Perfil C (Simplificado)`.
+   * **Indicador de Atividade:** `0 - Industrial ou Equiparado` ou `1 - Outros (Comércio / Serviços)`.
+
+2. 📍 **2. Endereço & Contato (SPED 0005):**
+   * CEP, Logradouro, Número, Complemento, Bairro, Município, Código IBGE (7 dígitos), Telefone e E-mail fiscal.
+
+3. 👨‍💼 **3. Contador Responsável (SPED 0100):**
+   * Nome do Contabilista, CPF, Registro no CRC (com UF do CRC), CNPJ do Escritório Contábil, CEP, Endereço, Código IBGE do município, Telefone e E-mail.
+
+4. 📑 **4. Automatismo SPED Bloco 0 (`|0000|`, `|0005|`, `|0100|`, `|0150|`):**
+   * **Visualizador em Tempo Real:** Formatação automática das linhas no layout oficial do Guia Prático da EFD ICMS/IPI e EFD Contribuições.
+   * **Copiar Registros:** Botões de cópia direta para cada registro (`|0000|`, `|0005|`, `|0100|`, `|0150|`).
+   * **Exportação Direta (.TXT):** Botão `Baixar BLOCO_0.TXT` gerando o arquivo pronto para importação e validação no PVA (Programa Validador e Assinador da Receita Federal).
+
+---
+
+## 2. Validação e Build
+
+* **Compilação Vite/TypeScript:** Executada com sucesso sem erros de tipagem (`npm run build` retornou código 0 com todos os módulos transformados).

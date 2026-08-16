@@ -1,3 +1,5 @@
 Usuário Master
 login: admin@radarfiscal.com.br
 senha: Admin@RadarFiscal2026!
+
+BI & Inteligência Fiscal (Tax Analytics)

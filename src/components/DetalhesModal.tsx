@@ -30,14 +30,24 @@ export const DetalhesModal: React.FC<DetalhesModalProps> = ({ item, onClose }) =
                   {item.uf}
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mt-0.5">
+              <div className="flex items-center gap-3 text-xs text-slate-400 font-mono mt-0.5 flex-wrap">
                 <span>CNPJ: <strong className="text-cyan-400">{item.cnpj}</strong></span>
                 <span>•</span>
-                <span>IE: <strong className="text-slate-200">{item.ie || 'ISENTO'}</strong></span>
+                <span>IE: <strong className="text-slate-200">{item.ie || 'Não Possui / Isento'}</strong></span>
                 {item.tipoIE && (
                   <>
                     <span>•</span>
-                    <span className="text-cyan-300 font-sans font-semibold text-[11px] bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">{item.tipoIE}</span>
+                    <span className={`font-sans font-bold text-[11px] px-2 py-0.5 rounded border ${
+                      item.tipoIE.includes('NÃO CONTRIBUINTE')
+                        ? 'bg-purple-950/60 text-purple-300 border-purple-800'
+                        : item.tipoIE.includes('SIMPLES')
+                        ? 'bg-amber-950/60 text-amber-300 border-amber-800'
+                        : item.tipoIE.includes('ISENTO')
+                        ? 'bg-blue-950/60 text-blue-300 border-blue-800'
+                        : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                    }`}>
+                      {item.tipoIE}
+                    </span>
                   </>
                 )}
               </div>
@@ -64,21 +74,26 @@ export const DetalhesModal: React.FC<DetalhesModalProps> = ({ item, onClose }) =
 
           <div>
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Inscrição Estadual (CCC)</span>
-            <div className="text-xs font-extrabold text-cyan-400 mt-0.5">
-              {item.situaçaoIE || 'Habilitado'}
+            <div className={`text-xs font-extrabold mt-0.5 ${
+              item.situaçaoIE === 'Habilitado' ? 'text-emerald-400' :
+              item.situaçaoIE === 'Não Habilitado' || item.situaçaoIE === 'Baixado' || item.situaçaoIE === 'Suspenso' ? 'text-rose-400' :
+              item.situaçaoIE === 'Isento' ? 'text-blue-300' :
+              'text-purple-300'
+            }`}>
+              {item.situaçaoIE || 'Não Contribuinte'}
             </div>
           </div>
 
           <div>
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Regime Tributário</span>
-            <div className="text-xs font-bold text-slate-200 mt-0.5">
-              {item.regimeTributario || 'Simples Nacional'}
+            <div className="text-xs font-bold text-amber-300 mt-0.5">
+              {item.regimeTributario || 'Regime Geral'}
             </div>
           </div>
 
           <div>
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Capital Social</span>
-            <div className="text-xs font-mono font-extrabold text-amber-400 mt-0.5">
+            <div className="text-xs font-mono font-extrabold text-white mt-0.5">
               {formatCurrency(item.capitalSocial)}
             </div>
           </div>

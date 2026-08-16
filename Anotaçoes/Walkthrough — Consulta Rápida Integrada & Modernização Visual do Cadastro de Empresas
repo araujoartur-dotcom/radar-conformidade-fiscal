@@ -1,0 +1,40 @@
+# Walkthrough — Consulta Rápida Integrada & Modernização Visual do Cadastro de Empresas
+
+---
+
+## 1. O que foi Implementado
+
+### A. Consulta Rápida & Onboarding em 1 Clique (Fast Onboarding)
+* **Barra de Ação Rápida no Topo do Cadastro de Empresas:**
+  * Inserido um banner com bordas em degradê ciano/azul e ícone `⚡` de alta visibilidade.
+  * O usuário informa o CNPJ (com formatação automática) e seleciona a UF.
+  * Botão de ação: **`⚡ Consultar na Receita & Cadastrar (+ Novo Cadastro)`**.
+  * Ao clicar, o sistema consulta a base oficial em tempo real (`lookupCnpj` via BrasilAPI / MinhaReceita / CNPJ.ws) e abre o **Modal Cadastral em 4 Abas** com **100% dos dados pré-preenchidos**:
+    * 🏢 **1. Identificação:** Razão Social, Fantasia, CNPJ, UF, Regime Tributário, IE, IM, CNAE Principal, Suframa, Perfil SPED ('A'), Tipo de Atividade ('0' Industrial ou '1' Outros).
+    * 📍 **2. Endereço (SPED 0005):** Logradouro, Número, Complemento, Bairro, CEP, Código IBGE (7 dígitos), Município, Telefone, E-mail.
+    * 👨‍💼 **3. Contador Responsável (SPED 0100):** Nome, CPF, CRC (com UF do CRC), CNPJ do Escritório Contábil, CEP, Endereço, Código IBGE, Telefone, E-mail.
+    * 📑 **4. Automatismo SPED Bloco 0:** Geração em tempo real dos registros `|0000|`, `|0005|`, `|0100|` e `|0150|` com botão de cópia e download do arquivo `BLOCO_0.TXT`.
+
+* **Autopreenchimento Inteligente Dentro do Modal (+ Novo CNPJ):**
+  * Na primeira aba do modal de cadastro manual, há uma barra de busca direta para autopreencher qualquer CNPJ com 1 clique (`⚡ Preencher Automaticamente`).
+
+---
+
+### B. Modernização do Layout & Experiência Visual
+1. **Cards de KPIs no Topo:**
+   * 🏢 **Total de Empresas:** Contagem geral de empresas/filiais cadastradas.
+   * 🛡️ **Certificados A1 Ativos:** Indicador de certificados instalados e válidos.
+   * ⚠️ **A1 Pendente:** Alerta de empresas sem certificado .PFX ativo.
+   * 📑 **SPED Bloco 0 Pronto:** Quantidade de empresas com conformidade cadastral pronta para a EFD.
+2. **Alternador de Visualização (Cards vs. Tabela):**
+   * **Visualização em Cards:** Grid moderno com status da SEFAZ, contagem de documentos XML capturados, validade do certificado e botões de ação rápida.
+   * **Visualização em Tabela:** Tabela executiva de alta densidade, ideal para visualização rápida de dezenas de clientes e filiais.
+3. **Distribuição Harmônica e Micro-Interações:**
+   * Animações de loading nos botões, badges em degradê (Lucro Real, Presumido, Simples, MEI), inputs sem flicker e layout responsivo.
+
+---
+
+## 2. Validação e Testes
+
+* **Compilação do Frontend (`npm run build`):**
+  * Vite compilou com sucesso (`built in 8.89s`) com **código de saída 0**.

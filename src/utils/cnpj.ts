@@ -257,12 +257,80 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   };
 }
 
+/**
+ * Identifica se a atividade CNAE é tipicamente de Serviços puros (não sujeita a ICMS estadual).
+ */
+function isPureServiceCnae(cnae: string): boolean {
+  if (!cnae) return false;
+  const cleanCnae = cnae.replace(/\D/g, '');
+  const prefix2 = cleanCnae.slice(0, 2);
+  const servicePrefixes = [
+    '62', '63', '64', '65', '66', '68', '69', '70', '71', '72',
+    '73', '74', '75', '78', '80', '81', '82', '85', '86', '87',
+    '88', '90', '91', '92', '93', '94', '95', '96'
+  ];
+  return servicePrefixes.includes(prefix2);
+}
+
+/**
+ * Determina com fidelidade o Regime Tributário a partir dos dados oficiais da Receita Federal.
+ */
+function determineTaxRegime(data: any): string {
+  const isMei = data.opcao_pelo_mei === true || data.simples?.optante_mei === 'Sim' || data.simples?.mei === 'Sim';
+  if (isMei) return 'MEI (Microempreendedor Individual)';
+
+  const isSimples = data.opcao_pelo_simples === true || data.simples?.optante_simples === 'Sim' || data.simples?.simples === 'Sim';
+  if (isSimples) return 'Simples Nacional';
+
+  const natJur = String(data.natureza_juridica || data.natureza_juridica_descricao || '');
+  if (natJur.includes('308') || natJur.includes('Condomínio') || natJur.includes('399') || natJur.includes('Associação') || natJur.includes('Fundação')) {
+    return 'Imune / Isento';
+  }
+
+  return 'Regime Geral (Lucro Presumido / Real)';
+}
+
+/**
+ * Determina com fidelidade a Inscrição Estadual e a situação cadastral no CCC/SEFAZ.
+ */
+function determineIeAndCccStatus(
+  rawIe: string | undefined | null,
+  cnae: string,
+  sitCNPJ: SituaçãoCNPJ
+): { ie: string; tipoIE: string; situaçaoIE: SituaçãoIE } {
+  const cleanIe = (rawIe || '').replace(/\D/g, '');
+  
+  if (cleanIe.length >= 6) {
+    return {
+      ie: rawIe || cleanIe,
+      tipoIE: 'CONTRIBUINTE ICMS',
+      situaçaoIE: sitCNPJ === 'ATIVA' ? 'Habilitado' : 'Não Habilitado'
+    };
+  }
+
+  if (isPureServiceCnae(cnae)) {
+    return {
+      ie: 'Não Possui / Isento',
+      tipoIE: 'NÃO CONTRIBUINTE',
+      situaçaoIE: 'Não Contribuinte'
+    };
+  }
+
+  return {
+    ie: 'Não Consta no CCC',
+    tipoIE: 'NÃO CONTRIBUINTE',
+    situaçaoIE: 'Não Contribuinte'
+  };
+}
+
 function parseBrasilApiResponse(data: any, formattedCnpj: string, defaultUf: string): Partial<CnpjLookupItem> {
   const uf = data.uf || defaultUf;
   const sitCNPJ: SituaçãoCNPJ = data.descricao_situacao_cadastral === 'ATIVA'
     ? 'ATIVA'
     : (data.descricao_situacao_cadastral as SituaçãoCNPJ || 'PENDENTE');
-  const sitIE: SituaçãoIE = sitCNPJ === 'ATIVA' ? 'Habilitado' : 'Não Habilitado';
+
+  const cnaePrincipal = data.cnae_fiscal ? `${data.cnae_fiscal}` : '';
+  const ieStatus = determineIeAndCccStatus(data.inscricao_estadual, cnaePrincipal, sitCNPJ);
 
   const sociosList = Array.isArray(data.qsa) && data.qsa.length > 0
     ? data.qsa.map((s: any) => ({
@@ -274,17 +342,17 @@ function parseBrasilApiResponse(data: any, formattedCnpj: string, defaultUf: str
   return {
     cnpj: formattedCnpj,
     uf: uf,
-    ie: data.inscricao_estadual || 'Consultar SEFAZ Estadual',
-    tipoIE: data.opcao_pelo_simples ? 'SIMPLES NACIONAL' : 'CONTRIBUINTE NORMAL',
-    situaçaoIE: sitIE,
+    ie: ieStatus.ie,
+    tipoIE: ieStatus.tipoIE,
+    situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
     naturezaJuridica: data.natureza_juridica || '',
     razaoSocial: data.razao_social || '',
     nomeFantasia: data.nome_fantasia || data.razao_social || '',
-    cnaePrincipal: data.cnae_fiscal ? `${data.cnae_fiscal}` : '',
+    cnaePrincipal: cnaePrincipal,
     cnaeDescricao: data.cnae_fiscal_descricao || '',
     dataAbertura: data.data_inicio_atividade || '',
-    regimeTributario: data.opcao_pelo_simples ? 'Simples Nacional' : 'Lucro Presumido / Real',
+    regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
     municipio: data.municipio || '',
@@ -302,7 +370,9 @@ function parseMinhaReceitaResponse(data: any, formattedCnpj: string, defaultUf: 
   const sitCNPJ: SituaçãoCNPJ = data.descricao_situacao_cadastral === 'ATIVA'
     ? 'ATIVA'
     : (data.descricao_situacao_cadastral as SituaçãoCNPJ || 'PENDENTE');
-  const sitIE: SituaçãoIE = sitCNPJ === 'ATIVA' ? 'Habilitado' : 'Não Habilitado';
+
+  const cnaePrincipal = data.cnae_fiscal ? `${data.cnae_fiscal}` : '';
+  const ieStatus = determineIeAndCccStatus(data.inscricao_estadual, cnaePrincipal, sitCNPJ);
 
   const sociosList = Array.isArray(data.qsa) && data.qsa.length > 0
     ? data.qsa.map((s: any) => ({
@@ -314,17 +384,17 @@ function parseMinhaReceitaResponse(data: any, formattedCnpj: string, defaultUf: 
   return {
     cnpj: formattedCnpj,
     uf: uf,
-    ie: 'Consultar SEFAZ Estadual',
-    tipoIE: data.opcao_pelo_simples ? 'SIMPLES NACIONAL' : 'CONTRIBUINTE NORMAL',
-    situaçaoIE: sitIE,
+    ie: ieStatus.ie,
+    tipoIE: ieStatus.tipoIE,
+    situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
     naturezaJuridica: data.natureza_juridica || '',
     razaoSocial: data.razao_social || '',
     nomeFantasia: data.nome_fantasia || data.razao_social || '',
-    cnaePrincipal: data.cnae_fiscal ? `${data.cnae_fiscal}` : '',
+    cnaePrincipal: cnaePrincipal,
     cnaeDescricao: data.cnae_fiscal_descricao || '',
     dataAbertura: data.data_inicio_atividade || '',
-    regimeTributario: data.opcao_pelo_simples ? 'Simples Nacional' : 'Lucro Presumido / Real',
+    regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
     municipio: data.municipio || '',
@@ -345,7 +415,10 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
   const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
   const activeIeForUf = ieList.find((i: any) => i.estado?.sigla === uf && i.ativo);
   const activeAnyIe = ieList.find((i: any) => i.ativo);
-  const primaryIe = activeIeForUf?.inscricao_estadual || activeAnyIe?.inscricao_estadual || ieList[0]?.inscricao_estadual || 'Consultar SEFAZ Estadual';
+  const foundIe = activeIeForUf?.inscricao_estadual || activeAnyIe?.inscricao_estadual || (ieList[0]?.ativo ? ieList[0]?.inscricao_estadual : undefined);
+
+  const cnaePrincipal = est.atividade_principal?.id ? `${est.atividade_principal.id}` : '';
+  const ieStatus = determineIeAndCccStatus(foundIe, cnaePrincipal, sitCNPJ);
 
   const sociosList = Array.isArray(data.socios)
     ? data.socios.map((s: any) => ({
@@ -357,25 +430,28 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
   return {
     cnpj: formattedCnpj,
     uf: uf,
-    ie: primaryIe,
-    tipoIE: est.inscricoes_estaduais?.length ? 'CONTRIBUINTE NORMAL' : 'NÃO CONTRIBUINTE',
-    situaçaoIE: sitCNPJ === 'ATIVA' ? 'Habilitado' : 'Não Habilitado',
+    ie: ieStatus.ie,
+    tipoIE: ieStatus.tipoIE,
+    situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
     naturezaJuridica: data.natureza_juridica?.descricao || '',
     razaoSocial: data.razao_social || '',
     nomeFantasia: est.nome_fantasia || data.razao_social || '',
-    cnaePrincipal: est.atividade_principal?.subclasse || '',
+    cnaePrincipal: cnaePrincipal,
     cnaeDescricao: est.atividade_principal?.descricao || '',
     dataAbertura: est.data_inicio_atividade || '',
-    regimeTributario: data.simples?.opcao_pelo_simples ? 'Simples Nacional' : 'Lucro Real / Presumido',
+    regimeTributario: determineTaxRegime(data),
     capitalSocial: Number(data.capital_social) || 0,
-    enderecoCompleto: [est.tipo_logradouro, est.logradouro, est.numero, est.complemento, est.bairro].filter(Boolean).join(', '),
+    enderecoCompleto: [est.tipo_logradouro, est.logradouro, est.numero, est.complemento, est.bairro].filter(Boolean).join(' '),
     municipio: est.cidade?.nome || '',
     cep: est.cep || '',
-    telefone: est.ddd1 ? `(${est.ddd1}) ${est.telefone1}` : '',
+    telefone: est.telefone1 || '',
     email: est.email || '',
     socios: sociosList,
     statusConsulta: 'sucesso',
     dataConsulta: new Date().toISOString()
   };
 }
+
+/** Alias for queryCnpjsData */
+export const lookupCnpj = queryCnpjsData;

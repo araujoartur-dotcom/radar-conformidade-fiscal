@@ -4,4 +4,3 @@ SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoa2tta2x6c3N0b3hvZW5weXVhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjgwMjE5OCwiZXhwIjoyMTAyMzc4MTk4fQ.8hywhez2ZUjCBpM8KevBsnpgYD_SNif7eB0SYDfXgxo
 JWT_SECRET=gere-um-segredo-forte-com-openssl-rand-hex-64-aqui
 
-Assim que fizer isso, o login com admin@radarfiscal.com.br e Admin@RadarFiscal2026! conectará instantaneamente no seu Supabase!

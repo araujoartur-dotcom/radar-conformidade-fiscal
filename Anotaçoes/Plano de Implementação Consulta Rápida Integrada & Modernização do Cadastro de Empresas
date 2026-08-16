@@ -1,0 +1,62 @@
+# Plano de Implementação — Consulta Rápida Integrada & Modernização do Cadastro de Empresas
+
+Este plano detalha a implementação do **mecanismo de busca automática de CNPJ com preenchimento instantâneo** no módulo de **Cadastro de Empresas** (`CarteiraCnpjsPanel.tsx`), além da reformulação visual para uma experiência premium, ágil e moderna.
+
+---
+
+## 1. Visão Geral da Solução
+
+### A. Consulta Rápida & Onboarding em 1 Clique (Fast Onboarding)
+* **Barra de Ação Rápida no Topo do Painel:**
+  * Campo de entrada para CNPJ (com máscara e suporte a CNPJ numérico/alfanumérico) + seletor de UF.
+  * Botão de destaque: **`⚡ Consultar na Receita & Cadastrar (+ Novo Cadastro)`**.
+  * Ao clicar, o sistema consulta a base oficial em tempo real (`lookupCnpj`) e abre imediatamente o **Modal Cadastral Enterprise em 4 Abas** com **100% dos dados já preenchidos**:
+    * 🏢 **1. Identificação & Fisco:** Razão Social, Fantasia, CNPJ, UF, Regime Tributário real, IE, IM, CNAE Principal, Suframa, Perfil SPED ('A'), Indicador de Atividade ('0'/'1').
+    * 📍 **2. Endereço & Contato (SPED 0005):** Logradouro, Número, Complemento, Bairro, CEP, Código IBGE (7 dígitos), Município, Telefone, E-mail.
+    * 👨‍💼 **3. Dados do Contador (SPED 0100):** Pré-preenchimento dos dados contábeis com vínculo do responsável técnico.
+    * 📑 **4. Automatismo SPED Bloco 0:** Geração em tempo real dos registros `|0000|`, `|0005|`, `|0100|` e `|0150|`.
+
+* **Autopreenchimento Inteligente Dentro do Próprio Modal:**
+  * Se o usuário abrir o modal de novo cadastro manualmente, terá uma barra de busca direta no topo da primeira aba para preencher tudo em 1 clique.
+
+---
+
+### B. Modernização do Layout e Experiência Visual
+1. **Cards de KPIs no Topo:**
+   * 🏢 **Total de Empresas:** Contagem total de matrizes e filiais.
+   * 🛡️ **Certificados A1 Ativos:** Status de certificados instalados e válidos.
+   * ⚠️ **Pendentes de Certificado:** Alerta de empresas sem certificado .PFX ativo.
+   * 📑 **SPED Bloco 0 Configurado:** Indicador de conformidade cadastral para EFD ICMS/IPI.
+2. **Alternador de Visualização (Grid vs. Tabela):**
+   * Visualização em **Cards Modernos** (com badges em degradê, status SEFAZ, validade do certificado).
+   * Visualização em **Tabela Executiva** (ideal para escritórios com dezenas de filiais/clientes).
+3. **Distribuição Harmônica e Micro-Interações:**
+   * Animações suaves de loading, badges informativos, botões de ação rápida (Selecionar Empresa, Editar & SPED, Vincular Certificado A1, Excluir).
+
+---
+
+## 2. Alterações Propostas
+
+### Frontend
+
+#### [MODIFY] [CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+* Integrar `lookupCnpj` e `formatCNPJ` de `src/utils/cnpj.ts`.
+* Adicionar estados para `quickLookupCnpj`, `quickLookupUf`, `isQuickSearching` e `viewMode` ('grid' | 'table').
+* Implementar a função `handleQuickLookupAndOpenAdd()` que busca os dados da Receita Federal e abre o modal pré-populado.
+* Inserir o Banner Superior de Consulta Rápida com botão de ação direta.
+* Inserir os 4 Cards de Resumo/KPIs no topo do painel.
+* Atualizar o Modal de Adição para suportar as 4 abas (Identificação, Endereço SPED 0005, Contador SPED 0100, SPED Bloco 0) com autopreenchimento instantâneo.
+* Renderizar a visualização em Grid e Tabela com filtros combinados por busca textual e grupo contábil.
+
+---
+
+## 3. Plano de Verificação
+
+### Teste Automatizado & Build
+* Executar `npm run build` para garantir zero erros de TypeScript e compilação limpa do Vite.
+
+### Verificação Funcional
+1. Digitar o CNPJ `31.758.338/0001-30` no banner de consulta rápida e clicar em **`⚡ Consultar na Receita & Cadastrar`**.
+2. Verificar se o modal abre instantaneamente com Razão Social, CNAE, Endereço, Município e Regime preenchidos com fidelidade.
+3. Salvar a nova empresa e conferir se aparece na listagem, pronta para vincular certificado e emitir Bloco 0 do SPED.
+4. Alternar entre as visualizações de Grid e Tabela.

@@ -1,0 +1,71 @@
+# 📋 Plano de Implementação: Automatismo SPED Bloco 0 (|0000|, |0005|, |0100| Contador, |0150| Participantes) & Correção de Fidelidade Cadastral
+
+---
+
+## 🎯 Objetivo
+1. **Automatismo SPED no Cadastro de Empresas ([`CarteiraCnpjsPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)):**
+   - Expandir o cadastro de clientes/empresas para conter a ficha cadastral completa com dados opcionais, fiscais e endereço (Bloco `|0000|` e `|0005|`).
+   - Adicionar o cadastro completo do **Contabilista / Contador Responsável (Registro `|0100|` do SPED)** (Nome, CPF, CRC, CNPJ da contabilidade, endereço, telefone, e-mail e código IBGE).
+   - Gerador automático das linhas SPED `|0000|`, `|0005|`, `|0100|` e `|0150|` (Participantes/Parceiros) com visualizador em tempo real, cópia rápida e exportação para o PVA (Validador da Receita Federal).
+2. **Correção de Fidelidade no Parser de CNPJ ([`src/utils/cnpj.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/cnpj.ts)) e Modal de Detalhes ([`src/components/DetalhesModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DetalhesModal.tsx)):**
+   - Eliminar a atribuição arbitrária de `Habilitado` e `Contribuinte Normal` para empresas sem IE (ex: Corretoras de Seguros CNAE 6622-3/00, Clínicas, Consultorias).
+   - Classificar com fidelidade: **`Não Contribuinte (Isento de IE)`**, **`Isento`**, **`Contribuinte ICMS`** e Regimes Tributários reais (**`Simples Nacional`**, **`MEI`**, **`Imune/Isento`**, **`Regime Geral - Presumido/Real`**).
+
+---
+
+## 🏗️ Alterações Propostas
+
+### 1. Tipagem & Modelo de Dados ([`src/types.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts))
+- Expandir `ClienteEmpresaTenant` para incluir:
+  - `dadosFiscais`: `ie`, `im`, `cnaePrincipal`, `cnaeDescricao`, `codMunicipioIbge`, `suframa`, `perfilSped` ('A'|'B'|'C'), `indAtiv` ('0' Industrial | '1' Outros).
+  - `endereco`: `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `municipio`, `uf`, `telefone`, `email`.
+  - `contador`: `nome`, `cpf`, `crc`, `ufCrc`, `cnpjEscritorio`, `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `codMunicipioIbge`, `municipio`, `uf`, `telefone`, `email`.
+
+### 2. Automatismo SPED Bloco 0 na Carteira de Empresas ([`src/components/CarteiraCnpjsPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx))
+- **Modal de Empresa com 4 Abas:**
+  1. 🏢 **1. Identificação & Contrato:** CNPJ, Razão Social, Fantasia, Grupo Contábil, Regime Tributário e Certificado A1.
+  2. 📍 **2. Endereço & Contato (SPED 0005):** Logradouro, CEP, Município IBGE, Telefone e E-mail.
+  3. 👨‍💼 **3. Dados do Contador (SPED 0100):** Nome, CPF, CRC/UF, CNPJ do escritório contábil, e-mail, telefone e endereço profissional.
+  4. 📑 **4. Gerador SPED Bloco 0 (|0000|, |0005|, |0100|, |0150|):** Visualização em tempo real das linhas formatadas para o SPED Fiscal (EFD ICMS/IPI) e SPED Contribuições, botão de cópia de cada registro e exportação `.txt`.
+
+### 3. Correção de Fidelidade Cadastral ([`src/utils/cnpj.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/cnpj.ts))
+- No `parseBrasilApiResponse` e `parseMinhaReceitaResponse`:
+  - Se a empresa for de atividade de serviços sem IE (ex: CNAE 6622-3/00, 6201-5/01, 8630-5/03) ou o campo `inscricao_estadual` estiver ausente/vazio:
+    * `ie`: `'Não Possui / Isento'`
+    * `tipoIE`: `'NÃO CONTRIBUINTE'`
+    * `situaçaoIE`: `'Não Contribuinte'`
+  - Tratar com fidelidade `opcao_pelo_simples` e `opcao_pelo_mei`:
+    * Se `opcao_pelo_mei` -> `'MEI (Microempreendedor Individual)'`
+    * Se `opcao_pelo_simples` -> `'Simples Nacional'`
+    * Se natureza jurídica de condomínio (308-5), associação (399-9), fundação (306-9) -> `'Imune / Isento'`
+    * Se não optante -> `'Regime Geral (Lucro Presumido / Real)'`
+
+### 4. Ajustes no Modal de Detalhes ([`src/components/DetalhesModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DetalhesModal.tsx))
+- Badges dinâmicos com cores e ícones corretos:
+  - `NÃO CONTRIBUINTE` (cinza/roxo discreto)
+  - `CONTRIBUINTE ICMS` (verde/ciano)
+  - `ISENTO` (azul)
+- Exibição de Regime Tributário claro e sem contradições.
+
+---
+
+## 🧪 Plano de Verificação
+
+### Casos de Teste Reais:
+1. **CNPJ 31.758.338/0001-30 (Silcorr Corretora de Seguros):**
+   - IE: `Não Possui / Isento`
+   - Tipo IE: `NÃO CONTRIBUINTE`
+   - Situação CCC: `Não Contribuinte (Sem IE)`
+   - Regime: `Simples Nacional` ou `Regime Geral (Presumido/Real)`
+2. **CNPJ 33.000.167/0001-01 (Petrobras):**
+   - IE: `81281882`
+   - Tipo IE: `CONTRIBUINTE NORMAL`
+   - Situação CCC: `Habilitado`
+   - Regime: `Lucro Real`
+3. **Módulo Cadastro de Empresa:**
+   - Preenchimento dos dados do Contador (CPF, CRC, Nome, etc.).
+   - Geração automática e conferência dos Registros:
+     - `|0000|017|0|...|`
+     - `|0005|...|`
+     - `|0100|NOME DO CONTADOR|CPF|CRC...|`
+     - `|0150|COD_PART|...|`

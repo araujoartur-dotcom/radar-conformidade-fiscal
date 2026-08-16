@@ -1,0 +1,80 @@
+# Plano de Implementação — Central de KPIs & Dashboards Fiscais (Tax BI)
+
+Este plano detalha a criação do novo módulo executivo **`📊 Central de KPIs & Dashboards`** posicionado no topo da barra de atividades, fornecendo análises visuais de **Volume de DF-e por Modelo**, **Faturamento/Compras Totais** e a **Decomposição Tributária da Reforma (CBS, IBS Estadual e IBS Municipal)**.
+
+---
+
+## 1. Visão Geral do Novo Módulo
+
+### A. Posicionamento Estratégico
+* Criado como o **primeiro grupo no Menu de Atividades** (`Painel Executivo & BI Fiscal` -> `Central de KPIs & Dashboards`).
+* Permite alternar a visão por:
+  * **Empresa / Tenant Ativo** ou **Consolidado de Todas as Empresas**.
+  * **Sentido da Operação:** `Todas`, `Entradas (Compras/Inbound)` ou `Saídas (Vendas/Outbound)`.
+  * **Período Temporal:** `Mês Atual (Agosto/2026)`, `Último Trimestre`, `Ano de 2026` ou `Personalizado`.
+
+---
+
+### B. Painéis & Gráficos do Dashboard
+
+1. 📌 **Cards Sintéticos de KPIs no Topo (Header Metrics):**
+   * 💵 **Valor Total Movimentado (R$):** Soma de todos os documentos fiscais selecionados.
+   * 📑 **Quantidade Total de DF-e:** Número consolidado de notas e conhecimentos.
+   * 🏛️ **Total CBS (Federal ~8,8%):** Estimativa da Contribuição sobre Bens e Serviços.
+   * 🗺️ **Total IBS UF (Estadual ~10,6%):** Parcela dos Estados no Imposto sobre Bens e Serviços.
+   * 🏙️ **Total IBS MUN (Municipal ~7,1%):** Parcela dos Municípios no Imposto sobre Bens e Serviços.
+
+2. 📊 **Gráfico 1: Volume de Notas Fiscais por Tipo de DF-e (Quantidade):**
+   * Gráfico de barras interativo com barras coloridas em degradê e contadores:
+     * **NF-e (Mod 55)** — Nota Fiscal Eletrônica (Indústria, Atacado, Grandes Operações).
+     * **NFC-e (Mod 65)** — Nota Fiscal de Consumidor Eletrônica (Varejo).
+     * **CT-e (Mod 57)** — Conhecimento de Transporte Eletrônico (Logística / Fretes).
+     * **NFS-e** — Nota Fiscal de Serviços Eletrônica.
+     * **MDF-e (Mod 58)** — Manifesto Eletrônico de Documentos Fiscais.
+   * Exibição de quantidade absoluta e percentual de participação no volume total.
+
+3. 💰 **Gráfico 2: Valor Total & Decomposição da Reforma Tributária (R$):**
+   * Gráficos de barras comparativos com valores em Reais (R$):
+     * **Valor Total dos DF-e**
+     * **Valor CBS (Federal)**
+     * **Valor IBS UF (Estadual)**
+     * **Valor IBS MUN (Municipal)**
+     * **Imposto Seletivo (IS)**
+   * Comparativo lado a lado da carga tributária estimada.
+
+4. 🏢 **Tabela Analítica: Top 5 Parceiros & Maiores Movimentações:**
+   * Lista dos 5 maiores clientes/fornecedores com CNPJ, Razão Social, UF, Volume de DF-e e Valor de CBS/IBS gerado.
+
+5. 📥 **Exportação de Relatório:**
+   * Botão para exportar os dados do Dashboard em planilha Excel (`.xlsx`) ou gerar relatório consolidado para impressão.
+
+---
+
+## 2. Arquitetura e Arquivos a Modificar
+
+### Frontend
+
+#### [MODIFY] [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+* Adicionar `'central_kpis'` ao union type `QueryMode`.
+
+#### [MODIFY] [SidebarCertificado.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SidebarCertificado.tsx)
+* Adicionar o grupo `Painel Executivo & BI Fiscal` no topo de `navGroups` apontando para `central_kpis`.
+
+#### [NEW] [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+* Criar o componente completo com cards de KPI, gráficos de barras interativos com SVG/CSS tokens harmonizados, filtros de operação/período e exportação.
+
+#### [MODIFY] [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx)
+* Importar e renderizar `CentralKpisPanel` quando `activeMode === 'central_kpis'`.
+
+---
+
+## 3. Plano de Verificação
+
+### Compilação e Build
+* Executar `npm run build` para garantir 0 erros de TypeScript e compilação limpa do Vite.
+
+### Verificação Funcional
+1. Acessar a aplicação e clicar em **`📊 Central de KPIs & Dashboards`** no topo do menu.
+2. Conferir os cards de KPIs sintéticos com valores monetários e volumetria.
+3. Verificar a renderização dos gráficos de barras (Quantidade por Tipo de DF-e e Decomposição CBS / IBS UF / IBS MUN).
+4. Testar a alternância de filtros (Todas as Operações, Entradas, Saídas, Períodos).
