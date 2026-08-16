@@ -129,11 +129,43 @@ export default function App() {
     }
   };
 
+  const syncEmpresaCertificado = async () => {
+    if (!empresaAtiva) return;
+    const res = await get<{ success: boolean; data: any[] }>('/tenants');
+    if (res.ok && res.data?.data) {
+      const activeTenant = res.data.data.find(
+        (t: any) => t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto
+      );
+      if (activeTenant?.certificadoA1) {
+        setCertificado({
+          fileName: activeTenant.certificadoA1.fileName,
+          cnpj: activeTenant.cnpjCompleto,
+          razãoSocial: activeTenant.razaoSocial,
+          tipo: 'e-CNPJ A1',
+          validade: activeTenant.certificadoA1.validade,
+          status: 'valido',
+          emissor: activeTenant.certificadoA1.emissor,
+          impressaoDigital: activeTenant.certificadoA1.impressaoDigital
+        });
+      } else {
+        setCertificado({
+          fileName: '',
+          cnpj: empresaAtiva.cnpjCompleto || '',
+          razãoSocial: empresaAtiva.razaoSocial || '',
+          tipo: 'e-CNPJ A1',
+          validade: '',
+          status: 'pendente'
+        });
+      }
+    }
+  };
+
   useEffect(() => {
-    if (empresaAtiva?.id) {
+    if (empresaAtiva?.id || empresaAtiva?.cnpjCompleto) {
+      syncEmpresaCertificado();
       loadDocumentos();
     }
-  }, [empresaAtiva?.id]);
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto]);
 
   // Stopwatch effect
   useEffect(() => {

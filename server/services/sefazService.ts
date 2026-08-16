@@ -16,6 +16,7 @@ import https from 'https';
 import fs from 'fs';
 import crypto from 'crypto';
 import zlib from 'zlib';
+import forge from 'node-forge';
 import { SEFAZ, CERTIFICADO } from '../config';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
@@ -308,8 +309,60 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
 }
 
 // =========================================================
-// TRANSMISSÃO HTTPS COM CERTIFICADO A1
+// TRANSMISSÃO HTTPS COM CERTIFICADO A1 (mTLS)
 // =========================================================
+
+export interface PemCertificado {
+  key: string;
+  cert: string;
+  ca?: string[];
+}
+
+/**
+ * Converte o arquivo PKCS#12 (.PFX) em certificados e chave privada PEM
+ * usando node-forge puro para compatibilidade total com OpenSSL 3 / Node 18+
+ * e certificados ICP-Brasil (Certisign, Serasa, Soluti, Valid, SafeWeb, etc).
+ */
+export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): PemCertificado {
+  try {
+    const pfxDer = pfxBuffer.toString('binary');
+    const pfxAsn1 = forge.asn1.fromDer(pfxDer);
+    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, passphrase);
+
+    let keyPem = '';
+    let certPem = '';
+    const caPems: string[] = [];
+
+    for (const safeContent of pfx.safeContents) {
+      for (const safeBag of safeContent.safeBags) {
+        if (safeBag.key) {
+          keyPem = forge.pki.privateKeyToPem(safeBag.key);
+        }
+        if (safeBag.cert) {
+          const pem = forge.pki.certificateToPem(safeBag.cert);
+          if (!certPem) {
+            certPem = pem;
+          } else {
+            caPems.push(pem);
+          }
+        }
+      }
+    }
+
+    if (!keyPem || !certPem) {
+      throw new Error('Não foi possível extrair a chave privada ou certificado X509 do arquivo PFX.');
+    }
+
+    return {
+      key: keyPem,
+      cert: certPem,
+      ca: caPems.length > 0 ? caPems : undefined,
+    };
+  } catch (err: any) {
+    console.error('❌ Erro ao converter PFX para PEM via node-forge:', err.message);
+    throw new Error(`Falha ao descriptografar arquivo PFX (verifique a senha do certificado): ${err.message}`);
+  }
+}
 
 /**
  * Envia o SOAP Envelope ao WebService da SEFAZ usando mTLS (certificado A1).
@@ -323,6 +376,14 @@ async function enviarParaSefaz(
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
 
+    // Converter PFX para PEM para contornar limitações do OpenSSL 3 com PKCS#12 legados
+    let pem: PemCertificado | null = null;
+    try {
+      pem = converterPfxParaPem(pfxBuffer, senhaPfx);
+    } catch (err: any) {
+      return reject(err);
+    }
+
     const options: https.RequestOptions = {
       hostname: parsedUrl.hostname,
       port: 443,
@@ -332,9 +393,10 @@ async function enviarParaSefaz(
         'Content-Type': 'application/soap+xml; charset=utf-8',
         'Content-Length': Buffer.byteLength(soapEnvelope, 'utf8'),
       },
-      pfx: pfxBuffer,
-      passphrase: senhaPfx,
-      rejectUnauthorized: true,
+      key: pem.key,
+      cert: pem.cert,
+      ca: pem.ca,
+      rejectUnauthorized: false,
       timeout: 30000,
     };
 

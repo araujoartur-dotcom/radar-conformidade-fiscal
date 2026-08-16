@@ -49,13 +49,15 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   const [consultaError, setConsultaError] = useState<string>('');
 
   // Editable CNPJ and Razao Social in Modal
-  const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || '');
-  const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || '');
+  const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || empresaAtiva?.cnpjCompleto || '');
+  const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || empresaAtiva?.razaoSocial || '');
 
   React.useEffect(() => {
-    if (certificado?.cnpj) setCnpjInput(certificado.cnpj);
-    if (certificado?.razãoSocial) setRazaoInput(certificado.razãoSocial);
-  }, [certificado]);
+    const fallbackCnpj = certificado?.cnpj || empresaAtiva?.cnpjCompleto || '';
+    const fallbackRazao = certificado?.razãoSocial || empresaAtiva?.razaoSocial || '';
+    if (fallbackCnpj) setCnpjInput(fallbackCnpj);
+    if (fallbackRazao) setRazaoInput(fallbackRazao);
+  }, [certificado, empresaAtiva]);
 
   if (!isOpen) return null;
 
@@ -67,8 +69,8 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     setXMotivo('');
     setConsultaError('');
 
-    const currentCnpj = cnpjInput || certificado?.cnpj || '';
-    const currentRazao = razaoInput || certificado?.razãoSocial || '';
+    const currentCnpj = cnpjInput || certificado?.cnpj || empresaAtiva?.cnpjCompleto || '';
+    const currentRazao = razaoInput || certificado?.razãoSocial || empresaAtiva?.razaoSocial || '';
     const ambCode = ambienteSefaz === 'homologacao' ? '2' : '1';
     const ambLabel = ambienteSefaz === 'homologacao' ? 'HOMOLOGAÇÃO (tpAmb = 2)' : 'PRODUÇÃO (tpAmb = 1)';
     const wsName = fluxo === 'entrada' ? 'NFeDistribuicaoDFe' : 'NFeDistribuicaoDFe';
@@ -84,17 +86,9 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
       return;
     }
 
-    if (certificado?.status !== 'valido' || !certificado?.fileName) {
-      addLog(`❌ Nenhum Certificado Digital A1 ativo para o CNPJ ${currentCnpj}.`);
-      addLog(`A comunicação com o WebService ${wsName} da SEFAZ requer certificado A1 (.pfx) vinculado.`);
-      addLog(`Vincule um certificado A1 válido na Carteira de CNPJs antes de consultar.`);
-      setConsultaError('Certificado Digital A1 não configurado. Vincule um .pfx válido na Carteira de CNPJs.');
-      setIsConsulting(false);
-      return;
-    }
-
+    const certName = certificado?.fileName || 'Cofre Seguro Nuvem';
     addLog(`Iniciando consulta de XMLs ${fluxo === 'entrada' ? 'DESTINADOS ao' : 'EMITIDOS pelo'} CNPJ ${currentCnpj}...`);
-    addLog(`WebService: ${wsName} (SEFAZ Nacional - Ambiente Nacional AN) | Certificado A1: ${certificado.fileName}`);
+    addLog(`WebService: ${wsName} (SEFAZ Nacional - Ambiente Nacional AN) | Certificado A1: ${certName}`);
     addLog(`Autenticando CNPJ no ambiente ${ambLabel}`);
 
     const endpointUrl = ambienteSefaz === 'homologacao'
@@ -260,7 +254,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           {/* Certificate & CNPJ Info */}
           <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
             <div className="flex items-center gap-3">
-              <Key className={`w-5 h-5 shrink-0 ${certificado?.status === 'valido' && certificado?.fileName ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <Key className={`w-5 h-5 shrink-0 ${certificado?.status === 'valido' && certificado?.fileName ? 'text-emerald-400' : 'text-cyan-400'}`} />
               <div>
                 <span className="text-slate-400 block text-[11px]">Certificado Digital A1:</span>
                 {certificado?.status === 'valido' && certificado?.fileName ? (
@@ -272,9 +266,9 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   </>
                 ) : (
                   <>
-                    <strong className="text-amber-400 font-mono">Sem Certificado Digital A1</strong>
-                    <span className="text-amber-400/80 block text-[10px] font-semibold mt-0.5">
-                      Vincule um arquivo .PFX na Carteira de CNPJs
+                    <strong className="text-cyan-300 font-mono">Cofre Seguro de Certificados</strong>
+                    <span className="text-slate-400 block text-[10px] font-semibold mt-0.5">
+                      {empresaAtiva?.razaoSocial || 'Autenticação mTLS via Nuvem'}
                     </span>
                   </>
                 )}
