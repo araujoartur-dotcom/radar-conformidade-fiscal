@@ -1,8 +1,8 @@
 /**
  * ============================================================
- * BANCO DE DADOS — SQLite (Local) ou Supabase (Serverless)
+ * BANCO DE DADOS — SQLite (Local) ou Supabase (Produção/Render)
  * ============================================================
- * Em serverless (Vercel), better-sqlite3 NÃO funciona.
+ * Todas as rotas em produção utilizam Supabase.
  * Todas as rotas devem verificar isSupabaseConfigured() primeiro.
  * O mock aqui evita crashes na importação das rotas que ainda
  * referenciam getDatabase().

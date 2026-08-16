@@ -3,7 +3,7 @@
  * EXPRESS APP — RADAR DE CONFORMIDADE FISCAL
  * ============================================================
  * Configuração limpa de middlewares e rotas.
- * Compatível com standalone (Node.js) e Vercel Serverless.
+ * Compatível com standalone (Node.js) e Render Backend.
  * ============================================================
  */
 

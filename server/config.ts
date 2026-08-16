@@ -2,7 +2,7 @@
  * ============================================================
  * CONFIGURAÇÃO CENTRAL DE CREDENCIAIS E SEGURANÇA
  * ============================================================
- * 100% compatível com Vercel Serverless (read-only filesystem).
+ * Configuração de ambiente e segurança para Node.js / Render.
  * ============================================================
  */
 
