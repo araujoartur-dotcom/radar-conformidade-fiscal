@@ -290,28 +290,6 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         </button>
       </div>
 
-      {/* Explanation Banner regarding Soft Limit & Cloud Architecture */}
-      <div className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/30 text-xs space-y-2 text-slate-300">
-        <div className="flex items-center gap-2 text-cyan-300 font-bold">
-          <Database className="w-4 h-4 text-cyan-400" />
-          <span>Isolamento Tenant & Capacidade de CNPJ Raiz:</span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] pt-1 font-mono">
-          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span className="text-slate-400 block text-[10px]">Limite CNPJ Raiz:</span>
-            <strong className="text-emerald-400">Sem limite rígido (Multi-Tenant Nuvem)</strong>
-          </div>
-          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span className="text-slate-400 block text-[10px]">Isolamento Contábil:</span>
-            <strong className="text-cyan-300">Particionamento Lógico por CNPJ</strong>
-          </div>
-          <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
-            <span className="text-slate-400 block text-[10px]">Gestão de Certificados:</span>
-            <strong className="text-indigo-300">Individuais A1 por Matriz/Filial</strong>
-          </div>
-        </div>
-      </div>
-
       {/* Filters Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
         <div className="relative w-full sm:w-80">
