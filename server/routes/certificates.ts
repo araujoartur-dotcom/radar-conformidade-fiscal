@@ -107,6 +107,9 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
     const fingerprint = `SHA256:${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
     const status = 'ok';
 
+    const fileBuffer = fs.readFileSync(file.path);
+    const base64Enc = `base64:${fileBuffer.toString('base64')}`;
+
     // 3. Salvar no Supabase ou SQLite
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -123,7 +126,7 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
           .insert({
             id,
             empresa_id: empresa.id,
-            arquivo_path_enc: file.path,
+            arquivo_path_enc: base64Enc,
             arquivo_nome: file.originalname,
             senha_enc: senhaEnc,
             iv: ivHex,
@@ -148,7 +151,7 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
           iv, auth_tag, validade, status_alerta, emissor, impressao_digital
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, empresa.id, file.path, file.originalname, senhaEnc,
+        id, empresa.id, base64Enc, file.originalname, senhaEnc,
         ivHex, authTag, validade, status, emissor, fingerprint
       );
     }

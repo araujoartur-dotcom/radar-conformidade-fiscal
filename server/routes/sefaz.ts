@@ -53,12 +53,22 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
     if (!empresa && isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        const { data: supaEmp } = await supabase
+        let { data: supaEmp } = await supabase
           .from('empresas')
           .select('*')
-          .or(`cnpj_completo.eq.${cnpj},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
+          .eq('cnpj_raiz', cleanCnpj.substring(0, 8))
           .limit(1)
           .maybeSingle();
+
+        if (!supaEmp) {
+          const { data: supaByCnpj } = await supabase
+            .from('empresas')
+            .select('*')
+            .eq('cnpj_completo', cnpj)
+            .limit(1)
+            .maybeSingle();
+          supaEmp = supaByCnpj;
+        }
 
         if (supaEmp) {
           empresa = supaEmp;
