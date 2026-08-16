@@ -18,6 +18,8 @@ import {
   Building2
 } from 'lucide-react';
 import { CertificadoA1, AmbienteSefaz, DfeXmlItem } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 interface ConsultaNsuModalProps {
   isOpen: boolean;
@@ -36,6 +38,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   onImportDfeItems,
   defaultFluxo = 'entrada'
 }) => {
+  const { token, empresaAtiva } = useAuth();
   const [fluxo, setFluxo] = useState<'entrada' | 'saida'>(defaultFluxo);
   const [ultNSU, setUltNSU] = useState<string>('000000000000000');
   const [isConsulting, setIsConsulting] = useState<boolean>(false);
@@ -102,14 +105,13 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     addLog(`Parâmetros: tpAmb=${ambCode}, cOrgaoAuthor=91 (AN), ultNSU=${ultNSU}`);
 
     try {
-      // Retrieve auth token from localStorage
-      const token = localStorage.getItem('radar_fiscal_token') || '';
+      const effectiveToken = token || localStorage.getItem('@RadarFiscal:token') || localStorage.getItem('radar_fiscal_token') || '';
 
-      const response = await fetch('/api/sefaz/distribui-dfe', {
+      const response = await fetch(`${getApiBaseUrl()}/sefaz/distribui-dfe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${effectiveToken}`,
         },
         body: JSON.stringify({
           cnpj: currentCnpj.replace(/\D/g, ''),
@@ -122,13 +124,12 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-        const errorMsg = errorData.error || `Erro HTTP ${response.status}`;
+        const errorMsg = errorData.error || errorData.message || `Erro HTTP ${response.status}`;
         addLog(`❌ Erro na comunicação com o backend: ${errorMsg}`);
 
         if (response.status === 404) {
-          addLog(`⚠️ Endpoint /api/sefaz/distribui-dfe ainda não implementado no backend.`);
-          addLog(`O endpoint de Distribuição DF-e (consulta NSU real via SOAP+mTLS) será adicionado na Fase 2.`);
-          setConsultaError('Endpoint de Distribuição DF-e ainda não implementado no servidor backend. Fase 2 pendente.');
+          addLog(`⚠️ Endpoint /sefaz/distribui-dfe não encontrado no backend.`);
+          setConsultaError('Endpoint de Distribuição DF-e não localizado no backend.');
         } else {
           setConsultaError(errorMsg);
         }
