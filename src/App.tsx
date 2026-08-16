@@ -335,9 +335,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f18] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="h-screen w-screen overflow-hidden bg-[#0a0f18] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500/30 selection:text-cyan-200">
       
-      {/* Top Header */}
+      {/* Top Header (Fixed at top) */}
       <Header
         activeMode={activeMode}
         setActiveMode={setActiveMode}
@@ -348,32 +348,34 @@ export default function App() {
         setAmbienteSefaz={setAmbienteSefaz}
       />
 
-      {/* Main Body Workspace */}
-      <main className="flex-1 max-w-[1800px] w-full mx-auto p-4 lg:p-6 flex flex-col gap-6 min-w-0 max-w-full">
+      {/* Main Body Workspace Container (fills remaining viewport height) */}
+      <div className="flex-1 w-full max-w-[1800px] mx-auto px-4 lg:px-6 pt-4 pb-2 flex flex-col overflow-hidden min-h-0 min-w-0">
         
-        {/* Content Layout: Sidebar + Main Workspace */}
-        <div className="flex flex-col lg:flex-row gap-6 items-start w-full min-w-0 max-w-full">
+        {/* Content Layout: Independent Scrollable Sidebar + Independent Scrollable Main Workspace */}
+        <div className="flex flex-col lg:flex-row gap-6 w-full flex-1 min-h-0 min-w-0 overflow-hidden">
           
-          {/* Left Config Sidebar with Module Menu */}
-          <SidebarCertificado
-            activeMode={activeMode}
-            setActiveMode={setActiveMode}
-            certificado={certificado}
-            setCertificado={setCertificado}
-            rateLimit={rateLimit}
-            setRateLimit={setRateLimit}
-            isProcessing={isProcessing}
-            isPaused={isPaused}
-            stats={stats}
-            onStart={startBatchProcessing}
-            onPause={handlePause}
-            onCancel={handleCancel}
-            onClear={handleClear}
-            onExport={() => exportToExcel(items)}
-          />
+          {/* Left Config Sidebar with Module Menu (Independent Scroll) */}
+          <div className="w-full lg:w-80 flex-shrink-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-4">
+            <SidebarCertificado
+              activeMode={activeMode}
+              setActiveMode={setActiveMode}
+              certificado={certificado}
+              setCertificado={setCertificado}
+              rateLimit={rateLimit}
+              setRateLimit={setRateLimit}
+              isProcessing={isProcessing}
+              isPaused={isPaused}
+              stats={stats}
+              onStart={startBatchProcessing}
+              onPause={handlePause}
+              onCancel={handleCancel}
+              onClear={handleClear}
+              onExport={() => exportToExcel(items)}
+            />
+          </div>
 
-          {/* Right Main Panels Area */}
-          <div className="flex-1 w-full min-w-0 max-w-full flex flex-col gap-6">
+          {/* Right Main Panels Area (Independent Scroll) */}
+          <main className="flex-1 w-full h-full overflow-y-auto custom-scrollbar pr-2 pb-6 min-w-0 flex flex-col gap-6">
             
             {/* Mode 1: Lote Excel */}
             {activeMode === 'lote' && (
@@ -521,20 +523,22 @@ export default function App() {
               />
             )}
 
-          </div>
+          </main>
         </div>
 
         {/* Footer Status Engine Bar */}
-        <StatusBar
-          isProcessing={isProcessing}
-          isPaused={isPaused}
-          stats={stats}
-          currentProcessingCnpj={currentProcessingCnpj}
-          elapsedSeconds={elapsedSeconds}
-          rateLimit={rateLimit}
-        />
+        <div className="shrink-0 pt-2">
+          <StatusBar
+            isProcessing={isProcessing}
+            isPaused={isPaused}
+            stats={stats}
+            currentProcessingCnpj={currentProcessingCnpj}
+            elapsedSeconds={elapsedSeconds}
+            rateLimit={rateLimit}
+          />
+        </div>
 
-      </main>
+      </div>
 
       {/* Ficha Cadastral Detailed Modal */}
       <DetalhesModal

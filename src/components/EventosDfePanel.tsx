@@ -200,85 +200,65 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner Header */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute -right-10 -top-10 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-700/60 text-blue-300 text-xs font-bold mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            Reforma Tributária do Consumo (RTC) & APIs CGIBS / RFB
-          </div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">
-            Gestão de Eventos Fiscais & Integração de APIs
-          </h2>
-          <p className="text-xs md:text-sm text-slate-300 max-w-3xl mt-1">
-            Plataforma central para emissão de eventos das notas técnicas <strong>NT 2025.002-RTC (NF-e/NFC-e)</strong>, <strong>NT 2025.001-RTC (CT-e)</strong> e <strong>NT 009 (NFS-e)</strong> com sincronização para os motores de cálculo do <strong>CGIBS</strong> e da <strong>Receita Federal</strong>.
-          </p>
+      {/* Main Top Navigation Tabs & Certificate Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab('emissor')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'emissor'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Send className="w-4 h-4 text-cyan-400" />
+            <span>Envio de Eventos</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notas_tecnicas')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'notas_tecnicas'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <FileText className="w-4 h-4 text-indigo-400" />
+            <span>Notas Técnicas RTC (NT 2025.002, NT 2025.001, NT 009)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('apis_config')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'apis_config'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Globe className="w-4 h-4 text-emerald-400" />
+            <span>Central de APIs & Webhooks (CGIBS / RFB)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('schema_generator')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'schema_generator'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Terminal className="w-4 h-4 text-purple-400" />
+            <span>Gerador de Schemas XML / JSON</span>
+          </button>
         </div>
 
-        <div className="relative z-10 flex flex-col sm:flex-row items-start sm:items-center gap-2">
-          <div className="px-3.5 py-2 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-300 flex items-center gap-2 shadow-inner">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div>
-              <div className="font-bold text-emerald-400 text-[11px] flex items-center gap-1">
-                Certificado Digital A1 OK
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <div className="text-[10px] text-slate-400 font-mono">SEFAZ / SVRS / CGIBS API</div>
-            </div>
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs shadow-inner">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="text-[11px]">
+            <span className="font-bold text-emerald-400 mr-1.5">Certificado A1 OK</span>
+            <span className="text-[10px] text-slate-400 font-mono">SEFAZ / CGIBS</span>
           </div>
         </div>
-      </div>
-
-      {/* Main Top Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
-        <button
-          onClick={() => setActiveTab('emissor')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'emissor'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-          }`}
-        >
-          <Send className="w-4 h-4 text-cyan-400" />
-          <span>Disparo de Eventos RTC</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('notas_tecnicas')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'notas_tecnicas'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-indigo-400" />
-          <span>Notas Técnicas RTC (NT 2025.002, NT 2025.001, NT 009)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('apis_config')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'apis_config'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-          }`}
-        >
-          <Globe className="w-4 h-4 text-emerald-400" />
-          <span>Central de APIs & Webhooks (CGIBS / RFB)</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('schema_generator')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'schema_generator'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-          }`}
-        >
-          <Terminal className="w-4 h-4 text-purple-400" />
-          <span>Gerador de Schemas XML / JSON</span>
-        </button>
       </div>
 
       {/* TAB 1: EMISSOR DE EVENTOS RTC */}

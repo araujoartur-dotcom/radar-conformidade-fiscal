@@ -70,73 +70,57 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 border border-slate-800 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 text-xs font-semibold mb-2">
-            <Database className="w-3.5 h-3.5 text-cyan-400" />
-            Hub de Conectividade ERP & SAP S/4HANA / ECC
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Integração Nativa de Dados Fiscais & Eventos
-          </h2>
-          <p className="text-sm text-slate-300 max-w-2xl mt-1">
-            Transfira automaticamente os status do CCC SEFAZ, eventos de manifestação e apurações da Reforma Tributária (IBS/CBS) diretamente para o seu ERP.
-          </p>
+      {/* Tabs Subnavigation & Connection Status Badge */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setActiveTab('config')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'config'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Server className="w-4 h-4" />
+            <span>Conectores SAP & ERPs</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('payload')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'payload'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Code className="w-4 h-4" />
+            <span>Payload de Envio JSON / RFC</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('api')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'api'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white bg-slate-900/60 hover:bg-slate-800 border border-slate-800'
+            }`}
+          >
+            <Key className="w-4 h-4" />
+            <span>API REST Webhook</span>
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex items-center gap-3 text-xs">
-            <div className={`w-3 h-3 rounded-full ${config.statusConexao === 'conectado' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
-            <div>
-              <div className="text-white font-bold uppercase">
-                {config.tipoErp.replace('_', ' ')}: {config.statusConexao}
-              </div>
-              <div className="text-[10px] text-slate-400 font-mono">
-                Última Sinc: {config.ultimaSincronizacao}
-              </div>
-            </div>
+        <div className="px-3.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2.5 text-xs shadow-inner">
+          <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.statusConexao === 'conectado' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
+          <div>
+            <span className="text-white font-bold uppercase text-[11px] mr-2">
+              {config.tipoErp.replace('_', ' ')}: {config.statusConexao}
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">
+              Última Sinc: {config.ultimaSincronizacao}
+            </span>
           </div>
         </div>
-      </div>
-
-      {/* Tabs Subnavigation */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
-        <button
-          onClick={() => setActiveTab('config')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'config'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-white bg-slate-900/60'
-          }`}
-        >
-          <Server className="w-4 h-4" />
-          Conectores SAP & ERPs
-        </button>
-
-        <button
-          onClick={() => setActiveTab('payload')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'payload'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-white bg-slate-900/60'
-          }`}
-        >
-          <Code className="w-4 h-4" />
-          Payload de Envio JSON / RFC
-        </button>
-
-        <button
-          onClick={() => setActiveTab('api')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-            activeTab === 'api'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-              : 'text-slate-400 hover:text-white bg-slate-900/60'
-          }`}
-        >
-          <Key className="w-4 h-4" />
-          API REST Webhook
-        </button>
       </div>
 
       {/* Tab 1: Config */}

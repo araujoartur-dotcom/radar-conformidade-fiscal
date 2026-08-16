@@ -43,8 +43,8 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
     {
       title: 'Acesso & Multi-Tenant CNPJ',
       items: [
-        { id: 'acesso_corporativo' as QueryMode, label: 'Login 2FA & Perfis Admin', icon: Lock, accent: 'cyan' },
-        { id: 'carteira_cnpjs' as QueryMode, label: 'Carteira & Certificados A1', icon: Building2, accent: 'emerald', badge: 'MULTI' },
+        { id: 'acesso_corporativo' as QueryMode, label: 'Gestão de Acessos', icon: Lock, accent: 'cyan' },
+        { id: 'carteira_cnpjs' as QueryMode, label: 'Cadastro de Empresas', icon: Building2, accent: 'emerald' },
       ]
     },
     {
@@ -58,13 +58,13 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       title: 'Documentos Fiscais (DF-e)',
       items: [
         { id: 'dfe_xml' as QueryMode, label: 'XMLs & Ref. Tributária', icon: FileCode, accent: 'cyan' },
-        { id: 'eventos_dfe' as QueryMode, label: 'Eventos DF-e / Manifestação', icon: Send, accent: 'indigo' },
+        { id: 'eventos_dfe' as QueryMode, label: 'Central de Eventos DF-e', icon: Send, accent: 'indigo' },
       ]
     },
     {
       title: 'Relatórios Fiscais (SAP / ERP)',
       items: [
-        { id: 'relatorios_xml' as QueryMode, label: 'Relatórios & Créditos (8 Relat.)', icon: FileBarChart, accent: 'cyan', badge: 'NOVO' },
+        { id: 'relatorios_xml' as QueryMode, label: 'Relatórios Fiscais', icon: FileBarChart, accent: 'cyan' },
         { id: 'tabelas_fiscais' as QueryMode, label: 'Parâmetros & Tabelas Fiscais', icon: Sliders, accent: 'indigo' },
       ]
     },
@@ -79,7 +79,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
   ];
 
   return (
-    <aside className="w-full lg:w-80 flex-shrink-0 flex flex-col gap-4">
+    <aside className="w-full flex flex-col gap-4">
       
       {/* Primary Sidebar Activity Navigation */}
       <div className="glass-panel-glow rounded-2xl p-4 flex flex-col gap-3">
@@ -90,9 +90,6 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
               Menu de Atividades
             </span>
           </div>
-          <span className="text-[10px] font-semibold text-slate-400 font-mono">
-            Módulos v2.5
-          </span>
         </div>
 
         <div className="flex flex-col gap-3">

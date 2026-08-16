@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User
+  ChevronDown, Check, User, Lock
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -65,19 +65,19 @@ export const Header: React.FC<HeaderProps> = ({
       case 'dfe_xml':
         return { title: 'Captura XML (NF-e, NFS-e e CT-e)', icon: FileCode, color: 'text-cyan-400' };
       case 'eventos_dfe':
-        return { title: 'Eventos DF-e / Manifestação', icon: Send, color: 'text-indigo-400' };
+        return { title: 'Central de Eventos DF-e', icon: Send, color: 'text-indigo-400' };
       case 'integracao_erp':
         return { title: 'Integração SAP / ERP', icon: Database, color: 'text-emerald-400' };
       case 'auditoria_fiscal':
         return { title: 'Auditoria Fiscal & Conformidade', icon: ShieldAlert, color: 'text-amber-400' };
       case 'relatorios_xml':
-        return { title: 'Relatórios de Entradas & Créditos (SAP/ERP)', icon: FileBarChart, color: 'text-cyan-400' };
+        return { title: 'Relatórios Fiscais', icon: FileBarChart, color: 'text-cyan-400' };
       case 'tabelas_fiscais':
         return { title: 'Parâmetros & Tabelas Fiscais', icon: FileBarChart, color: 'text-indigo-400' };
       case 'acesso_corporativo':
-        return { title: 'Acesso Corporativo & SSO', icon: Building2, color: 'text-indigo-400' };
+        return { title: 'Gestão de Acessos', icon: Lock, color: 'text-indigo-400' };
       case 'carteira_cnpjs':
-        return { title: 'Carteira & Certificados A1', icon: ShieldCheck, color: 'text-emerald-400' };
+        return { title: 'Cadastro de Empresas', icon: Building2, color: 'text-emerald-400' };
       case 'observabilidade_dlq':
         return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
       default:
@@ -103,9 +103,6 @@ export const Header: React.FC<HeaderProps> = ({
               <h1 className="text-lg sm:text-xl font-bold tracking-tight text-white font-['Plus_Jakarta_Sans']">
                 Radar de <span className="text-cyan-400">Conformidade Fiscal</span>
               </h1>
-              <span className="hidden sm:inline-flex text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-400 border border-cyan-800/60">
-                CCC SEFAZ v2.5
-              </span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium mt-0.5">
               <span>Módulo:</span>

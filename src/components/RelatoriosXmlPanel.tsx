@@ -159,42 +159,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
   return (
     <div className="space-y-6 w-full min-w-0 max-w-full">
       
-      {/* Top Banner Header */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-cyan-950 to-blue-950 border border-slate-800 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full min-w-0">
-        <div className="min-w-0 flex-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-900/60 border border-cyan-700/60 text-cyan-300 text-xs font-semibold mb-2">
-            <FileBarChart className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span className="truncate">Módulo de Relatórios Fiscais XML & Integração SAP / ERP (Reforma Tributária PLP 68/2024)</span>
-          </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-            Relatórios de Entradas & Apropriação de Créditos IBS / CBS
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-300 max-w-3xl mt-1">
-            Extração consolidada item a item a partir dos XMLs capturados diretamente dos Web Services da SEFAZ e salvos nos diretórios definidos por CNPJ Raiz, com filtros seletores para extração parametrizada.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <UploadCloud className="w-4 h-4" />
-            <span>Importar XML Manual</span>
-          </button>
-          <button
-            onClick={handleExportExcel}
-            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 flex items-center gap-2 transition-all cursor-pointer"
-          >
-            <Download className="w-4 h-4" />
-            <span>Exportar Relatório Ativo (.XLSX)</span>
-          </button>
-        </div>
-      </div>
-
       {/* Multi-Parameter Selection Filters Panel */}
       <div className="glass-panel rounded-2xl p-4 border border-slate-800 space-y-4 w-full min-w-0">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200 min-w-0 flex-wrap">
             <Filter className="w-4 h-4 text-cyan-400 shrink-0" />
             <span>Filtros Seletores de Extração Parametrizada</span>
@@ -203,33 +170,49 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleClearFilters}
-              className="text-xs text-slate-400 hover:text-slate-200 underline font-mono cursor-pointer"
+              className="text-xs text-slate-400 hover:text-slate-200 underline font-mono cursor-pointer mr-1"
             >
               Limpar Filtros
             </button>
             <button
               onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer"
+              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer mr-1"
             >
               {isFiltersExpanded ? 'Ocultar Filtros ▲' : 'Expandir Filtros ▼'}
             </button>
             <button
               onClick={handleSearch}
               disabled={loading}
-              className={`px-4 py-1.5 rounded-xl text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-blue-600/25 ${loading ? 'bg-slate-700 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'}`}
+              className={`px-3.5 py-1.5 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-600/25 ${loading ? 'bg-slate-700 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'}`}
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Processando...
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Processando...
                 </>
               ) : (
                 <>
-                  <Search className="w-4 h-4" /> Buscar Relatório
+                  <Search className="w-3.5 h-3.5" /> Buscar Relatório
                 </>
               )}
+            </button>
+
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+            >
+              <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Importar XML Manual</span>
+            </button>
+
+            <button
+              onClick={handleExportExcel}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-100" />
+              <span>Exportar (.XLSX)</span>
             </button>
           </div>
         </div>
@@ -380,13 +363,14 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
             {/* Filter: cClassTrib */}
             <div className="min-w-0">
               <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
-                cClassTrib (ex: 0001, 1001, 2001):
+                cClassTrib (ex: 000001, 100001, 200001):
               </label>
               <input
                 type="text"
-                placeholder="Ex: 0001"
+                maxLength={6}
+                placeholder="Ex: 000001"
                 value={filters.cClassTrib}
-                onChange={(e) => setFilters({ ...filters, cClassTrib: e.target.value })}
+                onChange={(e) => setFilters({ ...filters, cClassTrib: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>

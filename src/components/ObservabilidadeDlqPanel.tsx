@@ -47,9 +47,9 @@ export const DEMO_DLQ_TASKS: DlqTaskItem[] = [
     currentAttempt: 3,
     maxAttempts: 3,
     status: 'dlq_retido',
-    errorMessage: 'cClassTrib "9999" não reconhecido no catálogo de regras IBS/CBS versão 2026.2.',
+    errorMessage: 'cClassTrib "999999" não reconhecido no catálogo de regras IBS/CBS versão 2026.2.',
     errorCategory: 'schema_xml_invalido',
-    errorDetails: 'ValidationError: Field cClassTrib in item #3 has value "9999" which is not defined in TaxRuleRegistry v2026.2.\n    at IbsCbsValidator.validateItem (ibs-cbs.validator.ts:64)',
+    errorDetails: 'ValidationError: Field cClassTrib in item #3 has value "999999" which is not defined in TaxRuleRegistry v2026.2.\n    at IbsCbsValidator.validateItem (ibs-cbs.validator.ts:64)',
     payloadHash: '4a8a08f09d37b73795649038080b080c98f98c8c7f7d7e7f8a9b0c1d2e3f4a5b',
     retryBackoffMs: 300000,
     isIdempotent: true

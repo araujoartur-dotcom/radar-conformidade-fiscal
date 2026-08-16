@@ -237,44 +237,6 @@ export const TabelasFiscaisPanel: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-950 to-indigo-950 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 text-xs font-bold mb-2">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
-            Parâmetros Fiscais & Motor de Regras Tributárias (6 Dígitos cClassTrib)
-          </div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">
-            Gestão de Tabelas, Parâmetros e Regras Fiscais
-          </h2>
-          <p className="text-xs text-slate-300 max-w-3xl mt-1">
-            Atualize as alíquotas de referência da Reforma Tributária (CBS/IBS), cadastre e edite os códigos oficiais de <strong>cClassTrib (6 dígitos)</strong>, configure matrizes de crédito por <strong>CFOP</strong> e audite as <strong>Regras de Elegibilidade</strong>.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {activeTab === 'cclasstrib' && (
-            <button
-              onClick={() => setShowAddCClass(true)}
-              className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo cClassTrib (6 Dígitos)</span>
-            </button>
-          )}
-
-          {activeTab === 'cfop' && (
-            <button
-              onClick={() => setShowAddCfop(true)}
-              className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo CFOP</span>
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Module Tabs Selector */}
       <div className="flex items-center bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 gap-2">
         <button
@@ -286,7 +248,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
           }`}
         >
           <Table className="w-4 h-4" />
-          <span>Classificação cClassTrib (6 Dígitos)</span>
+          <span>Classificação cClassTrib</span>
         </button>
 
         <button
@@ -326,7 +288,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
         </button>
       </div>
 
-      {/* TAB 1: cClassTrib Rules (6 Digits) */}
+      {/* TAB 1: cClassTrib Rules */}
       {activeTab === 'cclasstrib' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -334,14 +296,25 @@ export const TabelasFiscaisPanel: React.FC = () => {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Filtrar por código 6 dígitos ou descrição..."
+                placeholder="Filtrar por cClassTrib ou descrição..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
               />
             </div>
-            <div className="text-xs text-slate-400 font-mono">
-              Total de Códigos Cadastrados: <strong className="text-white">{cClassRules.length}</strong>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="text-xs text-slate-400 font-mono">
+                Total de Códigos: <strong className="text-white">{cClassRules.length}</strong>
+              </div>
+
+              <button
+                onClick={() => setShowAddCClass(true)}
+                className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/20 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Novo cClassTrib</span>
+              </button>
             </div>
           </div>
 
@@ -349,7 +322,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
             <table className="w-full text-xs text-left text-slate-300">
               <thead className="bg-slate-950 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-800">
                 <tr>
-                  <th className="p-3">cClassTrib (6D)</th>
+                  <th className="p-3">cClassTrib</th>
                   <th className="p-3">Descrição Operação RTC</th>
                   <th className="p-3">Tratamento Tributário</th>
                   <th className="p-3">Gera Crédito</th>
@@ -612,14 +585,14 @@ export const TabelasFiscaisPanel: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Plus className="w-5 h-5 text-cyan-400" />
-                Cadastrar Código cClassTrib (6 Dígitos)
+                Cadastrar Código cClassTrib
               </h3>
               <button onClick={() => setShowAddCClass(false)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
             </div>
 
             <form onSubmit={handleAddCClass} className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Código cClassTrib (6 dígitos ex: 000001, 100001) *</label>
+                <label className="font-bold text-slate-300 block mb-1">Código cClassTrib *</label>
                 <input
                   type="text"
                   maxLength={6}
@@ -696,7 +669,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
 
             <form onSubmit={handleSaveEditCClass} className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Código cClassTrib (6 dígitos)</label>
+                <label className="font-bold text-slate-300 block mb-1">Código cClassTrib</label>
                 <input
                   type="text"
                   maxLength={6}

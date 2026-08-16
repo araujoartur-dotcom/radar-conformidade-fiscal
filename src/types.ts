@@ -267,7 +267,7 @@ export interface XmlItemDetailReport {
   descricaoItem: string;
   ncm: string;
   cfop: string;
-  cClassTrib: string;       // ex: "0001", "1001", "2001"
+  cClassTrib: string;       // ex: "000001", "100001", "200001"
   cstCsosn: string;
   naturezaOperacao: string;
   quantidade: number;

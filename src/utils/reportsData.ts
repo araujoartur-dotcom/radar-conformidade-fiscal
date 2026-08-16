@@ -75,7 +75,7 @@ export const INITIAL_MAPA_CFOP: MapaCfopItem[] = [
  */
 export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
   {
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     descricaoInterna: 'Operação Tributada Integralmente IBS/CBS',
     tratamentoEsperado: 'tributado',
     permiteCredito: 'Sim',
@@ -83,7 +83,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     alertas: 'Verificar se houver destaque zerado em documento tributado.'
   },
   {
-    cClassTrib: '1001',
+    cClassTrib: '100001',
     descricaoInterna: 'Alíquota Reduzida de Cesta Básica / Saúde',
     tratamentoEsperado: 'aliquota_reduzida',
     permiteCredito: 'Sim',
@@ -91,7 +91,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     alertas: 'Conferir enquadramento NCM na lista anexa do regulamento.'
   },
   {
-    cClassTrib: '2001',
+    cClassTrib: '200001',
     descricaoInterna: 'Isenção / Imunidade Constitucional',
     tratamentoEsperado: 'isento',
     permiteCredito: 'Não',
@@ -99,7 +99,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     alertas: 'Crédito bloqueado por ausência de incidência na entrada.'
   },
   {
-    cClassTrib: '3001',
+    cClassTrib: '300001',
     descricaoInterna: 'Não Incidência / Exportação',
     tratamentoEsperado: 'nao_incidencia',
     permiteCredito: 'Não',
@@ -107,7 +107,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     alertas: 'Não gera crédito de entrada.'
   },
   {
-    cClassTrib: '9001',
+    cClassTrib: '900001',
     descricaoInterna: 'Regime Específico Monofásico (Combustíveis/Bebidas)',
     tratamentoEsperado: 'monofasico',
     permiteCredito: 'Depende',
@@ -143,7 +143,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'SERVICOS E SUPRIMENTOS DE MANUTENCAO PREDIAL E FISCAL',
     ncm: '84713019',
     cfop: '1102',
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     cstCsosn: '00',
     naturezaOperacao: 'COMPRA PARA COMERCIALIZACAO',
     quantidade: 10,
@@ -206,7 +206,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'EQUIPAMENTOS INDUSTRIAIS TURBINAS DE REFINO - SERIE A1',
     ncm: '84118200',
     cfop: '1551',
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     cstCsosn: '00',
     naturezaOperacao: 'AQUISICAO DE BEM PARA O ATIVO IMOBILIZADO',
     quantidade: 1,
@@ -273,7 +273,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'SERVICOS DE CONSULTORIA E GESTAO DE TESOURARIA BANCARIA',
     ncm: 'NBS-10293',
     cfop: '1352',
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     cstCsosn: '00',
     naturezaOperacao: 'PRESTACAO DE SERVICOS TRIBUTADOS',
     quantidade: 1,
@@ -340,7 +340,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'FRETE RODOVIARIO INTERESTADUAL DE INSUMOS E PEÇAS',
     ncm: 'NBS-2001',
     cfop: '2102',
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     cstCsosn: '00',
     naturezaOperacao: 'TRANSPORTE INTERESTADUAL DE CARGAS',
     quantidade: 1,
@@ -403,7 +403,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'KITS DE AMOSTRAS GRATUITAS E BRINDES CORPORATIVOS',
     ncm: '39269090',
     cfop: '1910', // Remessa/Bonificação
-    cClassTrib: '2001', // Isento/Não On
+    cClassTrib: '200001', // Isento/Não On
     cstCsosn: '40',
     naturezaOperacao: 'REMESSA EM BONIFICACAO OU BRINDE',
     quantidade: 50,
@@ -475,7 +475,7 @@ export const INITIAL_XML_ITEM_REPORTS: XmlItemDetailReport[] = [
     descricaoItem: 'DEVOLUÇÃO DE COMPRA DE MATERIAIS DE ESCRITORIO',
     ncm: '48201000',
     cfop: '1202', // Devolução
-    cClassTrib: '0001',
+    cClassTrib: '000001',
     cstCsosn: '00',
     naturezaOperacao: 'DEVOLUCAO DE COMPRA DE MERCADORIAS',
     quantidade: 2,

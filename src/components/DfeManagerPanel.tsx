@@ -134,113 +134,73 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Banner: Reforma Tributária & DFe Engine */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-950/80 via-slate-900 to-indigo-950/80 border border-blue-800/60 shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
-          <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-700/60 text-blue-300 text-xs font-semibold">
-              <Calculator className="w-3.5 h-3.5 text-cyan-400" />
-              Captura de XML (NF-e, NFS-e e CT-e)
-            </div>
-            <div className="pt-2 flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => {
-                  setModalFluxo('entrada');
-                  setIsConsultaNsuOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer border border-blue-400/30"
-              >
-                <FolderInput className="w-4 h-4 text-cyan-200" />
-                <span>Buscar XMLs de ENTRADA (Compras)</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setModalFluxo('saida');
-                  setIsConsultaNsuOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 transition-all cursor-pointer border border-emerald-400/30"
-              >
-                <FolderOutput className="w-4 h-4 text-emerald-200" />
-                <span>Sincronizar XMLs de SAÍDA (Vendas / Emitidos)</span>
-              </button>
-            </div>
+      {/* Top Controls & Metrics Card */}
+      <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-4">
+        {/* Row 1: Actions / Buttons Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-700/60 text-blue-300 text-xs font-semibold">
+            <Calculator className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Captura de XML (NF-e, NFS-e e CT-e)</span>
           </div>
 
-          {/* Quick Metrics */}
-          <div className="grid grid-cols-3 gap-3 bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-center min-w-[340px]">
-            <div>
-              <div className="text-[10px] uppercase font-semibold text-slate-400">Total DFe (R$)</div>
-              <div className="text-base font-bold text-emerald-400 font-mono">
-                {totalValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase font-semibold text-slate-400">Proj. CBS (Federal)</div>
-              <div className="text-base font-bold text-cyan-400 font-mono">
-                {totalCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase font-semibold text-slate-400">Proj. IBS (Est/Mun)</div>
-              <div className="text-base font-bold text-indigo-400 font-mono">
-                {totalIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Directory Storage Banner per CNPJ Raiz */}
-      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-md flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-cyan-950/80 border border-cyan-800/80 flex items-center justify-center text-cyan-400 shrink-0">
-            <FolderArchive className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-bold text-white">
-                Diretórios de Armazenamento por CNPJ Raiz
-              </h4>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Segregação Ativa (Entrada x Saída)
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {directoryConfigs.length > 0
-                ? `${directoryConfigs.length} CNPJ(s) Raiz configurado(s) com separação automática de arquivos XML.`
-                : 'Configure os caminhos das pastas locais e de rede para salvar automaticamente XMLs de Entrada e Saída.'}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {directoryConfigs.length > 0 && (
-            <div className="hidden xl:flex items-center gap-3 text-xs bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 font-mono">
-              <span className="text-blue-400 flex items-center gap-1">
-                <FolderInput className="w-3.5 h-3.5" />
-                Entrada: <strong className="text-slate-200 font-normal">{directoryConfigs[0].diretorioEntrada}</strong>
-              </span>
-              <span className="text-slate-600">|</span>
-              <span className="text-emerald-400 flex items-center gap-1">
-                <FolderOutput className="w-3.5 h-3.5" />
-                Saída: <strong className="text-slate-200 font-normal">{directoryConfigs[0].diretorioSaida}</strong>
-              </span>
-            </div>
-          )}
-
-          {onOpenDirConfig && (
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={onOpenDirConfig}
-              className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-cyan-600/20 transition-all cursor-pointer"
+              onClick={() => {
+                setModalFluxo('entrada');
+                setIsConsultaNsuOpen(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-blue-600/30 transition-all cursor-pointer border border-blue-400/30"
             >
-              <Settings className="w-4 h-4" />
-              Configurar Diretórios (CNPJ Raiz)
+              <FolderInput className="w-4 h-4 text-cyan-200" />
+              <span>XML Entradas</span>
             </button>
-          )}
+
+            <button
+              onClick={() => {
+                setModalFluxo('saida');
+                setIsConsultaNsuOpen(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/30 transition-all cursor-pointer border border-emerald-400/30"
+            >
+              <FolderOutput className="w-4 h-4 text-emerald-200" />
+              <span>XML Saídas</span>
+            </button>
+
+            {onOpenDirConfig && (
+              <button
+                onClick={onOpenDirConfig}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white border border-slate-700 hover:border-cyan-500/50 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                title="Configurar diretórios de armazenamento de XMLs por CNPJ Raiz"
+              >
+                <Settings className="w-4 h-4 text-cyan-400" />
+                <span>Configurar Diretórios (CNPJ Raiz)</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Metrics / Indicators (Expanded fields, removed 'PROJ.') */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-center">
+            <div className="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-1">Total DF-e (R$)</div>
+            <div className="text-xl lg:text-2xl font-black text-emerald-400 font-mono tracking-tight">
+              {totalValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </div>
+          </div>
+
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-center">
+            <div className="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-1">CBS (Federal)</div>
+            <div className="text-xl lg:text-2xl font-black text-cyan-400 font-mono tracking-tight">
+              {totalCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </div>
+          </div>
+
+          <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 flex flex-col justify-center">
+            <div className="text-[11px] uppercase font-bold tracking-wider text-slate-400 mb-1">IBS (Est/Mun)</div>
+            <div className="text-xl lg:text-2xl font-black text-indigo-400 font-mono tracking-tight">
+              {totalIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </div>
+          </div>
         </div>
       </div>
 

@@ -158,12 +158,13 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
             <div>
-              <label className="text-slate-400 block mb-1">Código cClassTrib:</label>
+              <label className="text-slate-400 block mb-1">Código cClassTrib (6 Dígitos):</label>
               <input
                 type="text"
-                placeholder="Ex: 0002"
+                maxLength={6}
+                placeholder="Ex: 000002"
                 value={newItem.cClassTrib}
-                onChange={(e) => setNewItem({ ...newItem, cClassTrib: e.target.value })}
+                onChange={(e) => setNewItem({ ...newItem, cClassTrib: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                 className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white font-mono"
                 required
               />

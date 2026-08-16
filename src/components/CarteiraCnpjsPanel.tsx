@@ -266,31 +266,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         onChange={handleCertUpload}
       />
 
-      {/* Top Banner Info for Accounting Multi-Tenant */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 text-xs font-bold mb-2">
-            <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-            Gestão Multi-Empresa & Escritórios Contábeis (Isolamento por CNPJ)
-          </div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">
-            Carteira de Clientes, CNPJs Raiz e Certificados A1
-          </h2>
-          <p className="text-xs text-slate-300 max-w-3xl mt-1">
-            Gira múltiplos clientes e filiais com <strong>banco de dados isolado por CNPJ</strong>, vinculo de certificados digitais A1 individuais e sem restrição rígida de CNPJs Raiz na nuvem.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4 text-cyan-300" />
-          <span>Cadastrar Novo CNPJ / Cliente</span>
-        </button>
-      </div>
-
-      {/* Filters Bar */}
+      {/* Filters & Action Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
@@ -305,19 +281,29 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto text-xs">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <span className="text-slate-400 font-semibold">Grupo / Carteira:</span>
-          <select
-            value={selectedGroupFilter}
-            onChange={(e) => setSelectedGroupFilter(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-medium focus:outline-none"
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto text-xs justify-between sm:justify-end">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <span className="text-slate-400 font-semibold">Grupo / Carteira:</span>
+            <select
+              value={selectedGroupFilter}
+              onChange={(e) => setSelectedGroupFilter(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-medium focus:outline-none"
+            >
+              <option value="todos">Todos os Grupos ({tenants.length})</option>
+              {groupsAvailable.map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 cursor-pointer shrink-0"
           >
-            <option value="todos">Todos os Grupos ({tenants.length})</option>
-            {groupsAvailable.map(g => (
-              <option key={g} value={g}>{g}</option>
-            ))}
-          </select>
+            <Plus className="w-4 h-4 text-cyan-300" />
+            <span>Novo CNPJ</span>
+          </button>
         </div>
       </div>
 
@@ -327,7 +313,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           <Building2 className="w-12 h-12 text-slate-600 mx-auto" />
           <h3 className="text-base font-bold text-white">Nenhum CNPJ cadastrado na carteira</h3>
           <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Para iniciar, clique no botão <strong className="text-cyan-300">"Cadastrar Novo CNPJ / Cliente"</strong> acima. Após salvar a empresa, insira a senha e ative o certificado digital A1 (.PFX).
+            Para iniciar, clique no botão <strong className="text-cyan-300">"+ Novo CNPJ"</strong> acima. Após salvar a empresa, insira a senha e ative o certificado digital A1 (.PFX).
           </p>
         </div>
       )}

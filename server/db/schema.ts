@@ -192,7 +192,7 @@ export function initializeSchema(): void {
       descricao             TEXT NOT NULL,
       tipo_aquisicao        TEXT DEFAULT '',                -- revenda | insumo | imobilizado | servico | frete | importacao
       cfops_aplicaveis      TEXT DEFAULT '',                -- JSON array: ["1102","2102","1551"]
-      cclasstrib_aplicaveis TEXT DEFAULT '',                -- JSON array: ["0001","1001"]
+      cclasstrib_aplicaveis TEXT DEFAULT '',                -- JSON array: ["000001","100001"]
       resultado_padrao      TEXT NOT NULL DEFAULT 'Pendente',
                             -- Elegível | Parcial | Não elegível | Pendente
       exige_onerosidade     INTEGER NOT NULL DEFAULT 1,
