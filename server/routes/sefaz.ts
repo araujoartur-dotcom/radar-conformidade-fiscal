@@ -12,6 +12,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
 import { transmitirEventoSefaz, testarConexaoSefaz, consultarDistribuicaoDFe, EventoSefazRequest } from '../services/sefazService';
 
@@ -33,12 +34,36 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
     const db = getDatabase();
 
     // 1. Localizar a empresa no banco de dados para recuperar o ID e o certificado vinculado
-    let empresa = req.user?.empresaAtivaId 
-      ? db.prepare('SELECT * FROM empresas WHERE id = ?').get(req.user.empresaAtivaId) as any
-      : null;
+    let empresa: any = null;
+
+    if (req.user?.empresaAtivaId) {
+      empresa = db.prepare('SELECT * FROM empresas WHERE id = ?').get(req.user.empresaAtivaId);
+    }
 
     if (!empresa) {
-      empresa = db.prepare('SELECT * FROM empresas WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, ".", ""), "/", ""), "-", "") = ?').get(cleanCnpj) as any;
+      empresa = db.prepare(`
+        SELECT * FROM empresas 
+        WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, '.', ''), '/', ''), '-', '') = ? 
+           OR cnpj_raiz = ? 
+           OR cnpj_completo = ?
+        LIMIT 1
+      `).get(cleanCnpj, cleanCnpj.substring(0, 8), cnpj);
+    }
+
+    if (!empresa && isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: supaEmp } = await supabase
+          .from('empresas')
+          .select('*')
+          .or(`cnpj_completo.eq.${cnpj},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (supaEmp) {
+          empresa = supaEmp;
+        }
+      }
     }
 
     const empresaId = empresa?.id || req.user?.empresaAtivaId || '';
