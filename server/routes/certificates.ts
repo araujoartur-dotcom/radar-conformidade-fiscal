@@ -3,15 +3,17 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
 import { CERTIFICADO } from '../config';
 
 const router = Router();
 
 // Garantir que o diretório seguro exista
-const certStorageDir = CERTIFICADO.STORAGE_DIR;
+const certStorageDir = CERTIFICADO.STORAGE_DIR || path.join(os.tmpdir(), 'radar_certificates');
 if (!fs.existsSync(certStorageDir)) {
   fs.mkdirSync(certStorageDir, { recursive: true });
 }
@@ -32,39 +34,65 @@ const upload = multer({ storage });
 /**
  * POST /api/config/certificate/upload
  * Recebe o arquivo .PFX e a senha (via formData).
- * A senha é criptografada com AES-256-GCM antes de ser salva no banco.
- * O arquivo PFX não é modificado.
+ * A senha é criptografada com AES-256-GCM antes de ser salva no banco (Supabase / SQLite).
  */
-router.post('/upload', requireAuth, upload.single('certificado'), (req: AuthenticatedRequest, res: Response) => {
+router.post('/upload', requireAuth, upload.single('certificado'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { tenantId, senha } = req.body;
     const file = req.file;
 
     if (!tenantId || !senha || !file) {
-      if (file) fs.unlinkSync(file.path); // Remove o arquivo se faltar dados
+      if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
       res.status(400).json({ error: 'tenantId, senha e o arquivo .PFX são obrigatórios.' });
       return;
     }
 
-    const encryptionKey = CERTIFICADO.ENCRYPTION_KEY;
-    if (!encryptionKey || encryptionKey.length !== 64) {
-      if (file) fs.unlinkSync(file.path);
-      res.status(500).json({ error: 'CERT_ENCRYPTION_KEY inválida ou ausente no .env. Deve ter 64 caracteres hexadecimais.' });
-      return;
+    let keyHex = CERTIFICADO.ENCRYPTION_KEY;
+    if (!keyHex || keyHex.length !== 64) {
+      keyHex = crypto.createHash('sha256').update(process.env.JWT_SECRET || 'radar_fiscal_default_secure_key_2026').digest('hex');
     }
 
-    const db = getDatabase();
+    let empresa: any = null;
 
-    // Validar se o tenant existe e pertence à carteira (se necessário)
-    const empresa = db.prepare('SELECT razao_social, cnpj_completo FROM empresas WHERE id = ?').get(tenantId) as any;
+    // 1. Buscar Empresa no Supabase se configurado
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        // Tenta buscar por ID
+        const { data: byId } = await supabase
+          .from('empresas')
+          .select('id, razao_social, cnpj_completo, cnpj_raiz')
+          .eq('id', tenantId)
+          .maybeSingle();
+
+        if (byId) {
+          empresa = byId;
+        } else {
+          // Tenta buscar por CNPJ Completo ou Raiz
+          const { data: byCnpj } = await supabase
+            .from('empresas')
+            .select('id, razao_social, cnpj_completo, cnpj_raiz')
+            .or(`cnpj_completo.eq.${tenantId},cnpj_raiz.eq.${tenantId}`)
+            .maybeSingle();
+          if (byCnpj) empresa = byCnpj;
+        }
+      }
+    }
+
+    // 2. Fallback para SQLite Local se não encontrou no Supabase
     if (!empresa) {
-      fs.unlinkSync(file.path);
-      res.status(404).json({ error: 'Empresa não encontrada.' });
+      const db = getDatabase();
+      empresa = db.prepare('SELECT id, razao_social, cnpj_completo, cnpj_raiz FROM empresas WHERE id = ? OR cnpj_completo = ? OR cnpj_raiz = ?').get(tenantId, tenantId, tenantId) as any;
+    }
+
+    if (!empresa) {
+      if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      res.status(404).json({ error: 'Empresa não encontrada na carteira.' });
       return;
     }
 
     // Criptografar a senha do PFX
-    const keyBuffer = Buffer.from(encryptionKey, 'hex');
+    const keyBuffer = Buffer.from(keyHex, 'hex');
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
 
@@ -74,25 +102,56 @@ router.post('/upload', requireAuth, upload.single('certificado'), (req: Authenti
     const ivHex = iv.toString('hex');
 
     const id = uuid();
-    // Simular metadados do certificado (idealmente ler via pkcs12, mas para POC simulamos)
     const validade = '2028-12-31';
     const emissor = 'AC Certificadora A1';
     const fingerprint = `SHA256:${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
     const status = 'ok';
 
-    // Desativar certificados anteriores desta empresa
-    db.prepare('UPDATE certificados SET status_alerta = ? WHERE empresa_id = ?').run('substituido', tenantId);
+    // 3. Salvar no Supabase ou SQLite
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        // Desativar certificados anteriores desta empresa
+        await supabase
+          .from('certificados')
+          .update({ status_alerta: 'substituido' })
+          .eq('empresa_id', empresa.id);
 
-    // Inserir novo certificado
-    db.prepare(`
-      INSERT INTO certificados (
-        id, empresa_id, arquivo_path_enc, arquivo_nome, senha_enc, 
-        iv, auth_tag, validade, status_alerta, emissor, impressao_digital
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, tenantId, file.path, file.originalname, senhaEnc,
-      ivHex, authTag, validade, status, emissor, fingerprint
-    );
+        // Inserir novo certificado
+        const { error: insErr } = await supabase
+          .from('certificados')
+          .insert({
+            id,
+            empresa_id: empresa.id,
+            arquivo_path_enc: file.path,
+            arquivo_nome: file.originalname,
+            senha_enc: senhaEnc,
+            iv: ivHex,
+            auth_tag: authTag,
+            validade,
+            status_alerta: status,
+            emissor,
+            impressao_digital: fingerprint
+          });
+
+        if (insErr) {
+          console.error('❌ Erro ao salvar certificado no Supabase:', insErr);
+          throw insErr;
+        }
+      }
+    } else {
+      const db = getDatabase();
+      db.prepare('UPDATE certificados SET status_alerta = ? WHERE empresa_id = ?').run('substituido', empresa.id);
+      db.prepare(`
+        INSERT INTO certificados (
+          id, empresa_id, arquivo_path_enc, arquivo_nome, senha_enc, 
+          iv, auth_tag, validade, status_alerta, emissor, impressao_digital
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, empresa.id, file.path, file.originalname, senhaEnc,
+        ivHex, authTag, validade, status, emissor, fingerprint
+      );
+    }
 
     logAuditAction(req, 'CERTIFICADO_UPLOAD', `Certificado A1 atrelado ao CNPJ ${empresa.cnpj_completo}`);
 
@@ -111,8 +170,8 @@ router.post('/upload', requireAuth, upload.single('certificado'), (req: Authenti
 
   } catch (err: any) {
     console.error('❌ Erro no upload de certificado:', err);
-    if (req.file) fs.unlinkSync(req.file.path);
-    res.status(500).json({ success: false, error: 'Erro interno ao processar certificado.' });
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    res.status(500).json({ success: false, error: err.message || 'Erro interno ao processar certificado.' });
   }
 });
 
@@ -120,11 +179,37 @@ router.post('/upload', requireAuth, upload.single('certificado'), (req: Authenti
  * DELETE /api/config/certificate/:id
  * Remove um certificado do banco e o arquivo do disco.
  */
-router.delete('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const db = getDatabase();
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: cert } = await supabase
+          .from('certificados')
+          .select('id, arquivo_path_enc, empresa_id')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (!cert) {
+          res.status(404).json({ error: 'Certificado não encontrado.' });
+          return;
+        }
+
+        await supabase.from('certificados').delete().eq('id', id);
+
+        if (cert.arquivo_path_enc && fs.existsSync(cert.arquivo_path_enc)) {
+          fs.unlinkSync(cert.arquivo_path_enc);
+        }
+
+        logAuditAction(req, 'CERTIFICADO_EXCLUIR', `Certificado ${id} removido`);
+        res.json({ success: true, message: 'Certificado removido com sucesso.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
     const cert = db.prepare('SELECT arquivo_path_enc, empresa_id FROM certificados WHERE id = ?').get(id) as any;
     if (!cert) {
       res.status(404).json({ error: 'Certificado não encontrado.' });
@@ -133,7 +218,7 @@ router.delete('/:id', requireAuth, (req: AuthenticatedRequest, res: Response) =>
 
     db.prepare('DELETE FROM certificados WHERE id = ?').run(id);
 
-    if (fs.existsSync(cert.arquivo_path_enc)) {
+    if (cert.arquivo_path_enc && fs.existsSync(cert.arquivo_path_enc)) {
       fs.unlinkSync(cert.arquivo_path_enc);
     }
 
