@@ -123,33 +123,21 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        let insertPayload: any = {
+        const insertPayload = {
           cnpj_raiz: cnpjRaiz,
           cnpj_completo: cnpjCompleto,
           razao_social: razaoSocial.toUpperCase(),
           nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
           uf: uf || 'SP',
           regime_tributario: regimeTributario || 'Lucro Real',
-          manifestar_ciencia_automatica: autoCiencia,
           status: 'ativo'
         };
 
-        let { data: newEmp, error: insertErr } = await supabase
+        const { data: newEmp, error: insertErr } = await supabase
           .from('empresas')
           .insert(insertPayload)
           .select()
           .single();
-
-        if (insertErr && insertErr.message && insertErr.message.includes('manifestar_ciencia_automatica')) {
-          delete insertPayload.manifestar_ciencia_automatica;
-          const retryRes = await supabase
-            .from('empresas')
-            .insert(insertPayload)
-            .select()
-            .single();
-          newEmp = retryRes.data;
-          insertErr = retryRes.error;
-        }
 
         if (insertErr) throw insertErr;
 
@@ -243,30 +231,18 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        // Tentativa 1: com manifestar_ciencia_automatica
-        let updatePayload: any = {
+        const updatePayload = {
           razao_social: razaoSocial.toUpperCase(),
           nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
           uf,
           regime_tributario: regimeTributario,
-          manifestar_ciencia_automatica: autoCiencia,
           updated_at: new Date().toISOString()
         };
 
-        let { error } = await supabase
+        const { error } = await supabase
           .from('empresas')
           .update(updatePayload)
           .eq('id', id);
-
-        // Fallback: se a coluna ainda não existir no schema do Supabase, atualiza sem ela
-        if (error && error.message && error.message.includes('manifestar_ciencia_automatica')) {
-          delete updatePayload.manifestar_ciencia_automatica;
-          const fallbackRes = await supabase
-            .from('empresas')
-            .update(updatePayload)
-            .eq('id', id);
-          error = fallbackRes.error;
-        }
 
         if (error) throw error;
         res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
