@@ -340,11 +340,11 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal ~{item.aliquotaCbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
                       <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual ~{item.aliquotaIbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
                       <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
@@ -586,11 +586,11 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-[9.5px] text-center pt-1">
                     <div className="p-1.5 rounded bg-white border border-indigo-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS Serv (Federal ~{item.aliquotaCbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS Serv (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
                       <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-indigo-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS Serv (Estadual/Municipal ~{item.aliquotaIbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS Serv (Estadual/Municipal {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
                       <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                   </div>
@@ -808,11 +808,11 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal ~{item.aliquotaCbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
                       <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal ~{item.aliquotaIbs}%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
                       <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">

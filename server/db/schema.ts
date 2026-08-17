@@ -149,6 +149,47 @@ export function initializeSchema(): void {
     );
 
     -- =========================================================
+    -- TABELAS DE ALÍQUOTAS (AD VALOREM % E AD REM R$)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS aliquotas_tabelas (
+      id                    TEXT PRIMARY KEY,
+      codigo_cadastro       TEXT NOT NULL,                 -- ex: "00001", "00002"
+      modalidade            TEXT NOT NULL DEFAULT 'ad_valorem', -- ad_valorem | ad_rem
+      cbs_federal           REAL NOT NULL DEFAULT 0.0,
+      ibs_estadual          REAL NOT NULL DEFAULT 0.0,
+      ibs_municipal         REAL NOT NULL DEFAULT 0.0,
+      is_federal            REAL NOT NULL DEFAULT 0.0,
+      unidade_medida        TEXT DEFAULT NULL,             -- kg | L | m3 | unid (para ad_rem)
+      inicio_vigencia       TEXT NOT NULL,                 -- YYYY-MM-DD
+      final_vigencia        TEXT NOT NULL,                 -- YYYY-MM-DD
+      descricao             TEXT DEFAULT '',
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(codigo_cadastro, modalidade)
+    );
+
+    -- =========================================================
+    -- REGRAS DE ANEXOS / NCM / NBS / cClassTrib (Reduções e Isenções)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS ncm_regras_anexos (
+      id                    TEXT PRIMARY KEY,
+      ncm                   TEXT NOT NULL,                 -- ex: "2711.19.10" ou "27111910"
+      nbs                   TEXT DEFAULT '',
+      cclasstrib            TEXT DEFAULT '',
+      descricao             TEXT NOT NULL,
+      tipo_tratamento       TEXT NOT NULL DEFAULT 'padrao', 
+                            -- padrao | cesta_basica_zero | reducao_60 | reducao_30 | ad_rem | isento | monofasico
+      percentual_reducao    REAL NOT NULL DEFAULT 0.0,     -- ex: 100, 60, 30, 0
+      anexo_lei             TEXT DEFAULT '',               -- ex: "Anexo I", "Anexo VII", "Art. 132"
+      base_legal            TEXT DEFAULT '',               -- ex: "LC 214/2025 Art. 45"
+      vigencia_inicio       TEXT NOT NULL DEFAULT '2026-01-01',
+      vigencia_fim          TEXT NOT NULL DEFAULT '2033-12-31',
+      ativo                 INTEGER NOT NULL DEFAULT 1,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
     -- MAPA CFOP x TRATAMENTO DE CRÉDITO
     -- =========================================================
     CREATE TABLE IF NOT EXISTS cfop_tratamento (

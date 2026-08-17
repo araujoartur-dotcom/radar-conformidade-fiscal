@@ -112,15 +112,15 @@ export default function App() {
         destinatarioNome: doc.cliente_razao,
         destinatarioUf: doc.cliente_uf,
         valorTotal: doc.valor_total,
-        valorIcms: 0,
-        valorIpi: 0,
-        valorPis: 0,
-        valorCofins: 0,
-        aliquotaCbs: 8.8,
-        valorCbs: doc.valor_total * 0.088,
-        aliquotaIbs: 17.7,
-        valorIbs: doc.valor_total * 0.177,
-        valorImpostoSeletivo: 0,
+        valorIcms: (doc as any).valor_icms || 0,
+        valorIpi: (doc as any).valor_ipi || 0,
+        valorPis: (doc as any).valor_pis || 0,
+        valorCofins: (doc as any).valor_cofins || 0,
+        aliquotaCbs: (doc as any).aliquota_cbs || 0,
+        valorCbs: (doc as any).valor_cbs || 0,
+        aliquotaIbs: (doc as any).aliquota_ibs || 0,
+        valorIbs: (doc as any).valor_ibs || 0,
+        valorImpostoSeletivo: (doc as any).valor_imposto_seletivo || 0,
         statusAuditoria: 'conforme',
         alertasAuditoria: [],
         statusSincronizacaoErp: 'pendente'
@@ -460,6 +460,7 @@ export default function App() {
               <CentralKpisPanel
                 dfeList={dfeList}
                 selectedTenantCnpj={selectedTenantCnpj}
+                empresaAtiva={empresaAtiva}
               />
             )}
 

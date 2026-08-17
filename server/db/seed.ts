@@ -145,15 +145,50 @@ export function seedDatabase(): void {
     { codigo: 'ELEG_099', nome: 'Bonificação/Brinde — Operação não onerosa', desc: 'CFOP de remessa não onerosa — crédito vedado', tipo: 'revenda', cfops: '["1910"]', result: 'Não elegível', evid: 'NF-e de bonificação sem contraprestação financeira', base: 'LC 214/2025, Art. 28, §2º' },
   ];
 
-  const stmtRegra = db.prepare(`
-    INSERT INTO regras_elegibilidade (id, empresa_id, codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal)
-    VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+  // =========================================================
+  // TABELAS DE ALÍQUOTAS (AD VALOREM % E AD REM R$)
+  // =========================================================
+  const tabelasAliquotas = [
+    // Ad Valorem (%)
+    { cod: '00001', mod: 'ad_valorem', cbs: 0.9000, ibs_est: 0.1000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste e Calibração Operacional (Art. 342 LC 214/2025)' },
+    { cod: '00002', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 0.1000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2027-01-01', fim: '2027-12-31', desc: 'Início Vigência CBS Plena e IBS Transição' },
+    { cod: '00003', mod: 'ad_valorem', cbs: 8.8000, ibs_est: 10.6200, ibs_mun: 7.0800, is_fed: 0.0000, unid: null, ini: '2033-01-01', fim: '2099-12-31', desc: 'Vigência Plena e Definitiva do IVA Dual (26,50%)' },
+
+    // Ad Rem (R$ / Unidade)
+    { cod: '00001', mod: 'ad_rem', cbs: 0.0000, ibs_est: 0.0000, ibs_mun: 0.0000, is_fed: 0.0000, unid: 'kg', ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste Ad Rem (Combustíveis e GLP)' },
+    { cod: '00002', mod: 'ad_rem', cbs: 176.7000, ibs_est: 1.4700, ibs_mun: 0.0000, is_fed: 0.0000, unid: 'kg', ini: '2027-01-01', fim: '2027-12-31', desc: 'Ad Rem Combustíveis / GLP — LC 214/2025' },
+  ];
+
+  const stmtTabAliq = db.prepare(`
+    INSERT OR REPLACE INTO aliquotas_tabelas (id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  for (const r of regras) {
-    stmtRegra.run(uuid(), r.codigo, r.nome, r.desc, r.tipo, r.cfops, r.result, r.evid, r.base);
+  for (const t of tabelasAliquotas) {
+    stmtTabAliq.run(uuid(), t.cod, t.mod, t.cbs, t.ibs_est, t.ibs_mun, t.is_fed, t.unid, t.ini, t.fim, t.desc);
   }
-  
-  console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas, CFOP, cClassTrib (6 Dígitos), Regras.');
+
+  // =========================================================
+  // CATÁLOGO DE ANEXOS & REGIMES ESPECIAIS (NCM / NBS / cClassTrib)
+  // =========================================================
+  const ncmRegras = [
+    { ncm: '2711.19.10', nbs: '', cclasstrib: '900001', desc: 'Gás Liquefeito de Petróleo (GLP)', tipo: 'ad_rem', red: 0, anexo: 'Art. 350 LC 214/25', base: 'LC 214/2025' },
+    { ncm: '1006.10.92', nbs: '', cclasstrib: '030001', desc: 'Arroz em grãos não parboilizado', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+    { ncm: '0401.20.10', nbs: '', cclasstrib: '030001', desc: 'Leite pasteurizado integral', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+    { ncm: '0713.33.19', nbs: '', cclasstrib: '030001', desc: 'Feijão preto e feijão carioca', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+    { ncm: '3004.90.99', nbs: '', cclasstrib: '010001', desc: 'Medicamentos de uso humano essenciais', tipo: 'reducao_60', red: 60, anexo: 'Anexo VII Produtos de Saúde', base: 'Art. 132 LC 214/2025' },
+    { ncm: '8504.40.21', nbs: '', cclasstrib: '000001', desc: 'Equipamentos e conversores estáticos', tipo: 'padrao', red: 0, anexo: 'Regime Geral', base: 'LC 214/2025' },
+  ];
+
+  const stmtNcm = db.prepare(`
+    INSERT OR REPLACE INTO ncm_regras_anexos (id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01', '2033-12-31', 1)
+  `);
+
+  for (const n of ncmRegras) {
+    stmtNcm.run(uuid(), n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
+  }
+
+  console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas Ad Valorem/Ad Rem, Anexos NCM, CFOP, cClassTrib.');
 }
 

@@ -1,0 +1,54 @@
+# Walkthrough: Tabelas Dinâmicas de Alíquotas e KPIs Reais dos XMLs
+
+Implementamos com sucesso a arquitetura fiscal dinâmica no **Radar de Conformidade Fiscal**, eliminando 100% de valores de alíquotas fixos em código (*zero hardcode*), disponibilizando as tabelas dinâmicas por vigência (**Ad Valorem %** e **Ad Rem R$**), o **Catálogo de Anexos da Lei (NCM / NBS)** com **importação em lote via Excel**, e a consolidação dos **KPIs baseados nos tributos reais dos XMLs**.
+
+---
+
+## 🚀 O que foi Implementado
+
+### 1. Banco de Dados & REST API
+- **Tabela de Alíquotas por Vigência (`aliquotas_tabelas`)**:
+  - Segregação por modalidade `ad_valorem` (%) e `ad_rem` (R$/unidade).
+  - Campos: `codigo_cadastro`, `cbs_federal`, `ibs_estadual`, `ibs_municipal`, `is_federal`, `unidade_medida` (kg, L, m³), `inicio_vigencia`, `final_vigencia`, `descricao`.
+- **Catálogo de Anexos da Lei (`ncm_regras_anexos`)**:
+  - Campos: `ncm`, `nbs`, `cclasstrib`, `descricao`, `tipo_tratamento` (`cesta_basica_zero`, `reducao_60`, `reducao_30`, `ad_rem`, `padrao`, `isento`), `percentual_reducao`, `anexo_lei`, `base_legal`, `vigencia_inicio`, `vigencia_fim`.
+- **Endpoints REST em [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts)**:
+  - `GET`, `POST`, `DELETE` para `/api/tables/aliquotas/ad-valorem`
+  - `GET`, `POST`, `DELETE` para `/api/tables/aliquotas/ad-rem`
+  - `GET`, `POST`, `DELETE` para `/api/tables/anexos-ncm`
+  - `POST /api/tables/anexos-ncm/upload-lote` (transação em lote de centenas de NCMs).
+
+---
+
+### 2. Interface de Parâmetros Fiscais ([TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx))
+- **Aba 1 — Alíquotas Ad Valorem (%)**:
+  - Tabela idêntica ao modelo desenhado pelo usuário (Cadastro, CBS Federal %, IBS Estadual %, IBS Municipal %, IS Federal %, Início Vigência, Final Vigência, Ações).
+- **Aba 2 — Alíquotas Ad Rem (R$ por Unidade)**:
+  - Tabela para regimes monofásicos de valor fixo (GLP, combustíveis) com unidade de medida (`kg`, `L`, `m³`).
+- **Aba 3 — Catálogo de Anexos & NCMs Diferenciados**:
+  - Busca em tempo real por NCM, descrição ou cClassTrib.
+  - Filtro por tipo de regime (Cesta Básica Zero, Redução 60%, Redução 30%, Ad Rem).
+  - Botão **📥 Importar Planilha Excel (.xlsx, .xls, .csv)** com modal de preview antes da confirmação.
+
+---
+
+### 3. Central de KPIs & BI Fiscal ([CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx))
+- **Soma Real dos Tributos do XML**:
+  - Os cards somam `valorCbs`, `valorIbs`, `valorIcms`, `valorPis`, `valorCofins`, `valorIpi` reais das notas fiscais.
+- **Rótulos Limpos e Alíquotas Efetivas**:
+  - Títulos dos cards sem porcentagens fixas: `CBS Federal`, `IBS Estadual`, `IBS Municipal`.
+  - Exibição de badge com a **alíquota média efetiva real** calculada sobre a carteira.
+- **Linha de Destaque de Tributos do Regime Atual**:
+  - Apuração consolidada de ICMS, PIS, COFINS e IPI para documentos do período de transição/atual.
+- **Vigências Fiscais Dinâmicas**:
+  - O seletor de ano consulta diretamente os parâmetros do banco de dados para a vigência correspondente.
+
+---
+
+## 🧪 Validação Técnica
+
+| Verificação | Comando | Resultado |
+| :--- | :--- | :--- |
+| **Tipagem Estrita TypeScript** | `npm run lint` (`tsc --noEmit`) | ✅ **0 Erros de Compilação** |
+| **Bundle de Produção Vite** | `npm run build` | ✅ **Sucesso (1717 módulos compilados em 8.88s)** |
+| **Persistência de Dados** | SQLite / Supabase | ✅ **Tabelas e Seeds criados com integridade** |

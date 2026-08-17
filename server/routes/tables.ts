@@ -376,4 +376,430 @@ router.get('/regras', requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+// =========================================================
+// TABELAS DE ALÍQUOTAS AD VALOREM (%)
+// =========================================================
+
+/** GET /api/tables/aliquotas/ad-valorem — Listar linhas Ad Valorem */
+router.get('/aliquotas/ad-valorem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('aliquotas_tabelas')
+          .select('*')
+          .eq('modalidade', 'ad_valorem')
+          .order('inicio_vigencia', { ascending: true })
+          .order('codigo_cadastro', { ascending: true });
+
+        if (!error && data) {
+          res.json({ success: true, data });
+          return;
+        }
+      }
+    }
+
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM aliquotas_tabelas
+      WHERE modalidade = 'ad_valorem'
+      ORDER BY inicio_vigencia ASC, codigo_cadastro ASC
+    `).all();
+
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar alíquotas Ad Valorem: ' + err.message });
+  }
+});
+
+/** POST /api/tables/aliquotas/ad-valorem — Criar/Atualizar linha Ad Valorem */
+router.post('/aliquotas/ad-valorem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, codigo_cadastro, cbs_federal, ibs_estadual, ibs_municipal, is_federal, inicio_vigencia, final_vigencia, descricao } = req.body;
+
+    const rowId = id || uuid();
+    const codCad = codigo_cadastro || '00001';
+    const cbs = Number(cbs_federal || 0);
+    const ibsEst = Number(ibs_estadual || 0);
+    const ibsMun = Number(ibs_municipal || 0);
+    const isFed = Number(is_federal || 0);
+    const ini = inicio_vigencia || '2026-01-01';
+    const fim = final_vigencia || '2026-12-31';
+    const desc = descricao || '';
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('aliquotas_tabelas')
+          .upsert({
+            id: rowId,
+            codigo_cadastro: codCad,
+            modalidade: 'ad_valorem',
+            cbs_federal: cbs,
+            ibs_estadual: ibsEst,
+            ibs_municipal: ibsMun,
+            is_federal: isFed,
+            unidade_medida: null,
+            inicio_vigencia: ini,
+            final_vigencia: fim,
+            descricao: desc,
+            updated_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Alíquota Ad Valorem salva com sucesso no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      INSERT OR REPLACE INTO aliquotas_tabelas (
+        id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
+      ) VALUES (?, ?, 'ad_valorem', ?, ?, ?, ?, NULL, ?, ?, ?, datetime('now'))
+    `).run(rowId, codCad, cbs, ibsEst, ibsMun, isFed, ini, fim, desc);
+
+    res.json({ success: true, message: 'Alíquota Ad Valorem salva com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar alíquota Ad Valorem: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/aliquotas/ad-valorem/:id */
+router.delete('/aliquotas/ad-valorem/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
+
+    res.json({ success: true, message: 'Registro removido com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir registro: ' + err.message });
+  }
+});
+
+// =========================================================
+// TABELAS DE ALÍQUOTAS AD REM (R$ / UNIDADE)
+// =========================================================
+
+/** GET /api/tables/aliquotas/ad-rem — Listar linhas Ad Rem */
+router.get('/aliquotas/ad-rem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('aliquotas_tabelas')
+          .select('*')
+          .eq('modalidade', 'ad_rem')
+          .order('inicio_vigencia', { ascending: true })
+          .order('codigo_cadastro', { ascending: true });
+
+        if (!error && data) {
+          res.json({ success: true, data });
+          return;
+        }
+      }
+    }
+
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM aliquotas_tabelas
+      WHERE modalidade = 'ad_rem'
+      ORDER BY inicio_vigencia ASC, codigo_cadastro ASC
+    `).all();
+
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar alíquotas Ad Rem: ' + err.message });
+  }
+});
+
+/** POST /api/tables/aliquotas/ad-rem — Criar/Atualizar linha Ad Rem */
+router.post('/aliquotas/ad-rem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, codigo_cadastro, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao } = req.body;
+
+    const rowId = id || uuid();
+    const codCad = codigo_cadastro || '00001';
+    const cbs = Number(cbs_federal || 0);
+    const ibsEst = Number(ibs_estadual || 0);
+    const ibsMun = Number(ibs_municipal || 0);
+    const isFed = Number(is_federal || 0);
+    const unid = unidade_medida || 'kg';
+    const ini = inicio_vigencia || '2026-01-01';
+    const fim = final_vigencia || '2026-12-31';
+    const desc = descricao || '';
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('aliquotas_tabelas')
+          .upsert({
+            id: rowId,
+            codigo_cadastro: codCad,
+            modalidade: 'ad_rem',
+            cbs_federal: cbs,
+            ibs_estadual: ibsEst,
+            ibs_municipal: ibsMun,
+            is_federal: isFed,
+            unidade_medida: unid,
+            inicio_vigencia: ini,
+            final_vigencia: fim,
+            descricao: desc,
+            updated_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Alíquota Ad Rem salva com sucesso no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      INSERT OR REPLACE INTO aliquotas_tabelas (
+        id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
+      ) VALUES (?, ?, 'ad_rem', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(rowId, codCad, cbs, ibsEst, ibsMun, isFed, unid, ini, fim, desc);
+
+    res.json({ success: true, message: 'Alíquota Ad Rem salva com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar alíquota Ad Rem: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/aliquotas/ad-rem/:id */
+router.delete('/aliquotas/ad-rem/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
+
+    res.json({ success: true, message: 'Registro removido com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir registro: ' + err.message });
+  }
+});
+
+// =========================================================
+// CATÁLOGO DE ANEXOS DA LEI & NCMs (Reduções e Isenções)
+// =========================================================
+
+/** GET /api/tables/anexos-ncm — Listar regras de NCM / Anexos */
+router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { q, tipo_tratamento } = req.query as { q?: string; tipo_tratamento?: string };
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        let query = supabase
+          .from('ncm_regras_anexos')
+          .select('*')
+          .eq('ativo', true)
+          .order('ncm');
+
+        if (tipo_tratamento && tipo_tratamento !== 'todos') {
+          query = query.eq('tipo_tratamento', tipo_tratamento);
+        }
+        if (q && q.trim()) {
+          query = query.or(`ncm.ilike.%${q}%,descricao.ilike.%${q}%,cclasstrib.ilike.%${q}%`);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) {
+          res.json({ success: true, data, total: data.length });
+          return;
+        }
+      }
+    }
+
+    const db = getDatabase();
+    let sql = 'SELECT * FROM ncm_regras_anexos WHERE ativo = 1';
+    const params: any[] = [];
+
+    if (tipo_tratamento && tipo_tratamento !== 'todos') {
+      sql += ' AND tipo_tratamento = ?';
+      params.push(tipo_tratamento);
+    }
+    if (q && q.trim()) {
+      sql += ' AND (ncm LIKE ? OR descricao LIKE ? OR cclasstrib LIKE ?)';
+      const term = `%${q.trim()}%`;
+      params.push(term, term, term);
+    }
+
+    sql += ' ORDER BY ncm ASC';
+    const rows = db.prepare(sql).all(...params);
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar anexos NCM: ' + err.message });
+  }
+});
+
+/** POST /api/tables/anexos-ncm — Criar/Atualizar regra NCM */
+router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim } = req.body;
+
+    if (!ncm || !descricao) {
+      res.status(400).json({ success: false, message: 'NCM e Descrição são obrigatórios.' });
+      return;
+    }
+
+    const rowId = id || uuid();
+    const red = Number(percentual_reducao || 0);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error } = await supabase
+          .from('ncm_regras_anexos')
+          .upsert({
+            id: rowId,
+            ncm: ncm.trim(),
+            nbs: nbs || '',
+            cclasstrib: cclasstrib || '',
+            descricao: descricao.trim(),
+            tipo_tratamento: tipo_tratamento || 'padrao',
+            percentual_reducao: red,
+            anexo_lei: anexo_lei || '',
+            base_legal: base_legal || '',
+            vigencia_inicio: vigencia_inicio || '2026-01-01',
+            vigencia_fim: vigencia_fim || '2033-12-31',
+            ativo: true,
+            updated_at: new Date().toISOString()
+          });
+
+        if (error) throw error;
+        res.json({ success: true, message: 'Regra de NCM gravada no Supabase.' });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare(`
+      INSERT OR REPLACE INTO ncm_regras_anexos (
+        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+    `).run(
+      rowId, ncm.trim(), nbs || '', cclasstrib || '', descricao.trim(),
+      tipo_tratamento || 'padrao', red, anexo_lei || '', base_legal || '',
+      vigencia_inicio || '2026-01-01', vigencia_fim || '2033-12-31'
+    );
+
+    res.json({ success: true, message: 'Regra de NCM gravada com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao gravar regra NCM: ' + err.message });
+  }
+});
+
+/** POST /api/tables/anexos-ncm/upload-lote — Inserir lote de NCMs importados do Excel */
+router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum item válido enviado para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO ncm_regras_anexos (
+        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const it of rows) {
+        if (!it.ncm) continue;
+        insertStmt.run(
+          it.id || uuid(),
+          String(it.ncm).trim(),
+          it.nbs || '',
+          it.cclasstrib || '',
+          it.descricao || 'Item Importado',
+          it.tipo_tratamento || 'padrao',
+          Number(it.percentual_reducao || 0),
+          it.anexo_lei || '',
+          it.base_legal || 'LC 214/2025',
+          it.vigencia_inicio || '2026-01-01',
+          it.vigencia_fim || '2033-12-31'
+        );
+        inseridos++;
+      }
+    });
+
+    tx(itens);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const supaRows = itens.map(it => ({
+          id: it.id || uuid(),
+          ncm: String(it.ncm).trim(),
+          nbs: it.nbs || '',
+          cclasstrib: it.cclasstrib || '',
+          descricao: it.descricao || 'Item Importado',
+          tipo_tratamento: it.tipo_tratamento || 'padrao',
+          percentual_reducao: Number(it.percentual_reducao || 0),
+          anexo_lei: it.anexo_lei || '',
+          base_legal: it.base_legal || 'LC 214/2025',
+          vigencia_inicio: it.vigencia_inicio || '2026-01-01',
+          vigencia_fim: it.vigencia_fim || '2033-12-31',
+          ativo: true
+        }));
+        await supabase.from('ncm_regras_anexos').upsert(supaRows);
+      }
+    }
+
+    res.json({ success: true, message: `${inseridos} regras de NCM importadas com sucesso.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro na importação em lote de NCMs: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/anexos-ncm/:id */
+router.delete('/anexos-ncm/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('ncm_regras_anexos').delete().eq('id', id);
+      }
+    }
+
+    const db = getDatabase();
+    db.prepare('DELETE FROM ncm_regras_anexos WHERE id = ?').run(id);
+
+    res.json({ success: true, message: 'Regra de NCM excluída com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir regra NCM: ' + err.message });
+  }
+});
+
 export default router;
+

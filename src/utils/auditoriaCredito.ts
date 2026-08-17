@@ -71,8 +71,8 @@ export function auditarItemCredito(
   item: Partial<ItemDfeDetail>,
   index: number = 0,
   regimeEmitente: string = 'Lucro Real',
-  aliquotaCbsDoc: number = 8.8,
-  aliquotaIbsDoc: number = 17.7
+  aliquotaCbsDoc: number = 0,
+  aliquotaIbsDoc: number = 0
 ): ParecerCreditoItem {
   const cfop = item.cfop || '1102';
   const cClassTrib = item.cClassTrib || '000001';

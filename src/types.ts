@@ -665,3 +665,37 @@ export interface CustodiaWormItem {
   emissorCnpj: string;
   destinatarioCnpj: string;
 }
+
+// =========================================================
+// TABELAS DINÂMICAS DE ALÍQUOTAS & ANEXOS NCM
+// =========================================================
+
+export interface AliquotaTabelaItem {
+  id?: string;
+  codigo_cadastro: string;
+  modalidade: 'ad_valorem' | 'ad_rem';
+  cbs_federal: number;
+  ibs_estadual: number;
+  ibs_municipal: number;
+  is_federal: number;
+  unidade_medida?: string | null;
+  inicio_vigencia: string;
+  final_vigencia: string;
+  descricao?: string;
+}
+
+export interface NcmRegraAnexoItem {
+  id?: string;
+  ncm: string;
+  nbs?: string;
+  cclasstrib?: string;
+  descricao: string;
+  tipo_tratamento: 'padrao' | 'cesta_basica_zero' | 'reducao_60' | 'reducao_30' | 'ad_rem' | 'isento' | 'monofasico';
+  percentual_reducao: number;
+  anexo_lei?: string;
+  base_legal?: string;
+  vigencia_inicio: string;
+  vigencia_fim: string;
+  ativo?: boolean;
+}
+

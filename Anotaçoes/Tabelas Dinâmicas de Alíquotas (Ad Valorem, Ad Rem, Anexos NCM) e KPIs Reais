@@ -1,0 +1,109 @@
+# Plano Mestre: Tabelas Dinâmicas de Alíquotas (Ad Valorem, Ad Rem, Anexos NCM) e KPIs Reais
+
+Este plano estabelece a reformulação completa do mecanismo de alíquotas do sistema, eliminando 100% de valores fiscais fixos em código (*zero hardcode*), implementando as tabelas dinâmicas por vigência (Ad Valorem e Ad Rem), o catálogo de Anexos da Lei (NCM/NBS) com upload em lote, e a consolidação dos KPIs a partir dos valores reais dos XMLs.
+
+---
+
+## 🎯 Objetivos Principais
+
+1. **Tabela de Alíquotas Ad Valorem (%)**: Cadastro e manutenção de alíquotas por período de vigência para CBS Federal, IBS Estadual, IBS Municipal e IS Federal.
+2. **Tabela de Alíquotas Ad Rem (R$ por Unidade)**: Cadastro e manutenção de alíquotas em valor fixo por unidade de medida para setores com tributação monofásica (GLP, combustíveis, etc.).
+3. **Catálogo de Anexos & Regimes Especiais (NCM / NBS / cClassTrib)**: Cadastro individual e importação em lote (Excel) de NCMs sujeitos a Alíquota Zero (Cesta Básica), Redução de 60%, Redução de 30% ou Regime Diferenciado.
+4. **Consolidação Real dos KPIs**: Os cards do painel executivo passam a somar os valores reais destacados nos itens dos XMLs, sem multiplicações teóricas artificiais e sem rótulos fixos de porcentagem.
+5. **Compatibilidade com o Motor da Calculadora RFB (RTC)**: Estrutura de dados 100% compatível com a biblioteca de cálculo da Receita Federal e Comitê Gestor do IBS.
+
+---
+
+## 🏗️ Arquitetura Proposta
+
+```mermaid
+graph TD
+    subgraph Entrada de Dados Fiscais
+        T1[Tabela Ad Valorem % por Vigência]
+        T2[Tabela Ad Rem R$ por Vigência]
+        T3[Tabela de Anexos NCM/NBS com % Redução]
+    end
+
+    subgraph Fontes de Dados
+        XML[XMLs Reais de DF-e Capturados]
+        MAN[Upload Manual de Planilhas]
+    end
+
+    subgraph Motor de Auditoria & KPIs
+        KPI[Central de KPIs: Soma Real dos Itens do XML]
+        AUDIT[Motor de Auditoria: Cruzamento XML vs Tabelas Vigentes]
+    end
+
+    T1 --> AUDIT
+    T2 --> AUDIT
+    T3 --> AUDIT
+    XML --> KPI
+    XML --> AUDIT
+    MAN --> T3
+```
+
+---
+
+## 📁 Detalhamento das Alterações
+
+### 1. Banco de Dados & Backend API
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+* Atualizar a tabela `aliquotas_referencia` para suportar explicitamente modalidade `ad_valorem` e `ad_rem`, com segregação de `cbs_federal`, `ibs_estadual`, `ibs_municipal`, `is_federal`, `unidade_medida`, `inicio_vigencia` e `final_vigencia`.
+* Criar a tabela `ncm_regras_anexos`:
+  * `id`, `ncm`, `nbs`, `cclasstrib`, `descricao`, `tipo_tratamento` (`padrao`, `cesta_basica_zero`, `reducao_60`, `reducao_30`, `ad_rem`, `isento`, `imune`), `percentual_reducao`, `anexo_lei`, `base_legal`, `vigencia_inicio`, `vigencia_fim`, `ativo`.
+
+#### [MODIFY] [rls_policies.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/rls_policies.sql)
+* Adicionar as DDLs e políticas RLS para Supabase/PostgreSQL das novas tabelas de alíquotas e anexos NCM.
+
+#### [MODIFY] [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts)
+* Implementar endpoints REST completos:
+  * `GET /api/tables/aliquotas/ad-valorem` — Listar tabelas Ad Valorem ordenadas por vigência.
+  * `POST /api/tables/aliquotas/ad-valorem` — Criar / Atualizar linha de vigência Ad Valorem.
+  * `DELETE /api/tables/aliquotas/ad-valorem/:id` — Remover vigência Ad Valorem.
+  * `GET /api/tables/aliquotas/ad-rem` — Listar tabelas Ad Rem.
+  * `POST /api/tables/aliquotas/ad-rem` — Criar / Atualizar linha de vigência Ad Rem.
+  * `DELETE /api/tables/aliquotas/ad-rem/:id` — Remover vigência Ad Rem.
+  * `GET /api/tables/anexos-ncm` — Listar regras de NCM com paginação e busca.
+  * `POST /api/tables/anexos-ncm` — Criar / Atualizar regra de NCM.
+  * `POST /api/tables/anexos-ncm/upload-excel` — Importar lote de NCMs de planilha Excel (XLSX).
+  * `DELETE /api/tables/anexos-ncm/:id` — Excluir regra de NCM.
+
+---
+
+### 2. Interface do Usuário (Frontend)
+
+#### [MODIFY] [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx)
+* Reformular a tela de Parâmetros e Tabelas Fiscais com 3 abas especializadas:
+  1. **Aba 1 — Alíquotas Ad Valorem (%)**: Tabela interativa idêntica ao modelo desenhado pelo usuário (Cadastro, CBS Federal %, IBS Estadual %, IBS Municipal %, IS Federal %, Início Vigência, Final Vigência, Ações).
+  2. **Aba 2 — Alíquotas Ad Rem (R$ por Unidade)**: Tabela de alíquotas em valor (Cadastro, CBS Federal R$, IBS Estadual R$, IBS Municipal R$, IS Federal R$, Unidade, Início Vigência, Final Vigência, Ações).
+  3. **Aba 3 — Anexos da Lei & NCMs com Redução (Cesta Básica / 60% / 30%)**: Interface com busca por NCM/NBS, filtro por tratamento tributário, cadastro manual e botão para **Importar Planilha Excel**.
+
+#### [MODIFY] [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+* Remover todas as multiplicações estáticas de alíquotas.
+* Consolidar os KPIs somando diretamente os valores tributários reais dos itens dos XMLs (`valorCbs`, `valorIbs`, `valorIcms`, `valorPis`, `valorCofins`, `valorIpi`).
+* Atualizar os cards para exibir títulos limpos (`CBS Federal`, `IBS Estadual`, `IBS Municipal`), exibindo a alíquota média ponderada real calculada a partir dos XMLs da carteira.
+* O Simulador de Transição passa a consultar a tabela de vigência cadastrada no banco de dados para o ano selecionado.
+
+#### [MODIFY] [reformaTransicao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reformaTransicao.ts)
+* Atualizar o motor de transição para priorizar dados carregados da API `/tables/aliquotas/ad-valorem` e `/tables/anexos-ncm`.
+
+#### [MODIFY] [auditoriaCredito.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/auditoriaCredito.ts) & [DanfeModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DanfeModal.tsx)
+* Remover fallbacks com alíquotas fixas (`8.8%`, `17.7%`) e utilizar exclusivamente a alíquota real do item ou o parâmetro fiscal da data de emissão.
+
+---
+
+## 🧪 Plano de Verificação
+
+### 1. Testes Automatizados e Compilação
+- Executar `npx tsc --noEmit` para garantir 0 erros de tipagem estrita no TypeScript.
+- Executar `npm run build` para validar a integridade do bundle Vite.
+
+### 2. Testes de Integração Backend & Banco de Dados
+- Criar e listar vigências nas tabelas Ad Valorem e Ad Rem via API.
+- Testar upload de planilha Excel com múltiplos NCMs e verificar a persistência no Supabase/SQLite.
+
+### 3. Validação Visual & Funcional
+- Acessar o módulo **Parâmetros & Tabelas Fiscais** e verificar as 3 abas.
+- Cadastrar as vigências de 2026 (CBS 0,90%, IBS 0,10%) e 2027 (CBS 9,21%, IBS 0,10%).
+- Acessar a **Central de KPIs** e verificar se os valores exibidos refletem exatamente os XMLs carregados, com títulos dinâmicos e sem alíquotas fixas no código.

@@ -144,6 +144,27 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
         const qCom = parseFloat(getTagValue(prod, 'qCom') || '1');
         const vUnCom = parseFloat(getTagValue(prod, 'vUnCom') || '0');
         const vProd = parseFloat(getTagValue(prod, 'vProd') || `${qCom * vUnCom}`);
+        // Extrai tributos reais destacados no XML para este item
+        const impostoNode = det.getElementsByTagName('imposto')[0];
+        let itemIcms = 0;
+        let itemIpi = 0;
+        let itemPis = 0;
+        let itemCofins = 0;
+        let itemCbs = 0;
+        let itemIbs = 0;
+        let itemAliqCbs = 0;
+        let itemAliqIbs = 0;
+
+        if (impostoNode) {
+          itemIcms = parseFloat(getTagValue(impostoNode, 'vICMS') || '0') || 0;
+          itemIpi = parseFloat(getTagValue(impostoNode, 'vIPI') || '0') || 0;
+          itemPis = parseFloat(getTagValue(impostoNode, 'vPIS') || '0') || 0;
+          itemCofins = parseFloat(getTagValue(impostoNode, 'vCOFINS') || '0') || 0;
+          itemCbs = parseFloat(getTagValue(impostoNode, 'vCBS') || '0') || 0;
+          itemIbs = parseFloat(getTagValue(impostoNode, 'vIBS') || '0') || 0;
+          itemAliqCbs = parseFloat(getTagValue(impostoNode, 'pCBS') || '0') || 0;
+          itemAliqIbs = parseFloat(getTagValue(impostoNode, 'pIBS') || '0') || 0;
+        }
 
         itensExtraidos.push({
           numeroItem: numItem,
@@ -155,10 +176,14 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
           quantidade: qCom,
           valorUnitario: vUnCom,
           valorTotal: vProd,
-          valorIcms: Number((vProd * 0.18).toFixed(2)),
-          valorIpi: 0,
-          valorCbs: Number((vProd * 0.088).toFixed(2)),
-          valorIbs: Number((vProd * 0.177).toFixed(2)),
+          valorIcms: itemIcms,
+          valorIpi: itemIpi,
+          valorPis: itemPis,
+          valorCofins: itemCofins,
+          valorCbs: itemCbs,
+          valorIbs: itemIbs,
+          aliquotaCbs: itemAliqCbs,
+          aliquotaIbs: itemAliqIbs,
         });
       }
     }
