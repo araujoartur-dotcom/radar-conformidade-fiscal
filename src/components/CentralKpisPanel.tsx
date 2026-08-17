@@ -5,10 +5,11 @@ import {
   BarChart3, RefreshCw, Filter, Calendar, Building2, Percent,
   Download, Sparkles, ShieldAlert, Check, HelpCircle, Info
 } from 'lucide-react';
-import { DfeXmlItem, RegraTransicaoAno, AliquotaTabelaItem } from '../types';
+import { DfeXmlItem, RegraTransicaoAno } from '../types';
 import { exportToExcel } from '../utils/excel';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
+import { getRegraTransicaoAno, ANOS_TRANSICAO } from '../utils/reformaTransicao';
 
 interface CentralKpisPanelProps {
   dfeList?: DfeXmlItem[];
@@ -31,65 +32,9 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const [operacaoFilter, setOperacaoFilter] = useState<'todas' | 'entradas' | 'saidas'>('todas');
   const [anoSimulado, setAnoSimulado] = useState<number>(2026);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [tabelasAdValorem, setTabelasAdValorem] = useState<AliquotaTabelaItem[]>([]);
 
-  // Carregar alíquotas dinâmicas do banco de dados (zero hardcode)
-  useEffect(() => {
-    const loadAliquotas = async () => {
-      const res = await get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem');
-      if (res.ok && res.data?.data) {
-        setTabelasAdValorem(res.data.data);
-      }
-    };
-    loadAliquotas();
-  }, []);
-
-  // Obter regra dinâmica da vigência selecionada
-  const regraDinamica = useMemo(() => {
-    const anoStr = String(anoSimulado);
-    const matched = tabelasAdValorem.find(t => {
-      const iniAno = t.inicio_vigencia ? t.inicio_vigencia.slice(0, 4) : '';
-      const fimAno = t.final_vigencia ? t.final_vigencia.slice(0, 4) : '';
-      return iniAno <= anoStr && fimAno >= anoStr;
-    });
-
-    if (matched) {
-      const cbs = Number(matched.cbs_federal || 0);
-      const ibsEst = Number(matched.ibs_estadual || 0);
-      const ibsMun = Number(matched.ibs_municipal || 0);
-      const isFed = Number(matched.is_federal || 0);
-      const totalIbs = ibsEst + ibsMun;
-      const totalIva = cbs + totalIbs + isFed;
-
-      return {
-        ano: anoSimulado,
-        faseNome: matched.descricao || `Vigência Fiscal ${anoSimulado}`,
-        badge: `CBS ${cbs.toFixed(2)}% + IBS ${totalIbs.toFixed(2)}%`,
-        aliquotaCbs: cbs,
-        aliquotaIbsEstadual: ibsEst,
-        aliquotaIbsMunicipal: ibsMun,
-        aliquotaIbsTotal: totalIbs,
-        aliquotaIvaTotal: totalIva,
-        observacoes: matched.descricao || 'Regra de vigência configurada nos Parâmetros Fiscais.'
-      };
-    }
-
-    // Fallback padrão se tabela ainda não tiver carregado
-    const defaultCbs = anoSimulado === 2026 ? 0.9 : 8.8;
-    const defaultIbsEst = anoSimulado === 2026 ? 0.05 : anoSimulado >= 2033 ? 10.62 : 0;
-    const defaultIbsMun = anoSimulado === 2026 ? 0.05 : anoSimulado >= 2033 ? 7.08 : 0;
-    return {
-      ano: anoSimulado,
-      faseNome: `Exercício Fiscal ${anoSimulado}`,
-      badge: `CBS ${defaultCbs}% + IBS ${(defaultIbsEst + defaultIbsMun).toFixed(1)}%`,
-      aliquotaCbs: defaultCbs,
-      aliquotaIbsEstadual: defaultIbsEst,
-      aliquotaIbsMunicipal: defaultIbsMun,
-      aliquotaIbsTotal: defaultIbsEst + defaultIbsMun,
-      aliquotaIvaTotal: defaultCbs + defaultIbsEst + defaultIbsMun,
-      observacoes: 'Alíquotas carregadas da tabela de parâmetros do sistema.'
-    };
-  }, [tabelasAdValorem, anoSimulado]);
+  // Regra de transição oficial por ano
+  const regraAno = useMemo(() => getRegraTransicaoAno(anoSimulado), [anoSimulado]);
 
   // Documentos Reais
   const baseItems: DfeXmlItem[] = useMemo(() => {
@@ -111,26 +56,20 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     });
   }, [baseItems, operacaoFilter, empresaAtiva]);
 
-  // Agregações de Valores Reais dos XMLs
+  // Agregações Gerais Dinâmicas por Ano da Transição
   const totalValor = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorTotal || 0), 0), [filteredItems]);
-  const totalCbsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorCbs || 0), 0), [filteredItems]);
-  const totalIbsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorIbs || 0), 0), [filteredItems]);
+  const totalCbs = useMemo(() => (totalValor * regraAno.aliquotaCbs) / 100, [totalValor, regraAno]);
+  const totalIbsUf = useMemo(() => (totalValor * regraAno.aliquotaIbsEstadual) / 100, [totalValor, regraAno]);
+  const totalIbsMun = useMemo(() => (totalValor * regraAno.aliquotaIbsMunicipal) / 100, [totalValor, regraAno]);
+  const totalIbsTotal = useMemo(() => totalIbsUf + totalIbsMun, [totalIbsUf, totalIbsMun]);
+  const totalIvaDual = useMemo(() => totalCbs + totalIbsTotal, [totalCbs, totalIbsTotal]);
+  const totalQtd = filteredItems.length;
+
+  // Tributos do Regime Atual Destacados nos XMLs
   const totalIcmsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorIcms || 0), 0), [filteredItems]);
   const totalPisReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorPis || 0), 0), [filteredItems]);
   const totalCofinsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorCofins || 0), 0), [filteredItems]);
   const totalIpiReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorIpi || 0), 0), [filteredItems]);
-  const totalQtd = filteredItems.length;
-
-  // Valores a exibir nos KPIs: se há valores reais nos XMLs usa os reais; caso contrário usa a projeção da vigência selecionada
-  const hasRealCbsIbs = totalCbsReal > 0 || totalIbsReal > 0;
-  const displayCbs = hasRealCbsIbs ? totalCbsReal : (totalValor * regraDinamica.aliquotaCbs) / 100;
-  const displayIbsUf = hasRealCbsIbs ? (totalIbsReal * 0.6) : (totalValor * regraDinamica.aliquotaIbsEstadual) / 100;
-  const displayIbsMun = hasRealCbsIbs ? (totalIbsReal * 0.4) : (totalValor * regraDinamica.aliquotaIbsMunicipal) / 100;
-  const displayIbsTotal = displayIbsUf + displayIbsMun;
-
-  // Alíquota Média Efetiva Real
-  const aliqEfetivaCbs = totalValor > 0 ? (displayCbs / totalValor) * 100 : 0;
-  const aliqEfetivaIbs = totalValor > 0 ? (displayIbsTotal / totalValor) * 100 : 0;
 
   // Agregações por Modelo de DF-e
   const dfeTypeCounts = useMemo<Record<string, DfeTypeStat>>(() => {
@@ -313,27 +252,28 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         </div>
       )}
 
-      {/* ── BARRA DE VIGÊNCIAS FISCAIS & SIMULADOR ── */}
+      {/* ── BARRA DE SIMULAÇÃO TEMPORAL DA TRANSIÇÃO (2026 - 2033) ── */}
       <div className="p-4 rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-cyan-400" />
-            <span className="text-xs font-extrabold text-white">Vigência Tributária & Parâmetros de Cálculo:</span>
+            <span className="text-xs font-extrabold text-white">Simulador Temporal da Reforma Tributária (EC 132/2023 & LC 214/2025):</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-cyan-950 text-cyan-300 border border-cyan-800">
-              {regraDinamica.badge}
+              {regraAno.badge}
             </span>
             <span className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-950 text-slate-300 border border-slate-800">
-              Carga Referência: <strong className="text-white font-mono">{regraDinamica.aliquotaIvaTotal.toFixed(2)}%</strong>
+              Carga IVA Total: <strong className="text-white font-mono">{regraAno.aliquotaIvaTotal.toFixed(2)}%</strong>
             </span>
           </div>
         </div>
 
-        {/* Botões de Anos de Vigência */}
+        {/* Botões de Anos da Transição */}
         <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-          {[2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033].map((ano) => {
+          {ANOS_TRANSICAO.map((ano) => {
             const isSelected = anoSimulado === ano;
+            const r = getRegraTransicaoAno(ano);
             return (
               <button
                 key={ano}
@@ -346,8 +286,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
                 }`}
               >
                 <div className="font-extrabold text-xs">{ano}</div>
-                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-cyan-100' : 'text-slate-500'}`}>
-                  Vigência
+                <div className={`text-[9.5px] font-mono mt-0.5 ${isSelected ? 'text-cyan-100 font-bold' : 'text-slate-500'}`}>
+                  {r.aliquotaIvaTotal.toFixed(1)}%
                 </div>
               </button>
             );
@@ -356,11 +296,13 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
 
         <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/60">
           <span>
-            ℹ️ <strong className="text-slate-300">{regraDinamica.faseNome}:</strong> {regraDinamica.observacoes}
+            ℹ️ <strong className="text-slate-300">{regraAno.faseNome}:</strong> {regraAno.observacoes}
           </span>
-          <span className="text-emerald-400 font-bold hidden md:inline-block">
-            {hasRealCbsIbs ? '✅ Exibindo apuração real dos XMLs' : '📊 Exibindo projeção com parâmetros cadastrados'}
-          </span>
+          {regraAno.percentualReducaoIcmsIss > 0 && (
+            <span className="text-emerald-400 font-bold hidden md:inline-block">
+              📉 ICMS/ISS reduzidos em {regraAno.percentualReducaoIcmsIss}%
+            </span>
+          )}
         </div>
       </div>
 
@@ -390,20 +332,17 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              CBS Federal
+              CBS Federal ({regraAno.aliquotaCbs.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400">
               <Building2 className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-extrabold font-mono text-cyan-300">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayCbs)}
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>União • Contribuição</span>
-            <span className="font-mono font-bold text-cyan-400 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-              ~{aliqEfetivaCbs.toFixed(2)}%
-            </span>
+          <div className="text-[11px] text-slate-400 font-medium">
+            União • {anoSimulado === 2026 ? 'Alíquota de Teste (0,9%)' : 'Contribuição sobre Bens & Serviços'}
           </div>
         </div>
 
@@ -411,20 +350,17 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Estadual
+              IBS Estadual ({regraAno.aliquotaIbsEstadual.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-800 flex items-center justify-center text-indigo-400">
               <Layers className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-extrabold font-mono text-indigo-300">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayIbsUf)}
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>Estados • Subnacional</span>
-            <span className="font-mono font-bold text-indigo-400 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-              {totalValor > 0 ? ((displayIbsUf / totalValor) * 100).toFixed(2) : '0.00'}%
-            </span>
+          <div className="text-[11px] text-slate-400 font-medium">
+            Estados • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 
@@ -432,20 +368,17 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Municipal
+              IBS Municipal ({regraAno.aliquotaIbsMunicipal.toFixed(2)}%)
             </span>
             <div className="w-8 h-8 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-purple-400">
               <Percent className="w-4 h-4" />
             </div>
           </div>
           <div className="text-2xl font-extrabold font-mono text-purple-300">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayIbsMun)}
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}
           </div>
-          <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>Municípios • Subnacional</span>
-            <span className="font-mono font-bold text-purple-400 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
-              {totalValor > 0 ? ((displayIbsMun / totalValor) * 100).toFixed(2) : '0.00'}%
-            </span>
+          <div className="text-[11px] text-slate-400 font-medium">
+            Municípios • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 
@@ -594,15 +527,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             {/* CBS Federal */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-cyan-300">2. CBS Federal (União)</span>
+                <span className="font-bold text-cyan-300">2. CBS Federal ({regraAno.aliquotaCbs.toFixed(2)}% União)</span>
                 <span className="font-mono font-bold text-cyan-300">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayCbs)}
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}
                 </span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-700"
-                  style={{ width: `${(displayCbs / maxValorTributario) * 100}%` }}
+                  style={{ width: `${(totalCbs / maxValorTributario) * 100}%` }}
                 />
               </div>
             </div>
@@ -610,15 +543,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             {/* IBS Estadual (UF) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-indigo-300">3. IBS Estadual (Estados)</span>
+                <span className="font-bold text-indigo-300">3. IBS Estadual ({regraAno.aliquotaIbsEstadual.toFixed(2)}% Estados)</span>
                 <span className="font-mono font-bold text-indigo-300">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayIbsUf)}
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}
                 </span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700"
-                  style={{ width: `${(displayIbsUf / maxValorTributario) * 100}%` }}
+                  style={{ width: `${(totalIbsUf / maxValorTributario) * 100}%` }}
                 />
               </div>
             </div>
@@ -626,15 +559,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             {/* IBS Municipal (MUN) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-purple-300">4. IBS Municipal (Municípios)</span>
+                <span className="font-bold text-purple-300">4. IBS Municipal ({regraAno.aliquotaIbsMunicipal.toFixed(2)}% Municípios)</span>
                 <span className="font-mono font-bold text-purple-300">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayIbsMun)}
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}
                 </span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-700"
-                  style={{ width: `${(displayIbsMun / maxValorTributario) * 100}%` }}
+                  style={{ width: `${(totalIbsMun / maxValorTributario) * 100}%` }}
                 />
               </div>
             </div>
@@ -644,9 +577,9 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
           {/* Sum Total Card */}
           <div className="p-3.5 bg-gradient-to-r from-cyan-950/40 via-indigo-950/40 to-slate-950 rounded-2xl border border-cyan-800/40 flex items-center justify-between text-xs">
             <div>
-              <span className="text-slate-400 block text-[10px] font-bold uppercase">Total CBS + IBS:</span>
+              <span className="text-slate-400 block text-[10px] font-bold uppercase">Total CBS + IBS ({regraAno.aliquotaIvaTotal.toFixed(2)}% Transição):</span>
               <span className="font-mono font-extrabold text-cyan-300 text-sm">
-                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(displayCbs + displayIbsTotal)}
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs + totalIbsTotal)}
               </span>
             </div>
             <span className="px-3 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
@@ -679,8 +612,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
                 <th className="py-3 px-3">UF</th>
                 <th className="py-3 px-3 text-center">Volume DF-e</th>
                 <th className="py-3 px-3 text-right">Valor Total (R$)</th>
-                <th className="py-3 px-3 text-right">CBS Apurada</th>
-                <th className="py-3 px-3 text-right">IBS Apurado</th>
+                <th className="py-3 px-3 text-right">CBS ({regraAno.aliquotaCbs.toFixed(1)}%)</th>
+                <th className="py-3 px-3 text-right">IBS Total ({regraAno.aliquotaIbsTotal.toFixed(1)}%)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
@@ -692,8 +625,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
                 </tr>
               ) : (
                 topParceiros.map((p, idx) => {
-                  const cbsVal = (p.total * regraDinamica.aliquotaCbs) / 100;
-                  const ibsVal = (p.total * regraDinamica.aliquotaIbsTotal) / 100;
+                  const cbsVal = (p.total * regraAno.aliquotaCbs) / 100;
+                  const ibsVal = (p.total * regraAno.aliquotaIbsTotal) / 100;
                   return (
                     <tr key={idx} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3 px-4">
