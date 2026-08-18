@@ -1,0 +1,91 @@
+# Plano de Implementação: Auditoria Tributária de Serviços (Retenções na Fonte e Fundamentações Legais), Limpeza Visual e Robustez Operacional
+
+Este plano detalha o suporte a **NF-e**, **CT-e** e **NFS-e** (removendo MDF-e), o motor de **auditoria analítica de retenções na fonte de serviços** (com **CSLL segregada**, IRRF, PIS, COFINS, INSS e ISS), as **fundamentações legais completas**, a **persistência de página no F5**, a **Central de KPIs como tela inicial** e a **limpeza dos elementos visuais**.
+
+---
+
+## ⚖️ Mapeamento de Retenções na Fonte em Serviços (NFS-e) & Fundamentações Legais
+
+| Tributo Retido | Alíquota Padrão | Base Legal / Legislação Aplicável | Hipótese de Incidência / Regra de Retenção |
+| :--- | :---: | :--- | :--- |
+| **IRRF** | **1,50%** *(ou 1,0%)* | **Art. 714 e 716 do RIR/2018** *(Decreto nº 9.580/2018)*, **Art. 52 da Lei nº 7.450/1985** e **Art. 64 da Lei nº 9.430/1996** | Serviços de natureza profissional regulamentada (advocacia, contabilidade, auditoria, consultoria, engenharia, informática, etc.) e serviços de limpeza/segurança (1%). |
+| **CSLL Retida** | **1,00%** | **Art. 30 da Lei nº 10.833/2003**, **Art. 1º da Lei nº 10.925/2004** e **IN RFB nº 2.145/2023** | Prestação de serviços de assessoria, consultoria, conservação, segurança, vigilância, locação de mão de obra e serviços profissionais. Segregada individualmente na apuração. |
+| **PIS Retido** | **0,65%** | **Art. 30 da Lei nº 10.833/2003** e **Lei nº 13.137/2015** | Componente do pacote de contribuições federais sobre pagamentos a pessoas jurídicas. |
+| **COFINS Retida** | **3,00%** | **Art. 30 da Lei nº 10.833/2003** e **Lei nº 13.137/2015** | Componente de contribuição social federal retida na fonte pelo tomador. |
+| **CRF / PCC Global** | **4,65%** *(PIS 0,65% + COFINS 3% + CSLL 1%)* | **Art. 30 a 32 da Lei nº 10.833/2003** e **Lei nº 13.137/2015** | Retenção agregada das três contribuições federais para pagamentos a pessoas jurídicas prestadoras de serviços. |
+| **INSS Retido** | **11,00%** *(ou 3,5% CPRB)* | **Art. 31 da Lei nº 8.212/1991**, **IN RFB nº 2.110/2022** e **Lei nº 12.546/2011** | Serviços prestados mediante cessão de mão de obra ou empreitada (limpeza, conservação, vigilância, construção civil, etc.). |
+| **ISS / ISSQN Retido** | **2,00% a 5,00%** | **Art. 3º e Art. 6º da Lei Complementar nº 116/2003** | Retenção devida no local da prestação (ex: construção civil, vigilância, limpeza, guarda, eventos) ou quando o prestador não comprovar inscrição municipal/CPOM. |
+| **CBS & IBS (Reforma)** | *Conforme Vigência* | **EC nº 132/2023** e **LC nº 214/2025** *(PLP 68/2024)* | Incidência não cumulativa plena sobre fornecimento de bens e serviços materiais/imateriais. |
+
+---
+
+## 🔍 Regras do Motor de Auditoria de Serviços (NFS-e)
+
+1. **Auditoria de Retenção Indevida de ISS**:
+   - Se o serviço tiver ISS retido pelo tomador, mas a atividade constar como tributável no município do prestador (regra geral do *Art. 3º da LC 116/2003*), apontar inconsistência de **Bitributação / Retenção Indevida**.
+2. **Auditoria de Falta de Retenção de IRRF / CSLL / PIS / COFINS**:
+   - Para prestadores do Lucro Real ou Presumido prestando serviços profissionais, apontar alerta de **Falta de Retenção Obrigatória na Fonte** caso as tags venham zeradas (*Art. 714 RIR/2018 e Art. 30 Lei 10.833/2003*).
+3. **Dispensa de Retenção para Optantes do Simples Nacional**:
+   - Não reter IRRF/CSLL/PIS/COFINS de empresas optantes pelo Simples Nacional (*Art. 32, III da Lei 10.833/2003*). Se houver destaque, apontar **Retenção Indevida para Optante do Simples**.
+4. **Auditoria de INSS em Cessão de Mão de Obra**:
+   - Verificar incidência dos 11% ou 3,5% sobre o valor da mão de obra (*Art. 31 Lei 8.212/1991*).
+
+---
+
+## 🛠️ Detalhamento das Alterações no Código
+
+### 1. Inicialização & Persistência de Navegação (F5)
+#### [MODIFY] [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx)
+- Inicializar `activeMode` com `localStorage.getItem('@RadarFiscal:activeMode') || 'central_kpis'`.
+- Sincronizar em tempo real as trocas de módulo com o `localStorage`.
+
+### 2. Limpeza Visual Solicitada
+#### [MODIFY] [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+- Remover o badge `<span className="...">TAX ANALYTICS</span>`.
+- Remover menções a MDF-e das contagens e gráficos.
+
+#### [MODIFY] [MdmPartnersPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/MdmPartnersPanel.tsx)
+- Remover o badge `MASTER DATA MANAGEMENT (MDM) & GOVERNANÇA TRIBUTÁRIA`.
+- Remover o badge `SPED / SCANC / CNPJ Alfa`.
+- Remover o parágrafo descritivo abaixo do título.
+- Remover o caractere `+` duplicado no botão de cadastro de parceiro.
+
+### 3. Upload & Dropzone Principal (NF-e, CT-e e NFS-e)
+#### [MODIFY] [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+- Atualizar o texto do dropzone para: *"Arraste ou clique para carregar arquivos XML de DF-e (NF-e, NFS-e e CT-e)"*.
+- Garantir processamento em lote via FileReader/Text e integração com o backend `/api/upload/xml`.
+
+#### [MODIFY] [ConsultaNsuModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx)
+- Limpeza de textos e referências a MDF-e.
+
+### 4. Extração, Tipagem e Parametrização de Retenções (CSLL, IRRF, PIS, COFINS, INSS, ISS)
+#### [MODIFY] [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+- Adicionar os campos na interface `DfeXmlItem`:
+  - `valorIrrf?: number;`
+  - `valorCsllRetido?: number;`
+  - `valorPisRetido?: number;`
+  - `valorCofinsRetido?: number;`
+  - `valorCrfTotal?: number;`
+  - `valorInssRetido?: number;`
+  - `valorIssRetido?: number;`
+  - `aliquotaIss?: number;`
+
+#### [MODIFY] [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/xmlParser.ts)
+- Extrair tags de retenção de serviços: `vIRRF`, `vCSLL`, `vPIS`, `vCOFINS`, `vINSS`, `vISSRetido`, `vISS`, `vDeducoes`, `vOutrasRetencoes`.
+- Implementar regras de auditoria automática com fundamentação legal anexada aos alertas do documento.
+
+#### [MODIFY] [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx)
+- Adicionar a nova aba **"Auditoria de Retenções de Serviços (NFS-e)"** com as fundamentações legais e alíquotas de referência (IRRF 1,5%, CSLL 1%, PIS 0,65%, COFINS 3%, INSS 11%, ISS 2% a 5%).
+
+---
+
+## 🧪 Plano de Verificação
+
+### Testes Automatizados
+- Executar `npm run lint` (`tsc --noEmit`) para validar tipagem estrita de todos os campos de retenção.
+- Executar `npm run build` para garantir build de produção do Vite em 100%.
+
+### Verificação Manual
+1. **F5 & Tela Inicial**: Entrar no sistema (deve abrir em Central de KPIs), mudar de módulo e dar F5 (deve permanecer no módulo).
+2. **Interface Limpa**: Verificar ausência de `TAX ANALYTICS`, badges do MDM e botão de parceiro com `+` único.
+3. **Upload**: Subir arquivos XML de NF-e, CT-e e NFS-e pelo dropzone principal e modal, conferindo a extração de CSLL, IRRF, PIS, COFINS, INSS e ISS.

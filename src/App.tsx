@@ -30,7 +30,19 @@ import { Login } from './components/Login';
 export default function App() {
   const { user, empresaAtiva } = useAuth();
   const { get } = useApi();
-  const [activeMode, setActiveMode] = useState<QueryMode>('carteira_cnpjs');
+
+  // Initialize activeMode with persistent localStorage state or fallback to central_kpis
+  const [activeMode, setActiveMode] = useState<QueryMode>(() => {
+    const saved = localStorage.getItem('@RadarFiscal:activeMode') as QueryMode;
+    return saved || 'central_kpis';
+  });
+
+  // Persist activeMode on navigation
+  useEffect(() => {
+    if (activeMode) {
+      localStorage.setItem('@RadarFiscal:activeMode', activeMode);
+    }
+  }, [activeMode]);
 
   // Corporate Access & User State
   const [selectedTenantCnpj, setSelectedTenantCnpj] = useState<string>('');

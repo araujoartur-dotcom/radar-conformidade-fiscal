@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   SlidersHorizontal, Table, Plus, Edit3, Trash2, CheckCircle2,
   AlertTriangle, FileText, Scale, Save, Percent, ShieldCheck, Search, Filter, X,
-  Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles
+  Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
@@ -40,9 +40,84 @@ interface RegraElegibilidade {
   base_legal: string;
 }
 
+export const REGRAS_RETENCAO_SERVICOS = [
+  {
+    codigo: 'RET-IRRF-01',
+    tributo: 'IRRF (Serviços Profissionais)',
+    aliquota: '1,50%',
+    baseLegal: 'Art. 714 do RIR/2018 (Decreto nº 9.580/2018)',
+    hipotese: 'Serviços de assessoria, consultoria, contabilidade, auditoria, advocacia, engenharia, informática e profissões regulamentadas.',
+    tipoRetencao: 'Federal (DARF 1708)',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-IRRF-02',
+    tributo: 'IRRF (Limpeza, Segurança e Mão de Obra)',
+    aliquota: '1,00%',
+    baseLegal: 'Art. 716 do RIR/2018',
+    hipotese: 'Serviços de limpeza, conservação, segurança, vigilância e locação de mão de obra temporária.',
+    tipoRetencao: 'Federal (DARF 1708)',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-CSLL-01',
+    tributo: 'CSLL Retida (Segregada Individual)',
+    aliquota: '1,00%',
+    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e IN RFB nº 2.145/2023',
+    hipotese: 'Serviços profissionais e locação de mão de obra. Segregada individualmente na apuração.',
+    tipoRetencao: 'Federal',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-PIS-01',
+    tributo: 'PIS Retido',
+    aliquota: '0,65%',
+    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e Lei nº 13.137/2015',
+    hipotese: 'Componente da retenção na fonte sobre pagamentos a pessoas jurídicas prestadoras de serviços.',
+    tipoRetencao: 'Federal',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-COF-01',
+    tributo: 'COFINS Retida',
+    aliquota: '3,00%',
+    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e Lei nº 13.137/2015',
+    hipotese: 'Componente da retenção na fonte sobre pagamentos a pessoas jurídicas prestadoras de serviços.',
+    tipoRetencao: 'Federal',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-CRF-01',
+    tributo: 'CRF / PCC Global (PIS + COFINS + CSLL)',
+    aliquota: '4,65%',
+    baseLegal: 'Art. 30 a 32 da Lei nº 10.833/2003',
+    hipotese: 'Retenção conjunta das 3 contribuições sociais federais (DARF 5952). Dispensa se imposto <= R$ 10,00.',
+    tipoRetencao: 'Federal (DARF 5952)',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-INSS-01',
+    tributo: 'INSS Previdenciário (Mão de Obra)',
+    aliquota: '11,00% (ou 3,5% CPRB)',
+    baseLegal: 'Art. 31 da Lei nº 8.212/1991 e IN RFB nº 2.110/2022',
+    hipotese: 'Serviços prestados mediante cessão de mão de obra ou empreitada (limpeza, vigilância, construção civil, temporários).',
+    tipoRetencao: 'Previdenciária (DCTFWeb)',
+    responsavel: 'Tomador (Pessoa Jurídica)'
+  },
+  {
+    codigo: 'RET-ISS-01',
+    tributo: 'ISSQN Retido no Destino',
+    aliquota: '2,00% a 5,00%',
+    baseLegal: 'Art. 3º e 6º da Lei Complementar nº 116/2003',
+    hipotese: 'Serviços com incidência no local da prestação (incisos I a XXV do Art. 3º) ou tomador como substituto tributário municipal.',
+    tipoRetencao: 'Municipal (DAM)',
+    responsavel: 'Tomador (Substituto Tributário)'
+  }
+];
+
 export const TabelasFiscaisPanel: React.FC = () => {
   const { get, post, put, del } = useApi();
-  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'cclasstrib' | 'cfop' | 'regras'>('ad_valorem');
+  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'cclasstrib' | 'cfop' | 'regras'>('ad_valorem');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -477,6 +552,18 @@ export const TabelasFiscaisPanel: React.FC = () => {
         </button>
 
         <button
+          onClick={() => setActiveTab('retencoes_servicos')}
+          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'retencoes_servicos'
+              ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <Receipt className="w-4 h-4 text-amber-300" />
+          <span>Retenções de Serviços (NFS-e)</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('cclasstrib')}
           className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'cclasstrib'
@@ -866,6 +953,58 @@ export const TabelasFiscaisPanel: React.FC = () => {
                     );
                   })
                 )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TAB 3.5: TABELA DE REGRAS DE RETENÇÃO DE SERVIÇOS (NFS-e)
+      ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'retencoes_servicos' && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-amber-400" />
+                Matriz de Retenções na Fonte em Serviços (NFS-e) & Fundamentação Legal
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Regras tributárias parametrizadas para auditoria automática de retenção na fonte (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme Lei 10.833/03, RIR/2018 e LC 116/03.
+              </p>
+            </div>
+
+            <div className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs font-bold font-mono">
+              8 Regras Parametrizadas
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Código</th>
+                  <th className="py-3 px-4">Tributo Retido</th>
+                  <th className="py-3 px-4">Alíquota</th>
+                  <th className="py-3 px-4">Base Legal</th>
+                  <th className="py-3 px-4">Hipótese de Incidência</th>
+                  <th className="py-3 px-4">Tipo Recolhimento</th>
+                  <th className="py-3 px-4">Responsável</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {REGRAS_RETENCAO_SERVICOS.map((regra) => (
+                  <tr key={regra.codigo} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-4 font-mono font-bold text-amber-400 whitespace-nowrap">{regra.codigo}</td>
+                    <td className="py-3 px-4 font-bold text-white whitespace-nowrap">{regra.tributo}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-emerald-400 whitespace-nowrap">{regra.aliquota}</td>
+                    <td className="py-3 px-4 font-mono text-cyan-300 text-[11px] whitespace-nowrap">{regra.baseLegal}</td>
+                    <td className="py-3 px-4 text-slate-300 text-[11px] max-w-xs">{regra.hipotese}</td>
+                    <td className="py-3 px-4 text-slate-400 whitespace-nowrap font-mono text-[11px]">{regra.tipoRetencao}</td>
+                    <td className="py-3 px-4 text-indigo-300 whitespace-nowrap font-semibold text-[11px]">{regra.responsavel}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

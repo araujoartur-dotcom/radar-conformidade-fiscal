@@ -77,8 +77,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       'NFe': { label: 'NF-e (Mod 55) Mercadorias', qtd: 0, valor: 0, color: 'text-cyan-400', bg: 'bg-cyan-500', border: 'border-cyan-500/30' },
       'NFCe': { label: 'NFC-e (Mod 65) Varejo', qtd: 0, valor: 0, color: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-500/30' },
       'CTe': { label: 'CT-e (Mod 57) Transportes', qtd: 0, valor: 0, color: 'text-indigo-400', bg: 'bg-indigo-500', border: 'border-indigo-500/30' },
-      'NFSe': { label: 'NFS-e Serviços', qtd: 0, valor: 0, color: 'text-purple-400', bg: 'bg-purple-500', border: 'border-purple-500/30' },
-      'MDFe': { label: 'MDF-e (Mod 58) Manifesto', qtd: 0, valor: 0, color: 'text-amber-400', bg: 'bg-amber-500', border: 'border-amber-500/30' }
+      'NFSe': { label: 'NFS-e Serviços', qtd: 0, valor: 0, color: 'text-purple-400', bg: 'bg-purple-500', border: 'border-purple-500/30' }
     };
 
     filteredItems.forEach(item => {
@@ -157,14 +156,9 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             <BarChart3 className="w-6 h-6" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-extrabold text-white">
-                Central de KPIs & Dashboards Fiscais
-              </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold font-mono bg-cyan-950 text-cyan-300 border border-cyan-800">
-                TAX ANALYTICS
-              </span>
-            </div>
+            <h2 className="text-lg font-extrabold text-white">
+              Central de KPIs & Dashboards Fiscais
+            </h2>
             <p className="text-xs text-slate-400 mt-0.5">
               Empresa Ativa: <strong className="text-cyan-400">{empresaAtiva?.razaoSocial || 'Todas as Empresas'}</strong> ({empresaAtiva?.cnpjCompleto || 'Consolidado'})
             </p>
@@ -443,7 +437,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-2">
-              Distribuição quantitativa por modelo fiscal (NF-e, NFC-e, CT-e, NFS-e, MDF-e).
+              Distribuição quantitativa por modelo fiscal (NF-e, NFC-e, CT-e e NFS-e).
             </p>
           </div>
 

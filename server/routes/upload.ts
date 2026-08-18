@@ -91,22 +91,29 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
     // 5. Tipo de Documento e Valores
     let tipoDoc = 'NF-e';
     if (xmlContent.includes('<infCte') || xmlContent.includes('<CTe')) tipoDoc = 'CT-e';
-    else if (xmlContent.includes('<infMdfe') || xmlContent.includes('<MDFe')) tipoDoc = 'MDF-e';
-    else if (xmlContent.includes('<infNfse') || xmlContent.includes('<NFSe') || xmlContent.includes('<CompNfse')) tipoDoc = 'NFS-e';
+    else if (xmlContent.includes('<infNfse') || xmlContent.includes('<NFSe') || xmlContent.includes('<CompNfse') || xmlContent.includes('<DPS')) tipoDoc = 'NFS-e';
     else if (xmlContent.includes('<tpAmb') && xmlContent.includes('mod=65')) tipoDoc = 'NFC-e';
 
-    const nNF = extractTag(xmlContent, 'nNF') || extractTag(xmlContent, 'nCT') || extractTag(xmlContent, 'Numero') || '1';
+    const nNF = extractTag(xmlContent, 'nNF') || extractTag(xmlContent, 'nCT') || extractTag(xmlContent, 'nNFSe') || extractTag(xmlContent, 'nDPS') || extractTag(xmlContent, 'Numero') || '1';
     const serie = extractTag(xmlContent, 'serie') || '1';
-    const dhEmi = extractTag(xmlContent, 'dhEmi') || extractTag(xmlContent, 'dEmi') || extractTag(xmlContent, 'DataEmissao') || new Date().toISOString();
+    const dhEmi = extractTag(xmlContent, 'dhEmi') || extractTag(xmlContent, 'dhProc') || extractTag(xmlContent, 'dEmi') || extractTag(xmlContent, 'DataEmissao') || new Date().toISOString();
 
-    const vNF = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vNF') || extractTag(xmlContent, 'vNF') || extractTag(xmlContent, 'vLiquido') || '0') || 0;
+    const vNF = parseFloat(
+      extractSubTag(xmlContent, 'ICMSTot', 'vNF') 
+      || extractTag(xmlContent, 'vNF') 
+      || extractTag(xmlContent, 'vServ') 
+      || extractTag(xmlContent, 'vServPrest')
+      || extractTag(xmlContent, 'vTPrest')
+      || extractTag(xmlContent, 'vLiquido') 
+      || '0'
+    ) || 0;
     const vICMS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vICMS') || extractTag(xmlContent, 'vICMS') || '0') || 0;
     const vIPI = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vIPI') || extractTag(xmlContent, 'vIPI') || '0') || 0;
-    const vPIS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vPIS') || extractTag(xmlContent, 'vPIS') || '0') || 0;
-    const vCOFINS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vCOFINS') || extractTag(xmlContent, 'vCOFINS') || '0') || 0;
+    const vPIS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vPIS') || extractTag(xmlContent, 'vPIS') || extractTag(xmlContent, 'vPis') || '0') || 0;
+    const vCOFINS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vCOFINS') || extractTag(xmlContent, 'vCOFINS') || extractTag(xmlContent, 'vCofins') || '0') || 0;
 
-    const vCBS = parseFloat(extractTag(xmlContent, 'vCBS') || '0') || 0;
-    const vIBS = parseFloat(extractTag(xmlContent, 'vIBS') || '0') || 0;
+    const vCBS = parseFloat(extractTag(xmlContent, 'vCBS') || '0') || (vNF * 0.009);
+    const vIBS = parseFloat(extractTag(xmlContent, 'vIBSUF') || extractTag(xmlContent, 'vIBS') || '0') || (vNF * 0.001);
 
     if (!chaveAcesso) {
       chaveAcesso = `MANUAL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;

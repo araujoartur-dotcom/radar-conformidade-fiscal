@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles } from 'lucide-react';
+import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt } from 'lucide-react';
 import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
 import { parseDfeXmlString } from '../utils/xmlParser';
 import { DanfeModal } from './DanfeModal';
@@ -207,7 +207,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             <Upload className="w-7 h-7" />
           </div>
           <p className="text-base font-bold text-slate-200">
-            Arraste ou clique para carregar arquivos XML de DF-e (NF-e, NFS-e, CT-e, MDF-e)
+            Arraste ou clique para carregar arquivos XML de DF-e (NF-e, NFS-e e CT-e)
           </p>
           <p className="text-xs text-slate-400 mt-1">
             Suporta múltiplos arquivos XML simultâneos com extração instantânea dos itens e impostos.
@@ -451,6 +451,55 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
 
                 </div>
               </div>
+
+              {/* Withholding Taxes (NFS-e Retenções na Fonte & Fundamentação Legal) */}
+              {(selectedDfe.tipo === 'NFSe' || (selectedDfe.valorInssRetido || 0) > 0 || (selectedDfe.valorIrrf || 0) > 0 || (selectedDfe.valorCsllRetido || 0) > 0 || (selectedDfe.valorIssRetido || 0) > 0) && (
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                  <div className="text-xs font-bold text-amber-300 border-b border-slate-800 pb-1.5 flex justify-between items-center">
+                    <span className="flex items-center gap-1.5">
+                      <Receipt className="w-4 h-4 text-amber-400" />
+                      Retenções na Fonte de Serviços (NFS-e) & Fundamentações Legais
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Cód. Serviço: {selectedDfe.codigoServico || '17.05'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">INSS Retido (11%):</span>
+                      <strong className="text-amber-400 font-mono text-sm block">
+                        {(selectedDfe.valorInssRetido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                      <span className="text-[9px] text-slate-500">Art. 31 Lei 8.212/91</span>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">IRRF Retido:</span>
+                      <strong className="text-blue-400 font-mono text-sm block">
+                        {(selectedDfe.valorIrrf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                      <span className="text-[9px] text-slate-500">Art. 714 RIR/2018</span>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">CSLL / CRF Retida:</span>
+                      <strong className="text-cyan-400 font-mono text-sm block">
+                        {(selectedDfe.valorCsllRetido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                      <span className="text-[9px] text-slate-500">Art. 30 Lei 10.833/03</span>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">ISS Retido ({selectedDfe.aliquotaIss || 5}%):</span>
+                      <strong className="text-emerald-400 font-mono text-sm block">
+                        {(selectedDfe.valorIssRetido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                      <span className="text-[9px] text-slate-500">Art. 3º LC 116/03</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Audit Alerts */}
               {selectedDfe.alertasAuditoria.length > 0 && (

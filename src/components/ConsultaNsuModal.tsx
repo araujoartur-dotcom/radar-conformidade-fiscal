@@ -492,7 +492,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   Clique ou Arraste arquivos XML aqui (Contingência Fiscal)
                 </div>
                 <p className="text-[11px] text-slate-400 max-w-md">
-                  Suporta arquivos <code className="text-emerald-400 font-mono">.xml</code> de NF-e, CT-e, NFS-e e MDF-e. O sistema processa todos os tributos automaticamente.
+                  Suporta arquivos <code className="text-emerald-400 font-mono">.xml</code> de NF-e, CT-e e NFS-e. O sistema processa todos os tributos automaticamente.
                 </p>
                 <button
                   type="button"

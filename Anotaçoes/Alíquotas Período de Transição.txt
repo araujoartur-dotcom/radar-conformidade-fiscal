@@ -1,0 +1,23 @@
+Pronto! **O cálculo e a exibição do Período de Transição foram mantidos e já estão no ar!** 🎯
+
+---
+
+### 🔄 O que foi reestabelecido:
+1. **Bateria de Botões do Cronograma Oficial (2026 a 2033)**:
+   * **2026**: `1.0%` (Ano Teste: CBS 0,9% + IBS 0,1%)
+   * **2027**: `8.8%` (CBS Plena + Fim de PIS/Cofins)
+   * **2028**: `8.8%` (CBS Plena + IBS 0%)
+   * **2029**: `10.6%` (IBS 10% da Ref. = 1,77% + Redução ICMS 10%)
+   * **2030**: `12.3%` (IBS 20% da Ref. = 3,54% + Redução ICMS 20%)
+   * **2031**: `14.1%` (IBS 30% da Ref. = 5,31% + Redução ICMS 30%)
+   * **2032**: `15.9%` (IBS 40% da Ref. = 7,08% + Redução ICMS 40%)
+   * **2033**: `26.5%` (IVA Dual Pleno: CBS 8,8% + IBS 17,7%)
+
+2. **Cálculo Reativo nos Cards e Gráficos**:
+   * Ao clicar em qualquer ano (ex: `2029`), os cards de **CBS Federal**, **IBS Estadual (UF)**, **IBS Municipal (MUN)** e o gráfico de **Decomposição Tributária** recalculam automaticamente a projeção da carga para aquele exercício com base na base de cálculo dos seus DF-e.
+
+---
+
+### 🚀 Status do Deploy:
+* **Commit:** `bfb4f2b`
+* **Deploy no Netlify:** Atualizado com sucesso em produção!

@@ -325,19 +325,9 @@ export const ParceirosNegocioPanel: React.FC = () => {
       <div className="glass-panel-glow rounded-3xl p-6 relative overflow-hidden">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="flex items-center gap-2 text-xs font-bold text-cyan-400 uppercase tracking-widest mb-1.5">
-              <Landmark className="w-4 h-4" />
-              <span>Master Data Management (MDM) & Governança Tributária</span>
-            </div>
-            <h1 className="text-2xl font-black tracking-tight text-white flex items-center gap-3">
+            <h1 className="text-2xl font-black tracking-tight text-white">
               Dados Mestres & Cadastro Fiscal de Parceiros
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono font-normal">
-                SPED / SCANC / CNPJ Alfa
-              </span>
             </h1>
-            <p className="text-xs text-slate-300 max-w-2xl mt-1">
-              Catálogo unificado de clientes, fornecedores e prestadores. Motor de regras fiscais automatizado com suporte a CNPJ Alfanumérico, determinação automática de retenções (IRRF, CRF, INSS, ISS) e conformidade SPED.
-            </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
@@ -353,7 +343,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>+ Novo Parceiro de Negócio</span>
+              <span>Novo Parceiro de Negócio</span>
             </button>
           </div>
         </div>

@@ -143,8 +143,12 @@ export interface ItemDfeDetail {
   valorTotal: number;
   valorIcms?: number;
   valorIpi?: number;
+  valorPis?: number;
+  valorCofins?: number;
   valorCbs?: number;
   valorIbs?: number;
+  aliquotaCbs?: number;
+  aliquotaIbs?: number;
 }
 
 export interface DfeXmlItem {
@@ -174,6 +178,30 @@ export interface DfeXmlItem {
   aliquotaIbs: number; // ex: 17.7%
   valorIbs: number;
   valorImpostoSeletivo: number;
+  
+  // Retenções na Fonte de Serviços (NFS-e)
+  valorIrrf?: number;
+  valorCsllRetido?: number;
+  valorPisRetido?: number;
+  valorCofinsRetido?: number;
+  valorCrfTotal?: number;
+  valorInssRetido?: number;
+  valorIssRetido?: number;
+  aliquotaIss?: number;
+  codigoServico?: string;
+  codigoNbs?: string;
+  descricaoServico?: string;
+
+  // Informações de Transporte (CT-e)
+  chaveNfeVinculada?: string;
+  produtoPredominante?: string;
+  municipioOrigem?: string;
+  municipioDestino?: string;
+
+  // Reforma Tributária por Documento
+  cClassTrib?: string;
+  percentualReducao?: number;
+
   // Lista de Itens do Documento
   itens?: ItemDfeDetail[];
   // Status de Auditoria
@@ -186,6 +214,8 @@ export interface DfeXmlItem {
   sha256?: string;
   splitPayment?: SplitPaymentInfo;
   custodiaWorm?: CustodiaWormItem;
+  xmlRaw?: string;
+  isResumoApenas?: boolean;
 }
 
 export interface EventoDfeDefinition {
