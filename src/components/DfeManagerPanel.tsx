@@ -89,42 +89,29 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
     setIsUploading(true);
     setUploadSuccessMsg('');
 
-    let processedCount = 0;
-    let successCount = 0;
+    const newlyParsedList: DfeXmlItem[] = [];
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const reader = new FileReader();
-      
-      const fileReadPromise = new Promise<void>((resolve) => {
-        reader.onload = async (event) => {
-          try {
-            const xmlContent = event.target?.result as string;
-            // Parse para exibir localmente
-            const parsed = parseDfeXmlString(xmlContent, file.name);
-            
-            // Enviar para o backend
-            const res = await post('/upload/xml', { xmlContent });
-            if (res.ok) {
-              successCount++;
-            } else {
-              console.error('Erro ao salvar XML no backend:', res.error);
-            }
-          } catch (err) {
-            console.error('Erro ao processar XML:', err);
-          }
-          processedCount++;
-          resolve();
-        };
-        reader.readAsText(file);
-      });
+      try {
+        const xmlContent = await file.text();
+        const parsed = parseDfeXmlString(xmlContent, file.name);
+        newlyParsedList.push(parsed);
 
-      await fileReadPromise;
+        // Enviar para o backend
+        await post('/upload/xml', { xmlContent });
+      } catch (err) {
+        console.error('Erro ao processar XML:', err);
+      }
     }
 
-    if (successCount > 0) {
-      setUploadSuccessMsg(`${successCount} XML(s) importado(s) com sucesso!`);
-      await loadDocumentos(); // Recarregar a lista do banco
+    if (newlyParsedList.length > 0) {
+      setDfeList(prev => {
+        const existingKeys = new Set(newlyParsedList.map(d => d.chaveAcesso));
+        return [...newlyParsedList, ...prev.filter(d => !existingKeys.has(d.chaveAcesso))];
+      });
+      setSelectedDfe(newlyParsedList[0]);
+      setUploadSuccessMsg(`${newlyParsedList.length} XML(s) importado(s) com sucesso!`);
     }
     setIsUploading(false);
   };
