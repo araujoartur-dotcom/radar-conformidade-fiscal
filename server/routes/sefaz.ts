@@ -77,7 +77,7 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
     }
 
     const empresaId = empresa?.id || req.user?.empresaAtivaId || '';
-    const ufAutor = empresa?.uf || 'SP';
+    const ufAutor = req.body.ufAutor || empresa?.uf || 'SP';
     const manifestarCienciaAutomatica = empresa?.manifestar_ciencia_automatica !== undefined 
       ? Boolean(empresa.manifestar_ciencia_automatica) 
       : true;
@@ -85,7 +85,7 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
     // 2. Chamar o serviço de comunicação SOAP com mTLS
     const resultado = await consultarDistribuicaoDFe({
       cnpj: cleanCnpj,
-      ultNSU: ultNSU || empresa?.ultimo_nsu || '000000000000000',
+      ultNSU: ultNSU !== undefined ? ultNSU : (empresa?.ultimo_nsu || '000000000000000'),
       chNFe,
       nsuEspecifico,
       tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',

@@ -136,7 +136,10 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   };
 
   // ── MODO 1: CONSULTA INDIVIDUAL / NSU VIA SEFAZ ──────────────────
-  const handleStartConsultaDFe = async (isByChave: boolean = false, targetChave?: string) => {
+  const [nsuModeType, setNsuModeType] = useState<'sequencial' | 'especifico'>('sequencial');
+  const [nsuEspecificoInput, setNsuEspecificoInput] = useState<string>('');
+
+  const handleStartConsultaDFe = async (isByChave: boolean = false, targetChave?: string, targetNsuEspecifico?: string) => {
     setIsConsulting(true);
     setLogs([]);
     setResults(null);
@@ -171,6 +174,8 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 
     if (isByChave) {
       addLog(`Tipo de Consulta: consChNFe (Chave: ${cleanChave})`);
+    } else if (targetNsuEspecifico) {
+      addLog(`Tipo de Consulta: consNSU (NSU Específico: ${targetNsuEspecifico})`);
     } else {
       addLog(`Tipo de Consulta: distNSU (ultNSU: ${ultNSU})`);
     }
@@ -186,7 +191,8 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         },
         body: JSON.stringify({
           cnpj: currentCnpj.replace(/\D/g, ''),
-          ultNSU: isByChave ? undefined : ultNSU,
+          ultNSU: (isByChave || targetNsuEspecifico) ? undefined : ultNSU,
+          nsuEspecifico: targetNsuEspecifico,
           chNFe: isByChave ? cleanChave : undefined,
           tpAmb: ambCode,
           fluxo,
@@ -1011,34 +1017,106 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 
           {/* ── TAB 2: CONSULTA POR NSU ────────────────────── */}
           {modalMode === 'nsu' && (
-            <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex-1 min-w-[200px]">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Último NSU Consultado no WebService:
-                  </label>
-                  <input
-                    type="text"
-                    value={ultNSU}
-                    onChange={(e) => setUltNSU(e.target.value)}
-                    placeholder="000000000000000"
-                    className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 font-mono text-xs text-cyan-300 w-full focus:outline-none focus:border-cyan-500"
-                  />
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-blue-900/40 space-y-4">
+              
+              {/* Sub-mode Switcher for NSU */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => { setNsuModeType('sequencial'); setResults(null); }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      nsuModeType === 'sequencial'
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>🔄 Varredura Sequencial (ultNSU)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setNsuModeType('especifico'); setResults(null); }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      nsuModeType === 'especifico'
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>🎯 NSU Específico (consNSU)</span>
+                  </button>
                 </div>
 
-                <button
-                  onClick={() => handleStartConsultaDFe(false)}
-                  disabled={isConsulting}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer disabled:opacity-50 mt-auto"
-                >
-                  <RefreshCw className={`w-4 h-4 ${isConsulting ? 'animate-spin' : ''}`} />
-                  {isConsulting ? 'Consultando SEFAZ...' : 'Buscar Novos XMLs Destinados (NSU)'}
-                </button>
+                <div className="text-[11px] text-blue-300 hidden sm:block">
+                  📦 <strong>Lotes de até 50 notas</strong> por requisição no Ambiente Nacional.
+                </div>
               </div>
 
-              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>💡 Se a SEFAZ retornar erro 656, use a <strong>Aba 1 (Por Chave de Acesso)</strong> para baixar diretamente sem fila de NSU.</span>
-              </div>
+              {/* Sub-modo Sequencial */}
+              {nsuModeType === 'sequencial' ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Último NSU Consultado na Esteira SEFAZ:
+                      </label>
+                      <input
+                        type="text"
+                        value={ultNSU}
+                        onChange={(e) => setUltNSU(e.target.value)}
+                        placeholder="000000000000000"
+                        className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-mono text-xs text-cyan-300 w-full focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handleStartConsultaDFe(false)}
+                      disabled={isConsulting}
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer disabled:opacity-50 mt-auto"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isConsulting ? 'animate-spin' : ''}`} />
+                      {isConsulting ? 'Consultando Esteira SEFAZ...' : 'Buscar Novos XMLs Destinados (NSU)'}
+                    </button>
+                  </div>
+                  
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400">
+                    💡 <strong>Como funciona a esteira:</strong> O WebService <code>distNSU</code> traz até 50 notas por chamada a partir do NSU informado. Ao atingir o final da fila (<code>maxNSU</code>), a SEFAZ exige aguardar 1h para novas varreduras.
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">
+                        Número Sequencial Único (NSU Específico):
+                      </label>
+                      <input
+                        type="text"
+                        value={nsuEspecificoInput}
+                        onChange={(e) => setNsuEspecificoInput(e.target.value)}
+                        placeholder="Ex: 1, 15, 2045..."
+                        className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-mono text-xs text-cyan-300 w-full focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handleStartConsultaDFe(false, undefined, nsuEspecificoInput)}
+                      disabled={isConsulting || !nsuEspecificoInput.trim()}
+                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer disabled:opacity-50 mt-auto"
+                    >
+                      <Search className={`w-4 h-4 ${isConsulting ? 'animate-spin' : ''}`} />
+                      {isConsulting ? 'Buscando NSU...' : 'Consultar NSU Específico'}
+                    </button>
+                  </div>
+
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400">
+                    🎯 <strong>Consulta Pontual:</strong> O <code>consNSU</code> permite resgatar qualquer documento diretamente pelo número do seu NSU histórico no Ambiente Nacional da SEFAZ.
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
