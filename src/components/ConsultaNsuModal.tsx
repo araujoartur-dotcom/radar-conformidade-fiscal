@@ -110,6 +110,8 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   // Editable CNPJ and Razao Social
   const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || empresaAtiva?.cnpjCompleto || '');
   const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || empresaAtiva?.razaoSocial || '');
+  const [nsuModeType, setNsuModeType] = useState<'sequencial' | 'especifico'>('sequencial');
+  const [nsuEspecificoInput, setNsuEspecificoInput] = useState<string>('');
 
   useEffect(() => {
     const fallbackCnpj = certificado?.cnpj || empresaAtiva?.cnpjCompleto || '';
@@ -136,9 +138,6 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   };
 
   // ── MODO 1: CONSULTA INDIVIDUAL / NSU VIA SEFAZ ──────────────────
-  const [nsuModeType, setNsuModeType] = useState<'sequencial' | 'especifico'>('sequencial');
-  const [nsuEspecificoInput, setNsuEspecificoInput] = useState<string>('');
-
   const handleStartConsultaDFe = async (isByChave: boolean = false, targetChave?: string, targetNsuEspecifico?: string) => {
     setIsConsulting(true);
     setLogs([]);

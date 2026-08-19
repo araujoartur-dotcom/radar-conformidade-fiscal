@@ -5,8 +5,13 @@ senha: Admin@RadarFiscal2026!
 BI & Inteligência Fiscal (Tax Analytics)
 
 
-Senha 123Ari@
+Senha 
+123Ari@
 Certificado Digital do Ari
+
+Garantir que a criação de diretórios suporte tanto o caminho 
+C:\SEFAZ\XMLs\
+C:\Radar Conformidade Fiscal\
 
 
 31758338000130
