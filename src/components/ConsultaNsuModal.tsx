@@ -324,12 +324,29 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         } else {
           errors++;
           const errMotivo = data.xMotivo || data.error || `cStat ${data.cStat || '137'}`;
+          const isLimit20 = (data.cStat === '656' || errMotivo.includes('20 consultas') || errMotivo.includes('Consumo Indevido'));
+
           setBatchItems(prev => prev.map((b, idx) => idx === i ? {
             ...b,
             status: 'erro',
-            motivo: errMotivo
+            motivo: isLimit20 ? 'Rejeição SEFAZ: Limite de 20 consultas diretas/hora atingido (NT 2014.002)' : errMotivo
           } : b));
-          addLog(`⚠️ [${i + 1}/${total}] Chave ${item.chave}: ${errMotivo}`);
+
+          if (isLimit20) {
+            addLog(`🛑 [SEFAZ BLOQUEIO DE COTA] Atingido o limite da SEFAZ de 20 consultas diretas por chave a cada 1 hora.`);
+            addLog(`💡 Dica: As notas restantes podem ser consultadas na próxima janela de 1h ou via Varredura de NSU.`);
+            // Marca as próximas chaves ainda pendentes e para a fila graciosamente
+            for (let j = i + 1; j < total; j++) {
+              setBatchItems(prev => prev.map((b, idx) => idx === j ? {
+                ...b,
+                status: 'pendente',
+                motivo: 'Aguardando próxima janela de 1h da SEFAZ'
+              } : b));
+            }
+            break;
+          } else {
+            addLog(`⚠️ [${i + 1}/${total}] Chave ${item.chave}: ${errMotivo}`);
+          }
         }
       } catch (err: any) {
         errors++;
@@ -426,6 +443,30 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     addLog(`💾 Arquivo ZIP com ${results.length} XMLs baixado com sucesso!`);
+  };
+
+  const handleCopyPendingChaves = () => {
+    const pending = batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').map(b => b.chave);
+    if (pending.length > 0) {
+      navigator.clipboard.writeText(pending.join('\n'));
+      addLog(`📋 ${pending.length} chaves pendentes copiadas para a Área de Transferência!`);
+    }
+  };
+
+  const handleExportPendingTxt = () => {
+    const pending = batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').map(b => b.chave);
+    if (pending.length > 0) {
+      const blob = new Blob([pending.join('\n')], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Chaves_Pendentes_${(cnpjInput || 'empresa').replace(/\D/g, '').substring(0, 8)}_${Date.now()}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      addLog(`💾 Arquivo .txt com ${pending.length} chaves pendentes exportado!`);
+    }
   };
 
   // ── MODO 3: UPLOAD DIRETO DE XML (CONTINGÊNCIA) ───────────────────
@@ -661,8 +702,9 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   </button>
                 </div>
 
-                <div className="text-[11px] text-slate-400 hidden sm:block">
-                  ⚡ <strong>Sem consumo indevido:</strong> O WebService <code>consChNFe</code> baixa direto sem erro 656.
+                <div className="text-[11px] text-amber-400/90 hidden sm:flex items-center gap-1.5 bg-amber-950/40 border border-amber-800/60 px-2.5 py-1 rounded-lg">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span><strong>Regra SEFAZ (NT 2014.002):</strong> Máximo de 20 consultas diretas por chave a cada 1 hora.</span>
                 </div>
               </div>
 
@@ -904,6 +946,44 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                           </div>
                         ))}
                       </div>
+
+                      {/* Recovery Banner for Pending / Blocked Keys */}
+                      {batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').length > 0 && !isBatchRunning && (
+                        <div className="p-3 bg-amber-950/40 border border-amber-800/60 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="text-amber-300 font-semibold flex items-center gap-1.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>{batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').length} chave(s) não foram baixadas (limite de 20 consultas/hora da SEFAZ atingido).</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleCopyPendingChaves}
+                              className="px-2.5 py-1 rounded-lg bg-amber-900/80 hover:bg-amber-800 text-amber-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <ClipboardPaste className="w-3.5 h-3.5" />
+                              <span>Copiar Pendentes ({batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').length})</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleExportPendingTxt}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-slate-700 transition-all cursor-pointer"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Salvar (.txt)</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => { setModalMode('nsu'); }}
+                              className="px-2.5 py-1 rounded-lg bg-blue-700 hover:bg-blue-600 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                              <span>Consultar por NSU (Lotes de 50)</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center justify-between pt-1">
