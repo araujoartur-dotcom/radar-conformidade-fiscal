@@ -131,8 +131,12 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
         const vIpiItem = ipiNode ? parseFloat(getTag(ipiNode, 'vIPI') || '0') : 0;
         const pIpi = ipiNode ? parseFloat(getTag(ipiNode, 'pIPI') || '0') : 0;
 
-        const vCbsItem = parseFloat(getSubTag(det, 'IBSCBS', 'vCBS') || '0');
-        const vIbsItem = parseFloat(getSubTag(det, 'IBSCBS', 'vIBS') || '0');
+        const ibsCbsNode = det.getElementsByTagName('IBSCBS')[0] || det.getElementsByTagName('gIBSCBS')[0];
+        const vCbsItem = ibsCbsNode ? parseFloat(getTag(ibsCbsNode, 'vCBS') || '0') : parseFloat(getSubTag(det, 'IBSCBS', 'vCBS') || '0');
+        const vIbsItem = ibsCbsNode ? parseFloat(getTag(ibsCbsNode, 'vIBS') || getTag(ibsCbsNode, 'vIBSUF') || '0') : parseFloat(getSubTag(det, 'IBSCBS', 'vIBS') || '0');
+        const pCbsItem = ibsCbsNode ? parseFloat(getTag(ibsCbsNode, 'pCBS') || '0') : 0;
+        const pIbsItem = ibsCbsNode ? parseFloat(getTag(ibsCbsNode, 'pIBS') || getTag(ibsCbsNode, 'pIBSUF') || '0') : 0;
+        const cClassTrib = ibsCbsNode ? (getTag(ibsCbsNode, 'cClassTrib') || '') : '';
 
         itensExtraidos.push({
           numeroItem: numItem,
@@ -148,11 +152,13 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
           valorIpi: vIpiItem,
           valorPis: 0,
           valorCofins: 0,
-          valorCbs: vCbsItem || Number((vProdItem * 0.009).toFixed(2)),
-          valorIbs: vIbsItem || Number((vProdItem * 0.001).toFixed(2)),
+          valorCbs: vCbsItem || 0,
+          valorIbs: vIbsItem || 0,
+          aliquotaCbs: pCbsItem || 0,
+          aliquotaIbs: pIbsItem || 0,
           aliquotaIcms: pIcms,
           aliquotaIpi: pIpi,
-          cClassTrib: cest || '000001',
+          cClassTrib: cClassTrib || cest || '410999',
         });
       }
     }
@@ -849,8 +855,8 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                           <th className="p-1 border-r border-slate-300 w-16">V. UNIT</th>
                           <th className="p-1 border-r border-slate-300 w-16">V. TOTAL</th>
                           <th className="p-1 border-r border-slate-300 w-14">V. ICMS</th>
-                          <th className="p-1 border-r border-slate-300 w-14">CBS (0.9%)</th>
-                          <th className="p-1 w-14">IBS (0.1%)</th>
+                          <th className="p-1 border-r border-slate-300 w-14">VALOR CBS</th>
+                          <th className="p-1 w-14">VALOR IBS</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -888,11 +894,11 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
                     <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal ~0.9%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal)</span>
                       <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal ~0.1%)</span>
+                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal)</span>
                       <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm col-span-2 sm:col-span-1">

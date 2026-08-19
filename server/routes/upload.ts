@@ -112,8 +112,61 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
     const vPIS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vPIS') || extractTag(xmlContent, 'vPIS') || extractTag(xmlContent, 'vPis') || '0') || 0;
     const vCOFINS = parseFloat(extractSubTag(xmlContent, 'ICMSTot', 'vCOFINS') || extractTag(xmlContent, 'vCOFINS') || extractTag(xmlContent, 'vCofins') || '0') || 0;
 
-    const vCBS = parseFloat(extractTag(xmlContent, 'vCBS') || '0') || (vNF * 0.009);
-    const vIBS = parseFloat(extractTag(xmlContent, 'vIBSUF') || extractTag(xmlContent, 'vIBS') || '0') || (vNF * 0.001);
+    // Extrair itens do XML
+    const detMatches = xmlContent.match(/<det\b[^>]*>([\s\S]*?)<\/det>/gi) || [];
+    const itensExtraidos: any[] = [];
+
+    detMatches.forEach((detXml, index) => {
+      const numItem = parseInt(detXml.match(/nItem="(\d+)"/i)?.[1] || `${index + 1}`, 10);
+      const prodMatch = detXml.match(/<prod\b[^>]*>([\s\S]*?)<\/prod>/i);
+      const prodXml = prodMatch ? prodMatch[1] : detXml;
+
+      const cProd = extractTag(prodXml, 'cProd') || `ITM-${index + 1}`;
+      const xProd = extractTag(prodXml, 'xProd') || 'Produto / Mercadoria';
+      const ncm = extractTag(prodXml, 'NCM') || '';
+      const cfop = extractTag(prodXml, 'CFOP') || '';
+      const uCom = extractTag(prodXml, 'uCom') || 'UN';
+      const qCom = parseFloat(extractTag(prodXml, 'qCom') || '1');
+      const vUnCom = parseFloat(extractTag(prodXml, 'vUnCom') || '0');
+      const vProd = parseFloat(extractTag(prodXml, 'vProd') || '0');
+
+      const vCBSItem = parseFloat(extractSubTag(detXml, 'IBSCBS', 'vCBS') || extractTag(detXml, 'vCBS') || '0') || 0;
+      const vIBSItem = parseFloat(extractSubTag(detXml, 'IBSCBS', 'vIBS') || extractTag(detXml, 'vIBSUF') || extractTag(detXml, 'vIBS') || '0') || 0;
+      const pCBSItem = parseFloat(extractSubTag(detXml, 'IBSCBS', 'pCBS') || extractTag(detXml, 'pCBS') || '0') || 0;
+      const pIBSItem = parseFloat(extractSubTag(detXml, 'IBSCBS', 'pIBS') || extractTag(detXml, 'pIBSUF') || extractTag(detXml, 'pIBS') || '0') || 0;
+      const cClassTrib = extractSubTag(detXml, 'IBSCBS', 'cClassTrib') || extractTag(detXml, 'cClassTrib') || '410999';
+      const cst = extractSubTag(detXml, 'IBSCBS', 'CST') || extractTag(detXml, 'CST') || '410';
+
+      itensExtraidos.push({
+        numeroItem: numItem,
+        codigo: cProd,
+        descricao: xProd,
+        ncm,
+        cfop,
+        unidade: uCom,
+        quantidade: qCom,
+        valorUnitario: vUnCom,
+        valorTotal: vProd,
+        valorCbs: vCBSItem,
+        valorIbs: vIBSItem,
+        aliquotaCbs: pCBSItem,
+        aliquotaIbs: pIBSItem,
+        cClassTrib,
+        cst
+      });
+    });
+
+    let vCBS = parseFloat(extractSubTag(xmlContent, 'IBSCBSTot', 'vCBS') || extractTag(xmlContent, 'vCBS') || '0') || 0;
+    let vIBS = parseFloat(extractSubTag(xmlContent, 'IBSCBSTot', 'vIBS') || extractTag(xmlContent, 'vIBSUF') || extractTag(xmlContent, 'vIBS') || '0') || 0;
+
+    if (vCBS === 0 && itensExtraidos.length > 0) {
+      const somaCbs = itensExtraidos.reduce((acc, it) => acc + (it.valorCbs || 0), 0);
+      if (somaCbs > 0) vCBS = Number(somaCbs.toFixed(2));
+    }
+    if (vIBS === 0 && itensExtraidos.length > 0) {
+      const somaIbs = itensExtraidos.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
+      if (somaIbs > 0) vIBS = Number(somaIbs.toFixed(2));
+    }
 
     if (!chaveAcesso) {
       chaveAcesso = `MANUAL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -121,11 +174,11 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
 
     const docId = uuidv4();
 
-    // 6. Gravação no SQLite
+    // 6. Gravação no SQLite (Documento + Itens)
     db.transaction(() => {
       // Upsert Documento
       db.prepare(`
-        INSERT INTO dfe_documentos (
+        INSERT OR REPLACE INTO dfe_documentos (
           id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie, data_emissao, data_entrada, 
           fornecedor_cnpj, fornecedor_razao, fornecedor_uf, 
           cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total,
@@ -142,6 +195,33 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
         destCnpj, destNome, destUf, 'autorizado', vNF,
         vICMS, vIPI, vPIS, vCOFINS, vCBS, vIBS
       );
+
+      // Inserir itens na tabela dfe_itens
+      if (itensExtraidos.length > 0) {
+        const insertItemStmt = db.prepare(`
+          INSERT OR REPLACE INTO dfe_itens (
+            id, documento_id, item_nro, descricao_item, ncm, cfop, cclasstrib, cst_csosn,
+            natureza_operacao, quantidade, unidade, valor_bruto_item, desconto_incondicional,
+            frete_seguro_rateado, valor_liquido_item, base_ibs, aliquota_ibs, valor_ibs,
+            base_cbs, aliquota_cbs, valor_cbs
+          ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?
+          )
+        `);
+
+        for (const it of itensExtraidos) {
+          const itemId = `item-${chaveAcesso}-${it.numeroItem}`;
+          insertItemStmt.run(
+            itemId, docId, it.numeroItem, it.descricao, it.ncm, it.cfop, it.cClassTrib, it.cst,
+            tipoOperacao, it.quantidade, it.unidade, it.valorTotal, 0,
+            0, it.valorTotal, it.valorTotal, it.aliquotaIbs, it.valorIbs,
+            it.valorTotal, it.aliquotaCbs, it.valorCbs
+          );
+        }
+      }
     })();
 
     // 7. Salvar no disco local em C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\

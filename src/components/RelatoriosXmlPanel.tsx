@@ -410,6 +410,37 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
         )}
       </div>
 
+      {/* Dynamic Report Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total Líquido Filtrado</span>
+          <strong className="text-base sm:text-lg font-black text-emerald-400 font-mono">
+            {filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </strong>
+        </div>
+
+        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total CBS Real (XMLs)</span>
+          <strong className="text-base sm:text-lg font-black text-cyan-400 font-mono">
+            {filteredItems.reduce((acc, it) => acc + (it.valorCbs || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </strong>
+        </div>
+
+        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total IBS Real (XMLs)</span>
+          <strong className="text-base sm:text-lg font-black text-indigo-400 font-mono">
+            {filteredItems.reduce((acc, it) => acc + (it.valorIbs || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </strong>
+        </div>
+
+        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Crédito Esperado IBS+CBS</span>
+          <strong className="text-base sm:text-lg font-black text-teal-300 font-mono">
+            {filteredItems.reduce((acc, it) => acc + (it.creditoEsperadoIbs + it.creditoEsperadoCbs), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </strong>
+        </div>
+      </div>
+
       {/* Report Package Tabs Bar (#1 to #8) */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800 w-full min-w-0 max-w-full">
         {reportTabs.map(tab => {

@@ -146,14 +146,14 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
 
     // Reforma Tributária NFS-e (IBS/CBS)
     const vCBSStr = getTagValue(xmlDoc, 'vCBS') || '0';
-    const vIBSUFStr = getTagValue(xmlDoc, 'vIBSUF') || getTagValue(xmlDoc, 'vIBSTot') || '0';
-    const pCBSStr = getTagValue(xmlDoc, 'pCBS') || '0.90';
-    const pIBSUFStr = getTagValue(xmlDoc, 'pIBSUF') || '0.10';
+    const vIBSUFStr = getTagValue(xmlDoc, 'vIBSUF') || getTagValue(xmlDoc, 'vIBSTot') || getTagValue(xmlDoc, 'vIBS') || '0';
+    const pCBSStr = getTagValue(xmlDoc, 'pCBS') || '0';
+    const pIBSUFStr = getTagValue(xmlDoc, 'pIBSUF') || getTagValue(xmlDoc, 'pIBS') || '0';
 
-    valorCbs = parseFloat(vCBSStr) || (valorTotal * 0.009);
-    valorIbs = parseFloat(vIBSUFStr) || (valorTotal * 0.001);
-    aliquotaCbs = parseFloat(pCBSStr) || 0.90;
-    aliquotaIbs = parseFloat(pIBSUFStr) || 0.10;
+    valorCbs = parseFloat(vCBSStr) || 0;
+    valorIbs = parseFloat(vIBSUFStr) || 0;
+    aliquotaCbs = parseFloat(pCBSStr) || 0;
+    aliquotaIbs = parseFloat(pIBSUFStr) || 0;
 
     // Códigos de Serviço
     codigoServico = getTagValue(xmlDoc, 'cTribNac') || getTagValue(xmlDoc, 'ItemListaServico') || '170501';
@@ -193,13 +193,13 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     // Reforma Tributária CT-e
     const vCBSStr = getTagValue(xmlDoc, 'vCBS') || '0';
     const vIBSUFStr = getTagValue(xmlDoc, 'vIBSUF') || getTagValue(xmlDoc, 'vIBS') || '0';
-    const pCBSStr = getTagValue(xmlDoc, 'pCBS') || '0.90';
-    const pIBSUFStr = getTagValue(xmlDoc, 'pIBSUF') || '0.10';
+    const pCBSStr = getTagValue(xmlDoc, 'pCBS') || '0';
+    const pIBSUFStr = getTagValue(xmlDoc, 'pIBSUF') || getTagValue(xmlDoc, 'pIBS') || '0';
 
-    valorCbs = parseFloat(vCBSStr) || (valorTotal * 0.009);
-    valorIbs = parseFloat(vIBSUFStr) || (valorTotal * 0.001);
-    aliquotaCbs = parseFloat(pCBSStr) || 0.90;
-    aliquotaIbs = parseFloat(pIBSUFStr) || 0.10;
+    valorCbs = parseFloat(vCBSStr) || 0;
+    valorIbs = parseFloat(vIBSUFStr) || 0;
+    aliquotaCbs = parseFloat(pCBSStr) || 0;
+    aliquotaIbs = parseFloat(pIBSUFStr) || 0;
 
     // Metadados do Transporte
     chaveNfeVinculada = getTagValue(xmlDoc, 'chave') || '';
@@ -213,7 +213,9 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     if (chaveNfeVinculada) {
       alertas.push(`Vinculado à NF-e de Carga: ${chaveNfeVinculada}`);
     }
-    alertas.push(`⚡ Reforma Tributária Frete: CBS R$ ${valorCbs.toFixed(2)} + IBS R$ ${valorIbs.toFixed(2)}`);
+    if (valorCbs > 0 || valorIbs > 0) {
+      alertas.push(`⚡ Reforma Tributária Frete: CBS R$ ${valorCbs.toFixed(2)} + IBS R$ ${valorIbs.toFixed(2)}`);
+    }
   }
 
   // =========================================================
@@ -235,12 +237,12 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     const vCOFINSStr = getSubTagValue('ICMSTot', 'vCOFINS') || '0';
     valorCofins = parseFloat(vCOFINSStr) || 0;
 
-    // Reforma Tributária Global NF-e
-    const vCBSGlobalStr = getSubTagValue('gCBS', 'vCBS') || getTagValue(xmlDoc, 'vCBS') || '0';
-    const vIBSGlobalStr = getSubTagValue('gIBS', 'vIBS') || getSubTagValue('gIBSUF', 'vIBSUF') || getTagValue(xmlDoc, 'vIBS') || '0';
+    // Reforma Tributária Global NF-e (IBSCBSTot / gCBS / gIBS)
+    const vCBSGlobalStr = getSubTagValue('IBSCBSTot', 'vCBS') || getSubTagValue('gCBS', 'vCBS') || getTagValue(xmlDoc, 'vCBS') || '0';
+    const vIBSGlobalStr = getSubTagValue('IBSCBSTot', 'vIBS') || getSubTagValue('gIBS', 'vIBS') || getSubTagValue('gIBSUF', 'vIBSUF') || getTagValue(xmlDoc, 'vIBS') || '0';
 
-    valorCbs = parseFloat(vCBSGlobalStr) || (valorTotal * 0.009);
-    valorIbs = parseFloat(vIBSGlobalStr) || (valorTotal * 0.001);
+    valorCbs = parseFloat(vCBSGlobalStr) || 0;
+    valorIbs = parseFloat(vIBSGlobalStr) || 0;
 
     if (valorIcms === 0 && valorTotal > 0) {
       alertas.push('Operação com Isenção / Redução de ICMS (Cesta Básica ou Benefício Fiscal Estadual)');
@@ -277,9 +279,9 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
         let itemCofins = 0;
         let itemCbs = 0;
         let itemIbs = 0;
-        let itemAliqCbs = 0.90;
-        let itemAliqIbs = 0.10;
-        let itemClassTrib = '000001';
+        let itemAliqCbs = 0;
+        let itemAliqIbs = 0;
+        let itemClassTrib = '';
         let itemReducao = 0;
 
         if (impostoNode) {
@@ -287,11 +289,21 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
           itemIpi = parseFloat(getTagValue(impostoNode, 'vIPI') || '0') || 0;
           itemPis = parseFloat(getTagValue(impostoNode, 'vPIS') || '0') || 0;
           itemCofins = parseFloat(getTagValue(impostoNode, 'vCOFINS') || '0') || 0;
-          itemCbs = parseFloat(getTagValue(impostoNode, 'vCBS') || '0') || 0;
-          itemIbs = parseFloat(getTagValue(impostoNode, 'vIBSUF') || getTagValue(impostoNode, 'vIBS') || '0') || 0;
-          itemAliqCbs = parseFloat(getTagValue(impostoNode, 'pCBS') || '0.90') || 0.90;
-          itemAliqIbs = parseFloat(getTagValue(impostoNode, 'pIBSUF') || getTagValue(impostoNode, 'pIBS') || '0.10') || 0.10;
-          itemClassTrib = getTagValue(impostoNode, 'cClassTrib') || '000001';
+
+          const ibsCbsNode = impostoNode.getElementsByTagName('IBSCBS')[0] || impostoNode.getElementsByTagName('gIBSCBS')[0];
+          if (ibsCbsNode) {
+            itemCbs = parseFloat(getTagValue(ibsCbsNode, 'vCBS') || '0') || 0;
+            itemIbs = parseFloat(getTagValue(ibsCbsNode, 'vIBS') || getTagValue(ibsCbsNode, 'vIBSUF') || '0') || 0;
+            itemAliqCbs = parseFloat(getTagValue(ibsCbsNode, 'pCBS') || '0') || 0;
+            itemAliqIbs = parseFloat(getTagValue(ibsCbsNode, 'pIBS') || getTagValue(ibsCbsNode, 'pIBSUF') || '0') || 0;
+            itemClassTrib = getTagValue(ibsCbsNode, 'cClassTrib') || getTagValue(impostoNode, 'cClassTrib') || '';
+          } else {
+            itemCbs = parseFloat(getTagValue(impostoNode, 'vCBS') || '0') || 0;
+            itemIbs = parseFloat(getTagValue(impostoNode, 'vIBSUF') || getTagValue(impostoNode, 'vIBS') || '0') || 0;
+            itemAliqCbs = parseFloat(getTagValue(impostoNode, 'pCBS') || '0') || 0;
+            itemAliqIbs = parseFloat(getTagValue(impostoNode, 'pIBSUF') || getTagValue(impostoNode, 'pIBS') || '0') || 0;
+            itemClassTrib = getTagValue(impostoNode, 'cClassTrib') || '';
+          }
           itemReducao = parseFloat(getTagValue(impostoNode, 'pRedAliq') || '0') || 0;
         }
 
@@ -317,6 +329,14 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
         });
       }
     }
+  }
+
+  // Se os totais do documento não vieram explícitos na tag global, calcula a soma exata dos itens
+  if (itensExtraidos.length > 0) {
+    const somaCbs = itensExtraidos.reduce((acc, it) => acc + (it.valorCbs || 0), 0);
+    const somaIbs = itensExtraidos.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
+    if (valorCbs === 0 && somaCbs > 0) valorCbs = Number(somaCbs.toFixed(2));
+    if (valorIbs === 0 && somaIbs > 0) valorIbs = Number(somaIbs.toFixed(2));
   }
 
   // Caso seja NFS-e ou CT-e e não tenha <det>, cria 1 item global

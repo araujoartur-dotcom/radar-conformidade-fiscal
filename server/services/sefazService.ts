@@ -747,6 +747,23 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
         const serie = extrairTagXml(xml, 'serie') || '1';
         const dhEmi = extrairTagXml(xml, 'dhEmi') || extrairTagXml(xml, 'dEmi') || new Date().toISOString();
 
+        const itensXml = extrairItensNFeXml(xml);
+        let vCBS = parseFloat(extrairSubTagXml(xml, 'IBSCBSTot', 'vCBS') || extrairTagXml(xml, 'vCBS') || '0') || 0;
+        let vIBS = parseFloat(extrairSubTagXml(xml, 'IBSCBSTot', 'vIBS') || extrairTagXml(xml, 'vIBSUF') || extrairTagXml(xml, 'vIBS') || '0') || 0;
+        
+        // Se não veio no totalizador global, soma os itens
+        if (vCBS === 0 && itensXml.length > 0) {
+          const somaCbs = itensXml.reduce((acc, it) => acc + (it.valorCbs || 0), 0);
+          if (somaCbs > 0) vCBS = Number(somaCbs.toFixed(2));
+        }
+        if (vIBS === 0 && itensXml.length > 0) {
+          const somaIbs = itensXml.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
+          if (somaIbs > 0) vIBS = Number(somaIbs.toFixed(2));
+        }
+
+        const pCBS = parseFloat(extrairTagXml(xml, 'pCBS') || '0') || (vCBS > 0 && vNF > 0 ? Number(((vCBS / vNF) * 100).toFixed(2)) : 0);
+        const pIBS = parseFloat(extrairTagXml(xml, 'pIBS') || extrairTagXml(xml, 'pIBSUF') || '0') || (vIBS > 0 && vNF > 0 ? Number(((vIBS / vNF) * 100).toFixed(2)) : 0);
+
         docsProcessados.push({
           id: `proc-${raw.nsu || Date.now()}-${Math.floor(Math.random() * 1000)}`,
           schema: raw.schema,
@@ -767,10 +784,10 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           valorIpi: vIPI,
           valorPis: vPIS,
           valorCofins: vCOFINS,
-          aliquotaCbs: 0.9,
-          valorCbs: Number((vNF * 0.009).toFixed(2)),
-          aliquotaIbs: 0.1,
-          valorIbs: Number((vNF * 0.001).toFixed(2)),
+          aliquotaCbs: pCBS,
+          valorCbs: vCBS,
+          aliquotaIbs: pIBS,
+          valorIbs: vIBS,
           valorImpostoSeletivo: 0,
           statusAuditoria: 'conforme',
           alertasAuditoria: [],
@@ -778,7 +795,7 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           statusSincronizacaoErp: 'pendente',
           xmlRaw: xml,
           isResumoApenas: false,
-          itens: extrairItensNFeXml(xml),
+          itens: itensXml,
         });
 
         // Gravação física automática no disco: C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\
@@ -789,30 +806,61 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           console.warn('Aviso: Falha ao salvar no disco local:', diskErr.message);
         }
 
-        // Gravação automática no banco de dados SQLite
+        // Gravação automática no banco de dados SQLite (Documento + Itens)
         try {
           const db = getDatabase();
           const tipoOperacaoDoc = params.fluxo === 'saida' ? 'Saída' : 'Entrada';
-          db.prepare(`
-            INSERT OR REPLACE INTO dfe_documentos (
-              id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie, data_emissao, data_entrada, 
-              fornecedor_cnpj, fornecedor_razao, fornecedor_uf, 
-              cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total,
-              valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs
-            ) VALUES (
-              ?, ?, ?, ?, ?, ?, ?, ?,
-              ?, ?, ?,
-              ?, ?, ?, ?, ?,
-              ?, ?, ?, ?, ?, ?
-            )
-          `).run(
-            `doc-${chaveAcesso}`, empresaId, tipoDoc, chaveAcesso, tipoOperacaoDoc, `${nNF} / ${serie}`, dhEmi.split('T')[0], new Date().toISOString(),
-            emitCnpj, emitNome, emitUf,
-            destCnpj, destNome, destUf, 'autorizado', vNF,
-            vICMS, vIPI, vPIS, vCOFINS, Number((vNF * 0.009).toFixed(2)), Number((vNF * 0.001).toFixed(2))
-          );
+          const docDbId = `doc-${chaveAcesso}`;
+
+          db.transaction(() => {
+            db.prepare(`
+              INSERT OR REPLACE INTO dfe_documentos (
+                id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie, data_emissao, data_entrada, 
+                fornecedor_cnpj, fornecedor_razao, fornecedor_uf, 
+                cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total,
+                valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs
+              ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?
+              )
+            `).run(
+              docDbId, empresaId, tipoDoc, chaveAcesso, tipoOperacaoDoc, `${nNF} / ${serie}`, dhEmi.split('T')[0], new Date().toISOString(),
+              emitCnpj, emitNome, emitUf,
+              destCnpj, destNome, destUf, 'autorizado', vNF,
+              vICMS, vIPI, vPIS, vCOFINS, vCBS, vIBS
+            );
+
+            // Inserir itens na tabela dfe_itens para alimentar os relatórios
+            if (itensXml.length > 0) {
+              const insertItemStmt = db.prepare(`
+                INSERT OR REPLACE INTO dfe_itens (
+                  id, documento_id, item_nro, descricao_item, ncm, cfop, cclasstrib, cst_csosn,
+                  natureza_operacao, quantidade, unidade, valor_bruto_item, desconto_incondicional,
+                  frete_seguro_rateado, valor_liquido_item, base_ibs, aliquota_ibs, valor_ibs,
+                  base_cbs, aliquota_cbs, valor_cbs
+                ) VALUES (
+                  ?, ?, ?, ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?, ?,
+                  ?, ?, ?, ?, ?,
+                  ?, ?, ?
+                )
+              `);
+
+              for (const it of itensXml) {
+                const itemId = `item-${chaveAcesso}-${it.numeroItem}`;
+                insertItemStmt.run(
+                  itemId, docDbId, it.numeroItem, it.descricao, it.ncm, it.cfop, it.cClassTrib || '410999', it.cst || '410',
+                  params.fluxo === 'saida' ? 'Saída' : 'Entrada', it.quantidade, it.unidade, it.valorTotal, 0,
+                  0, it.valorTotal, it.valorTotal, it.aliquotaIbs || pIBS, it.valorIbs,
+                  it.valorTotal, it.aliquotaCbs || pCBS, it.valorCbs
+                );
+              }
+            }
+          })();
         } catch (dbErr: any) {
-          console.warn('Aviso: Falha ao inserir documento no banco:', dbErr.message);
+          console.warn('Aviso: Falha ao inserir documento e itens no banco:', dbErr.message);
         }
       }
     }
