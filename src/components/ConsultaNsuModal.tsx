@@ -450,6 +450,50 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     addLog(`💾 Arquivo ZIP com ${results.length} XMLs baixado com sucesso!`);
   };
 
+  // Salvar diretamente na pasta do computador do usuário (File System Access API)
+  const handleSaveToLocalFolder = async () => {
+    if (!results || results.length === 0) return;
+
+    if (!('showDirectoryPicker' in window)) {
+      addLog(`ℹ️ Seu navegador não suporta seleção direta de pastas. Baixando arquivo ZIP organizado...`);
+      await handleDownloadZip();
+      return;
+    }
+
+    try {
+      addLog(`📁 Solicitando seleção de pasta no computador...`);
+      const rootHandle = await (window as any).showDirectoryPicker();
+      let count = 0;
+
+      for (const doc of results) {
+        const raw = doc.xmlRaw || generateDfeXmlContent(doc);
+        const cnpjRaiz = (doc.destinatarioCnpj || doc.emitenteCnpj || cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8);
+        const tipoPasta = fluxo === 'saida' ? 'Saida' : 'Entrada';
+        const ano = doc.dataEmissao ? doc.dataEmissao.substring(0, 4) : '2026';
+        const mes = doc.dataEmissao ? doc.dataEmissao.substring(5, 7) : '08';
+        const fileName = `${doc.chaveAcesso}.xml`;
+
+        // Criar estrutura de subpastas C:\[Pasta_Escolhida]\[CNPJ_RAIZ]\[Entrada|Saida]\[Ano]\[Mês]\[Chave].xml
+        const cnpjDir = await rootHandle.getDirectoryHandle(cnpjRaiz, { create: true });
+        const tipoDir = await cnpjDir.getDirectoryHandle(tipoPasta, { create: true });
+        const anoDir = await tipoDir.getDirectoryHandle(ano, { create: true });
+        const mesDir = await anoDir.getDirectoryHandle(mes, { create: true });
+        const fileHandle = await mesDir.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(raw);
+        await writable.close();
+        count++;
+      }
+
+      addLog(`✅ Gravação concluída com sucesso: ${count} arquivo(s) XML salvos na pasta local organizada!`);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        addLog(`⚠️ Gravação local cancelada ou não permitida. Baixando em formato ZIP...`);
+        await handleDownloadZip();
+      }
+    }
+  };
+
   const handleCopyPendingChaves = () => {
     const pending = batchItems.filter(b => b.status === 'erro' || b.status === 'pendente').map(b => b.chave);
     if (pending.length > 0) {
@@ -1247,17 +1291,28 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   <FileCode className="w-4 h-4 text-emerald-400" />
                   {results.length} Documento(s) Fiscal(is) Pronto(s) para Inclusão:
                 </span>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveToLocalFolder}
+                    className="px-3 py-1 rounded-xl bg-blue-950/80 hover:bg-blue-900 text-cyan-300 border border-blue-800 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    title="Salvar diretamente na pasta do computador (C:\SEFAZ\XMLs) via seletor de diretório"
+                  >
+                    <FolderInput className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>📁 Salvar na Pasta do PC</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handleDownloadZip}
-                    className="px-2.5 py-1 rounded bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                    className="px-3 py-1 rounded-xl bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    title="Baixar todos os XMLs em arquivo compactado .ZIP"
                   >
                     <FileArchive className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Baixar Todos em ZIP</span>
+                    <span>💾 Baixar em ZIP</span>
                   </button>
 
-                  <span className="text-xs font-mono font-bold text-emerald-400">
+                  <span className="text-xs font-mono font-bold text-emerald-400 ml-1">
                     Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(results.reduce((acc, curr) => acc + (curr.valorTotal || 0), 0))}
                   </span>
                 </div>

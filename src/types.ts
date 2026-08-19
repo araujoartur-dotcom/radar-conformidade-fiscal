@@ -149,6 +149,8 @@ export interface ItemDfeDetail {
   valorIbs?: number;
   aliquotaCbs?: number;
   aliquotaIbs?: number;
+  aliquotaIcms?: number;
+  aliquotaIpi?: number;
 }
 
 export interface DfeXmlItem {

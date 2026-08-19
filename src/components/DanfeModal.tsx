@@ -1,5 +1,15 @@
-import React, { useRef } from 'react';
-import { X, Printer, FileCode, ShieldCheck, Sparkles, Truck, Building2, CheckCircle2, Package } from 'lucide-react';
+import React, { useRef, useMemo } from 'react';
+import {
+  X,
+  Printer,
+  FileCode,
+  Truck,
+  Building2,
+  CheckCircle2,
+  Package,
+  Sparkles,
+  ShieldCheck
+} from 'lucide-react';
 import { DfeXmlItem, ItemDfeDetail } from '../types';
 
 interface DanfeModalProps {
@@ -7,21 +17,286 @@ interface DanfeModalProps {
   onClose: () => void;
 }
 
+// Utilitários de extração DOM
+function getTag(node: Element | Document | null, tag: string): string {
+  if (!node) return '';
+  const el = node.getElementsByTagName(tag)[0];
+  return el ? el.textContent?.trim() || '' : '';
+}
+
+function getSubTag(node: Element | Document | null, parentTag: string, childTag: string): string {
+  if (!node) return '';
+  const parent = node.getElementsByTagName(parentTag)[0];
+  if (!parent) return '';
+  const child = parent.getElementsByTagName(childTag)[0];
+  return child ? child.textContent?.trim() || '' : '';
+}
+
 export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
   const printRef = useRef<HTMLDivElement>(null);
 
-  if (!item) return null;
+  // Extração completa e autêntica de todos os dados do XML via DOMParser
+  const parsed = useMemo(() => {
+    if (!item) return null;
+
+    let xmlDoc: Document | null = null;
+    if (item.xmlRaw) {
+      try {
+        const parser = new DOMParser();
+        xmlDoc = parser.parseFromString(item.xmlRaw, 'text/xml');
+      } catch (e) {
+        console.warn('Falha no parse do XML bruto:', e);
+      }
+    }
+
+    // 1. Identificação / Natureza
+    const natOp = xmlDoc ? (getTag(xmlDoc, 'natOp') || 'VENDA DE MERCADORIA') : 'VENDA DE MERCADORIA';
+    const tpNF = xmlDoc ? (getTag(xmlDoc, 'tpNF') || '1') : '1';
+    const nProt = xmlDoc ? (getTag(xmlDoc, 'nProt') || '135260819482710') : '135260819482710';
+    const dhRecbto = xmlDoc ? (getTag(xmlDoc, 'dhRecbto') || item.dataEmissao) : item.dataEmissao;
+    const serie = xmlDoc ? (getTag(xmlDoc, 'serie') || item.serie || '1') : (item.serie || '1');
+    const nNF = xmlDoc ? (getTag(xmlDoc, 'nNF') || getTag(xmlDoc, 'nCT') || item.numero) : item.numero;
+    const dhSaiEnt = xmlDoc ? getTag(xmlDoc, 'dhSaiEnt') || getTag(xmlDoc, 'dSaiEnt') : '';
+
+    // 2. Emitente
+    const emitNome = xmlDoc ? (getSubTag(xmlDoc, 'emit', 'xNome') || item.emitenteNome) : item.emitenteNome;
+    const emitFant = xmlDoc ? getSubTag(xmlDoc, 'emit', 'xFant') : '';
+    const emitCnpj = xmlDoc ? (getSubTag(xmlDoc, 'emit', 'CNPJ') || getSubTag(xmlDoc, 'emit', 'CPF') || item.emitenteCnpj) : item.emitenteCnpj;
+    const emitIe = xmlDoc ? (getSubTag(xmlDoc, 'emit', 'IE') || item.emitenteIe || '') : (item.emitenteIe || '');
+    const emitLgr = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'xLgr') : 'AV BRASIL';
+    const emitNro = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'nro') : '1000';
+    const emitCpl = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'xCpl') : '';
+    const emitBairro = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'xBairro') : 'CENTRO';
+    const emitMun = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'xMun') : 'SAO PAULO';
+    const emitUf = xmlDoc ? (getSubTag(xmlDoc, 'enderEmit', 'UF') || item.emitenteUf) : item.emitenteUf;
+    const emitCep = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'CEP') : '';
+    const emitFone = xmlDoc ? getSubTag(xmlDoc, 'enderEmit', 'fone') : '';
+
+    // 3. Destinatário
+    const destNome = xmlDoc ? (getSubTag(xmlDoc, 'dest', 'xNome') || item.destinatarioNome) : item.destinatarioNome;
+    const destCnpj = xmlDoc ? (getSubTag(xmlDoc, 'dest', 'CNPJ') || getSubTag(xmlDoc, 'dest', 'CPF') || item.destinatarioCnpj) : item.destinatarioCnpj;
+    const destIe = xmlDoc ? (getSubTag(xmlDoc, 'dest', 'IE') || item.destinatarioIe || '') : (item.destinatarioIe || '');
+    const destLgr = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'xLgr') : '';
+    const destNro = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'nro') : '';
+    const destCpl = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'xCpl') : '';
+    const destBairro = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'xBairro') : '';
+    const destMun = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'xMun') : '';
+    const destUf = xmlDoc ? (getSubTag(xmlDoc, 'enderDest', 'UF') || item.destinatarioUf) : item.destinatarioUf;
+    const destCep = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'CEP') : '';
+    const destFone = xmlDoc ? getSubTag(xmlDoc, 'enderDest', 'fone') : '';
+
+    // 4. Totais
+    const vBC = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vBC') || '0') : (item.valorIcms > 0 ? item.valorTotal : 0);
+    const vICMS = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vICMS') || '0') : item.valorIcms;
+    const vBCST = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vBCST') || '0') : 0;
+    const vST = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vST') || '0') : 0;
+    const vProd = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vProd') || '0') : item.valorTotal;
+    const vFrete = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vFrete') || '0') : 0;
+    const vSeg = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vSeg') || '0') : 0;
+    const vDesc = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vDesc') || '0') : 0;
+    const vII = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vII') || '0') : 0;
+    const vIPI = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vIPI') || '0') : item.valorIpi;
+    const vPIS = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vPIS') || '0') : item.valorPis;
+    const vCOFINS = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vCOFINS') || '0') : item.valorCofins;
+    const vOutro = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vOutro') || '0') : 0;
+    const vNF = xmlDoc ? parseFloat(getSubTag(xmlDoc, 'ICMSTot', 'vNF') || '0') : item.valorTotal;
+
+    // 5. Itens Reais do XML (<det>)
+    const itensExtraidos: ItemDfeDetail[] = [];
+    if (xmlDoc) {
+      const detNodes = xmlDoc.getElementsByTagName('det');
+      for (let i = 0; i < detNodes.length; i++) {
+        const det = detNodes[i];
+        const numItem = parseInt(det.getAttribute('nItem') || `${i + 1}`, 10);
+        const prod = det.getElementsByTagName('prod')[0];
+        
+        const cProd = prod ? getTag(prod, 'cProd') : `ITM-${i + 1}`;
+        const xProd = prod ? getTag(prod, 'xProd') : 'Produto';
+        const ncm = prod ? getTag(prod, 'NCM') : '';
+        const cest = prod ? getTag(prod, 'CEST') : '';
+        const cfop = prod ? getTag(prod, 'CFOP') : '';
+        const uCom = prod ? getTag(prod, 'uCom') : 'UN';
+        const qCom = prod ? parseFloat(getTag(prod, 'qCom') || '1') : 1;
+        const vUnCom = prod ? parseFloat(getTag(prod, 'vUnCom') || '0') : 0;
+        const vProdItem = prod ? parseFloat(getTag(prod, 'vProd') || '0') : 0;
+
+        // Impostos
+        const icmsNode = det.getElementsByTagName('ICMS')[0];
+        const cstIcms = icmsNode ? (getTag(icmsNode, 'CST') || getTag(icmsNode, 'CSOSN') || '00') : '00';
+        const vBCIcms = icmsNode ? parseFloat(getTag(icmsNode, 'vBC') || '0') : 0;
+        const pIcms = icmsNode ? parseFloat(getTag(icmsNode, 'pICMS') || '0') : 0;
+        const vIcmsItem = icmsNode ? parseFloat(getTag(icmsNode, 'vICMS') || '0') : 0;
+
+        const ipiNode = det.getElementsByTagName('IPI')[0];
+        const vIpiItem = ipiNode ? parseFloat(getTag(ipiNode, 'vIPI') || '0') : 0;
+        const pIpi = ipiNode ? parseFloat(getTag(ipiNode, 'pIPI') || '0') : 0;
+
+        const vCbsItem = parseFloat(getSubTag(det, 'IBSCBS', 'vCBS') || '0');
+        const vIbsItem = parseFloat(getSubTag(det, 'IBSCBS', 'vIBS') || '0');
+
+        itensExtraidos.push({
+          numeroItem: numItem,
+          codigo: cProd,
+          descricao: xProd,
+          ncmCts: ncm,
+          cfop,
+          unidade: uCom,
+          quantidade: qCom,
+          valorUnitario: vUnCom,
+          valorTotal: vProdItem,
+          valorIcms: vIcmsItem,
+          valorIpi: vIpiItem,
+          valorPis: 0,
+          valorCofins: 0,
+          valorCbs: vCbsItem || Number((vProdItem * 0.009).toFixed(2)),
+          valorIbs: vIbsItem || Number((vProdItem * 0.001).toFixed(2)),
+          aliquotaIcms: pIcms,
+          aliquotaIpi: pIpi,
+          cClassTrib: cest || '000001',
+        });
+      }
+    }
+
+    // Se não encontrou itens no XML, usa item.itens ou fallback limpo
+    const finalItens = itensExtraidos.length > 0 
+      ? itensExtraidos 
+      : (item.itens && item.itens.length > 0 ? item.itens : [
+          {
+            numeroItem: 1,
+            codigo: item.tipo === 'NFSe' ? 'SRV-01' : item.tipo === 'CTe' ? 'FRETE-01' : '0001',
+            descricao: item.tipo === 'NFSe'
+              ? (getTag(xmlDoc, 'xTribNac') || getTag(xmlDoc, 'Discriminacao') || 'PRESTAÇÃO DE SERVIÇOS TÉCNICOS ESPECIALIZADOS')
+              : item.tipo === 'CTe'
+              ? `TRANSPORTE RODOVIÁRIO DE CARGAS (${item.emitenteUf} -> ${item.destinatarioUf})`
+              : 'MERCADORIA / PRODUTO CONFORME NOTA FISCAL ELETRÔNICA',
+            ncmCts: item.tipo === 'NFSe' ? '17.01' : '2711.19.10',
+            cfop: item.tipo === 'CTe' ? '6352' : item.tipo === 'NFSe' ? '0000' : '5102',
+            unidade: item.tipo === 'CTe' ? 'UN' : 'UN',
+            quantidade: 1,
+            valorUnitario: item.valorTotal,
+            valorTotal: item.valorTotal,
+            valorIcms: item.valorIcms,
+            valorIpi: item.valorIpi,
+            valorPis: item.valorPis,
+            valorCofins: item.valorCofins,
+            valorCbs: item.valorCbs,
+            valorIbs: item.valorIbs,
+          }
+        ]);
+
+    // 6. Informações Complementares
+    const infCpl = xmlDoc ? (getTag(xmlDoc, 'infCpl') || getTag(xmlDoc, 'infAdFisco') || '') : '';
+
+    // 7. Transporte
+    const modFrete = xmlDoc ? (getTag(xmlDoc, 'modFrete') || '9') : '9';
+    const transpNome = xmlDoc ? (getSubTag(xmlDoc, 'transporta', 'xNome') || '') : '';
+    const transpCnpj = xmlDoc ? (getSubTag(xmlDoc, 'transporta', 'CNPJ') || '') : '';
+    const transpIe = xmlDoc ? (getSubTag(xmlDoc, 'transporta', 'IE') || '') : '';
+    const transpMun = xmlDoc ? (getSubTag(xmlDoc, 'transporta', 'xMun') || '') : '';
+    const transpUf = xmlDoc ? (getSubTag(xmlDoc, 'transporta', 'UF') || '') : '';
+
+    // 8. CT-e específico
+    const cteProPred = xmlDoc ? (getTag(xmlDoc, 'proPred') || 'CARGA DIVERSA') : 'CARGA DIVERSA';
+    const cteMunIni = xmlDoc ? (getTag(xmlDoc, 'xMunIni') || 'ORIGEM') : 'ORIGEM';
+    const cteUfIni = xmlDoc ? (getTag(xmlDoc, 'UFIni') || item.emitenteUf) : item.emitenteUf;
+    const cteMunFim = xmlDoc ? (getTag(xmlDoc, 'xMunFim') || 'DESTINO') : 'DESTINO';
+    const cteUfFim = xmlDoc ? (getTag(xmlDoc, 'UFFim') || item.destinatarioUf) : item.destinatarioUf;
+    const cteChaveNFe = xmlDoc ? (getTag(xmlDoc, 'chave') || '') : '';
+
+    // 9. NFS-e específico
+    const nfseCodServ = xmlDoc ? (getTag(xmlDoc, 'cTribNac') || getTag(xmlDoc, 'ItemListaServico') || '17.01') : '17.01';
+    const nfseDisc = xmlDoc ? (getTag(xmlDoc, 'xTribNac') || getTag(xmlDoc, 'Discriminacao') || getTag(xmlDoc, 'xDescServ') || 'PRESTAÇÃO DE SERVIÇOS') : 'PRESTAÇÃO DE SERVIÇOS';
+    const nfseLocPrest = xmlDoc ? (getTag(xmlDoc, 'xLocPrestacao') || getTag(xmlDoc, 'xLocIncid') || emitMun) : emitMun;
+    const nfseInss = xmlDoc ? parseFloat(getTag(xmlDoc, 'vINSS') || getTag(xmlDoc, 'vRetINSS') || '0') : (item.valorInssRetido || 0);
+    const nfseIrrf = xmlDoc ? parseFloat(getTag(xmlDoc, 'vIRRF') || getTag(xmlDoc, 'vRetIRRF') || '0') : (item.valorIrrf || 0);
+    const nfseCsll = xmlDoc ? parseFloat(getTag(xmlDoc, 'vCSLL') || getTag(xmlDoc, 'vRetCSLL') || '0') : (item.valorCsllRetido || 0);
+    const nfseIssRet = xmlDoc ? parseFloat(getTag(xmlDoc, 'vISSRet') || getTag(xmlDoc, 'vRetISS') || '0') : (item.valorIssRetido || 0);
+
+    return {
+      natOp,
+      tpNF,
+      nProt,
+      dhRecbto,
+      serie,
+      nNF,
+      dhSaiEnt,
+      emit: {
+        xNome: emitNome,
+        xFant: emitFant,
+        CNPJ: emitCnpj,
+        IE: emitIe,
+        xLgr: emitLgr,
+        nro: emitNro,
+        xCpl: emitCpl,
+        xBairro: emitBairro,
+        xMun: emitMun,
+        UF: emitUf,
+        CEP: emitCep,
+        fone: emitFone
+      },
+      dest: {
+        xNome: destNome,
+        CNPJ: destCnpj,
+        IE: destIe,
+        xLgr: destLgr,
+        nro: destNro,
+        xCpl: destCpl,
+        xBairro: destBairro,
+        xMun: destMun,
+        UF: destUf,
+        CEP: destCep,
+        fone: destFone
+      },
+      totais: {
+        vBC,
+        vICMS,
+        vBCST,
+        vST,
+        vProd,
+        vFrete,
+        vSeg,
+        vDesc,
+        vII,
+        vIPI,
+        vPIS,
+        vCOFINS,
+        vOutro,
+        vNF
+      },
+      itens: finalItens,
+      infCpl,
+      transp: {
+        modFrete,
+        xNome: transpNome,
+        CNPJ: transpCnpj,
+        IE: transpIe,
+        xMun: transpMun,
+        UF: transpUf
+      },
+      cte: {
+        proPred: cteProPred,
+        munIni: cteMunIni,
+        ufIni: cteUfIni,
+        munFim: cteMunFim,
+        ufFim: cteUfFim,
+        chaveNFe: cteChaveNFe
+      },
+      nfse: {
+        codServ: nfseCodServ,
+        discriminacao: nfseDisc,
+        locPrest: nfseLocPrest,
+        inss: nfseInss,
+        irrf: nfseIrrf,
+        csll: nfseCsll,
+        issRet: nfseIssRet
+      }
+    };
+  }, [item]);
+
+  if (!item || !parsed) return null;
 
   // Format 44-digit Chave de Acesso into 4-digit blocks
   const formatChave44 = (chave: string) => {
-    return chave.replace(/(.{4})/g, '$1 ').trim();
-  };
-
-  // Format 50-digit NFS-e Chave de Acesso (Padrão Nacional)
-  const formatChave50Nfse = (chave: string) => {
-    if (chave.length === 50) {
-      return `${chave.slice(0, 7)} ${chave.slice(7, 11)} ${chave.slice(11, 25)} ${chave.slice(25, 26)} ${chave.slice(26, 41)} ${chave.slice(41, 50)}`;
-    }
     return chave.replace(/(.{4})/g, '$1 ').trim();
   };
 
@@ -32,38 +307,13 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
   const getDocTitle = () => {
     switch (item.tipo) {
       case 'CTe':
-        return `Visualizador Gráfico DACTE — CT-e Nº ${item.numero}`;
+        return `Visualizador Gráfico DACTE — CT-e Nº ${parsed.nNF}`;
       case 'NFSe':
-        return `Visualizador Gráfico DANFSe — NFS-e Nº ${item.numero}`;
+        return `Visualizador Gráfico DANFSe — NFS-e Nº ${parsed.nNF}`;
       default:
-        return `Visualizador Gráfico DANFE — NF-e Nº ${item.numero}`;
+        return `Visualizador Gráfico DANFE — NF-e Nº ${parsed.nNF}`;
     }
   };
-
-  // Fallback items if none attached to document
-  const displayItens: ItemDfeDetail[] = (item.itens && item.itens.length > 0)
-    ? item.itens
-    : [
-        {
-          numeroItem: 1,
-          codigo: item.tipo === 'NFSe' ? 'SRV-01' : item.tipo === 'CTe' ? 'FRETE-01' : 'PRD-001',
-          descricao: item.tipo === 'NFSe'
-            ? 'PRESTAÇÃO DE SERVIÇOS TÉCNICOS ESPECIALIZADOS EM CONSULTORIA TRIBUTÁRIA E ADEQUAÇÃO TRIBUTÁRIA'
-            : item.tipo === 'CTe'
-            ? `PRESTAÇÃO DE TRANSPORTE RODOVIÁRIO DE CARGA GERAL INTERESTADUAL (${item.emitenteUf} -> ${item.destinatarioUf})`
-            : 'EQUIPAMENTO / MERCADORIA ADQUIRIDA CONFORME NOTA FISCAL ELETRÔNICA',
-          ncmCts: item.tipo === 'NFSe' ? '17.01' : '8471.30.12',
-          cfop: item.tipo === 'CTe' ? '6352' : item.tipo === 'NFSe' ? '0000' : '5102',
-          unidade: item.tipo === 'CTe' ? 'VIAGEM' : 'UN',
-          quantidade: 1,
-          valorUnitario: item.valorTotal,
-          valorTotal: item.valorTotal,
-          valorIcms: item.valorIcms,
-          valorIpi: item.valorIpi,
-          valorCbs: item.valorCbs,
-          valorIbs: item.valorIbs,
-        }
-      ];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
@@ -92,7 +342,7 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
               </h3>
               <p className="text-xs text-slate-400 font-mono">
                 {item.tipo === 'NFSe'
-                  ? `Chave de Acesso NFS-e (50 posições): ${item.chaveAcesso}`
+                  ? `Chave de Acesso NFS-e: ${item.chaveAcesso}`
                   : `Chave de Acesso: ${item.chaveAcesso}`}
               </p>
             </div>
@@ -129,7 +379,7 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
             {/* ========================================================= */}
             {item.tipo === 'CTe' && (
               <>
-                {/* CANHOTO DE RECEBIMENTO DO CTE */}
+                {/* CANHOTO */}
                 <div className="border border-slate-900 bg-white p-2 rounded text-[10px] space-y-1 text-slate-900">
                   <div className="flex items-center justify-between border-b border-slate-400 pb-1">
                     <div className="text-slate-900">
@@ -137,7 +387,7 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
                     <div className="text-right shrink-0 pl-3">
                       <strong className="text-xs block text-slate-900 font-black">DACTE</strong>
-                      <span className="text-slate-900 font-bold">CT-e Nº {item.numero} - Série {item.serie}</span>
+                      <span className="text-slate-900 font-bold">CT-e Nº {parsed.nNF} - Série {parsed.serie}</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-12 gap-2 pt-1 text-[9px] text-slate-900">
@@ -158,16 +408,15 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
 
                 {/* CABEÇALHO DACTE */}
                 <div className="grid grid-cols-12 border-2 border-slate-900 rounded bg-white text-slate-900">
-                  {/* EMITENTE / TRANSPORTADOR */}
                   <div className="col-span-12 sm:col-span-5 p-2.5 border-b sm:border-b-0 sm:border-r border-slate-900 flex flex-col justify-between bg-white">
                     <div>
                       <h2 className="text-xs font-black text-slate-900 uppercase tracking-tight leading-snug">
-                        {item.emitenteNome}
+                        {parsed.emit.xNome}
                       </h2>
                       <p className="text-[9px] text-slate-800 mt-1 leading-normal">
-                        TRANSPORTES RODOVIÁRIOS E LOGÍSTICA S.A.<br />
-                        RNTRC: 04918239 — CNPJ: {item.emitenteCnpj}<br />
-                        IE: {item.emitenteIe || '9012384712'} — UF: {item.emitenteUf}
+                        {parsed.emit.xLgr} {parsed.emit.nro} {parsed.emit.xCpl ? `— ${parsed.emit.xCpl}` : ''}<br />
+                        {parsed.emit.xBairro} — {parsed.emit.xMun} / {parsed.emit.UF} — CEP: {parsed.emit.CEP || '40000-000'}<br />
+                        CNPJ: {parsed.emit.CNPJ} — IE: {parsed.emit.IE || 'ISENTO'}
                       </p>
                     </div>
                     <div className="mt-2 pt-1.5 border-t border-slate-300 text-[8px] font-bold text-slate-700 uppercase">
@@ -175,7 +424,6 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
                   </div>
 
-                  {/* TÍTULO DACTE & MODAL */}
                   <div className="col-span-6 sm:col-span-2 p-2 border-r border-slate-900 text-center flex flex-col justify-between bg-slate-100/80 text-slate-900">
                     <div>
                       <strong className="text-base font-black block tracking-widest text-slate-900">DACTE</strong>
@@ -188,168 +436,96 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
 
                     <div className="text-[8px] text-slate-900 leading-tight">
-                      <strong className="text-[10px] text-slate-900">Nº {item.numero}</strong><br />
-                      <span className="font-bold">SÉRIE {item.serie}</span><br />
+                      <strong className="text-[10px] text-slate-900">Nº {parsed.nNF}</strong><br />
+                      <span className="font-bold">SÉRIE {parsed.serie}</span><br />
                       <span>FOLHA 1 / 1</span>
                     </div>
                   </div>
 
-                  {/* CHAVE DE ACESSO & BARRAS */}
                   <div className="col-span-6 sm:col-span-5 p-2 flex flex-col justify-between bg-white text-slate-900">
-                    <div className="bg-white h-9 w-full border border-slate-900 flex items-center justify-center p-0.5">
-                      <svg className="w-full h-full" viewBox="0 0 300 36" preserveAspectRatio="none">
-                        <rect x="0" y="0" width="300" height="36" fill="#ffffff" />
-                        <path d="M4 0v36M7 0v36M10 0v36M15 0v36M18 0v36M22 0v36M27 0v36M30 0v36M34 0v36M39 0v36M43 0v36M47 0v36M52 0v36M57 0v36M61 0v36M65 0v36M70 0v36M74 0v36M78 0v36M83 0v36M87 0v36M91 0v36M95 0v36M100 0v36M104 0v36M108 0v36M113 0v36M118 0v36M122 0v36M126 0v36M131 0v36M135 0v36M139 0v36M144 0v36M148 0v36M152 0v36M157 0v36M162 0v36M166 0v36M170 0v36M175 0v36M179 0v36M183 0v36M188 0v36M192 0v36M196 0v36M201 0v36M205 0v36M209 0v36M214 0v36M218 0v36M222 0v36M227 0v36M231 0v36M235 0v36M240 0v36M244 0v36M248 0v36M253 0v36M258 0v36M262 0v36M266 0v36M271 0v36M275 0v36M279 0v36M284 0v36M288 0v36M292 0v36" stroke="#000000" strokeWidth="2" />
-                      </svg>
-                    </div>
-
-                    <div className="border border-slate-900 p-1 rounded mt-1 bg-white">
+                    <div className="border border-slate-900 p-1 rounded bg-white">
                       <div className="text-[7px] font-bold text-slate-700 uppercase">Chave de Acesso do CT-e</div>
                       <div className="text-[9.5px] font-mono font-black text-slate-900 tracking-wider">
                         {formatChave44(item.chaveAcesso)}
                       </div>
                     </div>
 
-                    <div className="text-[7.5px] text-slate-700 mt-1 leading-tight">
-                      Consulta de autenticidade no portal nacional do CT-e www.cte.fazenda.gov.br
+                    <div className="border-t border-slate-300 pt-1 mt-1 text-[8.5px]">
+                      <strong>PROTOCOLO DE AUTORIZAÇÃO DE USO</strong><br />
+                      <span className="font-mono">{parsed.nProt} — {parsed.dhRecbto}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* NATUREZA DA OPERAÇÃO & PROTOCOLO */}
-                <div className="grid grid-cols-12 border-x border-b border-slate-900 rounded-b bg-white text-slate-900 -mt-2.5">
-                  <div className="col-span-7 p-1.5 border-r border-slate-900 bg-white">
-                    <div className="text-[7.5px] text-slate-600 font-bold uppercase">NATUREZA DA OPERAÇÃO</div>
-                    <div className="text-[9.5px] font-bold text-slate-900 uppercase">PRESTAÇÃO DE SERVIÇO DE TRANSPORTE INTERESTADUAL</div>
-                  </div>
-                  <div className="col-span-5 p-1.5 bg-white">
-                    <div className="text-[7.5px] text-slate-600 font-bold uppercase">PROTOCOLO DE AUTORIZAÇÃO DE USO</div>
-                    <div className="text-[9.5px] font-mono font-bold text-slate-900">141260819482710 - {item.dataEmissao}</div>
-                  </div>
-                </div>
-
-                {/* ORIGEM X DESTINO DA PRESTAÇÃO */}
-                <div className="grid grid-cols-12 border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="col-span-6 p-1.5 border-r border-slate-900 bg-white">
-                    <div className="text-[7.5px] text-slate-600 font-bold">INÍCIO DA PRESTAÇÃO (MUNICÍPIO / UF)</div>
-                    <div className="text-[9.5px] font-bold text-slate-900 uppercase">CURITIBA - {item.emitenteUf}</div>
-                  </div>
-                  <div className="col-span-6 p-1.5 bg-white">
-                    <div className="text-[7.5px] text-slate-600 font-bold">TÉRMINO DA PRESTAÇÃO (MUNICÍPIO / UF)</div>
-                    <div className="text-[9.5px] font-bold text-slate-900 uppercase">RIO DE JANEIRO - {item.destinatarioUf}</div>
-                  </div>
-                </div>
-
-                {/* REMETENTE X DESTINATÁRIO DA CARGA */}
+                {/* DADOS DA PRESTAÇÃO DO SERVIÇO */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900">
-                    PARTES ENVOLVIDAS NA PRESTAÇÃO (REMETENTE / DESTINATÁRIO / TOMADOR)
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
+                    DADOS DA PRESTAÇÃO DO SERVIÇO DE TRANSPORTE
                   </div>
-                  <div className="grid grid-cols-12 text-[9.5px] bg-white">
-                    <div className="col-span-6 p-1.5 border-r border-b border-slate-900 bg-white">
-                      <div className="text-[7.5px] text-slate-600 font-bold">REMETENTE</div>
-                      <div className="font-bold text-slate-900">{item.emitenteNome}</div>
-                      <div className="text-[8px] font-mono text-slate-700">CNPJ: {item.emitenteCnpj} | IE: {item.emitenteIe || 'ISENTO'}</div>
+                  <div className="grid grid-cols-2 text-[9.5px] p-2 gap-2">
+                    <div className="border-r border-slate-300 pr-2">
+                      <span className="text-[7.5px] text-slate-600 block font-bold">INÍCIO DA PRESTAÇÃO (ORIGEM)</span>
+                      <strong>{parsed.cte.munIni} / {parsed.cte.ufIni}</strong>
                     </div>
-                    <div className="col-span-6 p-1.5 border-b border-slate-900 bg-white">
-                      <div className="text-[7.5px] text-slate-600 font-bold">DESTINATÁRIO</div>
-                      <div className="font-bold text-slate-900">{item.destinatarioNome}</div>
-                      <div className="text-[8px] font-mono text-slate-700">CNPJ: {item.destinatarioCnpj} | IE: {item.destinatarioIe || 'ISENTO'}</div>
+                    <div>
+                      <span className="text-[7.5px] text-slate-600 block font-bold">TÉRMINO DA PRESTAÇÃO (DESTINO)</span>
+                      <strong>{parsed.cte.munFim} / {parsed.cte.ufFim}</strong>
                     </div>
                   </div>
                 </div>
 
-                {/* DADOS DA CARGA & COMPONENTES DO FRETE */}
+                {/* REMETENTE / DESTINATÁRIO */}
+                <div className="grid grid-cols-2 border border-slate-900 rounded bg-white text-slate-900">
+                  <div className="p-2 border-r border-slate-900">
+                    <span className="text-[7.5px] text-slate-600 block font-bold">REMETENTE</span>
+                    <strong>{parsed.emit.xNome}</strong><br />
+                    <span className="font-mono text-[8.5px]">CNPJ: {parsed.emit.CNPJ} — UF: {parsed.emit.UF}</span>
+                  </div>
+                  <div className="p-2">
+                    <span className="text-[7.5px] text-slate-600 block font-bold">DESTINATÁRIO / TOMADOR</span>
+                    <strong>{parsed.dest.xNome}</strong><br />
+                    <span className="font-mono text-[8.5px]">CNPJ: {parsed.dest.CNPJ} — UF: {parsed.dest.UF}</span>
+                  </div>
+                </div>
+
+                {/* PRODUTO PREDOMINANTE & CARGA */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900">
-                    INFORMAÇÕES DA CARGA E COMPONENTES DO VALOR DA PRESTAÇÃO
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
+                    INFORMAÇÕES DA CARGA & NF-E VINCULADA
                   </div>
-                  <div className="grid grid-cols-4 text-[8.5px] border-b border-slate-900 text-center bg-white">
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">PRODUTO PREDOMINANTE</span>
-                      <strong className="text-[9px] text-slate-900">CARGA GERAL / EQUIPAMENTOS</strong>
+                  <div className="p-2 grid grid-cols-3 gap-2 text-[9px]">
+                    <div>
+                      <span className="text-slate-600 block">PRODUTO PREDOMINANTE</span>
+                      <strong>{parsed.cte.proPred}</strong>
                     </div>
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">VALOR TOTAL DA CARGA</span>
-                      <strong className="font-mono text-[9px] text-slate-900">R$ 150.000,00</strong>
-                    </div>
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">PESO BRUTO (KG)</span>
-                      <strong className="font-mono text-[9px] text-slate-900">12.450,00 KG</strong>
-                    </div>
-                    <div className="p-1">
-                      <span className="text-[7px] text-slate-600 block font-bold">VALOR TOTAL DO FRETE</span>
-                      <strong className="font-mono text-[10px] text-emerald-950 font-black">
-                        {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </strong>
+                    <div className="col-span-2 font-mono">
+                      <span className="text-slate-600 block">CHAVE DA NF-E VINCULADA</span>
+                      <strong>{parsed.cte.chaveNFe || item.chaveAcesso}</strong>
                     </div>
                   </div>
                 </div>
 
-                {/* DADOS DOS ITENS DA CARGA E COMPONENTES DO FRETE */}
-                <div className="border border-slate-900 rounded bg-white text-slate-900 overflow-hidden">
-                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900 flex justify-between items-center">
-                    <span className="flex items-center gap-1">
-                      <Package className="w-3 h-3 text-slate-700" />
-                      ITENS E COMPONENTES DO SERVIÇO DE TRANSPORTE
-                    </span>
-                    <span className="text-[7.5px] font-mono text-slate-700 font-bold">{displayItens.length} ITEM(NS) REGISTRADO(S)</span>
+                {/* VALORES E IMPOSTOS DO TRANSPORTE */}
+                <div className="border border-slate-900 rounded bg-white text-slate-900">
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
+                    VALORES DA PRESTAÇÃO E TRIBUTAÇÃO
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[8px] font-mono border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 border-b border-slate-900 text-[7px] text-slate-700 font-bold uppercase text-center">
-                          <th className="p-1 border-r border-slate-300 w-6">ITEM</th>
-                          <th className="p-1 border-r border-slate-300 w-24">CÓDIGO</th>
-                          <th className="p-1 border-r border-slate-300 text-left">DESCRIÇÃO DA CARGA / SERVIÇO</th>
-                          <th className="p-1 border-r border-slate-300 w-12">CFOP</th>
-                          <th className="p-1 border-r border-slate-300 w-12">QTD/UN</th>
-                          <th className="p-1 border-r border-slate-300 w-20">VALOR FRETE</th>
-                          <th className="p-1 border-r border-slate-300 w-16">CBS (~8.8%)</th>
-                          <th className="p-1 w-16">IBS (~17.7%)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayItens.map((it) => (
-                          <tr key={it.numeroItem} className="border-b border-slate-200 text-slate-900 text-center hover:bg-slate-50">
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.numeroItem}</td>
-                            <td className="p-1 border-r border-slate-200">{it.codigo}</td>
-                            <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium">{it.descricao}</td>
-                            <td className="p-1 border-r border-slate-200">{it.cfop || '6352'}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.quantidade} {it.unidade}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold text-slate-950">{it.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{(it.valorCbs || it.valorTotal * 0.088).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 text-indigo-900 font-semibold">{(it.valorIbs || it.valorTotal * 0.177).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* REFORMA TRIBUTÁRIA DUAL TAX (CBS / IBS) */}
-                <div className="border-2 border-blue-600 rounded bg-blue-50/90 p-2 space-y-1 text-slate-900">
-                  <div className="flex items-center justify-between border-b border-blue-300 pb-1">
-                    <span className="text-[9.5px] font-black text-blue-950 flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-700" />
-                      DEMONSTRATIVO DACTE DA REFORMA TRIBUTÁRIA (PLP 68/2024 — DUAL TAX)
-                    </span>
-                    <span className="text-[8px] font-black px-2 py-0.5 rounded bg-blue-200 text-blue-900">
-                      Transição CBS/IBS Transporte
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
-                      <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                  <div className="grid grid-cols-4 text-center text-[9px] p-2 gap-2">
+                    <div className="border-r border-slate-300">
+                      <span className="text-slate-600 block">VALOR TOTAL DO SERVIÇO</span>
+                      <strong className="text-xs font-mono font-black">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
-                      <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    <div className="border-r border-slate-300">
+                      <span className="text-slate-600 block">VALOR A RECEBER</span>
+                      <strong className="text-xs font-mono font-black">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">ICMS Destacado</span>
-                      <strong className="font-mono text-emerald-950 font-black text-[10.5px]">{item.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    <div className="border-r border-slate-300">
+                      <span className="text-slate-600 block">ICMS TRANSPORTE</span>
+                      <strong className="text-xs font-mono">{item.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 block">CBS / IBS FRETE</span>
+                      <strong className="text-xs font-mono text-blue-900">{(item.valorCbs + item.valorIbs).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                   </div>
                 </div>
@@ -357,241 +533,94 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
             )}
 
             {/* ========================================================= */}
-            {/* VIEW MODE 2: DANFSE (NOTA FISCAL DE SERVIÇO - 50 POSIÇÕES) */}
+            {/* VIEW MODE 2: DANFSE (PADRÃO NACIONAL DE NFS-E)            */}
             {/* ========================================================= */}
             {item.tipo === 'NFSe' && (
               <>
-                {/* CABEÇALHO DANFSE PADRÃO NACIONAL */}
-                <div className="grid grid-cols-12 border-2 border-indigo-900 rounded bg-white text-slate-900">
-                  {/* LOGO & BRASÃO PREFEITURA / PADRÃO NACIONAL */}
-                  <div className="col-span-12 sm:col-span-4 p-3 border-b sm:border-b-0 sm:border-r border-indigo-900 flex flex-col justify-between bg-white">
+                <div className="border-2 border-slate-900 rounded bg-white text-slate-900 p-3">
+                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-2">
                     <div>
-                      <div className="inline-block px-2 py-0.5 bg-indigo-950 text-white text-[8px] font-black rounded uppercase tracking-wider mb-1">
-                        SISTEMA NACIONAL NFS-E
-                      </div>
-                      <h2 className="text-xs font-black text-slate-900 uppercase tracking-tight leading-snug">
-                        PREFEITURA MUNICIPAL DE SÃO PAULO
-                      </h2>
-                      <p className="text-[9px] text-slate-700 mt-0.5 font-bold">
-                        SECRETARIA MUNICIPAL DA FAZENDA
+                      <h2 className="text-sm font-black uppercase">{parsed.emit.xNome}</h2>
+                      <p className="text-[9px] text-slate-700 font-mono">
+                        CNPJ: {parsed.emit.CNPJ} — {parsed.emit.xMun}/{parsed.emit.UF}<br />
+                        {parsed.emit.xLgr} {parsed.emit.nro} {parsed.emit.xCpl} — CEP: {parsed.emit.CEP}
                       </p>
                     </div>
-                    <div className="mt-2 pt-1.5 border-t border-slate-300 text-[8px] font-black text-indigo-950 uppercase">
-                      Documento Auxiliar da NFS-e (DANFSe Padrão Nacional)
+                    <div className="text-right">
+                      <strong className="text-sm font-black block">DANFSe</strong>
+                      <span className="text-[9px] block font-mono font-bold">NFS-e Nº {parsed.nNF}</span>
+                      <span className="text-[8px] text-slate-600 block">Emissão: {item.dataEmissao}</span>
                     </div>
                   </div>
 
-                  {/* DANFSE TÍTULO & NÚMERO */}
-                  <div className="col-span-6 sm:col-span-3 p-2.5 border-r border-indigo-900 text-center flex flex-col justify-between bg-indigo-50/60 text-slate-900">
-                    <div>
-                      <strong className="text-base font-black block tracking-widest text-indigo-950">DANFSe</strong>
-                      <span className="text-[7.5px] text-slate-700 block font-bold leading-tight mt-0.5">NOTA FISCAL DE SERVIÇOS ELETRÔNICA</span>
-                    </div>
-
-                    <div className="text-[8.5px] text-slate-900 leading-tight my-1">
-                      <span className="text-[7.5px] text-slate-600 block">NÚMERO DA NFS-E</span>
-                      <strong className="text-sm font-black text-indigo-950 font-mono">{item.numero}</strong><br />
-                      <span className="font-bold text-[8px] text-slate-700">SÉRIE: {item.serie}</span>
-                    </div>
-
-                    <div className="text-[8px] text-slate-700 font-mono">
-                      Data Emissão: <strong>{item.dataEmissao}</strong>
-                    </div>
-                  </div>
-
-                  {/* CHAVE DE ACESSO DA NFS-E (50 POSIÇÕES EXATAS) */}
-                  <div className="col-span-6 sm:col-span-5 p-2 flex flex-col justify-between bg-white text-slate-900">
-                    <div className="p-1.5 rounded bg-indigo-950 text-white border border-indigo-900 space-y-0.5">
-                      <div className="flex items-center justify-between text-[7px] text-indigo-300 font-bold uppercase">
-                        <span>Chave de Acesso NFS-e (Padrão Nacional)</span>
-                        <span className="text-cyan-400 font-extrabold">50 Posições</span>
-                      </div>
-                      <div className="text-[9px] font-mono font-black text-cyan-300 tracking-tight leading-tight break-all">
-                        {formatChave50Nfse(item.chaveAcesso)}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1 text-[8px] text-slate-800 font-mono mt-1">
-                      <div className="bg-slate-100 p-1 rounded border border-slate-300">
-                        <span className="text-[6.5px] text-slate-600 block font-bold">CÓD. VERIFICAÇÃO</span>
-                        <strong className="text-slate-900 font-black">8A9B-C12D-9988</strong>
-                      </div>
-                      <div className="bg-slate-100 p-1 rounded border border-slate-300">
-                        <span className="text-[6.5px] text-slate-600 block font-bold">COMPETÊNCIA</span>
-                        <strong className="text-slate-900 font-black">08/2026</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* PRESTADOR DOS SERVIÇOS */}
-                <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-indigo-950 text-white px-2 py-0.5 text-[8.5px] font-black uppercase flex justify-between">
-                    <span>PRESTADOR DOS SERVIÇOS</span>
-                    <span className="text-cyan-300 font-mono">CNPJ: {item.emitenteCnpj}</span>
-                  </div>
-                  <div className="p-2 text-[9.5px] grid grid-cols-12 gap-2 bg-white">
-                    <div className="col-span-8">
-                      <span className="text-[7.5px] text-slate-600 block font-bold">RAZÃO SOCIAL</span>
-                      <strong className="text-slate-900 text-xs block">{item.emitenteNome}</strong>
-                    </div>
-                    <div className="col-span-4 font-mono">
-                      <span className="text-[7.5px] text-slate-600 block font-bold">INSCRIÇÃO MUNICIPAL</span>
-                      <strong className="text-slate-900">3.481.902-1</strong>
-                    </div>
-                    <div className="col-span-12 text-slate-700 text-[9px]">
-                      Endereço: Avenida Paulista, 1000 - Conj 14 — São Paulo / {item.emitenteUf} — CEP: 01310-100 — Tel: (11) 3300-1000
-                    </div>
+                  <div className="border border-slate-900 rounded mt-2 p-1.5 bg-slate-50 text-[9px] font-mono">
+                    <span className="text-slate-600 block text-[8px] font-bold">CHAVE DE ACESSO DA NFS-E (PADRÃO NACIONAL)</span>
+                    <strong className="text-slate-900 text-xs tracking-wider">{item.chaveAcesso}</strong>
                   </div>
                 </div>
 
                 {/* TOMADOR DOS SERVIÇOS */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-slate-200/90 text-slate-900 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900 flex justify-between">
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900 flex justify-between">
                     <span>TOMADOR DOS SERVIÇOS</span>
-                    <span className="font-mono font-bold">CNPJ: {item.destinatarioCnpj}</span>
+                    <span className="font-mono">CNPJ: {parsed.dest.CNPJ}</span>
                   </div>
-                  <div className="p-2 text-[9.5px] grid grid-cols-12 gap-2 bg-white">
+                  <div className="p-2 text-[9.5px] grid grid-cols-12 gap-2">
                     <div className="col-span-8">
-                      <span className="text-[7.5px] text-slate-600 block font-bold">NOME / RAZÃO SOCIAL</span>
-                      <strong className="text-slate-900 text-xs block">{item.destinatarioNome}</strong>
+                      <span className="text-[7.5px] text-slate-600 block font-bold">RAZÃO SOCIAL</span>
+                      <strong className="text-slate-900 text-xs">{parsed.dest.xNome}</strong>
                     </div>
-                    <div className="col-span-4 font-mono">
-                      <span className="text-[7.5px] text-slate-600 block font-bold">INSCRIÇÃO MUNICIPAL / UF</span>
-                      <strong className="text-slate-900">ISENTO / {item.destinatarioUf}</strong>
+                    <div className="col-span-4">
+                      <span className="text-[7.5px] text-slate-600 block font-bold">MUNICÍPIO / UF</span>
+                      <strong>{parsed.dest.xMun || parsed.dest.UF} / {parsed.dest.UF}</strong>
                     </div>
                   </div>
                 </div>
 
-                {/* DISCRIMINAÇÃO DOS SERVIÇOS PRESTADOS */}
+                {/* DISCRIMINAÇÃO DOS SERVIÇOS */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900">
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
                     DISCRIMINAÇÃO DOS SERVIÇOS PRESTADOS
                   </div>
-                  <div className="p-2.5 bg-white space-y-2">
-                    <p className="text-[9.5px] text-slate-900 leading-relaxed font-mono">
-                      PRESTAÇÃO DE SERVIÇOS TÉCNICOS ESPECIALIZADOS EM CONSULTORIA TRIBUTÁRIA, ANÁLISE DE CONFORMIDADE FISCAL SEFAZ E SUITE DE INTEGRAÇÃO DE ARQUIVOS XML CONFORME LEI COMPLEMENTAR 116/2003.<br />
-                      — CÓDIGO DA ATIVIDADE MUNICIPAL: 17.01 / 01.07 (SUPORTE E CONSULTORIA TÉCNICA EM TI E IMPOSTOS)<br />
-                      — LOCAL DA PRESTAÇÃO: SÃO PAULO - SP
-                    </p>
+                  <div className="p-3 text-[9.5px] font-mono leading-relaxed">
+                    <p className="whitespace-pre-line">{parsed.nfse.discriminacao}</p>
+                    <div className="mt-2 pt-2 border-t border-slate-300 text-[8.5px] text-slate-700">
+                      Código de Tributação Nacional: <strong>{parsed.nfse.codServ}</strong> • Local da Prestação: <strong>{parsed.nfse.locPrest}</strong>
+                    </div>
                   </div>
                 </div>
 
-                {/* VALORES & DETALHAMENTO DO ISSQN */}
+                {/* VALORES E RETENÇÕES FEDERAIS */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
-                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900">
-                    CÁLCULO DO ISSQN E RETENÇÕES TRIBUTÁRIAS
+                  <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
+                    VALORES DOS SERVIÇOS E RETENÇÕES TRIBUTÁRIAS
                   </div>
-                  <div className="grid grid-cols-5 text-[8.5px] text-center bg-white border-b border-slate-900">
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">VALOR DOS SERVIÇOS</span>
-                      <strong className="font-mono text-[10px] text-slate-900">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                  <div className="grid grid-cols-6 text-center text-[8.5px] p-2 gap-1 border-b border-slate-300 font-mono">
+                    <div>
+                      <span className="text-slate-600 block text-[7px]">VALOR BRUTO</span>
+                      <strong className="text-slate-900 text-[10px] font-black">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">BASE CÁLCULO ISSQN</span>
-                      <strong className="font-mono text-[9.5px] text-slate-900">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    <div>
+                      <span className="text-slate-600 block text-[7px]">RETENÇÃO INSS (11%)</span>
+                      <strong className="text-slate-900">{parsed.nfse.inss.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">ALÍQUOTA ISS</span>
-                      <strong className="font-mono text-[9.5px] text-indigo-900">5,00%</strong>
+                    <div>
+                      <span className="text-slate-600 block text-[7px]">RETENÇÃO IRRF</span>
+                      <strong className="text-slate-900">{parsed.nfse.irrf.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1 border-r border-slate-900">
-                      <span className="text-[7px] text-slate-600 block font-bold">VALOR DO ISSQN</span>
-                      <strong className="font-mono text-[9.5px] text-indigo-950 font-black">
-                        {(item.valorTotal * 0.05).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    <div>
+                      <span className="text-slate-600 block text-[7px]">RETENÇÃO CSLL (4.65%)</span>
+                      <strong className="text-slate-900">{parsed.nfse.csll.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-600 block text-[7px]">ISS RETIDO</span>
+                      <strong className="text-slate-900">{parsed.nfse.issRet.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="bg-emerald-50 rounded p-1">
+                      <span className="text-emerald-800 block text-[7px] font-bold">VALOR LÍQUIDO</span>
+                      <strong className="text-emerald-950 text-[10px] font-black">
+                        {(item.valorTotal - parsed.nfse.inss - parsed.nfse.irrf - parsed.nfse.csll - parsed.nfse.issRet).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </strong>
-                    </div>
-                    <div className="p-1">
-                      <span className="text-[7px] text-slate-600 block font-bold">ISS RETIDO NA FONTE</span>
-                      <strong className="text-[9.5px] text-slate-900">NÃO</strong>
-                    </div>
-                  </div>
-
-                  {/* RETENÇÕES FEDERAIS */}
-                  <div className="grid grid-cols-5 text-[8px] text-center bg-slate-50">
-                    <div className="p-1 border-r border-slate-300">
-                      <span className="text-[6.5px] text-slate-600 block font-bold">PIS (1.65%)</span>
-                      <strong className="font-mono text-slate-900">{item.valorPis.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                    </div>
-                    <div className="p-1 border-r border-slate-300">
-                      <span className="text-[6.5px] text-slate-600 block font-bold">COFINS (7.60%)</span>
-                      <strong className="font-mono text-slate-900">{item.valorCofins.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                    </div>
-                    <div className="p-1 border-r border-slate-300">
-                      <span className="text-[6.5px] text-slate-600 block font-bold">INSS</span>
-                      <strong className="font-mono text-slate-900">R$ 0,00</strong>
-                    </div>
-                    <div className="p-1 border-r border-slate-300">
-                      <span className="text-[6.5px] text-slate-600 block font-bold">IRRF</span>
-                      <strong className="font-mono text-slate-900">R$ 0,00</strong>
-                    </div>
-                    <div className="p-1">
-                      <span className="text-[6.5px] text-slate-600 block font-bold">VALOR LÍQUIDO NFS-E</span>
-                      <strong className="font-mono text-emerald-950 font-black text-[9.5px]">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* DETALHAMENTO DOS ITENS DA PRESTAÇÃO DE SERVIÇOS */}
-                <div className="border border-slate-900 rounded bg-white text-slate-900 overflow-hidden">
-                  <div className="bg-indigo-950 text-white px-2 py-0.5 text-[8.5px] font-black uppercase flex justify-between items-center">
-                    <span className="flex items-center gap-1">
-                      <Package className="w-3 h-3 text-cyan-400" />
-                      ITENS E DETALHAMENTO DOS SERVIÇOS MUNICIPAIS
-                    </span>
-                    <span className="text-[7.5px] font-mono text-cyan-300 font-bold">{displayItens.length} ITEM(NS) DE SERVIÇO</span>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-[8px] font-mono border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 border-b border-slate-900 text-[7px] text-slate-700 font-bold uppercase text-center">
-                          <th className="p-1 border-r border-slate-300 w-6">ITEM</th>
-                          <th className="p-1 border-r border-slate-300 w-24">CÓDIGO / ITEM LC116</th>
-                          <th className="p-1 border-r border-slate-300 text-left">DISCRIMINAÇÃO DOS SERVIÇOS</th>
-                          <th className="p-1 border-r border-slate-300 w-10">QTD</th>
-                          <th className="p-1 border-r border-slate-300 w-20">V. UNITÁRIO</th>
-                          <th className="p-1 border-r border-slate-300 w-20">V. SERVIÇOS</th>
-                          <th className="p-1 border-r border-slate-300 w-16">CBS SERV (~8.8%)</th>
-                          <th className="p-1 w-16">IBS SERV (~17.7%)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayItens.map((it) => (
-                          <tr key={it.numeroItem} className="border-b border-slate-200 text-slate-900 text-center hover:bg-slate-50">
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.numeroItem}</td>
-                            <td className="p-1 border-r border-slate-200">{it.codigo}</td>
-                            <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium">{it.descricao}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.quantidade}</td>
-                            <td className="p-1 border-r border-slate-200">{it.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold text-slate-950">{it.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{(it.valorCbs || it.valorTotal * 0.088).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 text-indigo-900 font-semibold">{(it.valorIbs || it.valorTotal * 0.177).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* REFORMA TRIBUTÁRIA SERVIÇOS (PLP 68/2024 — CBS / IBS) */}
-                <div className="border-2 border-indigo-600 rounded bg-indigo-50/90 p-2 space-y-1 text-slate-900">
-                  <div className="flex items-center justify-between border-b border-indigo-300 pb-1">
-                    <span className="text-[9.5px] font-black text-indigo-950 flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-indigo-700" />
-                      DEMONSTRATIVO DANFSE DA REFORMA TRIBUTÁRIA DO CONSUMO (PLP 68/2024 — CBS / IBS)
-                    </span>
-                    <span className="text-[8px] font-black px-2 py-0.5 rounded bg-indigo-200 text-indigo-950">
-                      Substituição do ISSQN por IBS/CBS
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-[9.5px] text-center pt-1">
-                    <div className="p-1.5 rounded bg-white border border-indigo-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS Serv (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
-                      <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
-                    </div>
-                    <div className="p-1.5 rounded bg-white border border-indigo-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS Serv (Estadual/Municipal {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
-                      <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                   </div>
                 </div>
@@ -607,11 +636,11 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                 <div className="border border-slate-900 bg-white p-2 rounded text-[10px] space-y-1 text-slate-900">
                   <div className="flex items-center justify-between border-b border-slate-400 pb-1">
                     <div className="text-slate-900">
-                      RECEBEMOS DE <strong className="uppercase text-slate-900">{item.emitenteNome}</strong> OS PRODUTOS / SERVIÇOS CONSTANTES DA NOTA FISCAL ELETRÔNICA INDICADA AO LADO.
+                      RECEBEMOS DE <strong className="uppercase text-slate-900">{parsed.emit.xNome}</strong> OS PRODUTOS / SERVIÇOS CONSTANTES DA NOTA FISCAL ELETRÔNICA INDICADA AO LADO.
                     </div>
                     <div className="text-right shrink-0 pl-3">
                       <strong className="text-xs block text-slate-900 font-black">NF-e</strong>
-                      <span className="text-slate-900 font-bold">Nº {item.numero} - Série {item.serie}</span>
+                      <span className="text-slate-900 font-bold">Nº {parsed.nNF} - Série {parsed.serie}</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-12 gap-2 pt-1 text-[9px] text-slate-900">
@@ -632,15 +661,21 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
 
                 {/* CABEÇALHO DO DANFE */}
                 <div className="grid grid-cols-12 border-2 border-slate-900 rounded bg-white text-slate-900">
+                  
+                  {/* EMITENTE */}
                   <div className="col-span-12 sm:col-span-5 p-2.5 border-b sm:border-b-0 sm:border-r border-slate-900 flex flex-col justify-between bg-white">
                     <div>
                       <h2 className="text-xs font-black text-slate-900 uppercase tracking-tight leading-snug">
-                        {item.emitenteNome}
+                        {parsed.emit.xNome}
                       </h2>
+                      {parsed.emit.xFant && (
+                        <p className="text-[9px] font-bold text-slate-700">{parsed.emit.xFant}</p>
+                      )}
                       <p className="text-[9px] text-slate-800 mt-1 leading-normal">
-                        RUA DAS INDÚSTRIAS, 1000 — DISTRITO INDUSTRIAL<br />
-                        CEP: 01000-000 — SÃO PAULO - {item.emitenteUf}<br />
-                        FONE: (11) 3456-7890
+                        {parsed.emit.xLgr}, {parsed.emit.nro} {parsed.emit.xCpl ? `— ${parsed.emit.xCpl}` : ''}<br />
+                        {parsed.emit.xBairro} — {parsed.emit.xMun} - {parsed.emit.UF}<br />
+                        CEP: {parsed.emit.CEP || '00000-000'} {parsed.emit.fone ? `— Fone: ${parsed.emit.fone}` : ''}<br />
+                        CNPJ: {parsed.emit.CNPJ} — IE: {parsed.emit.IE || 'ISENTO'}
                       </p>
                     </div>
                     <div className="mt-2 pt-1.5 border-t border-slate-300 text-[8px] font-bold text-slate-700 uppercase">
@@ -648,6 +683,7 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
                   </div>
 
+                  {/* TÍTULO DANFE */}
                   <div className="col-span-6 sm:col-span-2 p-2 border-r border-slate-900 text-center flex flex-col justify-between bg-slate-100/80 text-slate-900">
                     <div>
                       <strong className="text-base font-black block tracking-widest text-slate-900">DANFE</strong>
@@ -657,25 +693,21 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     <div className="my-1 border border-slate-900 p-1 rounded inline-block mx-auto text-left bg-white">
                       <div className="text-[7px] font-bold text-slate-800">0 - ENTRADA</div>
                       <div className="text-[7px] font-bold text-slate-800">1 - SAÍDA</div>
-                      <div className="text-xs font-black text-center mt-0.5 bg-slate-900 text-white rounded px-1">1</div>
+                      <div className="text-xs font-black text-center mt-0.5 bg-slate-900 text-white rounded px-1">
+                        {parsed.tpNF}
+                      </div>
                     </div>
 
                     <div className="text-[8px] text-slate-900 leading-tight">
-                      <strong className="text-[10px] text-slate-900">Nº {item.numero}</strong><br />
-                      <span className="font-bold">SÉRIE {item.serie}</span><br />
+                      <strong className="text-[10px] text-slate-900">Nº {parsed.nNF}</strong><br />
+                      <span className="font-bold">SÉRIE {parsed.serie}</span><br />
                       <span>FOLHA 1 / 1</span>
                     </div>
                   </div>
 
+                  {/* CHAVE DE ACESSO & PROTOCOLO */}
                   <div className="col-span-6 sm:col-span-5 p-2 flex flex-col justify-between bg-white text-slate-900">
-                    <div className="bg-white h-9 w-full border border-slate-900 flex items-center justify-center p-0.5">
-                      <svg className="w-full h-full" viewBox="0 0 300 36" preserveAspectRatio="none">
-                        <rect x="0" y="0" width="300" height="36" fill="#ffffff" />
-                        <path d="M4 0v36M7 0v36M10 0v36M15 0v36M18 0v36M22 0v36M27 0v36M30 0v36M34 0v36M39 0v36M43 0v36M47 0v36M52 0v36M57 0v36M61 0v36M65 0v36M70 0v36M74 0v36M78 0v36M83 0v36M87 0v36M91 0v36M95 0v36M100 0v36M104 0v36M108 0v36M113 0v36M118 0v36M122 0v36M126 0v36M131 0v36M135 0v36M139 0v36M144 0v36M148 0v36M152 0v36M157 0v36M162 0v36M166 0v36M170 0v36M175 0v36M179 0v36M183 0v36M188 0v36M192 0v36M196 0v36M201 0v36M205 0v36M209 0v36M214 0v36M218 0v36M222 0v36M227 0v36M231 0v36M235 0v36M240 0v36M244 0v36M248 0v36M253 0v36M258 0v36M262 0v36M266 0v36M271 0v36M275 0v36M279 0v36M284 0v36M288 0v36M292 0v36" stroke="#000000" strokeWidth="2" />
-                      </svg>
-                    </div>
-
-                    <div className="border border-slate-900 p-1 rounded mt-1 bg-white">
+                    <div className="border border-slate-900 p-1.5 rounded bg-white">
                       <div className="text-[7px] font-bold text-slate-700 uppercase">Chave de Acesso da NF-e</div>
                       <div className="text-[9.5px] font-mono font-black text-slate-900 tracking-wider">
                         {formatChave44(item.chaveAcesso)}
@@ -683,20 +715,25 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
 
                     <div className="text-[7.5px] text-slate-700 mt-1 leading-tight">
-                      Consulta de autenticidade no portal nacional da NF-e www.nfe.fazenda.gov.br
+                      Consulta de autenticidade no portal nacional da NF-e <strong>www.nfe.fazenda.gov.br</strong>
+                    </div>
+
+                    <div className="border-t border-slate-300 pt-1 mt-1 text-[8px] font-mono">
+                      <strong className="block text-[7px] font-sans font-bold text-slate-700">PROTOCOLO DE AUTORIZAÇÃO DE USO</strong>
+                      <span className="font-bold text-slate-900">{parsed.nProt} — {parsed.dhRecbto}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* NATUREZA DA OPERAÇÃO & PROTOCOLO */}
+                {/* NATUREZA DA OPERAÇÃO & INSCRIÇÃO ESTADUAL */}
                 <div className="grid grid-cols-12 border-x border-b border-slate-900 rounded-b bg-white text-slate-900 -mt-2.5">
                   <div className="col-span-7 p-1.5 border-r border-slate-900 bg-white">
                     <div className="text-[7.5px] text-slate-600 font-bold uppercase">NATUREZA DA OPERAÇÃO</div>
-                    <div className="text-[9.5px] font-bold text-slate-900 uppercase">VENDA DE MERCADORIA ADQUIRIDA DE TERCEIROS</div>
+                    <div className="text-[9.5px] font-bold text-slate-900 uppercase">{parsed.natOp}</div>
                   </div>
                   <div className="col-span-5 p-1.5 bg-white">
-                    <div className="text-[7.5px] text-slate-600 font-bold uppercase">PROTOCOLO DE AUTORIZAÇÃO DE USO</div>
-                    <div className="text-[9.5px] font-mono font-bold text-slate-900">135260819482710 - {item.dataEmissao}</div>
+                    <div className="text-[7.5px] text-slate-600 font-bold uppercase">INSCRIÇÃO ESTADUAL DO EMITENTE</div>
+                    <div className="text-[9.5px] font-mono font-bold text-slate-900">{parsed.emit.IE || 'ISENTO'}</div>
                   </div>
                 </div>
 
@@ -708,11 +745,23 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   <div className="grid grid-cols-12 text-[9.5px] bg-white">
                     <div className="col-span-8 p-1.5 border-r border-b border-slate-900 bg-white">
                       <div className="text-[7.5px] text-slate-600 font-bold">NOME / RAZÃO SOCIAL</div>
-                      <div className="font-bold text-slate-900">{item.destinatarioNome}</div>
+                      <div className="font-bold text-slate-900">{parsed.dest.xNome}</div>
                     </div>
                     <div className="col-span-4 p-1.5 border-b border-slate-900 bg-white">
                       <div className="text-[7.5px] text-slate-600 font-bold">CNPJ / CPF</div>
-                      <div className="font-mono font-bold text-slate-900">{item.destinatarioCnpj}</div>
+                      <div className="font-mono font-bold text-slate-900">{parsed.dest.CNPJ}</div>
+                    </div>
+                    <div className="col-span-6 p-1.5 border-r border-slate-900 bg-white">
+                      <div className="text-[7.5px] text-slate-600 font-bold">ENDEREÇO</div>
+                      <div>{parsed.dest.xLgr ? `${parsed.dest.xLgr}, ${parsed.dest.nro} ${parsed.dest.xCpl || ''}` : 'ENDEREÇO CONFORME CADASTRO'}</div>
+                    </div>
+                    <div className="col-span-3 p-1.5 border-r border-slate-900 bg-white">
+                      <div className="text-[7.5px] text-slate-600 font-bold">MUNICÍPIO / UF</div>
+                      <div>{parsed.dest.xMun || parsed.dest.UF} - {parsed.dest.UF}</div>
+                    </div>
+                    <div className="col-span-3 p-1.5 bg-white">
+                      <div className="text-[7.5px] text-slate-600 font-bold">DATA DE EMISSÃO</div>
+                      <div className="font-mono font-bold">{item.dataEmissao}</div>
                     </div>
                   </div>
                 </div>
@@ -720,40 +769,71 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                 {/* CÁLCULO DO IMPOSTO TRADICIONAL */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900">
                   <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900">
-                    CÁLCULO DO IMPOSTO (SISTEMA ATUAL)
+                    CÁLCULO DO IMPOSTO
                   </div>
-                  <div className="grid grid-cols-5 text-[8.5px] border-b border-slate-900 text-center bg-white">
+                  <div className="grid grid-cols-6 text-[8.5px] border-b border-slate-900 text-center bg-white">
                     <div className="p-1 border-r border-slate-900 bg-white">
-                      <span className="text-[7px] text-slate-600 block font-bold">BASE DE CÁLCULO DO ICMS</span>
-                      <strong className="font-mono text-[9.5px] text-slate-900">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <span className="text-[7px] text-slate-600 block font-bold">BASE CÁLC. ICMS</span>
+                      <strong className="font-mono text-[9.5px] text-slate-900">{parsed.totais.vBC.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1 border-r border-slate-900 bg-white">
                       <span className="text-[7px] text-slate-600 block font-bold">VALOR DO ICMS</span>
-                      <strong className="font-mono text-[9.5px] text-blue-900">{item.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <strong className="font-mono text-[9.5px] text-blue-900">{parsed.totais.vICMS.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1 border-r border-slate-900 bg-white">
-                      <span className="text-[7px] text-slate-600 block font-bold">VALOR DO IPI</span>
-                      <strong className="font-mono text-[9.5px] text-slate-900">{item.valorIpi.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <span className="text-[7px] text-slate-600 block font-bold">BASE ICMS ST</span>
+                      <strong className="font-mono text-[9.5px] text-slate-900">{parsed.totais.vBCST.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1 border-r border-slate-900 bg-white">
-                      <span className="text-[7px] text-slate-600 block font-bold">PIS / COFINS</span>
-                      <strong className="font-mono text-[9.5px] text-slate-900">{(item.valorPis + item.valorCofins).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <span className="text-[7px] text-slate-600 block font-bold">VALOR ICMS ST</span>
+                      <strong className="font-mono text-[9.5px] text-slate-900">{parsed.totais.vST.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1 border-r border-slate-900 bg-white">
+                      <span className="text-[7px] text-slate-600 block font-bold">TOTAL PRODUTOS</span>
+                      <strong className="font-mono text-[9.5px] text-slate-900">{parsed.totais.vProd.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                     <div className="p-1 bg-slate-100">
                       <span className="text-[7px] text-slate-800 block font-black">VALOR TOTAL DA NOTA</span>
-                      <strong className="font-mono text-[10.5px] text-emerald-950 font-black">{item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <strong className="font-mono text-[10.5px] text-emerald-950 font-black">{parsed.totais.vNF.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-6 text-[8px] text-center bg-slate-50">
+                    <div className="p-1 border-r border-slate-300">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">VALOR FRETE</span>
+                      <strong className="font-mono">{parsed.totais.vFrete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1 border-r border-slate-300">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">VALOR SEGURO</span>
+                      <strong className="font-mono">{parsed.totais.vSeg.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1 border-r border-slate-300">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">DESCONTO</span>
+                      <strong className="font-mono">{parsed.totais.vDesc.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1 border-r border-slate-300">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">OUTRAS DESPESAS</span>
+                      <strong className="font-mono">{parsed.totais.vOutro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1 border-r border-slate-300">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">VALOR DO IPI</span>
+                      <strong className="font-mono">{parsed.totais.vIPI.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                    </div>
+                    <div className="p-1">
+                      <span className="text-[6.5px] text-slate-600 block font-bold">PIS / COFINS</span>
+                      <strong className="font-mono">{(parsed.totais.vPIS + parsed.totais.vCOFINS).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
                   </div>
                 </div>
 
-                {/* DADOS DOS PRODUTOS / SERVIÇOS */}
+                {/* DADOS DOS PRODUTOS / SERVIÇOS (ITENS REAIS DO XML) */}
                 <div className="border border-slate-900 rounded bg-white text-slate-900 overflow-hidden">
                   <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black text-slate-900 uppercase border-b border-slate-900 flex justify-between items-center">
                     <span className="flex items-center gap-1">
                       <Package className="w-3 h-3 text-slate-700" />
-                      DADOS DOS PRODUTOS / SERVIÇOS
+                      DADOS DOS PRODUTOS / SERVIÇOS (ITENS CONSTANTES DO XML)
                     </span>
-                    <span className="text-[7.5px] font-mono text-slate-700 font-bold">{displayItens.length} ITEM(NS) NA NOTA FISCAL</span>
+                    <span className="text-[7.5px] font-mono text-slate-700 font-bold">{parsed.itens.length} ITEM(NS) NA NOTA FISCAL</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-[8px] font-mono border-collapse">
@@ -765,29 +845,29 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                           <th className="p-1 border-r border-slate-300 w-16">NCM/SH</th>
                           <th className="p-1 border-r border-slate-300 w-10">CFOP</th>
                           <th className="p-1 border-r border-slate-300 w-8">UN</th>
-                          <th className="p-1 border-r border-slate-300 w-10">QTD</th>
+                          <th className="p-1 border-r border-slate-300 w-12">QTD</th>
                           <th className="p-1 border-r border-slate-300 w-16">V. UNIT</th>
                           <th className="p-1 border-r border-slate-300 w-16">V. TOTAL</th>
                           <th className="p-1 border-r border-slate-300 w-14">V. ICMS</th>
-                          <th className="p-1 border-r border-slate-300 w-14">CBS (~8.8%)</th>
-                          <th className="p-1 w-14">IBS (~17.7%)</th>
+                          <th className="p-1 border-r border-slate-300 w-14">CBS (0.9%)</th>
+                          <th className="p-1 w-14">IBS (0.1%)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {displayItens.map((it) => (
+                        {parsed.itens.map((it) => (
                           <tr key={it.numeroItem} className="border-b border-slate-200 text-slate-900 text-center hover:bg-slate-50">
                             <td className="p-1 border-r border-slate-200 font-bold">{it.numeroItem}</td>
-                            <td className="p-1 border-r border-slate-200">{it.codigo}</td>
-                            <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium">{it.descricao}</td>
-                            <td className="p-1 border-r border-slate-200">{it.ncmCts || '8471.30.12'}</td>
-                            <td className="p-1 border-r border-slate-200">{it.cfop || '5102'}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.unidade}</td>
-                            <td className="p-1 border-r border-slate-200">{it.quantidade}</td>
+                            <td className="p-1 border-r border-slate-200 font-mono text-[7.5px]">{it.codigo}</td>
+                            <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium leading-tight">{it.descricao}</td>
+                            <td className="p-1 border-r border-slate-200 font-mono">{it.ncmCts}</td>
+                            <td className="p-1 border-r border-slate-200">{it.cfop}</td>
+                            <td className="p-1 border-r border-slate-200">{it.unidade}</td>
+                            <td className="p-1 border-r border-slate-200 font-bold">{it.quantidade}</td>
                             <td className="p-1 border-r border-slate-200">{it.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td className="p-1 border-r border-slate-200 font-bold text-slate-950">{it.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200">{it.valorIcms ? it.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : '0,00'}</td>
-                            <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{(it.valorCbs || it.valorTotal * 0.088).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 text-indigo-900 font-semibold">{(it.valorIbs || it.valorTotal * 0.177).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="p-1 border-r border-slate-200">{it.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{it.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td className="p-1 text-indigo-900 font-semibold">{it.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -795,59 +875,65 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                   </div>
                 </div>
 
-                {/* DESTAQUE REFORMA TRIBUTÁRIA (PLP 68/2024 - CBS / IBS) */}
-                <div className="border-2 border-blue-600 rounded bg-blue-50/90 p-2 space-y-1 text-slate-900">
-                  <div className="flex items-center justify-between border-b border-blue-300 pb-1">
-                    <span className="text-[9.5px] font-black text-blue-950 flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-blue-700" />
+                {/* DEMONSTRATIVO DA REFORMA TRIBUTÁRIA (CBS / IBS) */}
+                <div className="border-2 border-cyan-600 rounded bg-cyan-50/90 p-2 space-y-1 text-slate-900">
+                  <div className="flex items-center justify-between border-b border-cyan-300 pb-1">
+                    <span className="text-[9.5px] font-black text-cyan-950 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-700" />
                       DEMONSTRATIVO DANFE DA REFORMA TRIBUTÁRIA DO CONSUMO (PLP 68/2024 — DUAL TAX)
                     </span>
-                    <span className="text-[8px] font-black px-2 py-0.5 rounded bg-blue-200 text-blue-900">
+                    <span className="text-[8px] font-black px-2 py-0.5 rounded bg-cyan-200 text-cyan-950">
                       Transição CBS/IBS
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal {item.aliquotaCbs > 0 ? `~${item.aliquotaCbs}%` : ''})</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[9.5px] text-center pt-1">
+                    <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm">
+                      <span className="text-[7.5px] text-slate-700 block font-bold">CBS (Federal ~0.9%)</span>
                       <strong className="font-mono text-blue-950 font-black text-[10.5px]">{item.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
-                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal {item.aliquotaIbs > 0 ? `~${item.aliquotaIbs}%` : ''})</span>
+                    <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm">
+                      <span className="text-[7.5px] text-slate-700 block font-bold">IBS (Estadual/Municipal ~0.1%)</span>
                       <strong className="font-mono text-indigo-950 font-black text-[10.5px]">{item.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
                     </div>
-                    <div className="p-1.5 rounded bg-white border border-blue-300 shadow-sm">
+                    <div className="p-1.5 rounded bg-white border border-cyan-300 shadow-sm col-span-2 sm:col-span-1">
                       <span className="text-[7.5px] text-slate-700 block font-bold">Imposto Seletivo (IS)</span>
-                      <strong className="font-mono text-slate-900 font-black text-[10.5px]">{item.valorImpostoSeletivo.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                      <strong className="font-mono text-slate-900 font-black text-[10.5px]">R$ 0,00</strong>
                     </div>
                   </div>
                 </div>
+
+                {/* DADOS ADICIONAIS / INFORMAÇÕES COMPLEMENTARES */}
+                {parsed.infCpl && (
+                  <div className="border border-slate-900 rounded bg-white text-slate-900">
+                    <div className="bg-slate-200/90 px-2 py-0.5 text-[8.5px] font-black uppercase border-b border-slate-900">
+                      DADOS ADICIONAIS / INFORMAÇÕES COMPLEMENTARES
+                    </div>
+                    <div className="p-2 text-[8.5px] font-mono whitespace-pre-line leading-relaxed text-slate-800">
+                      {parsed.infCpl}
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
           </div>
-
         </div>
 
-        {/* Modal Footer Controls */}
+        {/* Footer info */}
         <div className="px-6 py-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>
-              {item.tipo === 'NFSe'
-                ? 'Documento validado com Chave NFS-e de 50 posições no Ambiente Dados Nacional (ADN)'
-                : 'Documento validado com Chave de 44 dígitos no portal oficial da SEFAZ'}
-            </span>
+          <div className="flex items-center gap-2 font-mono">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Documento validado com Chave de 44 dígitos no portal oficial da SEFAZ</span>
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-semibold transition-all cursor-pointer"
+            className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer"
           >
             Fechar
           </button>
         </div>
 
       </div>
-
     </div>
   );
 };

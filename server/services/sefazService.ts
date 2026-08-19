@@ -100,6 +100,7 @@ export interface DocumentoDfeExtraido {
   statusSincronizacaoErp: 'pendente' | 'sincronizado';
   xmlRaw: string;
   isResumoApenas?: boolean;
+  itens?: any[];
 }
 
 export interface DistribucaoDfeResponse {
@@ -441,6 +442,54 @@ function extrairSubTagXml(xml: string, parentTag: string, childTag: string): str
   return extrairTagXml(parentMatch[1], childTag);
 }
 
+function extrairItensNFeXml(xml: string): any[] {
+  const itens: any[] = [];
+  const detMatches = xml.match(/<det\b[^>]*>([\s\S]*?)<\/det>/gi) || [];
+
+  detMatches.forEach((detXml, index) => {
+    const numItem = parseInt(detXml.match(/nItem="(\d+)"/i)?.[1] || `${index + 1}`, 10);
+    const prodMatch = detXml.match(/<prod\b[^>]*>([\s\S]*?)<\/prod>/i);
+    const prodXml = prodMatch ? prodMatch[1] : detXml;
+
+    const cProd = extrairTagXml(prodXml, 'cProd') || `ITM-${index + 1}`;
+    const xProd = extrairTagXml(prodXml, 'xProd') || 'Produto / Mercadoria';
+    const ncm = extrairTagXml(prodXml, 'NCM') || '';
+    const cfop = extrairTagXml(prodXml, 'CFOP') || '';
+    const uCom = extrairTagXml(prodXml, 'uCom') || 'UN';
+    const qCom = parseFloat(extrairTagXml(prodXml, 'qCom') || '1');
+    const vUnCom = parseFloat(extrairTagXml(prodXml, 'vUnCom') || '0');
+    const vProd = parseFloat(extrairTagXml(prodXml, 'vProd') || '0');
+
+    // Impostos do item
+    const vICMS = parseFloat(extrairSubTagXml(detXml, 'ICMS', 'vICMS') || extrairTagXml(detXml, 'vICMS') || '0');
+    const vIPI = parseFloat(extrairSubTagXml(detXml, 'IPI', 'vIPI') || extrairTagXml(detXml, 'vIPI') || '0');
+    const vPIS = parseFloat(extrairSubTagXml(detXml, 'PIS', 'vPIS') || extrairTagXml(detXml, 'vPIS') || '0');
+    const vCOFINS = parseFloat(extrairSubTagXml(detXml, 'COFINS', 'vCOFINS') || extrairTagXml(detXml, 'vCOFINS') || '0');
+    const vCBS = parseFloat(extrairSubTagXml(detXml, 'IBSCBS', 'vCBS') || extrairTagXml(detXml, 'vCBS') || '0');
+    const vIBS = parseFloat(extrairSubTagXml(detXml, 'IBSCBS', 'vIBS') || extrairTagXml(detXml, 'vIBS') || '0');
+
+    itens.push({
+      numeroItem: numItem,
+      codigo: cProd,
+      descricao: xProd,
+      ncm,
+      cfop,
+      unidade: uCom,
+      quantidade: qCom,
+      valorUnitario: vUnCom,
+      valorTotal: vProd,
+      valorIcms: vICMS,
+      valorIpi: vIPI,
+      valorPis: vPIS,
+      valorCofins: vCOFINS,
+      valorCbs: vCBS,
+      valorIbs: vIBS,
+    });
+  });
+
+  return itens;
+}
+
 function descompactarDocZip(base64Content: string): string {
   try {
     const buffer = Buffer.from(base64Content, 'base64');
@@ -729,6 +778,7 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           statusSincronizacaoErp: 'pendente',
           xmlRaw: xml,
           isResumoApenas: false,
+          itens: extrairItensNFeXml(xml),
         });
 
         // Gravação física automática no disco: C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\

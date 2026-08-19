@@ -124,14 +124,18 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
 
   const codeContainerRef = useRef<HTMLDivElement>(null);
 
-  if (!item) return null;
-
-  const rawXmlContent = item.xmlRaw || generateDfeXmlContent(item);
+  const rawXmlContent = useMemo(() => {
+    if (!item) return '';
+    return item.xmlRaw || generateDfeXmlContent(item);
+  }, [item]);
 
   // Linhas formatadas e indentadas
   const formattedLines = useMemo(() => {
+    if (!rawXmlContent) return [];
     return formatXmlPretty(rawXmlContent, collapseBase64);
   }, [rawXmlContent, collapseBase64]);
+
+  if (!item) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(rawXmlContent);
