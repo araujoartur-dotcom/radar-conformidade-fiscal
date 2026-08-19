@@ -20,6 +20,7 @@ import forge from 'node-forge';
 import { SEFAZ, CERTIFICADO } from '../config';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
+import { salvarXmlLocalmente } from '../utils/fileStorage';
 
 // =========================================================
 // TABELA IBGE UF -> cUF
@@ -725,10 +726,10 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           valorIpi: vIPI,
           valorPis: vPIS,
           valorCofins: vCOFINS,
-          aliquotaCbs: 8.8,
-          valorCbs: Number((vNF * 0.088).toFixed(2)),
-          aliquotaIbs: 17.7,
-          valorIbs: Number((vNF * 0.177).toFixed(2)),
+          aliquotaCbs: 0.9,
+          valorCbs: Number((vNF * 0.009).toFixed(2)),
+          aliquotaIbs: 0.1,
+          valorIbs: Number((vNF * 0.001).toFixed(2)),
           valorImpostoSeletivo: 0,
           statusAuditoria: 'conforme',
           alertasAuditoria: [],
@@ -737,6 +738,40 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           xmlRaw: xml,
           isResumoApenas: false,
         });
+
+        // Gravação física automática no disco: C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\
+        try {
+          const cnpjRaizSalvar = (params.fluxo === 'saida' ? emitCnpj : destCnpj || params.cnpj || '').replace(/\D/g, '').substring(0, 8);
+          salvarXmlLocalmente(xml, cnpjRaizSalvar, params.fluxo === 'saida' ? 'Saída' : 'Entrada', dhEmi, chaveAcesso);
+        } catch (diskErr: any) {
+          console.warn('Aviso: Falha ao salvar no disco local:', diskErr.message);
+        }
+
+        // Gravação automática no banco de dados SQLite
+        try {
+          const db = getDatabase();
+          const tipoOperacaoDoc = params.fluxo === 'saida' ? 'Saída' : 'Entrada';
+          db.prepare(`
+            INSERT OR REPLACE INTO dfe_documentos (
+              id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie, data_emissao, data_entrada, 
+              fornecedor_cnpj, fornecedor_razao, fornecedor_uf, 
+              cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total,
+              valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs
+            ) VALUES (
+              ?, ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?
+            )
+          `).run(
+            `doc-${chaveAcesso}`, empresaId, tipoDoc, chaveAcesso, tipoOperacaoDoc, `${nNF} / ${serie}`, dhEmi.split('T')[0], new Date().toISOString(),
+            emitCnpj, emitNome, emitUf,
+            destCnpj, destNome, destUf, 'autorizado', vNF,
+            vICMS, vIPI, vPIS, vCOFINS, Number((vNF * 0.009).toFixed(2)), Number((vNF * 0.001).toFixed(2))
+          );
+        } catch (dbErr: any) {
+          console.warn('Aviso: Falha ao inserir documento no banco:', dbErr.message);
+        }
       }
     }
 

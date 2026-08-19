@@ -1,0 +1,65 @@
+# Plano de Implementação: Download Massivo por Chaves de Acesso (44 Dígitos) com Intervalo de 2000ms e Criação Automática de Pastas Locais
+
+Este plano contempla o novo módulo de **Download Massivo em Lote por Chave de Acesso**, o intervalo de segurança de **2000ms (2 segundos)** entre cada requisição para total proteção contra bloqueios na SEFAZ e a **criação 100% automática da árvore de pastas locais** em `C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\[Ano]\[Mês]\[Chave].xml`.
+
+---
+
+## 🧭 Respostas às Perguntas do Usuário
+
+### 1. Qual o limite de chaves que posso buscar sem dar problema?
+* **Regra SEFAZ (`consChNFe`)**: Diferente da consulta por NSU (que tem consumo indevido `cStat 656` a cada 50 documentos), a consulta por chave de acesso **não possui limite diário pré-fixado por CNPJ**, desde que respeitado o intervalo de tempo entre requisições.
+* **Com o intervalo de 2.000ms (2s) ativado**:
+  * 30 chaves = ~1 minuto
+  * 150 chaves = ~5 minutos
+  * 600 chaves = ~20 minutos
+  * 1.800 chaves = ~1 hora
+* **Recomendação Operacional**: Lotes entre **50 a 200 chaves** por vez proporcionam uma experiência visual fluida na tela, mas o motor suportará lotes de **500 a 1.000+ chaves**, com botões de **Pausar**, **Retomar** e **Cancelar** em tempo real.
+
+---
+
+### 2. Criação Automática de Pastas em Disco
+* Vamos atualizar o utilitário de persistência (`fileStorage.ts`) para criar a árvore de diretórios automaticamente no Windows:
+  $$\text{C:\textbackslash SEFAZ\textbackslash XMLs\textbackslash [CNPJ\_RAIZ]\textbackslash [Entrada|Saida]\textbackslash [Ano]\textbackslash [Mês]\textbackslash [Chave].xml}$$
+* Usando `fs.mkdirSync(folderPath, { recursive: true })`, o sistema cria todas as subpastas pai e filhas que não existirem no momento da gravação, sem necessidade de criação manual pelo usuário.
+* Além disso, na tela adicionaremos o botão de **"💾 Baixar Lote em ZIP"** como contingência extra de download no navegador.
+
+---
+
+## 🛠️ Detalhamento das Alterações
+
+### 1. Interface do Modal: Modo Individual & Modo Massivo
+#### [MODIFY] [ConsultaNsuModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx)
+- Na aba **"2. Por Chave de Acesso (44d)"**, incluir sub-abas:
+  - `[ 🔑 Chave Individual ]`
+  - `[ 📋 Lote Massivo de Chaves ]`
+- **Componentes do Modo Massivo**:
+  - `Textarea` inteligente: aceita colar colunas inteiras do Excel, textos com quebra de linha, vírgula ou espaço.
+  - Regex automático `/\b\d{44}\b/g` que extrai as chaves válidas e remove duplicatas.
+  - Contador: *"X chaves únicas de 44 dígitos identificadas"*.
+  - Seletor de intervalo com padrão fixado em **2000ms (2,0s - Máxima Segurança)**.
+  - Barra de progresso dinâmica com percentual e estimativa de tempo (ETA).
+  - Tabela com status linha por linha em tempo real (🟢 Sucesso / 🔴 Erro / ⏳ Fila).
+  - Botões de controle: `▶️ Iniciar Download em Lote`, `⏸️ Pausar`, `⏹️ Cancelar`.
+
+### 2. Criação Automática de Pastas e Persistência Física
+#### [MODIFY] [fileStorage.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/fileStorage.ts)
+- Atualizar a base para `C:\SEFAZ\XMLs` (com fallback para `C:\Radar Conformidade Fiscal`).
+- Garantir `fs.mkdirSync(folderPath, { recursive: true })`.
+
+#### [MODIFY] [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts)
+- No processamento de `consChNFe`, chamar `salvarXmlLocalmente` imediatamente ao descompactar o XML autorizado da SEFAZ.
+- Inserir o documento e seus itens no SQLite (`dfe_documentos` e `dfe_itens`).
+
+---
+
+## 🧪 Plano de Verificação
+
+### Testes Automatizados
+- Executar `npm run lint` (`tsc --noEmit`) para validar o loop assíncrono e tipagens.
+- Executar `npm run build` para garantir build do Vite.
+
+### Verificação Manual
+1. Colar uma lista de 5 a 10 chaves na aba de Lote Massivo.
+2. Iniciar o download com intervalo de 2000ms e acompanhar a barra de progresso.
+3. Verificar a criação automática das pastas em `C:\SEFAZ\XMLs\[CNPJ_RAIZ]\Entrada\2026\08\` com os arquivos `.xml` gravados.
+4. Conferir a inserção instantânea no banco de dados e atualização dos KPIs.

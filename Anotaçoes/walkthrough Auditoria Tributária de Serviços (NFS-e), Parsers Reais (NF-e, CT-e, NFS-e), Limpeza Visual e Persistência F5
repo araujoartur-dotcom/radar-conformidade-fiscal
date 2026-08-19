@@ -1,0 +1,55 @@
+# 🚀 Walkthrough: Auditoria Tributária de Serviços (NFS-e), Parsers Reais (NF-e, CT-e, NFS-e), Limpeza Visual e Persistência F5
+
+Todas as demandas foram implementadas com precisão, testadas e **deployadas para produção com sucesso**!
+
+---
+
+## 📦 O Que Foi Implementado
+
+### 1. Auditoria Avançada de Serviços (NFS-e) com Retenções na Fonte
+* **Extração Completa**: O parser agora extrai e segrega individualmente:
+  * **IRRF (1,50% / 1,00%)** — *Art. 714 e 716 do RIR/2018 (Decreto nº 9.580/2018)*
+  * **CSLL Retida (1,00% - Segregada)** — *Art. 30 da Lei nº 10.833/2003 e IN RFB nº 2.145/2023*
+  * **PIS Retido (0,65%) & COFINS Retida (3,00%)** — *Art. 30 da Lei nº 10.833/2003 e Lei nº 13.137/2015*
+  * **CRF / PCC Global (4,65%)** — *Art. 30 a 32 da Lei nº 10.833/2003*
+  * **INSS Retido (11,00% / 3,50% CPRB)** — *Art. 31 da Lei nº 8.212/1991 e IN RFB nº 2.110/2022*
+  * **ISSQN Retido (2,00% a 5,00%)** — *Art. 3º e 6º da Lei Complementar nº 116/2003*
+* **Regras de Auditoria Automática**: Aponta conformidade ou inconsistência na retenção de ISS no local da prestação (ex: Cuiabá/MT no subitem 17.05 da LC 116/2003) e na retenção previdenciária de 11%.
+* **Nova Aba nos Parâmetros Fiscais**: Aba **"Retenções de Serviços (NFS-e)"** com as 8 matrizes tributárias e fundamentações legais.
+
+---
+
+### 2. Parsers Reais com a Reforma Tributária (NT 2025.002)
+* **NF-e (Mod 55)**: Suporte completo aos 3 regimes simultâneos:
+  * **Regime Geral / Integral**: `cClassTrib 000001` (CBS 0,90% + IBS 0,10%);
+  * **Cesta Básica Nacional**: `cClassTrib 200003` com redução de 100% (Alíquota Zero);
+  * **Regime Diferenciado**: `cClassTrib 200035` com redução de 60% (CBS 0,36% + IBS 0,04%).
+* **CT-e (Mod 57)**: Transporte rodoviário com ICMS Isento ou Tributado, CBS/IBS sobre frete e vínculo à NF-e de carga.
+* **Remoção de MDF-e**: MDF-e removido de todas as áreas de processamento e gráficos fiscais.
+
+---
+
+### 3. Usabilidade & Persistência de Navegação (F5)
+* **Inicialização Inteligente**: O aplicativo agora abre diretamente na **Central de KPIs & Dashboards** ao fazer login.
+* **Persistência de Página (F5)**: O módulo ativo é sincronizado no `localStorage` (`@RadarFiscal:activeMode`). Se você atualizar o navegador em qualquer tela, você permanece exatamente na mesma página sem perda de estado.
+
+---
+
+### 4. Limpeza Visual (Conforme Imagens)
+* **Central de KPIs**: Removido o badge `TAX ANALYTICS` ao lado do título.
+* **Parceiros de Negócio (MDM)**:
+  * Removido o badge superior `MASTER DATA MANAGEMENT`;
+  * Removido o badge `SPED / SCANC / CNPJ Alfa`;
+  * Removido o parágrafo descritivo longo;
+  * Corrigido o botão de novo parceiro para exibir apenas um único `+`.
+* **Dropzone de XMLs**: Texto atualizado para `(NF-e, NFS-e e CT-e)`.
+
+---
+
+## 🧪 Validação Técnica
+
+| Etapa de Teste | Comando Executado | Resultado |
+| :--- | :--- | :---: |
+| **Lint & TypeScript** | `npm run lint` (`tsc --noEmit`) | **0 Erros** ✅ |
+| **Build de Produção** | `npm run build` (`vite build`) | **Sucesso em 8.95s** ✅ |
+| **Git Push & Deploy** | `git push origin main` (`58df3a8`) | **Deploy Ativo no Netlify** ✅ |

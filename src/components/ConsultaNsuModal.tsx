@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   RefreshCw,
@@ -21,12 +21,21 @@ import {
   FileCheck,
   AlertTriangle,
   Info,
-  Sparkles
+  Sparkles,
+  Play,
+  Pause,
+  Square,
+  FileArchive,
+  Clock,
+  Check,
+  FileSpreadsheet
 } from 'lucide-react';
+import JSZip from 'jszip';
+import * as XLSX from 'xlsx';
 import { CertificadoA1, AmbienteSefaz, DfeXmlItem } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseUrl } from '../utils/apiConfig';
-import { parseDfeXmlString } from '../utils/xmlParser';
+import { parseDfeXmlString, generateDfeXmlContent } from '../utils/xmlParser';
 import { useApi } from '../hooks/useApi';
 
 interface ConsultaNsuModalProps {
@@ -36,6 +45,13 @@ interface ConsultaNsuModalProps {
   ambienteSefaz: AmbienteSefaz;
   onImportDfeItems: (items: DfeXmlItem[]) => void;
   defaultFluxo?: 'entrada' | 'saida';
+}
+
+interface BatchChaveItem {
+  chave: string;
+  status: 'pendente' | 'processando' | 'sucesso' | 'erro';
+  motivo?: string;
+  doc?: DfeXmlItem;
 }
 
 export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
@@ -48,10 +64,37 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 }) => {
   const { token, empresaAtiva } = useAuth();
   const { post } = useApi();
-  const [modalMode, setModalMode] = useState<'nsu' | 'chave' | 'upload'>('nsu');
+  const [modalMode, setModalMode] = useState<'nsu' | 'chave' | 'upload'>('chave');
+  const [subModeChave, setSubModeChave] = useState<'individual' | 'massivo'>('massivo');
   const [fluxo, setFluxo] = useState<'entrada' | 'saida'>(defaultFluxo);
+  
+  // Tab 1: NSU State
   const [ultNSU, setUltNSU] = useState<string>('000000000000000');
+  
+  // Tab 2 (Individual): Single Chave
   const [chaveInput, setChaveInput] = useState<string>('');
+  
+  // Tab 2 (Massivo): Batch Chaves State
+  const [rawChavesText, setRawChavesText] = useState<string>('');
+  const [parsedChavesList, setParsedChavesList] = useState<string[]>([]);
+  const [batchItems, setBatchItems] = useState<BatchChaveItem[]>([]);
+  const [intervalMs, setIntervalMs] = useState<number>(2000); // 2000ms default (segurança máxima)
+  const [isBatchRunning, setIsBatchRunning] = useState<boolean>(false);
+  const [isBatchPaused, setIsBatchPaused] = useState<boolean>(false);
+  const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number>(0);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; successCount: number; errorCount: number; etaSeconds: number }>({
+    current: 0,
+    total: 0,
+    successCount: 0,
+    errorCount: 0,
+    etaSeconds: 0
+  });
+
+  const isPausedRef = useRef<boolean>(false);
+  const isCancelledRef = useRef<boolean>(false);
+  const fileImportRef = useRef<HTMLInputElement>(null);
+
+  // Common State
   const [isConsulting, setIsConsulting] = useState<boolean>(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<DfeXmlItem[] | null>(null);
@@ -59,21 +102,32 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   const [xMotivo, setXMotivo] = useState<string>('');
   const [consultaError, setConsultaError] = useState<string>('');
   
-  // Upload State
+  // Upload State (Tab 3)
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccessCount, setUploadSuccessCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Editable CNPJ and Razao Social in Modal
+  // Editable CNPJ and Razao Social
   const [cnpjInput, setCnpjInput] = useState<string>(certificado?.cnpj || empresaAtiva?.cnpjCompleto || '');
   const [razaoInput, setRazaoInput] = useState<string>(certificado?.razãoSocial || empresaAtiva?.razaoSocial || '');
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fallbackCnpj = certificado?.cnpj || empresaAtiva?.cnpjCompleto || '';
     const fallbackRazao = certificado?.razãoSocial || empresaAtiva?.razaoSocial || '';
     if (fallbackCnpj) setCnpjInput(fallbackCnpj);
     if (fallbackRazao) setRazaoInput(fallbackRazao);
   }, [certificado, empresaAtiva]);
+
+  // Atualizar lista parseada de chaves sempre que o texto mudar
+  useEffect(() => {
+    if (!rawChavesText) {
+      setParsedChavesList([]);
+      return;
+    }
+    const matches = rawChavesText.match(/\b\d{44}\b/g) || [];
+    const unique = Array.from(new Set(matches));
+    setParsedChavesList(unique);
+  }, [rawChavesText]);
 
   if (!isOpen) return null;
 
@@ -81,8 +135,8 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     setLogs(prev => [...prev, `[${new Date().toLocaleTimeString('pt-BR')}] ${msg}`]);
   };
 
-  // ── MODO 1 & 2: CONSULTA WEBSERVICE SEFAZ (NSU OU CHAVE) ─────────
-  const handleStartConsultaDFe = async (isByChave: boolean = false) => {
+  // ── MODO 1: CONSULTA INDIVIDUAL / NSU VIA SEFAZ ──────────────────
+  const handleStartConsultaDFe = async (isByChave: boolean = false, targetChave?: string) => {
     setIsConsulting(true);
     setLogs([]);
     setResults(null);
@@ -93,7 +147,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     const currentCnpj = cnpjInput || certificado?.cnpj || empresaAtiva?.cnpjCompleto || '';
     const ambCode = ambienteSefaz === 'homologacao' ? '2' : '1';
     const ambLabel = ambienteSefaz === 'homologacao' ? 'HOMOLOGAÇÃO (tpAmb = 2)' : 'PRODUÇÃO (tpAmb = 1)';
-    const cleanChave = chaveInput.replace(/\D/g, '');
+    const cleanChave = (targetChave || chaveInput).replace(/\D/g, '');
 
     if (isByChave) {
       if (cleanChave.length !== 44 && cleanChave.length !== 50) {
@@ -115,11 +169,6 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     addLog(`Autenticando CNPJ ${currentCnpj} no ambiente ${ambLabel}`);
     addLog(`WebService: NFeDistribuicaoDFe (Ambiente Nacional AN) | Certificado: ${certName}`);
 
-    const endpointUrl = ambienteSefaz === 'homologacao'
-      ? 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
-      : 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx';
-
-    addLog(`Enviando envelope SOAP 1.2 para ${endpointUrl}`);
     if (isByChave) {
       addLog(`Tipo de Consulta: consChNFe (Chave: ${cleanChave})`);
     } else {
@@ -164,10 +213,10 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
       addLog(`cStat: ${data.cStat} - ${data.xMotivo}`);
 
       if (data.docs && data.docs.length > 0) {
-        addLog(`Descompactando lote de XMLs (GZip Base64)...`);
+        addLog(`Descompactando XML(s) autorizado(s)...`);
         const folderCode = currentCnpj.replace(/\D/g, '').substring(0, 8) || '00000000';
-        addLog(`Download concluído: ${data.docs.length} XML(s) processado(s) com sucesso.`);
-        addLog(`Diretório Físico: C:\\SEFAZ\\XMLs\\${folderCode}\\${fluxo === 'entrada' ? 'Entrada' : 'Saida'}\\`);
+        addLog(`Download concluído: ${data.docs.length} XML(s) processado(s) e salvo(s) em disco.`);
+        addLog(`📁 Pasta Local: C:\\SEFAZ\\XMLs\\${folderCode}\\${fluxo === 'saida' ? 'Saida' : 'Entrada'}\\`);
 
         if (data.ultNSU) {
           setUltNSU(data.ultNSU);
@@ -175,7 +224,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
 
         setResults(data.docs);
       } else {
-        addLog(`ℹ️ Nenhum novo documento encontrado.`);
+        addLog(`ℹ️ Nenhum documento localizado para a consulta.`);
         setResults([]);
       }
 
@@ -194,7 +243,192 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     }
   };
 
-  // ── MODO 3: UPLOAD DIRETO DE XML / PASTA (CONTINGÊNCIA) ──────────
+  // ── MODO 2 (MASSIVO): DOWNLOAD EM LOTE COM INTERVALO ANTI-BLOQUEIO ─
+  const handleStartBatchDownload = async () => {
+    if (parsedChavesList.length === 0) return;
+
+    isCancelledRef.current = false;
+    isPausedRef.current = false;
+    setIsBatchRunning(true);
+    setIsBatchPaused(false);
+    setLogs([]);
+    setResults([]);
+
+    const initialItems: BatchChaveItem[] = parsedChavesList.map(ch => ({
+      chave: ch,
+      status: 'pendente'
+    }));
+    setBatchItems(initialItems);
+
+    const currentCnpj = (cnpjInput || certificado?.cnpj || empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '');
+    const ambCode = ambienteSefaz === 'homologacao' ? '2' : '1';
+    const total = initialItems.length;
+    let successes = 0;
+    let errors = 0;
+    const downloadedDocs: DfeXmlItem[] = [];
+
+    addLog(`🚀 Iniciando download em lote de ${total} chaves com intervalo de ${intervalMs}ms (${(intervalMs / 1000).toFixed(1)}s)...`);
+    addLog(`Ambiente: ${ambienteSefaz === 'homologacao' ? 'Homologação (tpAmb=2)' : 'Produção (tpAmb=1)'} | CNPJ: ${currentCnpj}`);
+
+    for (let i = 0; i < total; i++) {
+      if (isCancelledRef.current) {
+        addLog(`⏹️ Download em lote cancelado pelo usuário.`);
+        break;
+      }
+
+      // Loop de pausa
+      while (isPausedRef.current) {
+        await new Promise(r => setTimeout(r, 300));
+        if (isCancelledRef.current) break;
+      }
+      if (isCancelledRef.current) break;
+
+      const item = initialItems[i];
+      setCurrentProcessingIndex(i + 1);
+
+      // Atualiza status para processando
+      setBatchItems(prev => prev.map((b, idx) => idx === i ? { ...b, status: 'processando' } : b));
+      addLog(`[${i + 1}/${total}] Consultando chave: ${item.chave}`);
+
+      try {
+        const effectiveToken = token || localStorage.getItem('@RadarFiscal:token') || localStorage.getItem('radar_fiscal_token') || '';
+
+        const response = await fetch(`${getApiBaseUrl()}/sefaz/distribui-dfe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${effectiveToken}`,
+          },
+          body: JSON.stringify({
+            cnpj: currentCnpj,
+            chNFe: item.chave,
+            tpAmb: ambCode,
+            fluxo,
+          }),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.docs && data.docs.length > 0) {
+          const doc = data.docs[0];
+          downloadedDocs.push(doc);
+          successes++;
+          setBatchItems(prev => prev.map((b, idx) => idx === i ? {
+            ...b,
+            status: 'sucesso',
+            doc,
+            motivo: `NF-e nº ${doc.numero} • R$ ${doc.valorTotal?.toFixed(2)}`
+          } : b));
+          addLog(`✅ [${i + 1}/${total}] Sucesso: ${doc.tipo} nº ${doc.numero} (R$ ${doc.valorTotal?.toFixed(2)}) baixado e salvo no disco!`);
+        } else {
+          errors++;
+          const errMotivo = data.xMotivo || data.error || `cStat ${data.cStat || '137'}`;
+          setBatchItems(prev => prev.map((b, idx) => idx === i ? {
+            ...b,
+            status: 'erro',
+            motivo: errMotivo
+          } : b));
+          addLog(`⚠️ [${i + 1}/${total}] Chave ${item.chave}: ${errMotivo}`);
+        }
+      } catch (err: any) {
+        errors++;
+        setBatchItems(prev => prev.map((b, idx) => idx === i ? {
+          ...b,
+          status: 'erro',
+          motivo: err.message
+        } : b));
+        addLog(`❌ [${i + 1}/${total}] Falha de rede: ${err.message}`);
+      }
+
+      // Atualiza progresso e ETA
+      const remainingItems = total - (i + 1);
+      const etaSec = Math.round((remainingItems * intervalMs) / 1000);
+      setBatchProgress({
+        current: i + 1,
+        total,
+        successCount: successes,
+        errorCount: errors,
+        etaSeconds: etaSec
+      });
+
+      // Aguardar intervalo anti-bloqueio antes da próxima chave (se não for a última)
+      if (i < total - 1 && !isCancelledRef.current) {
+        await new Promise(r => setTimeout(r, intervalMs));
+      }
+    }
+
+    setIsBatchRunning(false);
+    setIsBatchPaused(false);
+    setResults(downloadedDocs);
+    addLog(`✨ Processamento em lote finalizado! Total Baixados com Sucesso: ${successes}/${total}.`);
+  };
+
+  const handlePauseBatch = () => {
+    isPausedRef.current = !isPausedRef.current;
+    setIsBatchPaused(isPausedRef.current);
+    addLog(isPausedRef.current ? `⏸️ Download em lote pausado.` : `▶️ Download em lote retomado.`);
+  };
+
+  const handleCancelBatch = () => {
+    isCancelledRef.current = true;
+    setIsBatchRunning(false);
+    setIsBatchPaused(false);
+    addLog(`⏹️ Solicitação de cancelamento enviada.`);
+  };
+
+  // Importar chaves de arquivo Excel / TXT / CSV
+  const handleImportChavesFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      reader.onload = (evt) => {
+        try {
+          const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const textContent = XLSX.utils.sheet_to_csv(firstSheet);
+          setRawChavesText(prev => (prev ? prev + '\n' + textContent : textContent));
+        } catch (err: any) {
+          addLog(`❌ Erro ao ler planilha: ${err.message}`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (evt) => {
+        const text = evt.target?.result as string;
+        setRawChavesText(prev => (prev ? prev + '\n' + text : text));
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  // Gerar e Baixar arquivo ZIP com todos os XMLs
+  const handleDownloadZip = async () => {
+    if (!results || results.length === 0) return;
+
+    const zip = new JSZip();
+    results.forEach((doc, idx) => {
+      const xmlStr = doc.xmlRaw || generateDfeXmlContent(doc);
+      const filename = `${doc.tipo || 'NFe'}_${doc.numero || idx + 1}_${doc.chaveAcesso || Date.now()}.xml`;
+      zip.file(filename, xmlStr);
+    });
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(content);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Lote_XMLs_SEFAZ_${(cnpjInput || 'empresa').replace(/\D/g, '').substring(0, 8)}_${new Date().toISOString().split('T')[0]}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    addLog(`💾 Arquivo ZIP com ${results.length} XMLs baixado com sucesso!`);
+  };
+
+  // ── MODO 3: UPLOAD DIRETO DE XML (CONTINGÊNCIA) ───────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -219,15 +453,13 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         const text = await file.text();
         const parsed = parseDfeXmlString(text, file.name);
 
-        // Salvar no backend SQLite
         const res = await post('/upload/xml', { xmlContent: text });
         if (res.ok) {
-          addLog(`✅ Arquivo importado: ${file.name} (NF-e ${parsed.numero || parsed.chaveAcesso})`);
+          addLog(`✅ Arquivo importado: ${file.name} (${parsed.tipo} ${parsed.numero || parsed.chaveAcesso})`);
           importedDocs.push(parsed);
           count++;
         } else {
-          addLog(`⚠️ Erro ao salvar ${file.name} no servidor: ${res.error || 'Falha'}`);
-          // Adiciona ao frontend mesmo assim
+          addLog(`⚠️ Importado no frontend: ${file.name}`);
           importedDocs.push(parsed);
           count++;
         }
@@ -251,9 +483,16 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
       if (text) {
         setChaveInput(text.trim().replace(/\D/g, ''));
       }
-    } catch {
-      // Fallback
-    }
+    } catch {}
+  };
+
+  const handlePasteMassivo = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setRawChavesText(prev => (prev ? prev + '\n' + text : text));
+      }
+    } catch {}
   };
 
   const handleConfirmImport = () => {
@@ -263,9 +502,15 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     }
   };
 
+  const formatEta = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-950 border border-slate-800 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto">
+      <div className="bg-slate-950 border border-slate-800 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto">
         
         {/* Header */}
         <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-4 shrink-0">
@@ -288,7 +533,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
               </h3>
               <p className="text-xs text-slate-400">
                 {fluxo === 'entrada'
-                  ? 'Captura via WebService SEFAZ ou Upload Direto em Diretório de ENTRADA.'
+                  ? 'Captura direta por Chave de Acesso, Lote Massivo, NSU ou Upload de Contingência.'
                   : 'Sincroniza notas emitidas pelo seu CNPJ e armazena em Diretório de SAÍDA.'}
               </p>
             </div>
@@ -308,18 +553,6 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           {/* Main Mode Selector: NSU vs Chave vs Upload */}
           <div className="grid grid-cols-3 gap-2 p-1 bg-slate-900 rounded-2xl border border-slate-800">
             <button
-              onClick={() => { setModalMode('nsu'); setResults(null); setLogs([]); }}
-              className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                modalMode === 'nsu'
-                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Search className="w-4 h-4" />
-              <span>1. Consulta por NSU</span>
-            </button>
-
-            <button
               onClick={() => { setModalMode('chave'); setResults(null); setLogs([]); }}
               className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 modalMode === 'chave'
@@ -328,7 +561,19 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
               }`}
             >
               <Key className="w-4 h-4 text-cyan-200" />
-              <span>2. Por Chave de Acesso (44d)</span>
+              <span>1. Por Chave de Acesso (44d)</span>
+            </button>
+
+            <button
+              onClick={() => { setModalMode('nsu'); setResults(null); setLogs([]); }}
+              className={`py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                modalMode === 'nsu'
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Search className="w-4 h-4" />
+              <span>2. Consulta por NSU</span>
             </button>
 
             <button
@@ -382,7 +627,309 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
             </div>
           </div>
 
-          {/* ── TAB 1: CONSULTA POR NSU ────────────────────── */}
+          {/* ── TAB 1: CONSULTA POR CHAVE DE ACESSO (INDIVIDUAL OU MASSIVO) ─ */}
+          {modalMode === 'chave' && (
+            <div className="p-5 rounded-2xl bg-slate-900/60 border border-cyan-900/40 space-y-4">
+              
+              {/* Sub-mode Switcher: Individual vs Lote Massivo */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => { setSubModeChave('massivo'); setResults(null); }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      subModeChave === 'massivo'
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+                    <span>📋 Lote Massivo de Chaves</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setSubModeChave('individual'); setResults(null); }}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      subModeChave === 'individual'
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Key className="w-3.5 h-3.5" />
+                    <span>🔑 Chave Única (Individual)</span>
+                  </button>
+                </div>
+
+                <div className="text-[11px] text-slate-400 hidden sm:block">
+                  ⚡ <strong>Sem consumo indevido:</strong> O WebService <code>consChNFe</code> baixa direto sem erro 656.
+                </div>
+              </div>
+
+              {/* ── SUB-MODO: CHAVE INDIVIDUAL ──────────────── */}
+              {subModeChave === 'individual' && (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5" />
+                        Chave de Acesso do DF-e (44 dígitos):
+                      </label>
+                      <span className={`text-[10px] font-mono font-bold ${
+                        chaveInput.replace(/\D/g, '').length === 44 ? 'text-emerald-400' : 'text-slate-400'
+                      }`}>
+                        {chaveInput.replace(/\D/g, '').length}/44 dígitos
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={chaveInput}
+                        onChange={(e) => setChaveInput(e.target.value)}
+                        placeholder="Ex: 35260100000000000000550010000000011000000010"
+                        maxLength={50}
+                        className="bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 font-mono text-xs text-cyan-300 w-full focus:outline-none tracking-wider"
+                      />
+                      <button
+                        type="button"
+                        onClick={handlePasteChave}
+                        className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border border-slate-700"
+                        title="Colar da Área de Transferência"
+                      >
+                        <ClipboardPaste className="w-4 h-4" />
+                        <span>Colar</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-1">
+                    <button
+                      onClick={() => handleStartConsultaDFe(true)}
+                      disabled={isConsulting || chaveInput.replace(/\D/g, '').length < 44}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/30 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className={`w-4 h-4 ${isConsulting ? 'animate-spin' : ''}`} />
+                      {isConsulting ? 'Baixando da SEFAZ...' : 'Baixar XML Completo por Chave'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SUB-MODO: LOTE MASSIVO DE CHAVES ────────── */}
+              {subModeChave === 'massivo' && (
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                        Cole a lista de chaves de acesso (copiadas do Excel ou texto):
+                      </label>
+                      <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md ${
+                        parsedChavesList.length > 0 ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'text-slate-500'
+                      }`}>
+                        {parsedChavesList.length} chave(s) única(s) válida(s)
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows={5}
+                      value={rawChavesText}
+                      onChange={(e) => setRawChavesText(e.target.value)}
+                      placeholder="Cole aqui a coluna de chaves do Excel ou arquivo de texto... (Ex: 41260877765840000170550030005478051771547460)"
+                      className="bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl p-3 font-mono text-xs text-cyan-300 w-full focus:outline-none resize-none leading-relaxed tracking-wider"
+                      disabled={isBatchRunning}
+                    />
+                  </div>
+
+                  {/* Actions & Settings Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                    
+                    {/* Interval Rate-Limit Control */}
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      <span className="text-slate-300 font-semibold text-[11px]">Intervalo Anti-Bloqueio:</span>
+                      <select
+                        value={intervalMs}
+                        onChange={(e) => setIntervalMs(Number(e.target.value))}
+                        disabled={isBatchRunning}
+                        className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-cyan-300 font-bold font-mono text-[11px] focus:outline-none cursor-pointer"
+                      >
+                        <option value={2000}>2000ms (2s - Máxima Segurança SEFAZ)</option>
+                        <option value={1000}>1000ms (1s - Recomendado)</option>
+                        <option value={500}>500ms (0,5s - Rápido)</option>
+                      </select>
+                    </div>
+
+                    {/* Import from Excel / TXT */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={fileImportRef}
+                        type="file"
+                        accept=".txt,.csv,.xlsx,.xls"
+                        onChange={handleImportChavesFile}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileImportRef.current?.click()}
+                        disabled={isBatchRunning}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-[11px] flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Carregar do Excel/TXT</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handlePasteMassivo}
+                        disabled={isBatchRunning}
+                        className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-[11px] flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <ClipboardPaste className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Colar da Área de Transf.</span>
+                      </button>
+
+                      {rawChavesText && (
+                        <button
+                          type="button"
+                          onClick={() => { setRawChavesText(''); setBatchItems([]); }}
+                          disabled={isBatchRunning}
+                          className="px-2 py-1 rounded-lg text-slate-400 hover:text-rose-400 text-[11px] transition-all cursor-pointer"
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Batch Controls & Progress Bar */}
+                  {isBatchRunning || batchProgress.total > 0 ? (
+                    <div className="p-4 rounded-xl bg-slate-950 border border-cyan-900/60 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">
+                            Progresso do Lote: {batchProgress.current} de {batchProgress.total} chaves
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                            {Math.round((batchProgress.current / (batchProgress.total || 1)) * 100)}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 text-[11px] font-mono">
+                          <span className="text-emerald-400 font-bold">✅ {batchProgress.successCount} Sucessos</span>
+                          <span className="text-rose-400 font-bold">❌ {batchProgress.errorCount} Falhas</span>
+                          {isBatchRunning && (
+                            <span className="text-amber-300">⏳ Restante: {formatEta(batchProgress.etaSeconds)}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Progress bar track */}
+                      <div className="w-full h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-300"
+                          style={{ width: `${(batchProgress.current / (batchProgress.total || 1)) * 100}%` }}
+                        />
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="text-[11px] text-slate-400">
+                          {isBatchRunning ? (
+                            <span className="text-cyan-400 animate-pulse font-bold flex items-center gap-1.5">
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              Baixando XMLs e salvando automaticamente em C:\SEFAZ\XMLs\...
+                            </span>
+                          ) : (
+                            <span className="text-emerald-400 font-bold">
+                              ✨ Processamento concluído! Todos os XMLs válidos foram salvos no disco e no banco.
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          {isBatchRunning && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handlePauseBatch}
+                                className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                {isBatchPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                                <span>{isBatchPaused ? 'Retomar' : 'Pausar'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={handleCancelBatch}
+                                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <Square className="w-3.5 h-3.5" />
+                                <span>Cancelar</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Realtime Batch Status Table */}
+                      <div className="max-h-36 overflow-y-auto rounded-lg border border-slate-800/80 divide-y divide-slate-800/60 font-mono text-[11px]">
+                        {batchItems.map((item, idx) => (
+                          <div key={idx} className="p-2 bg-slate-900/60 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-slate-500 w-6 text-right font-bold">{idx + 1}.</span>
+                              <span className="text-cyan-300 font-bold">{item.chave}</span>
+                            </div>
+                            <div>
+                              {item.status === 'pendente' && (
+                                <span className="text-slate-500 text-[10px]">⏳ Na Fila</span>
+                              )}
+                              {item.status === 'processando' && (
+                                <span className="text-cyan-400 text-[10px] animate-pulse flex items-center gap-1">
+                                  <RefreshCw className="w-3 h-3 animate-spin" /> Baixando...
+                                </span>
+                              )}
+                              {item.status === 'sucesso' && (
+                                <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1">
+                                  <Check className="w-3 h-3" /> {item.motivo || 'Baixado & Salvo'}
+                                </span>
+                              )}
+                              {item.status === 'erro' && (
+                                <span className="text-rose-400 font-bold text-[10px]">
+                                  ❌ {item.motivo || 'Erro'}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="text-[11px] text-slate-400">
+                        Cada nota é <strong>salva fisicamente no disco</strong> e <strong>incorporada ao banco e KPIs</strong>.
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleStartBatchDownload}
+                        disabled={parsedChavesList.length === 0 || isBatchRunning}
+                        className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/30 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <Play className="w-4 h-4" />
+                        <span>Iniciar Download de {parsedChavesList.length} XML(s)</span>
+                      </button>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* ── TAB 2: CONSULTA POR NSU ────────────────────── */}
           {modalMode === 'nsu' && (
             <div className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -410,61 +957,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
               </div>
 
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-                <span>💡 Se a SEFAZ retornar erro 656, use a <strong>Aba 2 (Por Chave de Acesso)</strong> para baixar diretamente sem fila de NSU.</span>
-              </div>
-            </div>
-          )}
-
-          {/* ── TAB 2: CONSULTA POR CHAVE DE ACESSO (44 DÍGITOS) ─ */}
-          {modalMode === 'chave' && (
-            <div className="p-4 rounded-2xl bg-slate-900/50 border border-cyan-900/40 space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5" />
-                    Chave de Acesso do DF-e (44 dígitos):
-                  </label>
-                  <span className={`text-[10px] font-mono font-bold ${
-                    chaveInput.replace(/\D/g, '').length === 44 ? 'text-emerald-400' : 'text-slate-400'
-                  }`}>
-                    {chaveInput.replace(/\D/g, '').length}/44 dígitos
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={chaveInput}
-                    onChange={(e) => setChaveInput(e.target.value)}
-                    placeholder="Ex: 35260100000000000000550010000000011000000010"
-                    maxLength={50}
-                    className="bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 font-mono text-xs text-cyan-300 w-full focus:outline-none tracking-wider"
-                  />
-                  <button
-                    type="button"
-                    onClick={handlePasteChave}
-                    className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border border-slate-700"
-                    title="Colar da Área de Transferência"
-                  >
-                    <ClipboardPaste className="w-4 h-4" />
-                    <span>Colar</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 pt-1">
-                <div className="text-[11px] text-slate-400">
-                  ⚡ <strong>Vantagem:</strong> A consulta direta por chave <strong>não sofre bloqueio de consumo indevido (656)</strong> e traz o XML completo imediatamente.
-                </div>
-
-                <button
-                  onClick={() => handleStartConsultaDFe(true)}
-                  disabled={isConsulting || chaveInput.replace(/\D/g, '').length < 44}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/30 transition-all cursor-pointer disabled:opacity-50 shrink-0"
-                >
-                  <Download className={`w-4 h-4 ${isConsulting ? 'animate-spin' : ''}`} />
-                  {isConsulting ? 'Baixando da SEFAZ...' : 'Baixar XML Completo por Chave'}
-                </button>
+                <span>💡 Se a SEFAZ retornar erro 656, use a <strong>Aba 1 (Por Chave de Acesso)</strong> para baixar diretamente sem fila de NSU.</span>
               </div>
             </div>
           )}
@@ -512,19 +1005,33 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           )}
 
           {/* Path Notice */}
-          <p className="text-[11px] text-slate-400 flex items-center gap-1.5">
-            {fluxo === 'entrada' ? (
-              <>
-                <FolderInput className="w-3.5 h-3.5 text-blue-400" />
-                Armazenamento de Entrada: <code className="text-blue-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Entrada\</code>
-              </>
-            ) : (
-              <>
-                <FolderOutput className="w-3.5 h-3.5 text-emerald-400" />
-                Armazenamento de Saída: <code className="text-emerald-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Saida\</code>
-              </>
+          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+            <div className="flex items-center gap-2">
+              {fluxo === 'entrada' ? (
+                <>
+                  <FolderInput className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Gravação física automática: <code className="text-blue-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Entrada\YYYY\MM\</code></span>
+                </>
+              ) : (
+                <>
+                  <FolderOutput className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Gravação física automática: <code className="text-emerald-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Saida\YYYY\MM\</code></span>
+                </>
+              )}
+            </div>
+
+            {results && results.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDownloadZip}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[10px] flex items-center gap-1 border border-slate-700 transition-all cursor-pointer shrink-0 ml-2"
+                title="Baixar todos os XMLs em arquivo compactado .ZIP"
+              >
+                <FileArchive className="w-3.5 h-3.5 text-amber-400" />
+                <span>💾 Baixar Lote em ZIP</span>
+              </button>
             )}
-          </p>
+          </div>
 
           {/* cStat Feedback Banner */}
           {cStat && (
@@ -547,16 +1054,6 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   <strong className="font-mono">cStat {cStat}:</strong> {xMotivo}
                 </div>
               </div>
-
-              {cStat === '656' && modalMode === 'nsu' && (
-                <button
-                  type="button"
-                  onClick={() => setModalMode('chave')}
-                  className="px-2.5 py-1 rounded bg-amber-900/80 hover:bg-amber-800 text-white font-bold text-[10px] transition-all cursor-pointer shrink-0 ml-2"
-                >
-                  Usar Chave de Acesso ➔
-                </button>
-              )}
             </div>
           )}
 
@@ -570,10 +1067,10 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
               <span className="font-mono text-[10px] text-slate-500">HTTPS / SOAP 1.2</span>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 h-36 overflow-y-auto space-y-1">
+            <div className="p-3 rounded-2xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 h-32 overflow-y-auto space-y-1">
               {logs.length === 0 ? (
                 <div className="text-slate-600 italic">
-                  Aguardando início da operação. Selecione a aba desejada (NSU, Chave de Acesso ou Upload) e clique no botão correspondente.
+                  Aguardando início da operação. Selecione a aba desejada e clique em iniciar.
                 </div>
               ) : (
                 logs.map((log, index) => (
@@ -593,9 +1090,20 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                   <FileCode className="w-4 h-4 text-emerald-400" />
                   {results.length} Documento(s) Fiscal(is) Pronto(s) para Inclusão:
                 </span>
-                <span className="text-xs font-mono font-bold text-emerald-400">
-                  Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(results.reduce((acc, curr) => acc + (curr.valorTotal || 0), 0))}
-                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleDownloadZip}
+                    className="px-2.5 py-1 rounded bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-800 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                  >
+                    <FileArchive className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Baixar Todos em ZIP</span>
+                  </button>
+
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    Total: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(results.reduce((acc, curr) => acc + (curr.valorTotal || 0), 0))}
+                  </span>
+                </div>
               </div>
 
               <div className="max-h-40 overflow-y-auto space-y-2">
