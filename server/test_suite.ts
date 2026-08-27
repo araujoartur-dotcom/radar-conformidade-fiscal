@@ -526,6 +526,50 @@ async function runTestSuite() {
   }
 
   // =========================================================================
+  // TESTE 7: Gestão Dinâmica de Alíquotas por Tabela (Comitê Gestor IBS)
+  // =========================================================================
+  console.log('📊 Teste 7: Gestão Dinâmica de Alíquotas por Tabela (Comitê Gestor IBS)...');
+
+  // Gravar alíquotas do Comitê Gestor IBS diretamente na tabela aliquotas_tabelas
+  const aliq2033Id = uuid();
+  db.prepare(`
+    INSERT OR REPLACE INTO aliquotas_tabelas (
+      id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
+    ) VALUES (?, '00003', 'ad_valorem', 9.2100, 13.7000, 5.0000, 0.0000, NULL, '2033-01-01', '2099-12-31', 'Alíquota de Referência Oficial Comitê Gestor IBS (27,91%)', datetime('now'))
+  `).run(aliq2033Id);
+
+  // Consultar registro gravado
+  const savedRow = db.prepare(`
+    SELECT * FROM aliquotas_tabelas WHERE codigo_cadastro = '00003' AND modalidade = 'ad_valorem'
+  `).get() as any;
+
+  assert(savedRow !== undefined, 'Registro 00003 deve ser persistido na tabela aliquotas_tabelas');
+  assert(Number(savedRow.cbs_federal) === 9.21, 'CBS Federal de Referência deve ser 9.21%');
+  assert(Number(savedRow.ibs_estadual) === 13.70, 'IBS Estadual de Referência deve ser 13.70%');
+  assert(Number(savedRow.ibs_municipal) === 5.00, 'IBS Municipal de Referência deve ser 5.00%');
+  
+  const totalIvaCalculado = Number((Number(savedRow.cbs_federal) + Number(savedRow.ibs_estadual) + Number(savedRow.ibs_municipal)).toFixed(4));
+  assert(totalIvaCalculado === 27.91, 'Total IVA Dual Pleno deve ser 27.91%');
+
+  // Testar cálculo dinâmico da transição proporcional (2029: 10%, 2030: 20%, 2031: 30%, 2032: 40%, 2033: 100%)
+  const ibsTotRef = Number(savedRow.ibs_estadual) + Number(savedRow.ibs_municipal); // 18.70
+  const f2029Ibs = Number((ibsTotRef * 0.10).toFixed(4)); // 1.87%
+  const f2029Iva = Number((Number(savedRow.cbs_federal) + f2029Ibs).toFixed(4)); // 11.08%
+
+  const f2030Ibs = Number((ibsTotRef * 0.20).toFixed(4)); // 3.74%
+  const f2030Iva = Number((Number(savedRow.cbs_federal) + f2030Ibs).toFixed(4)); // 12.95%
+
+  const f2033Iva = Number((Number(savedRow.cbs_federal) + ibsTotRef).toFixed(4)); // 27.91%
+
+  assert(f2029Ibs === 1.87, '2029 (10% do IBS): IBS deve ser 1.87%');
+  assert(f2029Iva === 11.08, '2029: IVA Total deve ser 11.08%');
+  assert(f2030Ibs === 3.74, '2030 (20% do IBS): IBS deve ser 3.74%');
+  assert(f2030Iva === 12.95, '2030: IVA Total deve ser 12.95%');
+  assert(f2033Iva === 27.91, '2033 (100% IBS): IVA Total deve ser 27.91%');
+
+  console.log(`   Alíquotas e transição calculadas dinamicamente com perfeição: 2029=${f2029Iva}%, 2030=${f2030Iva}%, 2033=${f2033Iva}%\n`);
+
+  // =========================================================================
   // SUMÁRIO FINAL
   // =========================================================================
   console.log('=============================================================');

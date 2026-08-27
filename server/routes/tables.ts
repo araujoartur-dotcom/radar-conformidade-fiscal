@@ -1,9 +1,10 @@
 /**
  * ============================================================
- * ROTAS DE TABELAS TRIBUTÁRIAS — CRUD
+ * ROTAS DE TABELAS TRIBUTÁRIAS — CRUD E MOTOR DINÂMICO
  * ============================================================
- * Endpoints para gerenciar alíquotas, CFOP, cClassTrib e
- * regras de elegibilidade com suporte a Supabase e SQLite.
+ * Endpoints para gerenciar alíquotas Ad Valorem, Ad Rem, CFOP,
+ * cClassTrib, NCM Anexos e Regras de Elegibilidade.
+ * Integridade total no SQLite com sincronização segura ao Supabase.
  * ============================================================
  */
 
@@ -11,36 +12,19 @@ import { Router, Response } from 'express';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
-import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
+import { AuthenticatedRequest, requireAuth, requirePerfil } from '../middleware/auth';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 
 const router = Router();
 
 // =========================================================
-// ALÍQUOTAS DE REFERÊNCIA CBS / IBS
+// 1. ALÍQUOTAS DE REFERÊNCIA CBS / IBS (por Competência)
 // =========================================================
 
-/** GET /api/tables/aliquotas — Listar alíquotas vigentes */
+/** GET /api/tables/aliquotas — Listar alíquotas de referência */
 router.get('/aliquotas', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { competencia, tipo_tributo } = req.query;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        let q = supabase.from('aliquotas_referencia').select('*');
-        if (competencia) {
-          q = q.lte('competencia_inicio', String(competencia));
-        }
-        if (tipo_tributo) {
-          q = q.eq('tipo_tributo', String(tipo_tributo));
-        }
-        const { data, error } = await q.order('competencia_inicio', { ascending: false });
-        if (error) throw error;
-        res.json({ success: true, data: data || [], total: (data || []).length });
-        return;
-      }
-    }
 
     const db = getDatabase();
     let query = 'SELECT * FROM aliquotas_referencia WHERE 1=1';
@@ -56,8 +40,8 @@ router.get('/aliquotas', requireAuth, async (req: AuthenticatedRequest, res: Res
     }
 
     query += ' ORDER BY competencia_inicio DESC, tipo_tributo';
-
     const rows = db.prepare(query).all(...params);
+
     res.json({ success: true, data: rows, total: rows.length });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao listar alíquotas: ' + err.message });
@@ -65,25 +49,9 @@ router.get('/aliquotas', requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 /** GET /api/tables/aliquotas/vigente — Alíquotas vigentes para a data atual */
-router.get('/aliquotas/vigente', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/aliquotas/vigente', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
   try {
     const hoje = getBrasiliaDate();
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('aliquotas_referencia')
-          .select('*')
-          .lte('competencia_inicio', hoje)
-          .order('tipo_tributo');
-
-        if (error) throw error;
-        res.json({ success: true, data: data || [], dataReferencia: hoje });
-        return;
-      }
-    }
-
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT * FROM aliquotas_referencia
@@ -107,28 +75,6 @@ router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_g
       return;
     }
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('aliquotas_referencia')
-          .upsert({
-            competencia_inicio,
-            competencia_fim: competencia_fim || null,
-            tipo_tributo,
-            aliquota_referencia,
-            descricao: descricao || '',
-            base_legal: base_legal || '',
-            fase_transicao: fase_transicao || '',
-            updated_at: getBrasiliaTimestamp()
-          }, { onConflict: 'competencia_inicio,tipo_tributo' });
-
-        if (error) throw error;
-        res.status(200).json({ success: true, message: 'Alíquota gravada com sucesso no Supabase.' });
-        return;
-      }
-    }
-
     const db = getDatabase();
     const id = uuid();
     db.prepare(`
@@ -143,6 +89,27 @@ router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_g
         updated_at = datetime('now')
     `).run(id, competencia_inicio, competencia_fim || null, tipo_tributo, aliquota_referencia, descricao || '', base_legal || '', fase_transicao || '');
 
+    // Sincronização segura em segundo plano com Supabase
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase.from('aliquotas_referencia').upsert({
+            competencia_inicio,
+            competencia_fim: competencia_fim || null,
+            tipo_tributo,
+            aliquota_referencia,
+            descricao: descricao || '',
+            base_legal: base_legal || '',
+            fase_transicao: fase_transicao || '',
+            updated_at: getBrasiliaTimestamp()
+          }, { onConflict: 'competencia_inicio,tipo_tributo' });
+        } catch (e: any) {
+          console.warn('⚠️ Supabase sync warning (aliquotas_referencia):', e?.message || e);
+        }
+      }
+    }
+
     res.status(200).json({ success: true, id, message: 'Alíquota gravada com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao gravar alíquota: ' + err.message });
@@ -150,257 +117,12 @@ router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_g
 });
 
 // =========================================================
-// MAPA CFOP x TRATAMENTO
-// =========================================================
-
-/** GET /api/tables/cfop — Listar todos os CFOPs */
-router.get('/cfop', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const empresaId = req.user!.empresaAtivaId;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('cfop_tratamento')
-          .select('*')
-          .eq('ativo', true)
-          .order('cfop');
-
-        if (error) throw error;
-        res.json({ success: true, data: data || [], total: (data || []).length });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    const rows = db.prepare(`
-      SELECT * FROM cfop_tratamento 
-      WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
-      ORDER BY cfop
-    `).all(empresaId);
-
-    res.json({ success: true, data: rows, total: rows.length });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao listar CFOPs: ' + err.message });
-  }
-});
-
-/** POST /api/tables/cfop — Criar novo CFOP */
-router.post('/cfop', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima, global } = req.body;
-
-    if (!cfop || !descricao) {
-      res.status(400).json({ error: 'cfop e descricao são obrigatórios.' });
-      return;
-    }
-
-    const empresaId = global ? null : req.user!.empresaAtivaId;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('cfop_tratamento')
-          .insert({
-            empresa_id: empresaId,
-            cfop,
-            descricao,
-            categoria: categoria || 'Compra',
-            tratamento_padrao: tratamento_padrao || 'Depende',
-            exige_onerosidade: Boolean(exige_onerosidade),
-            evidencia_minima: evidencia_minima || ''
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        res.status(201).json({ success: true, id: data.id, message: 'CFOP criado com sucesso no Supabase.' });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    const id = uuid();
-    db.prepare(`
-      INSERT INTO cfop_tratamento (id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-    `).run(id, empresaId, cfop, descricao, categoria || 'Compra', tratamento_padrao || 'Depende', exige_onerosidade ? 1 : 0, evidencia_minima || '');
-
-    res.status(201).json({ success: true, id, message: 'CFOP criado com sucesso.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao criar CFOP: ' + err.message });
-  }
-});
-
-/** PUT /api/tables/cfop/:id */
-router.put('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima } = req.body;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('cfop_tratamento')
-          .update({
-            cfop,
-            descricao,
-            categoria,
-            tratamento_padrao,
-            exige_onerosidade: Boolean(exige_onerosidade),
-            evidencia_minima,
-            updated_at: getBrasiliaTimestamp()
-          })
-          .eq('id', id);
-
-        if (error) throw error;
-        res.json({ success: true, message: 'CFOP atualizado com sucesso no Supabase.' });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    db.prepare(`
-      UPDATE cfop_tratamento SET
-        cfop = COALESCE(?, cfop),
-        descricao = COALESCE(?, descricao),
-        categoria = COALESCE(?, categoria),
-        tratamento_padrao = COALESCE(?, tratamento_padrao),
-        exige_onerosidade = COALESCE(?, exige_onerosidade),
-        evidencia_minima = COALESCE(?, evidencia_minima),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(cfop, descricao, categoria, tratamento_padrao, exige_onerosidade !== undefined ? (exige_onerosidade ? 1 : 0) : null, evidencia_minima, id);
-
-    res.json({ success: true, message: 'CFOP atualizado com sucesso.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao atualizar CFOP: ' + err.message });
-  }
-});
-
-/** DELETE /api/tables/cfop/:id */
-router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('cfop_tratamento')
-          .update({ ativo: false, updated_at: getBrasiliaTimestamp() })
-          .eq('id', id);
-        if (error) throw error;
-        res.json({ success: true, message: 'CFOP desativado no Supabase.' });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    db.prepare('UPDATE cfop_tratamento SET ativo = 0, updated_at = datetime(\'now\') WHERE id = ?').run(id);
-    res.json({ success: true, message: 'CFOP desativado com sucesso.' });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao desativar CFOP: ' + err.message });
-  }
-});
-
-// =========================================================
-// MAPA cClassTrib (6 Dígitos)
-// =========================================================
-
-/** GET /api/tables/cclasstrib */
-router.get('/cclasstrib', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('cclasstrib_regras')
-          .select('*')
-          .eq('ativo', true)
-          .order('cclasstrib');
-
-        if (error) throw error;
-        res.json({ success: true, data: data || [], total: (data || []).length });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    const rows = db.prepare(`
-      SELECT * FROM cclasstrib_regras 
-      WHERE ativo = 1
-      ORDER BY cclasstrib
-    `).all();
-
-    res.json({ success: true, data: rows, total: rows.length });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao listar cClassTrib: ' + err.message });
-  }
-});
-
-// =========================================================
-// REGRAS DE ELEGIBILIDADE
-// =========================================================
-
-/** GET /api/tables/regras */
-router.get('/regras', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('regras_elegibilidade')
-          .select('*')
-          .eq('ativo', true)
-          .order('codigo_regra');
-
-        if (error) throw error;
-        res.json({ success: true, data: data || [], total: (data || []).length });
-        return;
-      }
-    }
-
-    const db = getDatabase();
-    const rows = db.prepare(`
-      SELECT * FROM regras_elegibilidade 
-      WHERE ativo = 1
-      ORDER BY codigo_regra
-    `).all();
-
-    res.json({ success: true, data: rows, total: rows.length });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao listar regras: ' + err.message });
-  }
-});
-
-// =========================================================
-// TABELAS DE ALÍQUOTAS AD VALOREM (%)
+// 2. TABELAS DE ALÍQUOTAS AD VALOREM (%)
 // =========================================================
 
 /** GET /api/tables/aliquotas/ad-valorem — Listar linhas Ad Valorem */
-router.get('/aliquotas/ad-valorem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/aliquotas/ad-valorem', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
   try {
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('aliquotas_tabelas')
-          .select('*')
-          .eq('modalidade', 'ad_valorem')
-          .order('inicio_vigencia', { ascending: true })
-          .order('codigo_cadastro', { ascending: true });
-
-        if (!error && data) {
-          res.json({ success: true, data });
-          return;
-        }
-      }
-    }
-
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT * FROM aliquotas_tabelas
@@ -429,38 +151,40 @@ router.post('/aliquotas/ad-valorem', requireAuth, async (req: AuthenticatedReque
     const fim = final_vigencia || '2026-12-31';
     const desc = descricao || '';
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('aliquotas_tabelas')
-          .upsert({
-            id: rowId,
-            codigo_cadastro: codCad,
-            modalidade: 'ad_valorem',
-            cbs_federal: cbs,
-            ibs_estadual: ibsEst,
-            ibs_municipal: ibsMun,
-            is_federal: isFed,
-            unidade_medida: null,
-            inicio_vigencia: ini,
-            final_vigencia: fim,
-            descricao: desc,
-            updated_at: getBrasiliaTimestamp()
-          });
-
-        if (error) throw error;
-        res.json({ success: true, message: 'Alíquota Ad Valorem salva com sucesso no Supabase.' });
-        return;
-      }
-    }
-
+    // 1. Gravar com prioridade absoluta no SQLite local (100% ACID, zero schema cache errors)
     const db = getDatabase();
     db.prepare(`
       INSERT OR REPLACE INTO aliquotas_tabelas (
         id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
       ) VALUES (?, ?, 'ad_valorem', ?, ?, ?, ?, NULL, ?, ?, ?, datetime('now'))
     `).run(rowId, codCad, cbs, ibsEst, ibsMun, isFed, ini, fim, desc);
+
+    // 2. Sincronização segura no Supabase (se a tabela existir na nuvem)
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase
+            .from('aliquotas_tabelas')
+            .upsert({
+              id: rowId,
+              codigo_cadastro: codCad,
+              modalidade: 'ad_valorem',
+              cbs_federal: cbs,
+              ibs_estadual: ibsEst,
+              ibs_municipal: ibsMun,
+              is_federal: isFed,
+              unidade_medida: null,
+              inicio_vigencia: ini,
+              final_vigencia: fim,
+              descricao: desc,
+              updated_at: getBrasiliaTimestamp()
+            });
+        } catch (supaErr: any) {
+          console.warn('⚠️ Supabase ad-valorem sync warning:', supaErr?.message || supaErr);
+        }
+      }
+    }
 
     res.json({ success: true, message: 'Alíquota Ad Valorem salva com sucesso.' });
   } catch (err: any) {
@@ -473,15 +197,19 @@ router.delete('/aliquotas/ad-valorem/:id', requireAuth, async (req: Authenticate
   try {
     const { id } = req.params;
 
+    const db = getDatabase();
+    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+        try {
+          await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+        } catch (e: any) {
+          console.warn('⚠️ Supabase ad-valorem delete warning:', e?.message || e);
+        }
       }
     }
-
-    const db = getDatabase();
-    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
 
     res.json({ success: true, message: 'Registro removido com sucesso.' });
   } catch (err: any) {
@@ -490,29 +218,12 @@ router.delete('/aliquotas/ad-valorem/:id', requireAuth, async (req: Authenticate
 });
 
 // =========================================================
-// TABELAS DE ALÍQUOTAS AD REM (R$ / UNIDADE)
+// 3. TABELAS DE ALÍQUOTAS AD REM (R$ / UNIDADE)
 // =========================================================
 
 /** GET /api/tables/aliquotas/ad-rem — Listar linhas Ad Rem */
-router.get('/aliquotas/ad-rem', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/aliquotas/ad-rem', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
   try {
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('aliquotas_tabelas')
-          .select('*')
-          .eq('modalidade', 'ad_rem')
-          .order('inicio_vigencia', { ascending: true })
-          .order('codigo_cadastro', { ascending: true });
-
-        if (!error && data) {
-          res.json({ success: true, data });
-          return;
-        }
-      }
-    }
-
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT * FROM aliquotas_tabelas
@@ -542,38 +253,38 @@ router.post('/aliquotas/ad-rem', requireAuth, async (req: AuthenticatedRequest, 
     const fim = final_vigencia || '2026-12-31';
     const desc = descricao || '';
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('aliquotas_tabelas')
-          .upsert({
-            id: rowId,
-            codigo_cadastro: codCad,
-            modalidade: 'ad_rem',
-            cbs_federal: cbs,
-            ibs_estadual: ibsEst,
-            ibs_municipal: ibsMun,
-            is_federal: isFed,
-            unidade_medida: unid,
-            inicio_vigencia: ini,
-            final_vigencia: fim,
-            descricao: desc,
-            updated_at: getBrasiliaTimestamp()
-          });
-
-        if (error) throw error;
-        res.json({ success: true, message: 'Alíquota Ad Rem salva com sucesso no Supabase.' });
-        return;
-      }
-    }
-
     const db = getDatabase();
     db.prepare(`
       INSERT OR REPLACE INTO aliquotas_tabelas (
         id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
       ) VALUES (?, ?, 'ad_rem', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).run(rowId, codCad, cbs, ibsEst, ibsMun, isFed, unid, ini, fim, desc);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase
+            .from('aliquotas_tabelas')
+            .upsert({
+              id: rowId,
+              codigo_cadastro: codCad,
+              modalidade: 'ad_rem',
+              cbs_federal: cbs,
+              ibs_estadual: ibsEst,
+              ibs_municipal: ibsMun,
+              is_federal: isFed,
+              unidade_medida: unid,
+              inicio_vigencia: ini,
+              final_vigencia: fim,
+              descricao: desc,
+              updated_at: getBrasiliaTimestamp()
+            });
+        } catch (supaErr: any) {
+          console.warn('⚠️ Supabase ad-rem sync warning:', supaErr?.message || supaErr);
+        }
+      }
+    }
 
     res.json({ success: true, message: 'Alíquota Ad Rem salva com sucesso.' });
   } catch (err: any) {
@@ -586,15 +297,19 @@ router.delete('/aliquotas/ad-rem/:id', requireAuth, async (req: AuthenticatedReq
   try {
     const { id } = req.params;
 
+    const db = getDatabase();
+    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+        try {
+          await supabase.from('aliquotas_tabelas').delete().eq('id', id);
+        } catch (e: any) {
+          console.warn('⚠️ Supabase ad-rem delete warning:', e?.message || e);
+        }
       }
     }
-
-    const db = getDatabase();
-    db.prepare('DELETE FROM aliquotas_tabelas WHERE id = ?').run(id);
 
     res.json({ success: true, message: 'Registro removido com sucesso.' });
   } catch (err: any) {
@@ -603,37 +318,13 @@ router.delete('/aliquotas/ad-rem/:id', requireAuth, async (req: AuthenticatedReq
 });
 
 // =========================================================
-// CATÁLOGO DE ANEXOS DA LEI & NCMs (Reduções e Isenções)
+// 4. CATÁLOGO DE ANEXOS DA LEI & NCMs (Reduções e Isenções)
 // =========================================================
 
 /** GET /api/tables/anexos-ncm — Listar regras de NCM / Anexos */
 router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { q, tipo_tratamento } = req.query as { q?: string; tipo_tratamento?: string };
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        let query = supabase
-          .from('ncm_regras_anexos')
-          .select('*')
-          .eq('ativo', true)
-          .order('ncm');
-
-        if (tipo_tratamento && tipo_tratamento !== 'todos') {
-          query = query.eq('tipo_tratamento', tipo_tratamento);
-        }
-        if (q && q.trim()) {
-          query = query.or(`ncm.ilike.%${q}%,descricao.ilike.%${q}%,cclasstrib.ilike.%${q}%`);
-        }
-
-        const { data, error } = await query;
-        if (!error && data) {
-          res.json({ success: true, data, total: data.length });
-          return;
-        }
-      }
-    }
 
     const db = getDatabase();
     let sql = 'SELECT * FROM ncm_regras_anexos WHERE ativo = 1';
@@ -671,33 +362,6 @@ router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: R
     const rowId = id || uuid();
     const red = Number(percentual_reducao || 0);
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { error } = await supabase
-          .from('ncm_regras_anexos')
-          .upsert({
-            id: rowId,
-            ncm: ncm.trim(),
-            nbs: nbs || '',
-            cclasstrib: cclasstrib || '',
-            descricao: descricao.trim(),
-            tipo_tratamento: tipo_tratamento || 'padrao',
-            percentual_reducao: red,
-            anexo_lei: anexo_lei || '',
-            base_legal: base_legal || '',
-            vigencia_inicio: vigencia_inicio || '2026-01-01',
-            vigencia_fim: vigencia_fim || '2033-12-31',
-            ativo: true,
-            updated_at: getBrasiliaTimestamp()
-          });
-
-        if (error) throw error;
-        res.json({ success: true, message: 'Regra de NCM gravada no Supabase.' });
-        return;
-      }
-    }
-
     const db = getDatabase();
     db.prepare(`
       INSERT OR REPLACE INTO ncm_regras_anexos (
@@ -708,6 +372,33 @@ router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: R
       tipo_tratamento || 'padrao', red, anexo_lei || '', base_legal || '',
       vigencia_inicio || '2026-01-01', vigencia_fim || '2033-12-31'
     );
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase
+            .from('ncm_regras_anexos')
+            .upsert({
+              id: rowId,
+              ncm: ncm.trim(),
+              nbs: nbs || '',
+              cclasstrib: cclasstrib || '',
+              descricao: descricao.trim(),
+              tipo_tratamento: tipo_tratamento || 'padrao',
+              percentual_reducao: red,
+              anexo_lei: anexo_lei || '',
+              base_legal: base_legal || '',
+              vigencia_inicio: vigencia_inicio || '2026-01-01',
+              vigencia_fim: vigencia_fim || '2033-12-31',
+              ativo: true,
+              updated_at: getBrasiliaTimestamp()
+            });
+        } catch (supaErr: any) {
+          console.warn('⚠️ Supabase ncm_regras_anexos sync warning:', supaErr?.message || supaErr);
+        }
+      }
+    }
 
     res.json({ success: true, message: 'Regra de NCM gravada com sucesso.' });
   } catch (err: any) {
@@ -757,21 +448,25 @@ router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedReq
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        const supaRows = itens.map(it => ({
-          id: it.id || uuid(),
-          ncm: String(it.ncm).trim(),
-          nbs: it.nbs || '',
-          cclasstrib: it.cclasstrib || '',
-          descricao: it.descricao || 'Item Importado',
-          tipo_tratamento: it.tipo_tratamento || 'padrao',
-          percentual_reducao: Number(it.percentual_reducao || 0),
-          anexo_lei: it.anexo_lei || '',
-          base_legal: it.base_legal || 'LC 214/2025',
-          vigencia_inicio: it.vigencia_inicio || '2026-01-01',
-          vigencia_fim: it.vigencia_fim || '2033-12-31',
-          ativo: true
-        }));
-        await supabase.from('ncm_regras_anexos').upsert(supaRows);
+        try {
+          const supaRows = itens.map(it => ({
+            id: it.id || uuid(),
+            ncm: String(it.ncm).trim(),
+            nbs: it.nbs || '',
+            cclasstrib: it.cclasstrib || '',
+            descricao: it.descricao || 'Item Importado',
+            tipo_tratamento: it.tipo_tratamento || 'padrao',
+            percentual_reducao: Number(it.percentual_reducao || 0),
+            anexo_lei: it.anexo_lei || '',
+            base_legal: it.base_legal || 'LC 214/2025',
+            vigencia_inicio: it.vigencia_inicio || '2026-01-01',
+            vigencia_fim: it.vigencia_fim || '2033-12-31',
+            ativo: true
+          }));
+          await supabase.from('ncm_regras_anexos').upsert(supaRows);
+        } catch (e: any) {
+          console.warn('⚠️ Supabase ncm_regras_anexos batch warning:', e?.message || e);
+        }
       }
     }
 
@@ -786,15 +481,19 @@ router.delete('/anexos-ncm/:id', requireAuth, async (req: AuthenticatedRequest, 
   try {
     const { id } = req.params;
 
+    const db = getDatabase();
+    db.prepare('DELETE FROM ncm_regras_anexos WHERE id = ?').run(id);
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        await supabase.from('ncm_regras_anexos').delete().eq('id', id);
+        try {
+          await supabase.from('ncm_regras_anexos').delete().eq('id', id);
+        } catch (e: any) {
+          console.warn('⚠️ Supabase ncm_regras_anexos delete warning:', e?.message || e);
+        }
       }
     }
-
-    const db = getDatabase();
-    db.prepare('DELETE FROM ncm_regras_anexos WHERE id = ?').run(id);
 
     res.json({ success: true, message: 'Regra de NCM excluída com sucesso.' });
   } catch (err: any) {
@@ -802,5 +501,196 @@ router.delete('/anexos-ncm/:id', requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
+// =========================================================
+// 5. MAPA CFOP x TRATAMENTO
+// =========================================================
+
+/** GET /api/tables/cfop — Listar todos os CFOPs */
+router.get('/cfop', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const empresaId = req.user!.empresaAtivaId;
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM cfop_tratamento 
+      WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
+      ORDER BY cfop
+    `).all(empresaId);
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar CFOPs: ' + err.message });
+  }
+});
+
+/** POST /api/tables/cfop — Criar novo CFOP */
+router.post('/cfop', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima, global } = req.body;
+
+    if (!cfop || !descricao) {
+      res.status(400).json({ error: 'cfop e descricao são obrigatórios.' });
+      return;
+    }
+
+    const empresaId = global ? null : req.user!.empresaAtivaId;
+    const db = getDatabase();
+    const id = uuid();
+    db.prepare(`
+      INSERT INTO cfop_tratamento (id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
+    `).run(id, empresaId, cfop, descricao, categoria || 'Compra', tratamento_padrao || 'Depende', exige_onerosidade ? 1 : 0, evidencia_minima || '');
+
+    res.status(201).json({ success: true, id, message: 'CFOP criado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao criar CFOP: ' + err.message });
+  }
+});
+
+/** PUT /api/tables/cfop/:id */
+router.put('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor', 'analista_fiscal'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, evidencia_minima } = req.body;
+
+    const db = getDatabase();
+    db.prepare(`
+      UPDATE cfop_tratamento SET
+        cfop = COALESCE(?, cfop),
+        descricao = COALESCE(?, descricao),
+        categoria = COALESCE(?, categoria),
+        tratamento_padrao = COALESCE(?, tratamento_padrao),
+        exige_onerosidade = COALESCE(?, exige_onerosidade),
+        evidencia_minima = COALESCE(?, evidencia_minima),
+        updated_at = datetime('now')
+      WHERE id = ?
+    `).run(cfop, descricao, categoria, tratamento_padrao, exige_onerosidade !== undefined ? (exige_onerosidade ? 1 : 0) : null, evidencia_minima, id);
+
+    res.json({ success: true, message: 'CFOP atualizado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao atualizar CFOP: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/cfop/:id */
+router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare("UPDATE cfop_tratamento SET ativo = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+    res.json({ success: true, message: 'CFOP desativado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao desativar CFOP: ' + err.message });
+  }
+});
+
+// =========================================================
+// 6. MAPA cClassTrib (6 Dígitos)
+// =========================================================
+
+/** GET /api/tables/cclasstrib */
+router.get('/cclasstrib', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM cclasstrib_regras 
+      WHERE ativo = 1
+      ORDER BY cclasstrib
+    `).all();
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar cClassTrib: ' + err.message });
+  }
+});
+
+/** POST /api/tables/cclasstrib */
+router.post('/cclasstrib', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas } = req.body;
+    if (!cclasstrib || !descricao_interna) {
+      res.status(400).json({ error: 'cclasstrib e descricao_interna são obrigatórios.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const id = uuid();
+    db.prepare(`
+      INSERT OR REPLACE INTO cclasstrib_regras (id, cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas, ativo, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+    `).run(id, cclasstrib, descricao_interna, tratamento_esperado || 'tributado', permite_credito || 'Sim', aliquota_esperada || '27.91%', alertas || '');
+
+    res.status(201).json({ success: true, message: 'cClassTrib cadastrado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar cClassTrib: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/cclasstrib/:id */
+router.delete('/cclasstrib/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare("UPDATE cclasstrib_regras SET ativo = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+    res.json({ success: true, message: 'cClassTrib desativado com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir cClassTrib: ' + err.message });
+  }
+});
+
+// =========================================================
+// 7. REGRAS DE ELEGIBILIDADE
+// =========================================================
+
+/** GET /api/tables/regras */
+router.get('/regras', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM regras_elegibilidade 
+      WHERE ativo = 1
+      ORDER BY codigo_regra
+    `).all();
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar regras: ' + err.message });
+  }
+});
+
+/** POST /api/tables/regras */
+router.post('/regras', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal } = req.body;
+    if (!codigo_regra || !nome) {
+      res.status(400).json({ error: 'codigo_regra e nome são obrigatórios.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const id = uuid();
+    db.prepare(`
+      INSERT OR REPLACE INTO regras_elegibilidade (id, codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal, ativo, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+    `).run(id, codigo_regra, nome, descricao || '', tipo_aquisicao || 'Geral', cfops_aplicaveis || '', resultado_padrao || 'Elegível', evidencia_minima || '', base_legal || '');
+
+    res.status(201).json({ success: true, message: 'Regra cadastrada com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar regra: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/regras/:id */
+router.delete('/regras/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare("UPDATE regras_elegibilidade SET ativo = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+    res.json({ success: true, message: 'Regra desativada com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir regra: ' + err.message });
+  }
+});
+
 export default router;
+
 

@@ -208,6 +208,52 @@ CREATE TABLE IF NOT EXISTS public.regras_elegibilidade (
 );
 
 -- ============================================================
+-- 10.1 TABELA DE ALÍQUOTAS (AD VALOREM % E AD REM R$)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.aliquotas_tabelas (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    codigo_cadastro VARCHAR(10) NOT NULL,
+    modalidade VARCHAR(20) NOT NULL DEFAULT 'ad_valorem' CHECK (modalidade IN ('ad_valorem', 'ad_rem')),
+    cbs_federal NUMERIC(10,4) NOT NULL DEFAULT 0.0,
+    ibs_estadual NUMERIC(10,4) NOT NULL DEFAULT 0.0,
+    ibs_municipal NUMERIC(10,4) NOT NULL DEFAULT 0.0,
+    is_federal NUMERIC(10,4) NOT NULL DEFAULT 0.0,
+    unidade_medida VARCHAR(20) DEFAULT NULL,
+    inicio_vigencia DATE NOT NULL,
+    final_vigencia DATE NOT NULL,
+    descricao TEXT DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT unq_aliquota_cadastro_modalidade UNIQUE(codigo_cadastro, modalidade)
+);
+
+CREATE INDEX IF NOT EXISTS idx_aliquotas_tabelas_mod ON public.aliquotas_tabelas(modalidade);
+CREATE INDEX IF NOT EXISTS idx_aliquotas_tabelas_vig ON public.aliquotas_tabelas(inicio_vigencia, final_vigencia);
+
+-- ============================================================
+-- 10.2 REGRAS DE ANEXOS / NCM / NBS / cClassTrib
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ncm_regras_anexos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ncm VARCHAR(20) NOT NULL,
+    nbs VARCHAR(20) DEFAULT '',
+    cclasstrib VARCHAR(10) DEFAULT '',
+    descricao TEXT NOT NULL,
+    tipo_tratamento VARCHAR(50) NOT NULL DEFAULT 'padrao',
+    percentual_reducao NUMERIC(6,2) NOT NULL DEFAULT 0.0,
+    anexo_lei TEXT DEFAULT '',
+    base_legal TEXT DEFAULT '',
+    vigencia_inicio DATE NOT NULL DEFAULT '2026-01-01',
+    vigencia_fim DATE NOT NULL DEFAULT '2033-12-31',
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ncm_regras_ncm ON public.ncm_regras_anexos(ncm);
+
+
+-- ============================================================
 -- 11. DOCUMENTOS FISCAIS ELETRÔNICOS (DF-e) & ITENS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.dfe_documentos (

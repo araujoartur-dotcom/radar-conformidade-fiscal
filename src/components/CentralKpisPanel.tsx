@@ -5,11 +5,11 @@ import {
   BarChart3, RefreshCw, Filter, Calendar, Building2, Percent,
   Download, Sparkles, ShieldAlert, Check, HelpCircle, Info
 } from 'lucide-react';
-import { DfeXmlItem, RegraTransicaoAno } from '../types';
+import { DfeXmlItem, RegraTransicaoAno, AliquotaTabelaItem } from '../types';
 import { exportToExcel } from '../utils/excel';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
-import { getRegraTransicaoAno, ANOS_TRANSICAO } from '../utils/reformaTransicao';
+import { getRegraTransicaoAno, ANOS_TRANSICAO, buildCronogramaFromTabelas } from '../utils/reformaTransicao';
 
 interface CentralKpisPanelProps {
   dfeList?: DfeXmlItem[];
@@ -32,9 +32,26 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const [operacaoFilter, setOperacaoFilter] = useState<'todas' | 'entradas' | 'saidas'>('todas');
   const [anoSimulado, setAnoSimulado] = useState<number>(2026);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [tabelasAliquotas, setTabelasAliquotas] = useState<AliquotaTabelaItem[]>([]);
 
-  // Regra de transição oficial por ano
-  const regraAno = useMemo(() => getRegraTransicaoAno(anoSimulado), [anoSimulado]);
+  // Buscar alíquotas cadastradas no banco para cálculo 100% dinâmico
+  useEffect(() => {
+    get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem')
+      .then(res => {
+        if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
+          setTabelasAliquotas(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [get]);
+
+  const customCronograma = useMemo(() => {
+    return buildCronogramaFromTabelas(tabelasAliquotas);
+  }, [tabelasAliquotas]);
+
+  // Regra de transição oficial por ano baseada 100% na tabela de alíquotas
+  const regraAno = useMemo(() => getRegraTransicaoAno(anoSimulado, customCronograma), [anoSimulado, customCronograma]);
+
 
   // Documentos Reais
   const baseItems: DfeXmlItem[] = useMemo(() => {
@@ -267,7 +284,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
           {ANOS_TRANSICAO.map((ano) => {
             const isSelected = anoSimulado === ano;
-            const r = getRegraTransicaoAno(ano);
+            const r = getRegraTransicaoAno(ano, customCronograma);
             return (
               <button
                 key={ano}

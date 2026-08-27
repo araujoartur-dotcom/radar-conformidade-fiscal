@@ -60,16 +60,16 @@ export function seedDatabase(): void {
     { inicio: '2026-01-01', fim: '2026-12-31', tipo: 'IBS', aliq: 0.1, fase: 'teste_2026', desc: 'IBS Teste (Art. 342 LC 214/25) — Alíquota de teste do período de adaptação', base: 'LC 214/2025, Art. 342' },
 
     // 2027 — Início transição
-    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'CBS', aliq: 8.8, fase: 'transicao_2027', desc: 'CBS Referência — Substituição integral de PIS/COFINS', base: 'LC 214/2025' },
-    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'IBS', aliq: 17.7, fase: 'transicao_2027', desc: 'IBS Referência — Substituição progressiva do ICMS/ISS', base: 'LC 214/2025' },
+    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'CBS', aliq: 9.21, fase: 'transicao_2027', desc: 'CBS Referência — Substituição integral de PIS/COFINS (9,21%)', base: 'LC 214/2025' },
+    { inicio: '2027-01-01', fim: '2027-12-31', tipo: 'IBS', aliq: 0.0, fase: 'transicao_2027', desc: 'IBS Referência — Período de Transição Inicial', base: 'LC 214/2025' },
 
     // 2029–2032 — Transição progressiva
-    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'CBS', aliq: 8.8, fase: 'transicao_progressiva', desc: 'CBS durante período de transição com redução progressiva de PIS/COFINS', base: 'LC 214/2025, Art. 343-348' },
-    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'IBS', aliq: 17.7, fase: 'transicao_progressiva', desc: 'IBS durante período de transição com redução progressiva de ICMS/ISS', base: 'LC 214/2025, Art. 343-348' },
+    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'CBS', aliq: 9.21, fase: 'transicao_progressiva', desc: 'CBS durante período de transição (9,21%)', base: 'LC 214/2025, Art. 343-348' },
+    { inicio: '2029-01-01', fim: '2032-12-31', tipo: 'IBS', aliq: 18.7, fase: 'transicao_progressiva', desc: 'IBS durante período de transição (13,70% Estadual + 5,00% Municipal = 18,70%)', base: 'LC 214/2025, Art. 343-348' },
 
     // 2033+ — Regime definitivo
-    { inicio: '2033-01-01', fim: null, tipo: 'CBS', aliq: 8.8, fase: 'definitiva', desc: 'CBS definitiva — PIS/COFINS extintos', base: 'LC 214/2025' },
-    { inicio: '2033-01-01', fim: null, tipo: 'IBS', aliq: 17.7, fase: 'definitiva', desc: 'IBS definitiva — ICMS/ISS extintos', base: 'LC 214/2025' },
+    { inicio: '2033-01-01', fim: null, tipo: 'CBS', aliq: 9.21, fase: 'definitiva', desc: 'CBS definitiva — Alíquota de Referência Comitê Gestor (9,21%)', base: 'LC 214/2025' },
+    { inicio: '2033-01-01', fim: null, tipo: 'IBS', aliq: 18.7, fase: 'definitiva', desc: 'IBS definitiva — Alíquota de Referência Comitê Gestor (13,70% Estadual + 5,00% Municipal = 18,70%)', base: 'LC 214/2025' },
 
     // Imposto Seletivo
     { inicio: '2027-01-01', fim: null, tipo: 'IS', aliq: 0, fase: 'definitiva', desc: 'Imposto Seletivo — Alíquota específica por produto (bebidas, fumo, etc.)', base: 'LC 214/2025, Art. 393-406' },
@@ -150,9 +150,9 @@ export function seedDatabase(): void {
   // =========================================================
   const tabelasAliquotas = [
     // Ad Valorem (%)
-    { cod: '00001', mod: 'ad_valorem', cbs: 0.9000, ibs_est: 0.1000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste e Calibração Operacional (Art. 342 LC 214/2025)' },
-    { cod: '00002', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 0.1000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2027-01-01', fim: '2027-12-31', desc: 'Início Vigência CBS Plena e IBS Transição' },
-    { cod: '00003', mod: 'ad_valorem', cbs: 8.8000, ibs_est: 10.6200, ibs_mun: 7.0800, is_fed: 0.0000, unid: null, ini: '2033-01-01', fim: '2099-12-31', desc: 'Vigência Plena e Definitiva do IVA Dual (26,50%)' },
+    { cod: '00001', mod: 'ad_valorem', cbs: 0.9000, ibs_est: 0.0500, ibs_mun: 0.0500, is_fed: 0.0000, unid: null, ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste e Calibração Operacional (Art. 342 LC 214/2025)' },
+    { cod: '00002', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 0.0000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2027-01-01', fim: '2027-12-31', desc: 'Início Vigência CBS Plena e IBS Transição' },
+    { cod: '00003', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 13.7000, ibs_mun: 5.0000, is_fed: 0.0000, unid: null, ini: '2033-01-01', fim: '2099-12-31', desc: 'Vigência Plena e Definitiva do IVA Dual (27,91%) — Comitê Gestor IBS' },
 
     // Ad Rem (R$ / Unidade)
     { cod: '00001', mod: 'ad_rem', cbs: 0.0000, ibs_est: 0.0000, ibs_mun: 0.0000, is_fed: 0.0000, unid: 'kg', ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste Ad Rem (Combustíveis e GLP)' },
