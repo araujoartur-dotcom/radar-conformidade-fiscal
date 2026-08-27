@@ -67,7 +67,7 @@ app.use('/api/partners', partnersRoutes);
 // =========================================================
 // HEALTH CHECK
 // =========================================================
-app.get('/api/health', (_req, res) => {
+const handleHealthCheck = (_req: express.Request, res: express.Response) => {
   res.json({
     status: 'ok',
     version: '2.5.0',
@@ -75,7 +75,11 @@ app.get('/api/health', (_req, res) => {
     environment: SERVER.NODE_ENV,
     timestamp: getBrasiliaTimestamp(),
   });
-});
+};
+
+app.get('/api/health', handleHealthCheck);
+app.get('/health', handleHealthCheck);
+app.get('/', handleHealthCheck);
 
 // =========================================================
 // ERROR HANDLERS
