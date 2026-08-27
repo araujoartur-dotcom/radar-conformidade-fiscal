@@ -14,6 +14,7 @@ import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
+import { getBrasiliaTimestamp } from '../utils/timezone';
 
 const router = Router();
 
@@ -467,8 +468,8 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
       cnpjDv: cleanDoc.length === 14 ? cleanDoc.slice(12, 14) : undefined,
       statusCadastro: payload.statusCadastro || 'A',
       situacaoCadastralSefaz: payload.situacaoCadastralSefaz || 'Habilitado',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: getBrasiliaTimestamp(),
+      updatedAt: getBrasiliaTimestamp()
     };
 
     inMemoryPartners.unshift(newPartner);
@@ -537,7 +538,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const updated = {
       ...inMemoryPartners[index],
       ...payload,
-      updatedAt: new Date().toISOString()
+      updatedAt: getBrasiliaTimestamp()
     };
 
     inMemoryPartners[index] = updated;
@@ -562,7 +563,7 @@ router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response)
             fiscal: updated.fiscal,
             retencoes: updated.retencoes,
             contabil: updated.contabil,
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           }).eq('id', id);
         } catch (supErr) {
           console.warn('⚠️ Supabase update fallback:', supErr);

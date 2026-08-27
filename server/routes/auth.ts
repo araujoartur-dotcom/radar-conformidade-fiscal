@@ -2,7 +2,8 @@
  * ============================================================
  * ROTAS DE AUTENTICAÇÃO — Login, Logout, Refresh, Trocar Empresa
  * ============================================================
- * Suporta Supabase (PostgreSQL Cloud) e SQLite local.
+ * Suporta Supabase (PostgreSQL Cloud) e SQLite local com
+ * persistência robusta de escopo de CNPJ e Horário de Brasília.
  * ============================================================
  */
 
@@ -14,6 +15,7 @@ import { AUTH } from '../config';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
+import { getBrasiliaTimestamp } from '../utils/timezone';
 
 const router = Router();
 
@@ -30,6 +32,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
+    const brasiliaNow = getBrasiliaTimestamp();
 
     // ── 1. SUPABASE CLOUD (Se configurado) ──────────────────
     if (isSupabaseConfigured()) {
@@ -57,12 +60,6 @@ router.post('/login', async (req: Request, res: Response) => {
           return;
         }
 
-        // Atualizar último acesso
-        await supabase
-          .from('usuarios')
-          .update({ ultimo_acesso: new Date().toISOString(), ip_ultimo_acesso: req.ip || '' })
-          .eq('id', user.id);
-
         // Buscar empresas vinculadas
         const { data: vinculos } = await supabase
           .from('usuario_empresa')
@@ -88,8 +85,8 @@ router.post('/login', async (req: Request, res: Response) => {
           });
         }
 
-        // Se o admin não tiver empresas vinculadas, buscar todas ativas
-        if (empresas.length === 0 && user.perfil === 'admin_master') {
+        // Se for admin_master, carregar todas as empresas ativas
+        if (user.perfil === 'admin_master') {
           const { data: allEmp } = await supabase
             .from('empresas')
             .select('*')
@@ -97,7 +94,18 @@ router.post('/login', async (req: Request, res: Response) => {
           empresas = (allEmp || []).map(e => ({ ...e, permissao: 'total', modulos_permitidos: '*' }));
         }
 
-        const empresaAtiva = empresas[0] || null;
+        // Selecionar empresa ativa persistida ou a primeira
+        let empresaAtiva = empresas.find(e => e.id === user.empresa_ativa_id) || empresas[0] || null;
+
+        // Atualizar último acesso e empresa ativa
+        await supabase
+          .from('usuarios')
+          .update({
+            ultimo_acesso: brasiliaNow,
+            ip_ultimo_acesso: req.ip || '',
+            empresa_ativa_id: empresaAtiva?.id || null,
+          })
+          .eq('id', user.id);
 
         const payload = {
           userId: user.id,
@@ -150,7 +158,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const db = getDatabase();
 
     const user = db.prepare(`
-      SELECT id, nome, email, senha_hash, perfil, mfa_habilitado, status, tentativas_falhas, bloqueado_ate
+      SELECT id, nome, email, senha_hash, perfil, mfa_habilitado, status, empresa_ativa_id, tentativas_falhas, bloqueado_ate
       FROM usuarios WHERE email = ?
     `).get(cleanEmail) as any;
 
@@ -173,21 +181,36 @@ router.post('/login', async (req: Request, res: Response) => {
       return;
     }
 
+    // Carregar empresas disponíveis para este usuário
+    let empresas: any[] = [];
+    if (user.perfil === 'admin_master') {
+      empresas = db.prepare(`
+        SELECT id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario,
+               'total' as permissao, '*' as modulos_permitidos
+        FROM empresas WHERE status = 'ativo'
+        ORDER BY razao_social ASC
+      `).all() as any[];
+    } else {
+      empresas = db.prepare(`
+        SELECT e.id, e.cnpj_raiz, e.cnpj_completo, e.razao_social, e.nome_fantasia, e.uf, e.regime_tributario,
+               ue.permissao, ue.modulos_permitidos
+        FROM usuario_empresa ue
+        JOIN empresas e ON e.id = ue.empresa_id
+        WHERE ue.usuario_id = ? AND e.status = 'ativo'
+        ORDER BY e.razao_social ASC
+      `).all(user.id) as any[];
+    }
+
+    // Priorizar a empresa ativa salva no cadastro do usuário
+    let empresaAtiva = empresas.find(e => e.id === user.empresa_ativa_id) || empresas[0] || null;
+
+    // Atualizar último acesso e empresa_ativa_id
     db.prepare(`
-      UPDATE usuarios SET tentativas_falhas = 0, bloqueado_ate = NULL, 
-      ultimo_acesso = datetime('now'), ip_ultimo_acesso = ?, updated_at = datetime('now')
+      UPDATE usuarios 
+      SET tentativas_falhas = 0, bloqueado_ate = NULL, 
+          ultimo_acesso = ?, ip_ultimo_acesso = ?, empresa_ativa_id = ?, updated_at = ?
       WHERE id = ?
-    `).run(req.ip || '', user.id);
-
-    const empresas = db.prepare(`
-      SELECT e.id, e.cnpj_raiz, e.cnpj_completo, e.razao_social, e.nome_fantasia, e.uf, e.regime_tributario,
-             ue.permissao, ue.modulos_permitidos
-      FROM usuario_empresa ue
-      JOIN empresas e ON e.id = ue.empresa_id
-      WHERE ue.usuario_id = ? AND e.status = 'ativo'
-    `).all(user.id) as any[];
-
-    const empresaAtiva = empresas[0];
+    `).run(brasiliaNow, req.ip || '', empresaAtiva?.id || null, brasiliaNow, user.id);
 
     const payload = {
       userId: user.id,
@@ -212,14 +235,14 @@ router.post('/login', async (req: Request, res: Response) => {
         nome: user.nome,
         email: user.email,
         perfil: user.perfil,
-        mfaHabilitado: !!user.mfa_habilitado,
+        mfaHabilitado: Boolean(user.mfa_habilitado),
       },
       empresaAtiva: empresaAtiva ? {
         id: empresaAtiva.id,
         cnpjRaiz: empresaAtiva.cnpj_raiz,
         cnpjCompleto: empresaAtiva.cnpj_completo,
         razaoSocial: empresaAtiva.razao_social,
-        nomeFantasia: empresaAtiva.nome_fantasia,
+        nomeFantasia: empresaAtiva.nome_fantasia || empresaAtiva.razao_social,
         uf: empresaAtiva.uf,
         regimeTributario: empresaAtiva.regime_tributario,
         permissao: empresaAtiva.permissao,
@@ -233,54 +256,21 @@ router.post('/login', async (req: Request, res: Response) => {
       })),
     });
   } catch (err: any) {
-    console.error('Erro no login:', err);
+    console.error('❌ Erro no login:', err);
     res.status(500).json({ error: 'Erro interno do servidor: ' + err.message, code: 'INTERNAL_ERROR' });
   }
 });
 
 // =========================================================
-// GET /api/auth/me — Obter dados do usuário logado
+// GET /api/auth/me — Obter dados do usuário logado e contexto
 // =========================================================
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user!.userId;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data: user } = await supabase
-          .from('usuarios')
-          .select('id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso')
-          .eq('id', userId)
-          .single();
-
-        if (!user) {
-          res.status(404).json({ error: 'Usuário não encontrado.' });
-          return;
-        }
-
-        res.json({
-          usuario: {
-            id: user.id,
-            nome: user.nome,
-            email: user.email,
-            perfil: user.perfil,
-            mfaHabilitado: Boolean(user.mfa_habilitado),
-            status: user.status,
-            ultimoAcesso: user.ultimo_acesso,
-          },
-          empresaAtiva: req.user!.empresaAtivaId ? {
-            id: req.user!.empresaAtivaId,
-            cnpjCompleto: req.user!.empresaCnpj,
-          } : null,
-        });
-        return;
-      }
-    }
-
     const db = getDatabase();
+
     const user = db.prepare(`
-      SELECT id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso
+      SELECT id, nome, email, perfil, mfa_habilitado, status, empresa_ativa_id, ultimo_acesso
       FROM usuarios WHERE id = ?
     `).get(userId) as any;
 
@@ -289,23 +279,58 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response) 
       return;
     }
 
+    let empresas: any[] = [];
+    if (user.perfil === 'admin_master') {
+      empresas = db.prepare(`
+        SELECT id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario,
+               'total' as permissao, '*' as modulos_permitidos
+        FROM empresas WHERE status = 'ativo'
+        ORDER BY razao_social ASC
+      `).all() as any[];
+    } else {
+      empresas = db.prepare(`
+        SELECT e.id, e.cnpj_raiz, e.cnpj_completo, e.razao_social, e.nome_fantasia, e.uf, e.regime_tributario,
+               ue.permissao, ue.modulos_permitidos
+        FROM usuario_empresa ue
+        JOIN empresas e ON e.id = ue.empresa_id
+        WHERE ue.usuario_id = ? AND e.status = 'ativo'
+        ORDER BY e.razao_social ASC
+      `).all(user.id) as any[];
+    }
+
+    const activeId = req.user!.empresaAtivaId || user.empresa_ativa_id;
+    const empresaAtiva = empresas.find(e => e.id === activeId) || empresas[0] || null;
+
     res.json({
       usuario: {
         id: user.id,
         nome: user.nome,
         email: user.email,
         perfil: user.perfil,
-        mfaHabilitado: !!user.mfa_habilitado,
+        mfaHabilitado: Boolean(user.mfa_habilitado),
         status: user.status,
         ultimoAcesso: user.ultimo_acesso,
       },
-      empresaAtiva: req.user!.empresaAtivaId ? {
-        id: req.user!.empresaAtivaId,
-        cnpjCompleto: req.user!.empresaCnpj,
+      empresaAtiva: empresaAtiva ? {
+        id: empresaAtiva.id,
+        cnpjRaiz: empresaAtiva.cnpj_raiz,
+        cnpjCompleto: empresaAtiva.cnpj_completo,
+        razaoSocial: empresaAtiva.razao_social,
+        nomeFantasia: empresaAtiva.nome_fantasia || empresaAtiva.razao_social,
+        uf: empresaAtiva.uf,
+        regimeTributario: empresaAtiva.regime_tributario,
+        permissao: empresaAtiva.permissao,
+        modulosPermitidos: empresaAtiva.modulos_permitidos,
       } : null,
+      empresasDisponiveis: empresas.map((e: any) => ({
+        id: e.id,
+        cnpjCompleto: e.cnpj_completo,
+        razaoSocial: e.razao_social,
+        uf: e.uf,
+      })),
     });
   } catch (err: any) {
-    console.error('Erro ao buscar dados do usuário:', err);
+    console.error('❌ Erro ao buscar dados do usuário:', err);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 });
@@ -321,94 +346,68 @@ router.post('/switch-empresa', requireAuth, async (req: AuthenticatedRequest, re
       return;
     }
 
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const { data: empresa } = await supabase
-          .from('empresas')
-          .select('*')
-          .eq('id', empresaId)
-          .eq('status', 'ativo')
-          .single();
+    const db = getDatabase();
+    const isSuperadmin = req.user!.perfil === 'admin_master';
+    let empresa: any = null;
 
-        if (!empresa) {
-          res.status(403).json({ error: 'Sem acesso a esta empresa.', code: 'AUTH_NO_TENANT_ACCESS' });
-          return;
-        }
-
-        const payload = {
-          userId: req.user!.userId,
-          email: req.user!.email,
-          perfil: req.user!.perfil,
-          empresaAtivaId: empresaId,
-          empresaCnpj: empresa.cnpj_completo,
-        };
-
-        const accessToken = jwt.sign(payload, AUTH.JWT_SECRET, {
-          expiresIn: AUTH.JWT_EXPIRES_IN as any,
-        });
-
-        res.json({
-          accessToken,
-          empresaAtiva: {
-            id: empresa.id,
-            cnpjRaiz: empresa.cnpj_raiz,
-            cnpjCompleto: empresa.cnpj_completo,
-            razaoSocial: empresa.razao_social,
-            nomeFantasia: empresa.nome_fantasia || empresa.razao_social,
-            uf: empresa.uf,
-            regimeTributario: empresa.regime_tributario,
-            permissao: 'total',
-            modulosPermitidos: '*',
-          },
-        });
-        return;
+    if (isSuperadmin) {
+      empresa = db.prepare(`
+        SELECT id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario
+        FROM empresas WHERE id = ? AND status = 'ativo'
+      `).get(empresaId);
+      if (empresa) {
+        empresa.permissao = 'total';
+        empresa.modulos_permitidos = '*';
       }
+    } else {
+      empresa = db.prepare(`
+        SELECT ue.permissao, ue.modulos_permitidos, e.*
+        FROM usuario_empresa ue
+        JOIN empresas e ON e.id = ue.empresa_id
+        WHERE ue.usuario_id = ? AND ue.empresa_id = ? AND e.status = 'ativo'
+      `).get(req.user!.userId, empresaId) as any;
     }
 
-    const db = getDatabase();
-    const vinculo = db.prepare(`
-      SELECT ue.permissao, ue.modulos_permitidos, e.*
-      FROM usuario_empresa ue
-      JOIN empresas e ON e.id = ue.empresa_id
-      WHERE ue.usuario_id = ? AND ue.empresa_id = ? AND e.status = 'ativo'
-    `).get(req.user!.userId, empresaId) as any;
-
-    if (!vinculo) {
-      res.status(403).json({ error: 'Sem acesso a esta empresa.', code: 'AUTH_NO_TENANT_ACCESS' });
+    if (!empresa) {
+      res.status(403).json({ error: 'Acesso negado para esta empresa.', code: 'AUTH_NO_TENANT_ACCESS' });
       return;
     }
+
+    // Persistir empresa_ativa_id no cadastro do usuário
+    const brasiliaNow = getBrasiliaTimestamp();
+    db.prepare('UPDATE usuarios SET empresa_ativa_id = ?, updated_at = ? WHERE id = ?')
+      .run(empresa.id, brasiliaNow, req.user!.userId);
 
     const payload = {
       userId: req.user!.userId,
       email: req.user!.email,
       perfil: req.user!.perfil,
-      empresaAtivaId: empresaId,
-      empresaCnpj: vinculo.cnpj_completo,
+      empresaAtivaId: empresa.id,
+      empresaCnpj: empresa.cnpj_completo,
     };
 
     const accessToken = jwt.sign(payload, AUTH.JWT_SECRET, {
       expiresIn: AUTH.JWT_EXPIRES_IN as any,
     });
 
-    logAuditAction(req, 'SWITCH_EMPRESA', `Empresa ativa alterada para ${vinculo.razao_social} (${vinculo.cnpj_completo})`);
+    logAuditAction(req, 'SWITCH_EMPRESA', `Empresa ativa alterada para ${empresa.razao_social} (${empresa.cnpj_completo})`);
 
     res.json({
       accessToken,
       empresaAtiva: {
-        id: vinculo.id,
-        cnpjRaiz: vinculo.cnpj_raiz,
-        cnpjCompleto: vinculo.cnpj_completo,
-        razaoSocial: vinculo.razao_social,
-        nomeFantasia: vinculo.nome_fantasia,
-        uf: vinculo.uf,
-        regimeTributario: vinculo.regime_tributario,
-        permissao: vinculo.permissao,
-        modulosPermitidos: vinculo.modulos_permitidos,
+        id: empresa.id,
+        cnpjRaiz: empresa.cnpj_raiz,
+        cnpjCompleto: empresa.cnpj_completo,
+        razaoSocial: empresa.razao_social,
+        nomeFantasia: empresa.nome_fantasia || empresa.razao_social,
+        uf: empresa.uf,
+        regimeTributario: empresa.regime_tributario,
+        permissao: empresa.permissao,
+        modulosPermitidos: empresa.modulos_permitidos,
       },
     });
   } catch (err: any) {
-    console.error('Erro ao trocar empresa:', err);
+    console.error('❌ Erro ao trocar empresa:', err);
     res.status(500).json({ error: 'Erro interno do servidor.' });
   }
 });

@@ -1,0 +1,75 @@
+Sistema de monitoramento fiscal de elite pode oferecer
+
+---
+
+### Como o Sistema Captura o "Desconhecimento da Operação" Enviado por um Cliente?
+
+Na arquitetura da **SEFAZ Nacional**, quando a sua empresa emite uma NF-e para um cliente e esse cliente dispara um evento de **Desconhecimento da Operação (`tpEvento = 210220`)** ou **Operação não Realizada (`tpEvento = 210240`)**:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente as Cliente (Destinatário)
+    participant SEFAZ as WebService SEFAZ (SVRS / AN)
+    participant Radar as Radar de Conformidade Fiscal (Seu Sistema)
+    actor Fiscal as Painel / Gestor Fiscal
+
+    Cliente->>SEFAZ: Transmite Manifestação (Desconhecimento 210220 / Operação não Realizada 210240)
+    SEFAZ->>SEFAZ: Registra e vincula evento à Chave de Acesso da NF-e e gera novo NSU
+    Note over Radar,SEFAZ: Varredura Contínua / Consulta NFeDistribuicaoDFe da Empresa Ativa
+    Radar->>SEFAZ: Consulta NFeDistribuicaoDFe (CNPJ Emitente + ultNSU)
+    SEFAZ-->>Radar: Retorna lote compactado docZip (procEventoNFe / resEvento)
+    Radar->>Radar: Descompacta GZip, extrai tpEvento=210220 e localiza a NF-e de Saída no Banco
+    Radar->>Radar: Atualiza situacao_doc = "Desconhecida pelo Destinatário" (Alerta Crítico)
+    Radar->>Fiscal: Dispara Alerta Visual Vermelho (Risco de Glosa / Fraude)
+```
+
+---
+
+### 1. O Mecanismo Técnico de Recepção (SEFAZ `NFeDistribuicaoDFe`)
+O WebService `NFeDistribuicaoDFe` **não serve apenas para notas de entrada**. Quando consultado com o CNPJ da sua empresa ativa, a SEFAZ retorna no fluxo de NSU (Número Sequencial Único):
+* **Documentos e Resumos** onde o CNPJ é Destinatário.
+* **Eventos de Terceiros** vinculados a documentos onde o seu CNPJ é o **Emitente** (sob os schemas `procEventoNFe_v1.00.xsd` e `resEvento_v1.00.xsd`).
+
+Dentro do payload retornado pela SEFAZ:
+```xml
+<procEventoNFe versao="1.00">
+  <evento versao="1.00">
+    <infEvento Id="ID210220352608...">
+      <tpEvento>210220</tpEvento>
+      <descEvento>Desconhecimento da Operacao</descEvento>
+      <dhEvento>2026-08-26T23:10:00-03:00</dhEvento>
+      <CNPJ>CNPJ_DO_CLIENTE</CNPJ>
+      <chNFe>CHAVE_DE_44_DIGITOS_DA_SUA_NFE_DE_SAIDA</chNFe>
+      <nProt>135260819999999</nProt>
+    </infEvento>
+  </evento>
+</procEventoNFe>
+```
+
+---
+
+### 2. O que o Nosso Sistema Faz ao Receber esse Evento?
+
+Para tornar a plataforma a mais desejada do Brasil, estruturamos o motor de auditoria em 4 pilares:
+
+1. **Associação Atômica e Imediata**:
+   O sistema localiza a NF-e correspondente na tabela `dfe_documentos` (pela chave de 44 dígitos), vincula o `documento_id` ao registro em `eventos_transmitidos/dfe_eventos` com `origem_evento = 'terceiro_destinatario'`.
+2. **Classificação de Risco Crítico Fiscal**:
+   - Atualiza o campo `situacao_manifestacao = 'desconhecida_pelo_destinatario'`.
+   - Marca o status de auditoria da nota como `🚨 INCONSISTENTE / ALERTA DE FRAUDE`.
+   - Gera um carimbo com data/hora exata no Horário Oficial de Brasília (`UTC-03:00`).
+3. **Proteção Tributária (Reforma CBS/IBS - LC 214/2025 & Apuração Assistida)**:
+   - Se o cliente desconheceu a operação, a presunção legal de entrega da mercadoria é anulada.
+   - O sistema avisa o analista fiscal para evitar glosa de créditos na apuração assistida do Comitê Gestor do IBS (CGIBS) e da Receita Federal (RFB).
+4. **Alerta em Tempo Real no Dashboard e Ações Recomendadas**:
+   - Destaque em vermelho piscante no painel de documentos e no painel de eventos.
+   - Sugestão de ações automáticas: *Entrar em contato com o cliente*, *Emitir NF-e de Estorno/Entrada por devolução simbólica* ou *Abrir ocorrência fiscal*.
+
+---
+
+### O Plano de Implementação está Atualizado
+
+Já incorporei esse motor de recepção e monitoramento 360° de eventos de terceiros no [implementation_plan.md](file:///C:/Users/artur/.gemini/antigravity-ide/brain/5bf653b0-a7cf-4a75-8e44-7088d59b7355/implementation_plan.md).
+
+Está pronto para que eu inicie a implementação completa de todos os módulos? Podemos prosseguir?

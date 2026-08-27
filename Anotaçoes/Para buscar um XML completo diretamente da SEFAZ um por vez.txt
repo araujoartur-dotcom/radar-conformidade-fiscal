@@ -1,0 +1,104 @@
+
+Para buscar um XML completo diretamente da SEFAZ, um por vez, **sem precisar enviar evento prévio de Ciência da Operação (`tpEvento 210210`)**, foi utilizado o schema de consulta direta por Chave de Acesso (**`consChNFe`**) do WebService **`NFeDistribuicaoDFe`** (Ambiente Nacional da SEFAZ).
+
+---
+
+### Por que esse método dispensa a Ciência da Operação?
+
+* **Consulta por NSU (`distNSU`):** A SEFAZ retorna inicialmente apenas o resumo (`resNFe`). Para liberar o XML completo com itens e impostos na esteira de NSU, ela exige o evento de manifestação/ciência.
+* **Consulta por Chave (`consChNFe`):** Você envia diretamente a chave de 44 dígitos da nota. O WebService localiza o documento vinculado ao seu CNPJ/Certificado A1 e já retorna diretamente o nó `<docZip schema="procNFe_v4.00.xml">` contendo o XML completo assinado e autorizado.
+
+---
+
+### 1. Construção do Envelope SOAP com `<consChNFe>`
+
+No arquivo [sefazService.ts]:
+
+```typescript
+function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
+  const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, ufAutor } = params;
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const cUF = (ufAutor && UF_TO_CUF[ufAutor.toUpperCase()]) || '35';
+
+  let distBody = '';
+  
+  // 👉 CONSULTA DIRETA POR CHAVE DE ACESSO (44 DÍGITOS)
+  if (chNFe && chNFe.replace(/\D/g, '').length === 44) {
+    distBody = `<consChNFe><chNFe>${chNFe.replace(/\D/g, '')}</chNFe></consChNFe>`;
+  } else if (nsuEspecifico && nsuEspecifico.trim() !== '') {
+    distBody = `<consNSU><NSU>${nsuEspecifico.replace(/\D/g, '').padStart(15, '0')}</NSU></consNSU>`;
+  } else {
+    const nsuFormatted = String(ultNSU || '0').replace(/\D/g, '').padStart(15, '0');
+    distBody = `<distNSU><ultNSU>${nsuFormatted}</ultNSU></distNSU>`;
+  }
+
+  const xmlDist = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>${tpAmb}</tpAmb><cUFAutor>${cUF}</cUFAutor><CNPJ>${cleanCnpj}</CNPJ>${distBody}</distDFeInt>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDadosMsg>${xmlDist}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
+}
+```
+
+O XML gerado e transmitido via mTLS com o Certificado Digital A1 é:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+  <soap12:Body>
+    <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+      <nfeDadosMsg>
+        <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+          <tpAmb>1</tpAmb>
+          <cUFAutor>35</cUFAutor>
+          <CNPJ>00000000000191</CNPJ>
+          <consChNFe>
+            <chNFe>35240500000000000191550010000012341000012345</chNFe>
+          </consChNFe>
+        </distDFeInt>
+      </nfeDadosMsg>
+    </nfeDistDFeInteresse>
+  </soap12:Body>
+</soap12:Envelope>
+```
+
+---
+
+### 2. Descompactação do Retorno (`docZip` em GZip Base64)
+
+No retorno da SEFAZ, o XML completo vem compactado dentro de tags `<docZip>`. A função em [sefazService.ts] faz o decode Base64 + GZip `gunzipSync`:
+
+```typescript
+import zlib from 'zlib';
+
+function descompactarDocZip(base64Content: string): string {
+  try {
+    const buffer = Buffer.from(base64Content, 'base64');
+    const decompressed = zlib.gunzipSync(buffer);
+    return decompressed.toString('utf-8');
+  } catch (err: any) {
+    console.error('Erro ao descompactar docZip:', err.message);
+    return '';
+  }
+}
+```
+
+---
+
+### 3. Chamada da API a partir do Frontend
+
+No componente [ConsultaNsuModal.tsx], o disparo individual é feito passando apenas o `chNFe`:
+
+```typescript
+const response = await fetch('/api/sefaz/distribui-dfe', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    cnpj: currentCnpj.replace(/\D/g, ''),
+    chNFe: cleanChave, // Chave de 44 dígitos
+    tpAmb: '1',        // 1 = Produção
+    fluxo: 'entrada',
+  }),
+});
+```	

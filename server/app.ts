@@ -11,6 +11,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 
+import { getBrasiliaTimestamp } from './utils/timezone';
 import { SERVER } from './config';
 
 // Rotas
@@ -72,7 +73,7 @@ app.get('/api/health', (_req, res) => {
     version: '2.5.0',
     app: 'Radar de Conformidade Fiscal',
     environment: SERVER.NODE_ENV,
-    timestamp: new Date().toISOString(),
+    timestamp: getBrasiliaTimestamp(),
   });
 });
 

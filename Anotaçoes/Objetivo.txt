@@ -1,0 +1,3 @@
+O Objetivo é ser o melhor sistema de Apuração de IBS CBS do Brasil e ser inevitavelmente desejado por qualquer cliente que ver esse sistema.
+
+Radar de Conformidade Fiscal, projetado para ser o sistema de monitoramento fiscal mais avançado e seguro do Brasil, com alta performance, integridade transacional rigorosa (ACID), captura bidirecional de documentos e eventos

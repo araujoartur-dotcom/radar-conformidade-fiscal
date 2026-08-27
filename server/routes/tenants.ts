@@ -1,31 +1,43 @@
 /**
  * ============================================================
- * ROTAS DE TENANTS (EMPRESAS) — CRUD PERSISTENTE
+ * ROTAS DE TENANTS (EMPRESAS) — CRUD PERSISTENTE & RBAC
  * ============================================================
- * Gerencia empresas na carteira com suporte a Supabase e SQLite.
+ * Gerencia empresas com isolamento multi-tenant estrito:
+ * - admin_master: visualiza e gerencia todas as empresas.
+ * - Usuários regulares: visualizam apenas empresas autorizadas em usuario_empresa.
+ * - Padronizado para Horário Oficial de Brasília.
  * ============================================================
  */
 
 import { Router, Response } from 'express';
-import { v4 as uuid } from 'uuid';
-import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
-import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
+import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
+import { getBrasiliaTimestamp } from '../utils/timezone';
 
 const router = Router();
 
-// GET /api/tenants - Listar todas as empresas da carteira do usuário
+// =========================================================
+// GET /api/tenants - Listar empresas autorizadas do usuário
+// =========================================================
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const isSuperadmin = req.user?.perfil === 'admin_master';
+    const userId = req.user?.userId;
+
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        const { data: rows, error } = await supabase
-          .from('empresas')
-          .select('*, certificados (*)')
-          .order('created_at', { ascending: false });
+        let query = supabase.from('empresas').select('*, certificados (*)').order('created_at', { ascending: false });
+        
+        if (!isSuperadmin && userId) {
+          const { data: vinculos } = await supabase.from('usuario_empresa').select('empresa_id').eq('usuario_id', userId);
+          const empIds = (vinculos || []).map(v => v.empresa_id);
+          query = query.in('id', empIds);
+        }
 
+        const { data: rows, error } = await query;
         if (error) throw error;
 
         const formatted = (rows || []).map((r: any) => {
@@ -61,19 +73,37 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     }
 
     const db = getDatabase();
+    let rows: any[] = [];
 
-    const rows = db.prepare(`
-      SELECT 
-        e.*,
-        c.arquivo_nome as cert_file_name,
-        c.validade as cert_validade,
-        c.status_alerta as cert_status,
-        c.emissor as cert_emissor,
-        c.impressao_digital as cert_fingerprint
-      FROM empresas e
-      LEFT JOIN certificados c ON c.empresa_id = e.id
-      ORDER BY e.created_at DESC
-    `).all() as any[];
+    if (isSuperadmin) {
+      rows = db.prepare(`
+        SELECT 
+          e.*,
+          c.arquivo_nome as cert_file_name,
+          c.validade as cert_validade,
+          c.status_alerta as cert_status,
+          c.emissor as cert_emissor,
+          c.impressao_digital as cert_fingerprint
+        FROM empresas e
+        LEFT JOIN certificados c ON c.empresa_id = e.id
+        ORDER BY e.created_at DESC
+      `).all() as any[];
+    } else {
+      rows = db.prepare(`
+        SELECT 
+          e.*,
+          c.arquivo_nome as cert_file_name,
+          c.validade as cert_validade,
+          c.status_alerta as cert_status,
+          c.emissor as cert_emissor,
+          c.impressao_digital as cert_fingerprint
+        FROM empresas e
+        INNER JOIN usuario_empresa ue ON ue.empresa_id = e.id
+        LEFT JOIN certificados c ON c.empresa_id = e.id
+        WHERE ue.usuario_id = ?
+        ORDER BY e.created_at DESC
+      `).all(userId) as any[];
+    }
 
     const formatted = rows.map((r: any) => ({
       id: r.id,
@@ -106,8 +136,10 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
+// =========================================================
 // POST /api/tenants - Criar nova empresa (Matriz ou Filial)
-router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// =========================================================
+router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente, manifestarCienciaAutomatica } = req.body;
     if (!cnpjCompleto || !razaoSocial) {
@@ -117,8 +149,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
 
     const cleanCnpj = cnpjCompleto.replace(/\D/g, '');
     const cnpjRaiz = cleanCnpj.substring(0, 8);
-    const id = uuid();
+    const id = uuidv4();
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
+    const brasiliaNow = getBrasiliaTimestamp();
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -130,7 +163,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
           nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
           uf: uf || 'SP',
           regime_tributario: regimeTributario || 'Lucro Real',
-          status: 'ativo'
+          status: 'ativo',
+          created_at: brasiliaNow,
+          updated_at: brasiliaNow,
         };
 
         const { data: newEmp, error: insertErr } = await supabase
@@ -146,7 +181,8 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
             usuario_id: req.user.userId,
             empresa_id: newEmp.id,
             permissao: 'total',
-            modulos_permitidos: '*'
+            modulos_permitidos: '*',
+            created_at: brasiliaNow,
           });
         }
 
@@ -182,16 +218,27 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
 
     db.transaction(() => {
       db.prepare(`
-        INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, manifestar_ciencia_automatica, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ativo')
-      `).run(id, cnpjRaiz, cnpjCompleto, razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf || 'SP', regimeTributario || 'Lucro Real', autoCiencia);
+        INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, manifestar_ciencia_automatica, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ativo', ?, ?)
+      `).run(
+        id,
+        cnpjRaiz,
+        cnpjCompleto,
+        razaoSocial.toUpperCase(),
+        (nomeFantasia || razaoSocial).toUpperCase(),
+        uf || 'SP',
+        regimeTributario || 'Lucro Real',
+        autoCiencia,
+        brasiliaNow,
+        brasiliaNow
+      );
 
       if (req.user?.userId) {
-        const vinculoId = uuid();
+        const vinculoId = uuidv4();
         db.prepare(`
-          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-          VALUES (?, ?, ?, 'total', '*')
-        `).run(vinculoId, req.user.userId, id);
+          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos, created_at)
+          VALUES (?, ?, ?, 'total', '*', ?)
+        `).run(vinculoId, req.user.userId, id, brasiliaNow);
       }
     })();
 
@@ -221,100 +268,66 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+// =========================================================
 // PUT /api/tenants/:id - Editar empresa
-router.put('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// =========================================================
+router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica } = req.body;
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        const updatePayload = {
-          razao_social: razaoSocial.toUpperCase(),
-          nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
-          uf,
-          regime_tributario: regimeTributario,
-          updated_at: new Date().toISOString()
-        };
-
-        const { error } = await supabase
-          .from('empresas')
-          .update(updatePayload)
-          .eq('id', id);
-
-        if (error) throw error;
-        res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
-        return;
-      }
-    }
+    const brasiliaNow = getBrasiliaTimestamp();
 
     const db = getDatabase();
-    const result = db.prepare(`
-      UPDATE empresas
-      SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(razaoSocial.toUpperCase(), (nomeFantasia || razaoSocial).toUpperCase(), uf, regimeTributario, autoCiencia, id);
-
-    if (result.changes === 0) {
+    const existing = db.prepare('SELECT id FROM empresas WHERE id = ?').get(id);
+    if (!existing) {
       res.status(404).json({ success: false, message: 'Empresa não encontrada.' });
       return;
     }
 
-    logAuditAction(req, 'TENANT_EDITAR', `Empresa ${id} atualizada: ${razaoSocial}`);
+    db.prepare(`
+      UPDATE empresas 
+      SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      razaoSocial.toUpperCase(),
+      (nomeFantasia || razaoSocial).toUpperCase(),
+      uf || 'SP',
+      regimeTributario || 'Lucro Real',
+      autoCiencia,
+      brasiliaNow,
+      id
+    );
 
+    logAuditAction(req, 'TENANT_EDITAR', `Empresa ID ${id} atualizada`);
     res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
   } catch (err: any) {
-    console.error('❌ Erro ao atualizar tenant:', err.message);
-    res.status(500).json({ success: false, message: 'Erro ao atualizar empresa: ' + err.message });
+    console.error('❌ Erro ao editar tenant:', err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// DELETE /api/tenants/:id - Excluir empresa
-router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// =========================================================
+// DELETE /api/tenants/:id - Excluir empresa (Apenas admin_master)
+// =========================================================
+router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        await supabase.from('usuario_empresa').delete().eq('empresa_id', id);
-        await supabase.from('certificados').delete().eq('empresa_id', id);
-        const { error } = await supabase.from('empresas').delete().eq('id', id);
-        if (error) throw error;
-
-        res.json({ success: true, message: 'Empresa removida da carteira com sucesso.' });
-        return;
-      }
-    }
-
     const db = getDatabase();
-    const empresa = db.prepare('SELECT razao_social, cnpj_completo FROM empresas WHERE id = ?').get(id) as any;
 
-    const certs = db.prepare('SELECT arquivo_path_enc FROM certificados WHERE empresa_id = ?').all(id) as any[];
-    for (const c of certs) {
-      if (c.arquivo_path_enc && fs.existsSync(c.arquivo_path_enc)) {
-        try { fs.unlinkSync(c.arquivo_path_enc); } catch {}
-      }
-    }
+    db.transaction(() => {
+      db.prepare('DELETE FROM certificados WHERE empresa_id = ?').run(id);
+      db.prepare('DELETE FROM usuario_empresa WHERE empresa_id = ?').run(id);
+      db.prepare('DELETE FROM eventos_transmitidos WHERE empresa_id = ?').run(id);
+      db.prepare('DELETE FROM dfe_documentos WHERE empresa_id = ?').run(id);
+      db.prepare('DELETE FROM empresas WHERE id = ?').run(id);
+    })();
 
-    const result = db.prepare('DELETE FROM empresas WHERE id = ?').run(id);
-
-    if (result.changes === 0) {
-      res.status(404).json({ success: false, message: 'Empresa não encontrada.' });
-      return;
-    }
-
-    db.prepare('DELETE FROM usuario_empresa WHERE empresa_id = ?').run(id);
-    db.prepare('DELETE FROM certificados WHERE empresa_id = ?').run(id);
-
-    logAuditAction(req, 'TENANT_EXCLUIR', `Empresa ${empresa?.razao_social} (${empresa?.cnpj_completo}) removida da carteira`);
-
-    res.json({ success: true, message: 'Empresa removida da carteira com sucesso.' });
+    logAuditAction(req, 'TENANT_EXCLUIR', `Empresa ID ${id} excluída do sistema`);
+    res.json({ success: true, message: 'Empresa e dados associados excluídos com sucesso.' });
   } catch (err: any) {
     console.error('❌ Erro ao excluir tenant:', err.message);
-    res.status(500).json({ success: false, message: 'Erro ao excluir empresa: ' + err.message });
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

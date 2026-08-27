@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import {
   Send, CheckCircle2, AlertCircle, ShieldCheck, Clock, RefreshCw, FileSignature,
   FileCode, Sparkles, Filter, Info, ChevronRight, Layers, Globe, Key, Database,
-  Settings, Server, Cpu, Radio, Terminal, FileText, Check, HelpCircle, ArrowRight
+  Settings, Server, Cpu, Radio, Terminal, FileText, Check, HelpCircle, ArrowRight,
+  AlertTriangle, ShieldAlert
 } from 'lucide-react';
 import { DfeXmlItem, EventoDfeRequest, TipoDFe } from '../types';
 import { CATALOGO_EVENTOS_DFE, getEventosPorTipoDfe } from '../utils/dfeEventsCatalog';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { formatBrasiliaDateTime } from '../utils/timezone';
 
 interface EventosDfePanelProps {
   selectedDfe?: DfeXmlItem | null;
@@ -50,12 +52,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   const currentDocument = dfeList.find(d => d.chaveAcesso === activeChave) || selectedDfe || dfeList[0];
 
   // Category Filter for Events
-  const [categoriaFilter, setCategoriaFilter] = useState<'todos' | 'destinatario' | 'emitente' | 'tomador' | 'reforma_tributaria' | 'contingencia'>('todos');
+  const [categoriaFilter, setCategoriaFilter] = useState<'todos' | 'destinatario' | 'emitente' | 'tomador' | 'reforma_tributaria' | 'contingencia' | 'terceiros'>('todos');
 
   // Selected Event Definition
   const eventosDisponiveis = getEventosPorTipoDfe(selectedTipoDfe);
   const eventosFiltrados = eventosDisponiveis.filter(e => {
     if (categoriaFilter === 'todos') return true;
+    if (categoriaFilter === 'terceiros') return e.categoria === 'destinatario';
     return e.categoria === categoriaFilter;
   });
 
@@ -70,31 +73,36 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   // Transmitted Event History
   const [transmittedLog, setTransmittedLog] = useState<EventoDfeRequest[]>([]);
 
-  useEffect(() => {
-    if (currentDocument && currentDocument.id) {
-      loadEventos(currentDocument.id);
-    }
-  }, [currentDocument?.id]);
-
-  const loadEventos = async (docId: string) => {
-    const res = await get<{ success: boolean; data: any[] }>(`/upload/documentos/${docId}/eventos`);
-    if (res.ok && res.data?.data) {
-      const mapped = res.data.data.map(evt => ({
-        id: evt.id,
-        chaveAcesso: evt.chave_acesso,
-        tipoDfe: selectedTipoDfe,
-        tipoEventoId: '',
-        codigoEvento: evt.tipo_evento,
-        nomeEvento: evt.tipo_evento,
-        categoria: 'destinatario',
-        dataHora: evt.dh_evento,
-        protocoloSeFaz: evt.protocolo || '',
-        status: 'processado',
-        justificativa: evt.xml_envio || undefined
-      }));
-      setTransmittedLog(mapped);
+  const loadEventos = async () => {
+    try {
+      const res = await get<{ success: boolean; eventos: any[] }>(`/sefaz/eventos?limit=100`);
+      if (res.ok && res.data?.eventos) {
+        const mapped: EventoDfeRequest[] = res.data.eventos.map((evt: any) => ({
+          id: evt.id,
+          chaveAcesso: evt.chave_acesso,
+          tipoDfe: (evt.tipo_dfe as TipoDFe) || 'NFe',
+          tipoEventoId: '',
+          codigoEvento: evt.codigo_evento,
+          nomeEvento: evt.nome_evento,
+          categoria: evt.categoria || 'destinatario',
+          dataHora: evt.data_hora,
+          protocoloSeFaz: evt.protocolo_sefaz || '',
+          status: evt.status === 'processado' ? 'processado' : (evt.status === 'rejeitado' ? 'rejeitado' : 'pendente'),
+          justificativa: evt.justificativa || undefined,
+          origemEvento: evt.origem_evento || 'proprio',
+          autorCnpj: evt.autor_cnpj || '',
+          detalhesReforma: evt.detalhes_reforma ? (typeof evt.detalhes_reforma === 'string' ? JSON.parse(evt.detalhes_reforma) : evt.detalhes_reforma) : undefined
+        }));
+        setTransmittedLog(mapped);
+      }
+    } catch {
+      // Fallback
     }
   };
+
+  useEffect(() => {
+    loadEventos();
+  }, [empresaAtiva?.id, currentDocument?.id]);
 
   // State for API Credentials Config
   const [apiEndpoints, setApiEndpoints] = useState({
@@ -264,6 +272,30 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       {/* TAB 1: EMISSOR DE EVENTOS RTC */}
       {activeTab === 'emissor' && (
         <div className="space-y-6">
+          {/* Top Emergency Alert Banner for Third-Party Events (Desconhecimento da Operação) */}
+          {transmittedLog.some(l => l.codigoEvento === '210220' || l.codigoEvento === '210240') && (
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-red-950/90 via-slate-900 to-rose-950/90 border-2 border-red-500/80 shadow-xl shadow-red-900/20 text-xs space-y-2">
+              <div className="flex items-center gap-3">
+                <ShieldAlert className="w-6 h-6 text-red-400 shrink-0" />
+                <div>
+                  <h4 className="text-sm font-extrabold text-white flex items-center gap-2">
+                    <span>🚨 ALERTA CRÍTICO DE RISCO FISCAL (Monitor 360°)</span>
+                    <span className="px-2 py-0.5 rounded bg-red-600 text-white font-mono text-[10px] font-bold">
+                      AÇÃO IMEDIATA REQUERIDA
+                    </span>
+                  </h4>
+                  <p className="text-xs text-red-200 mt-0.5">
+                    Foram identificadas manifestações de <strong>Desconhecimento da Operação (210220)</strong> ou <strong>Operação Não Realizada (210240)</strong> registradas por clientes destinatários contra notas emitidas por sua empresa.
+                  </p>
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-black/40 border border-red-900/60 text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                <span>⚡ <strong>Impacto Tributário:</strong> Anulação da presunção de entrega, risco de glosa de créditos na apuração assistida (CGIBS/RFB) e bloqueio de cobrança financeira.</span>
+                <span className="text-red-300 font-semibold font-mono">Horário Oficial de Brasília (UTC-03:00)</span>
+              </div>
+            </div>
+          )}
+
           {/* Primary DF-e Document Type Selector Tabs */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-2 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-md">
             <div className="flex items-center gap-1.5 overflow-x-auto max-w-full">
@@ -569,10 +601,18 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                   {transmittedLog.map((log) => (
                     <div
                       key={log.id}
-                      className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2 text-xs"
+                      className={`p-3.5 rounded-xl border space-y-2 text-xs transition-all ${
+                        log.codigoEvento === '210220'
+                          ? 'bg-red-950/40 border-red-600/80 shadow-md shadow-red-950/30'
+                          : log.codigoEvento === '210240'
+                          ? 'bg-amber-950/40 border-amber-600/80'
+                          : log.origemEvento === 'terceiro_destinatario'
+                          ? 'bg-slate-950/90 border-amber-800/60'
+                          : 'bg-slate-950/80 border-slate-800/80'
+                      }`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-[10px] px-2 py-0.5 rounded bg-blue-950 text-cyan-300 border border-blue-800">
                             {log.tipoDfe}
                           </span>
@@ -582,31 +622,59 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                           <span className="font-bold text-white text-xs truncate max-w-[180px]">
                             {log.nomeEvento}
                           </span>
+                          {log.origemEvento === 'terceiro_destinatario' && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-700">
+                              Recebido de Cliente
+                            </span>
+                          )}
                         </div>
 
-                        <span className="text-slate-400 font-mono text-[10px]">
-                          {log.dataHora}
+                        <span className="text-slate-400 font-mono text-[10px] whitespace-nowrap">
+                          {formatBrasiliaDateTime(log.dataHora)}
                         </span>
                       </div>
 
-                      <div className="text-slate-400 font-mono text-[10px] truncate bg-slate-900/60 p-1.5 rounded border border-slate-800">
-                        Chave: {log.chaveAcesso}
+                      {/* Alerta de Desconhecimento da Operação */}
+                      {log.codigoEvento === '210220' && (
+                        <div className="p-2 rounded-lg bg-red-950/90 border border-red-600 text-[11px] text-red-200 font-bold flex items-center gap-1.5">
+                          <ShieldAlert className="w-4 h-4 text-red-400 shrink-0" />
+                          <span>🚨 CLIENTE MANIFESTOU DESCONHECIMENTO DA OPERAÇÃO! (Risco de Glosa no IBS/CBS)</span>
+                        </div>
+                      )}
+
+                      {/* Alerta de Operação Não Realizada */}
+                      {log.codigoEvento === '210240' && (
+                        <div className="p-2 rounded-lg bg-amber-950/90 border border-amber-600 text-[11px] text-amber-200 font-bold flex items-center gap-1.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                          <span>⚠️ OPERAÇÃO NÃO REALIZADA PELO DESTINATÁRIO</span>
+                        </div>
+                      )}
+
+                      <div className="text-slate-400 font-mono text-[10px] truncate bg-slate-900/60 p-1.5 rounded border border-slate-800 flex justify-between items-center">
+                        <span>Chave: {log.chaveAcesso}</span>
+                        {log.autorCnpj && (
+                          <span className="text-slate-400 font-mono">Autor: {log.autorCnpj}</span>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px]">
                         <div className="text-slate-400">
-                          Protocolo SEFAZ: <strong className="text-emerald-400 font-mono">{log.protocoloSeFaz}</strong>
+                          Protocolo SEFAZ: <strong className="text-emerald-400 font-mono">{log.protocoloSeFaz || 'Autorizado'}</strong>
                         </div>
 
-                        <span className="inline-flex items-center gap-1 font-bold text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Autorizado SEFAZ / SVRS
+                        <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded border ${
+                          log.status === 'processado'
+                            ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800'
+                            : 'text-red-400 bg-red-950/60 border-red-800'
+                        }`}>
+                          {log.status === 'processado' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                          {log.status === 'processado' ? 'Homologado SEFAZ' : 'Rejeitado / Pendente'}
                         </span>
                       </div>
 
                       {log.justificativa && (
                         <div className="text-[11px] text-slate-300 bg-slate-900 p-2 rounded border border-slate-800 italic">
-                          "{log.justificativa}"
+                          Justificativa: "{log.justificativa}"
                         </div>
                       )}
 

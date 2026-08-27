@@ -1,0 +1,213 @@
+Para buscar as **20 NF-es por chave de acesso de forma individual e automática**, respeitando a regra da SEFAZ (limite estrito de 20 consultas diretas a cada 60 minutos sem precisar emitir Ciência da Operação), foram utilizados **4 blocos de código integrados**:
+
+---
+
+### 1. Frontend — Motor de Execução em Lote com Intervalo e Tratamento do Limite de 20/h
+No arquivo [ConsultaNsuModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx#L251-L387):
+
+O frontend realiza a iteração sequencial com intervalo configurado (`intervalMs = 2000ms`), monitora as respostas da SEFAZ e, ao atingir o limite de 20 consultas na janela de 1 hora (`cStat 656`), interrompe o lote graciosamente sem travar a aplicação:
+
+```typescript
+// ── DOWNLOAD EM LOTE COM INTERVALO ANTI-BLOQUEIO ──────────────────
+const handleStartBatchDownload = async () => {
+  if (parsedChavesList.length === 0) return;
+
+  setIsBatchRunning(true);
+  const total = initialItems.length;
+  let successes = 0;
+  let errors = 0;
+  const downloadedDocs: DfeXmlItem[] = [];
+
+  for (let i = 0; i < total; i++) {
+    if (isCancelledRef.current) break;
+
+    // Loop de controle para pausa/retomada
+    while (isPausedRef.current) {
+      await new Promise(r => setTimeout(r, 300));
+      if (isCancelledRef.current) break;
+    }
+
+    const item = initialItems[i];
+    setCurrentProcessingIndex(i + 1);
+
+    try {
+      // Chamada HTTP ao backend para a consulta individual da chave atual
+      const response = await fetch(`${getApiBaseUrl()}/sefaz/distribui-dfe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${effectiveToken}`,
+        },
+        body: JSON.stringify({
+          cnpj: currentCnpj,
+          chNFe: item.chave, // Chave de 44 dígitos
+          tpAmb: ambCode,    // 1 = Produção
+          fluxo,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.docs && data.docs.length > 0) {
+        // ✅ Sucesso: Documento descompactado e salvo em disco
+        const doc = data.docs[0];
+        downloadedDocs.push(doc);
+        successes++;
+        setBatchItems(prev => prev.map((b, idx) => idx === i ? {
+          ...b,
+          status: 'sucesso',
+          doc,
+          motivo: `NF-e nº ${doc.numero} • R$ ${doc.valorTotal?.toFixed(2)}`
+        } : b));
+      } else {
+        errors++;
+        const errMotivo = data.xMotivo || data.error || `cStat ${data.cStat || '137'}`;
+        
+        // 🛑 Detecção do limite estrito da SEFAZ de 20 consultas / 1 hora (NT 2014.002)
+        const isLimit20 = (data.cStat === '656' || errMotivo.includes('20 consultas') || errMotivo.includes('Consumo Indevido'));
+
+        setBatchItems(prev => prev.map((b, idx) => idx === i ? {
+          ...b,
+          status: 'erro',
+          motivo: isLimit20 ? 'Rejeição SEFAZ: Limite de 20 consultas diretas/hora atingido (NT 2014.002)' : errMotivo
+        } : b));
+
+        if (isLimit20) {
+          addLog(`🛑 [SEFAZ BLOQUEIO DE COTA] Atingido o limite da SEFAZ de 20 consultas diretas por chave a cada 1 hora.`);
+          
+          // Marca as notas restantes como pendentes para a próxima janela de 60 min
+          for (let j = i + 1; j < total; j++) {
+            setBatchItems(prev => prev.map((b, idx) => idx === j ? {
+              ...b,
+              status: 'pendente',
+              motivo: 'Aguardando próxima janela de 1h da SEFAZ'
+            } : b));
+          }
+          break; // Interrompe o envio para evitar rejeições consecutivas
+        }
+      }
+    } catch (err: any) {
+      errors++;
+    }
+
+    // ⏱️ Aguarda o intervalo de segurança (2000ms) antes de disparar a próxima chave
+    if (i < total - 1 && !isCancelledRef.current) {
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+  }
+
+  setIsBatchRunning(false);
+  setResults(downloadedDocs);
+};
+```
+
+---
+
+### 2. Backend — Envelope SOAP com `<consChNFe>` (Sem Ciência da Operação)
+No arquivo [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L523-L541):
+
+Ao informar a chave de 44 dígitos, o backend encapsula o XML na tag `<consChNFe>` em vez de `<distNSU>`:
+
+```typescript
+function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
+  const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, ufAutor } = params;
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const cUF = (ufAutor && UF_TO_CUF[ufAutor.toUpperCase()]) || '35';
+
+  let distBody = '';
+  // 👉 CONSULTA DIRETA POR CHAVE DE ACESSO
+  if (chNFe && chNFe.replace(/\D/g, '').length === 44) {
+    distBody = `<consChNFe><chNFe>${chNFe.replace(/\D/g, '')}</chNFe></consChNFe>`;
+  } else if (nsuEspecifico && nsuEspecifico.trim() !== '') {
+    distBody = `<consNSU><NSU>${nsuEspecifico.replace(/\D/g, '').padStart(15, '0')}</NSU></consNSU>`;
+  } else {
+    const nsuFormatted = String(ultNSU || '0').replace(/\D/g, '').padStart(15, '0');
+    distBody = `<distNSU><ultNSU>${nsuFormatted}</ultNSU></distNSU>`;
+  }
+
+  const xmlDist = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">` +
+                  `<tpAmb>${tpAmb}</tpAmb><cUFAutor>${cUF}</cUFAutor><CNPJ>${cleanCnpj}</CNPJ>` +
+                  `${distBody}</distDFeInt>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>` +
+         `<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">` +
+         `<soap12:Body>` +
+         `<nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">` +
+         `<nfeDadosMsg>${xmlDist}</nfeDadosMsg>` +
+         `</nfeDistDFeInteresse>` +
+         `</soap12:Body></soap12:Envelope>`;
+}
+```
+
+---
+
+### 3. Backend — Descompactação Automática do Pacote `docZip`
+No arquivo [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L500-L521):
+
+A SEFAZ devolve o XML completo compactado em GZip Base64. A função descompacta em memória com `zlib.gunzipSync`:
+
+```typescript
+import zlib from 'zlib';
+
+function descompactarDocZip(base64Content: string): string {
+  try {
+    const buffer = Buffer.from(base64Content, 'base64');
+    const decompressed = zlib.gunzipSync(buffer);
+    return decompressed.toString('utf-8');
+  } catch (err: any) {
+    console.error('Erro ao descompactar docZip:', err.message);
+    return '';
+  }
+}
+```
+
+---
+
+### 4. Criação Automática da Árvore de Pastas e Gravação Física em Disco
+No arquivo [fileStorage.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/fileStorage.ts#L9-L59):
+
+Assim que o XML completo é descompactado, ele é gravado na pasta local:
+
+$$\text{C:\textbackslash SEFAZ\textbackslash XMLs\textbackslash [CNPJ\_RAIZ]\textbackslash [Entrada|Saida]\textbackslash [Ano]\textbackslash [Mês]\textbackslash [Chave].xml}$$
+
+```typescript
+import fs from 'fs';
+import path from 'path';
+
+export function salvarXmlLocalmente(
+  xmlContent: string,
+  cnpjRaiz: string,
+  tipoOperacao: 'Entrada' | 'Saída' | string,
+  dataEmissaoIso: string,
+  chaveAcesso: string
+): string {
+  const cleanCnpjRaiz = (cnpjRaiz || '00000000').replace(/\D/g, '').substring(0, 8);
+  
+  const dateObj = new Date(dataEmissaoIso);
+  const ano = dateObj.getFullYear().toString();
+  const mes = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+  const operacaoDir = tipoOperacao.toLowerCase().includes('saida') ? 'Saida' : 'Entrada';
+
+  const basePath = process.env.SEFAZ_XML_DIR || 'C:\\SEFAZ\\XMLs';
+  const folderPath = path.join(basePath, cleanCnpjRaiz, operacaoDir, ano, mes);
+
+  // Criação automática de pastas pai/filho
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+  }
+
+  const cleanChave = chaveAcesso.replace(/[^a-zA-Z0-9_-]/g, '');
+  const filePath = path.join(folderPath, `${cleanChave}.xml`);
+  fs.writeFileSync(filePath, xmlContent, 'utf8');
+
+  return filePath;
+}
+```
+
+---
+
+### 📌 Resumo da Operação dos 20 XMLs
+1. **Sem Ciência da Operação:** O schema `<consChNFe>` solicita a chave pontual diretamente, retornando o XML autorizado sem passar pelo ciclo de manifestação.
+2. **Intervalo Anti-Bloqueio (2000ms):** Garante que as requisições não sejam rejeitadas por flood na porta TLS da SEFAZ.
+3. **Cota de 20 XMLs / 60 min:** Ao atingir a 20ª consulta, a SEFAZ fecha a janela de 1 hora (`cStat 656`). O código detecta o evento, preserva os 20 arquivos baixados e suspende o lote para a próxima hora.

@@ -218,6 +218,9 @@ export interface DfeXmlItem {
   custodiaWorm?: CustodiaWormItem;
   xmlRaw?: string;
   isResumoApenas?: boolean;
+  situacaoManifestacao?: string;
+  alertaFraude?: boolean;
+  downloadAt?: string;
 }
 
 export interface EventoDfeDefinition {
@@ -233,6 +236,8 @@ export interface EventoDfeDefinition {
   isReformaTributaria?: boolean;
 }
 
+export type EventoCatalogoItem = EventoDfeDefinition;
+
 export interface EventoDfeRequest {
   id: string;
   chaveAcesso: string;
@@ -241,6 +246,8 @@ export interface EventoDfeRequest {
   codigoEvento: string;
   nomeEvento: string;
   categoria: 'destinatario' | 'emitente' | 'tomador' | 'reforma_tributaria' | 'contingencia';
+  origemEvento?: 'proprio' | 'terceiro_destinatario' | 'sefaz';
+  autorCnpj?: string;
   justificativa?: string;
   dataHora: string;
   protocoloSeFaz?: string;

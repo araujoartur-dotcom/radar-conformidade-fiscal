@@ -12,6 +12,7 @@ import { v4 as uuid } from 'uuid';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
+import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 
 const router = Router();
 
@@ -66,7 +67,7 @@ router.get('/aliquotas', requireAuth, async (req: AuthenticatedRequest, res: Res
 /** GET /api/tables/aliquotas/vigente — Alíquotas vigentes para a data atual */
 router.get('/aliquotas/vigente', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = getBrasiliaDate();
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -119,7 +120,7 @@ router.post('/aliquotas', requireAuth, requirePerfil('admin_master', 'contador_g
             descricao: descricao || '',
             base_legal: base_legal || '',
             fase_transicao: fase_transicao || '',
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           }, { onConflict: 'competencia_inicio,tipo_tributo' });
 
         if (error) throw error;
@@ -251,7 +252,7 @@ router.put('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_ges
             tratamento_padrao,
             exige_onerosidade: Boolean(exige_onerosidade),
             evidencia_minima,
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           })
           .eq('id', id);
 
@@ -290,7 +291,7 @@ router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_
       if (supabase) {
         const { error } = await supabase
           .from('cfop_tratamento')
-          .update({ ativo: false, updated_at: new Date().toISOString() })
+          .update({ ativo: false, updated_at: getBrasiliaTimestamp() })
           .eq('id', id);
         if (error) throw error;
         res.json({ success: true, message: 'CFOP desativado no Supabase.' });
@@ -445,7 +446,7 @@ router.post('/aliquotas/ad-valorem', requireAuth, async (req: AuthenticatedReque
             inicio_vigencia: ini,
             final_vigencia: fim,
             descricao: desc,
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           });
 
         if (error) throw error;
@@ -558,7 +559,7 @@ router.post('/aliquotas/ad-rem', requireAuth, async (req: AuthenticatedRequest, 
             inicio_vigencia: ini,
             final_vigencia: fim,
             descricao: desc,
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           });
 
         if (error) throw error;
@@ -688,7 +689,7 @@ router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: R
             vigencia_inicio: vigencia_inicio || '2026-01-01',
             vigencia_fim: vigencia_fim || '2033-12-31',
             ativo: true,
-            updated_at: new Date().toISOString()
+            updated_at: getBrasiliaTimestamp()
           });
 
         if (error) throw error;

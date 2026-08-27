@@ -38,3 +38,45 @@ Na aba **"2. Consulta por NSU"**, você agora tem duas opções:
 * **Ambiente:** [cortex-tributario.netlify.app](https://cortex-tributario.netlify.app)
 
 Basta dar um `F5` ou `Ctrl+Shift+R` e testar a busca por NSU em Homologação!
+
+O novo visualizador de XML foi **completamente reformulado** para oferecer uma experiência de leitura limpa, moderna e amigável (estilo VS Code / Postman)! 🚀
+
+---
+
+### ✨ O que mudou e como ficou a nova visualização:
+
+#### 1. 📐 Indentação Inteligente (Pretty-Print):
+* **Fim das linhas coladas:** O XML agora é formatado com quebras de linha e indentação hierárquica automática de 2 espaços por nível.
+* Nós com valores diretos (ex: `<nNF>10</nNF>`, `<vNF>15.11</vNF>`, `<xNome>...</xNome>`) ficam perfeitamente agrupados em 1 linha limpa e legível.
+
+#### 2. 🎨 Syntax Highlighting de Alto Contraste:
+* **Tags (`<infNFe>`, `<ide>`, `<emit>`)**: Em roxo e índigo vibrante;
+* **Atributos (`versao=`, `Id=`)**: Em amarelo âmbar;
+* **Valores e Textos**: Em branco e ciano com leitura nítida e confortável.
+
+#### 3. 🛡️ Encurtador Inteligente de Assinatura Base64:
+* As assinaturas digitais gigantescas (`<X509Certificate>` e `<SignatureValue>`) agora são **encurtadas visualmente** por padrão para não poluírem a tela com 50 linhas de códigos indecifráveis, mantendo o foco total nos dados fiscais!
+* Se precisar ver os códigos na íntegra, há um botão seletor: **`[👁️ Certificado Base64 Encurtado / Base64 Completo]`**.
+* O botão **"Copiar XML"** e **"Baixar .XML"** continua copiando o XML 100% original e intacto com todas as assinaturas válidas da SEFAZ!
+
+#### 4. 🌳 Dois Modos de Visualização:
+* **`[ 💻 Código Formatado (Pretty XML) ]`**: Exibição do código com numeração de linhas e destaque em tempo real ao pesquisar.
+* **`[ 🌳 Árvore Estruturada Fiscal ]`**: Visualização em painéis colapsáveis organizados por seções:
+  * `📁 <ide> Identificação`
+  * `📁 <emit> Emitente`
+  * `📁 <dest> Destinatário`
+  * `📁 <det> Produtos e Serviços`
+  * `📁 <IBSCBSTot> Reforma Tributária (CBS & IBS)`
+  * `📁 <Signature> Assinatura Digital ICP-Brasil`
+
+#### 5. ⚡ Barra de Atalhos Rápidos no Topo:
+* Botões de 1 clique para rolar diretamente até as tags:
+  `[ <ide> ]` `[ <emit> ]` `[ <dest> ]` `[ <det> ]` `[ <total> ]` `[ <IBSCBS> ]` `[ <Signature> ]`.
+
+---
+
+### 🌐 Status do Deploy:
+* **Commit:** `4d55d9c`
+* **Ambiente:** [cortex-tributario.netlify.app](https://cortex-tributario.netlify.app)
+
+Basta dar um `F5` ou `Ctrl+Shift+R` no navegador e clicar no ícone **XML** de qualquer documento fiscal da lista para ver a nova estrutura!

@@ -22,7 +22,7 @@ interface RelatoriosXmlPanelProps {
 }
 
 export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = () => {
-  const { token, config } = useAuth();
+  const { token, empresaAtiva } = useAuth();
   const [activeTab, setActiveTab] = useState<ReportTabType>('razao_entradas');
   const [items, setItems] = useState<XmlItemDetailReport[]>([]);
   const [loading, setLoading] = useState(false);

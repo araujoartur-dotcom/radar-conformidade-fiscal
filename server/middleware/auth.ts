@@ -1,9 +1,9 @@
 /**
  * ============================================================
- * MIDDLEWARE DE AUTENTICAÇÃO JWT + CONTROLE MULTI-TENANT
+ * MIDDLEWARE DE AUTENTICAÇÃO JWT + CONTROLE MULTI-TENANT & RBAC
  * ============================================================
- * Verifica token JWT em cada requisição, identifica o usuário
- * e a empresa ativa, e injeta no req para uso nas rotas.
+ * Verifica token JWT em cada requisição, identifica o usuário,
+ * valida o escopo da empresa ativa e assegura o isolamento de dados.
  * ============================================================
  */
 
@@ -12,6 +12,7 @@ import jwt from 'jsonwebtoken';
 import { AUTH } from '../config';
 import { getDatabase } from '../db/database';
 import { isSupabaseConfigured } from '../db/supabase';
+import { getBrasiliaTimestamp } from '../utils/timezone';
 
 export interface JwtPayload {
   userId: string;
@@ -26,7 +27,7 @@ export interface AuthenticatedRequest extends Request {
 }
 
 /**
- * Middleware obrigatório — rejeita se não autenticado
+ * Middleware obrigatório — validação de autenticação JWT
  */
 export function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
@@ -61,12 +62,18 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
 }
 
 /**
- * Middleware para validar perfis específicos
+ * Middleware para validar perfis específicos (RBAC)
  */
 export function requirePerfil(...perfisPermitidos: string[]) {
   return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: 'Não autenticado.', code: 'AUTH_REQUIRED' });
+      return;
+    }
+
+    // admin_master tem acesso a todas as rotas
+    if (req.user.perfil === 'admin_master') {
+      next();
       return;
     }
 
@@ -83,7 +90,41 @@ export function requirePerfil(...perfisPermitidos: string[]) {
 }
 
 /**
- * Registra ação no log de auditoria
+ * Retorna os IDs das empresas acessíveis pelo usuário logado.
+ * Retorna `null` para `admin_master` (acesso irrestrito a todos os tenants).
+ */
+export function getAccessibleEmpresaIds(req: AuthenticatedRequest): string[] | null {
+  if (!req.user) return [];
+  if (req.user.perfil === 'admin_master') return null; // Acesso total
+
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?
+  `).all(req.user.userId) as any[];
+
+  const ids = rows.map(r => r.empresa_id);
+  if (req.user.empresaAtivaId && !ids.includes(req.user.empresaAtivaId)) {
+    ids.push(req.user.empresaAtivaId);
+  }
+
+  return ids;
+}
+
+/**
+ * Verifica se a requisição tem permissão para acessar a empresa especificada
+ */
+export function hasTenantAccess(req: AuthenticatedRequest, empresaId: string): boolean {
+  if (!req.user) return false;
+  if (req.user.perfil === 'admin_master') return true;
+  if (req.user.empresaAtivaId === empresaId) return true;
+
+  const accessible = getAccessibleEmpresaIds(req);
+  if (!accessible) return true;
+  return accessible.includes(empresaId);
+}
+
+/**
+ * Registra ação no log de auditoria com carimbo em Horário Oficial de Brasília
  */
 export function logAuditAction(
   req: AuthenticatedRequest,
@@ -93,23 +134,24 @@ export function logAuditAction(
   dadosExtras: Record<string, any> = {}
 ): void {
   try {
-    if (!isSupabaseConfigured()) {
-      const db = getDatabase();
-      db.prepare(`
-        INSERT INTO audit_log (nivel, servico, empresa_id, usuario_id, usuario_email, acao, descricao, ip_address, dados_extras)
-        VALUES (?, 'API', ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        nivel,
-        req.user?.empresaAtivaId || '',
-        req.user?.userId || '',
-        req.user?.email || '',
-        acao,
-        descricao,
-        req.ip || req.socket.remoteAddress || '',
-        JSON.stringify(dadosExtras)
-      );
-    }
+    const db = getDatabase();
+    const timestamp = getBrasiliaTimestamp();
+
+    db.prepare(`
+      INSERT INTO audit_log (timestamp, nivel, servico, empresa_id, usuario_id, usuario_email, acao, descricao, ip_address, dados_extras)
+      VALUES (?, ?, 'API', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      timestamp,
+      nivel,
+      req.user?.empresaAtivaId || '',
+      req.user?.userId || '',
+      req.user?.email || '',
+      acao,
+      descricao,
+      req.ip || req.socket.remoteAddress || '',
+      JSON.stringify(dadosExtras)
+    );
   } catch (err) {
-    // Audit logging failure should not break request flow
+    // Erro em log de auditoria não deve quebrar o fluxo da requisição
   }
 }

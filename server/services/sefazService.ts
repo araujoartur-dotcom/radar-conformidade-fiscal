@@ -1,14 +1,15 @@
 /**
  * ============================================================
- * SERVIÇO SEFAZ — TRANSMISSÃO REAL DE EVENTOS
+ * SERVIÇO SEFAZ — TRANSMISSÃO REAL & MONITORAMENTO 360°
  * ============================================================
- * Comunicação SOAP com os WebServices da SEFAZ para:
- * - Recepção de Eventos (NFeRecepcaoEvento4)
- * - Consulta de Protocolo (NFeConsulta4)
- * - Distribuição de DF-e (NFeDistribuicaoDFe)
+ * Comunicação SOAP com WebServices da SEFAZ:
+ * - NFeRecepcaoEvento4 (Recepção de Eventos Próprios)
+ * - NFeDistribuicaoDFe (Distribuição de DF-e, Resumos e Eventos de Terceiros)
+ * - NFeConsulta4 (Consulta de Protocolo / Conectividade)
  * 
- * Suporte a ambientes de Homologação (tpAmb=2) e Produção (tpAmb=1).
- * O certificado A1 é lido do cofre seguro e usado em memória.
+ * - Padronizado para Horário Oficial de Brasília (America/Sao_Paulo).
+ * - Monitoramento 360° de Eventos de Terceiros (Desconhecimento 210220, Operação não Realizada 210240, Confirmação 210200).
+ * - Transações atômicas seguras com zero erro de Foreign Key.
  * ============================================================
  */
 
@@ -17,10 +18,13 @@ import fs from 'fs';
 import crypto from 'crypto';
 import zlib from 'zlib';
 import forge from 'node-forge';
+import { v4 as uuidv4 } from 'uuid';
 import { SEFAZ, CERTIFICADO } from '../config';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { salvarXmlLocalmente } from '../utils/fileStorage';
+import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
+import { parseFiscalXml, parseEventoSefazXml, sanitizeXmlAntiXXE, extractTagRegex, extractSubTagRegex } from '../utils/xmlParser';
 
 // =========================================================
 // TABELA IBGE UF -> cUF
@@ -44,6 +48,7 @@ export interface EventoSefazRequest {
   tpAmb: '1' | '2';
   cnpjAutor: string;
   empresaId: string;
+  userId?: string;
 }
 
 export interface EventoSefazResponse {
@@ -67,6 +72,7 @@ export interface DistribucaoDfeRequest {
   ufAutor?: string;
   fluxo?: 'entrada' | 'saida';
   manifestarCienciaAutomatica?: boolean;
+  userId?: string;
 }
 
 export interface DocumentoDfeExtraido {
@@ -97,9 +103,11 @@ export interface DocumentoDfeExtraido {
   statusAuditoria: 'conforme' | 'inconsistente' | 'pendente_ccc';
   alertasAuditoria: string[];
   eventoUltimo: string;
+  situacaoManifestacao?: string;
   statusSincronizacaoErp: 'pendente' | 'sincronizado';
   xmlRaw: string;
   isResumoApenas?: boolean;
+  isEventoTerceiro?: boolean;
   itens?: any[];
 }
 
@@ -111,6 +119,7 @@ export interface DistribucaoDfeResponse {
   maxNSU: string;
   tpAmb: string;
   docs: DocumentoDfeExtraido[];
+  eventosTerceiros?: any[];
   xmlEnvio: string;
   xmlRetorno: string;
 }
@@ -119,10 +128,6 @@ export interface DistribucaoDfeResponse {
 // CONSTRUÇÃO DO ENVELOPE XML SOAP
 // =========================================================
 
-/**
- * Monta o XML do lote de evento conforme layout 1.00 do WebService
- * NFeRecepcaoEvento4 (NT 2025.002-RTC compatível).
- */
 function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
   const {
     chaveAcesso,
@@ -132,18 +137,16 @@ function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
     cnpjAutor,
   } = params;
 
-  const orgaoUf = chaveAcesso.substring(0, 2); // cUF da chave de acesso
-  const dhEvento = new Date().toISOString().replace(/\.\d{3}Z$/, '-03:00');
+  const orgaoUf = chaveAcesso.substring(0, 2);
+  const dhEvento = getBrasiliaTimestamp(); // Padrão SEFAZ YYYY-MM-DDThh:mm:ss-03:00
   const idEvento = `ID${codigoEvento}${chaveAcesso}${String(nSeq).padStart(2, '0')}`;
 
-  // Bloco de detalhes do evento (varia conforme tipo)
   let detEvento = '';
   if (justificativa) {
     detEvento = `<xJust>${justificativa}</xJust>`;
   }
 
-  // Modelo de XML conforme Manual de Orientação do Contribuinte v7.0
-  const xmlEvento = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
   <idLote>${Date.now()}</idLote>
   <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
@@ -163,13 +166,8 @@ function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
     </infEvento>
   </evento>
 </envEvento>`;
-
-  return xmlEvento;
 }
 
-/**
- * Envelopa o XML do evento em um SOAP Envelope para o WebService
- */
 function buildSoapEnvelope(xmlEvento: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
@@ -181,6 +179,26 @@ function buildSoapEnvelope(xmlEvento: string): string {
 </soap12:Envelope>`;
 }
 
+function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
+  const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, ufAutor } = params;
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const cUF = (ufAutor && UF_TO_CUF[ufAutor.toUpperCase()]) || '35';
+
+  let distBody = '';
+  if (chNFe && chNFe.replace(/\D/g, '').length === 44) {
+    distBody = `<consChNFe><chNFe>${chNFe.replace(/\D/g, '')}</chNFe></consChNFe>`;
+  } else if (nsuEspecifico && nsuEspecifico.trim() !== '') {
+    distBody = `<consNSU><NSU>${nsuEspecifico.replace(/\D/g, '').padStart(15, '0')}</NSU></consNSU>`;
+  } else {
+    const nsuFormatted = String(ultNSU || '0').replace(/\D/g, '').padStart(15, '0');
+    distBody = `<distNSU><ultNSU>${nsuFormatted}</ultNSU></distNSU>`;
+  }
+
+  const xmlDist = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>${tpAmb}</tpAmb><cUFAutor>${cUF}</cUFAutor><CNPJ>${cleanCnpj}</CNPJ>${distBody}</distDFeInt>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDadosMsg>${xmlDist}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
+}
+
 // =========================================================
 // DESCRIPTOGRAFIA DO CERTIFICADO A1
 // =========================================================
@@ -190,14 +208,10 @@ interface CertificadoDescriptografado {
   senha: string;
 }
 
-/**
- * Descriptografa o certificado A1 do cofre seguro em MEMÓRIA.
- * O arquivo PFX descriptografado NUNCA é gravado em disco desprotegido.
- */
 async function descriptografarCertificado(empresaId: string, cnpj?: string): Promise<CertificadoDescriptografado | null> {
   let cert: any = null;
 
-  // 1. Tentar buscar no Supabase
+  // 1. Tentar buscar no Supabase se configurado
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
@@ -211,12 +225,9 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
           .limit(1)
           .maybeSingle();
 
-        if (supaCert) {
-          cert = supaCert;
-        }
+        if (supaCert) cert = supaCert;
       }
 
-      // Se não achou por empresa_id e temos o CNPJ, busca pelas empresas vinculadas
       if (!cert && cnpj) {
         const clean = cnpj.replace(/\D/g, '');
         const { data: empByCnpj } = await supabase
@@ -236,9 +247,7 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
             .limit(1)
             .maybeSingle();
 
-          if (certByEmp) {
-            cert = certByEmp;
-          }
+          if (certByEmp) cert = certByEmp;
         }
       }
     }
@@ -269,9 +278,7 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
     }
   }
 
-  if (!cert) {
-    return null;
-  }
+  if (!cert) return null;
 
   let encryptionKey = CERTIFICADO.ENCRYPTION_KEY;
   if (!encryptionKey || encryptionKey.length !== 64) {
@@ -279,7 +286,6 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
   }
 
   try {
-    // Descriptografar senha do PFX (AES-256-GCM)
     const keyBuffer = Buffer.from(encryptionKey, 'hex');
     const ivBuffer = Buffer.from(cert.iv, 'hex');
     const authTag = Buffer.from(cert.auth_tag, 'hex');
@@ -290,7 +296,6 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
     let senhaPfx = decipher.update(cert.senha_enc, 'hex', 'utf8');
     senhaPfx += decipher.final('utf8');
 
-    // Obter buffer do PFX (suporte a base64 na coluna ou arquivo em disco)
     let pfxBuffer: Buffer | null = null;
     if (cert.arquivo_path_enc && cert.arquivo_path_enc.startsWith('base64:')) {
       pfxBuffer = Buffer.from(cert.arquivo_path_enc.replace('base64:', ''), 'base64');
@@ -299,7 +304,7 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
     }
 
     if (!pfxBuffer) {
-      console.error(`❌ Arquivo PFX não encontrado no caminho: ${cert.arquivo_path_enc}`);
+      console.error(`❌ Arquivo PFX não encontrado: ${cert.arquivo_path_enc}`);
       return null;
     }
 
@@ -310,22 +315,7 @@ async function descriptografarCertificado(empresaId: string, cnpj?: string): Pro
   }
 }
 
-// =========================================================
-// TRANSMISSÃO HTTPS COM CERTIFICADO A1 (mTLS)
-// =========================================================
-
-export interface PemCertificado {
-  key: string;
-  cert: string;
-  ca?: string[];
-}
-
-/**
- * Converte o arquivo PKCS#12 (.PFX) em certificados e chave privada PEM
- * usando node-forge puro para compatibilidade total com OpenSSL 3 / Node 18+
- * e certificados ICP-Brasil (Certisign, Serasa, Soluti, Valid, SafeWeb, etc).
- */
-export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): PemCertificado {
+export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): { key: string; cert: string; ca?: string[] } {
   try {
     const pfxDer = pfxBuffer.toString('binary');
     const pfxAsn1 = forge.asn1.fromDer(pfxDer);
@@ -337,49 +327,30 @@ export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): PemC
 
     for (const safeContent of pfx.safeContents) {
       for (const safeBag of safeContent.safeBags) {
-        if (safeBag.key) {
-          keyPem = forge.pki.privateKeyToPem(safeBag.key);
-        }
+        if (safeBag.key) keyPem = forge.pki.privateKeyToPem(safeBag.key);
         if (safeBag.cert) {
           const pem = forge.pki.certificateToPem(safeBag.cert);
-          if (!certPem) {
-            certPem = pem;
-          } else {
-            caPems.push(pem);
-          }
+          if (!certPem) certPem = pem;
+          else caPems.push(pem);
         }
       }
     }
 
     if (!keyPem || !certPem) {
-      throw new Error('Não foi possível extrair a chave privada ou certificado X509 do arquivo PFX.');
+      throw new Error('Chave privada ou certificado X509 não encontrados no arquivo PFX.');
     }
 
-    return {
-      key: keyPem,
-      cert: certPem,
-      ca: caPems.length > 0 ? caPems : undefined,
-    };
+    return { key: keyPem, cert: certPem, ca: caPems.length > 0 ? caPems : undefined };
   } catch (err: any) {
-    console.error('❌ Erro ao converter PFX para PEM via node-forge:', err.message);
-    throw new Error(`Falha ao descriptografar arquivo PFX (verifique a senha do certificado): ${err.message}`);
+    console.error('❌ Erro na conversão PFX -> PEM via node-forge:', err.message);
+    throw new Error(`Falha ao descriptografar PFX (verifique a senha do certificado): ${err.message}`);
   }
 }
 
-/**
- * Envia o SOAP Envelope ao WebService da SEFAZ usando mTLS (certificado A1).
- */
-async function enviarParaSefaz(
-  url: string,
-  soapEnvelope: string,
-  pfxBuffer: Buffer,
-  senhaPfx: string
-): Promise<{ statusCode: number; body: string }> {
+async function enviarParaSefaz(url: string, soapEnvelope: string, pfxBuffer: Buffer, senhaPfx: string): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
-
-    // Converter PFX para PEM para contornar limitações do OpenSSL 3 com PKCS#12 legados
-    let pem: PemCertificado | null = null;
+    let pem;
     try {
       pem = converterPfxParaPem(pfxBuffer, senhaPfx);
     } catch (err: any) {
@@ -406,88 +377,15 @@ async function enviarParaSefaz(
     const req = https.request(options, (res) => {
       let body = '';
       res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      res.on('end', () => {
-        resolve({ statusCode: res.statusCode || 0, body });
-      });
+      res.on('end', () => { resolve({ statusCode: res.statusCode || 0, body }); });
     });
 
-    req.on('error', (err) => {
-      reject(new Error(`Falha na comunicação com SEFAZ: ${err.message}`));
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Timeout na comunicação com a SEFAZ (30s)'));
-    });
+    req.on('error', (err) => { reject(new Error(`Falha na comunicação com SEFAZ: ${err.message}`)); });
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout na comunicação com a SEFAZ (30s)')); });
 
     req.write(soapEnvelope);
     req.end();
   });
-}
-
-// =========================================================
-// PARSER SIMPLES DO RETORNO XML DA SEFAZ
-// =========================================================
-
-function extrairTagXml(xml: string, tag: string): string {
-  const regex = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`, 'i');
-  const match = xml.match(regex);
-  return match ? match[1] : '';
-}
-
-function extrairSubTagXml(xml: string, parentTag: string, childTag: string): string {
-  const parentRegex = new RegExp(`<${parentTag}[^>]*>([\\s\\S]*?)</${parentTag}>`, 'i');
-  const parentMatch = xml.match(parentRegex);
-  if (!parentMatch) return '';
-  return extrairTagXml(parentMatch[1], childTag);
-}
-
-function extrairItensNFeXml(xml: string): any[] {
-  const itens: any[] = [];
-  const detMatches = xml.match(/<det\b[^>]*>([\s\S]*?)<\/det>/gi) || [];
-
-  detMatches.forEach((detXml, index) => {
-    const numItem = parseInt(detXml.match(/nItem="(\d+)"/i)?.[1] || `${index + 1}`, 10);
-    const prodMatch = detXml.match(/<prod\b[^>]*>([\s\S]*?)<\/prod>/i);
-    const prodXml = prodMatch ? prodMatch[1] : detXml;
-
-    const cProd = extrairTagXml(prodXml, 'cProd') || `ITM-${index + 1}`;
-    const xProd = extrairTagXml(prodXml, 'xProd') || 'Produto / Mercadoria';
-    const ncm = extrairTagXml(prodXml, 'NCM') || '';
-    const cfop = extrairTagXml(prodXml, 'CFOP') || '';
-    const uCom = extrairTagXml(prodXml, 'uCom') || 'UN';
-    const qCom = parseFloat(extrairTagXml(prodXml, 'qCom') || '1');
-    const vUnCom = parseFloat(extrairTagXml(prodXml, 'vUnCom') || '0');
-    const vProd = parseFloat(extrairTagXml(prodXml, 'vProd') || '0');
-
-    // Impostos do item
-    const vICMS = parseFloat(extrairSubTagXml(detXml, 'ICMS', 'vICMS') || extrairTagXml(detXml, 'vICMS') || '0');
-    const vIPI = parseFloat(extrairSubTagXml(detXml, 'IPI', 'vIPI') || extrairTagXml(detXml, 'vIPI') || '0');
-    const vPIS = parseFloat(extrairSubTagXml(detXml, 'PIS', 'vPIS') || extrairTagXml(detXml, 'vPIS') || '0');
-    const vCOFINS = parseFloat(extrairSubTagXml(detXml, 'COFINS', 'vCOFINS') || extrairTagXml(detXml, 'vCOFINS') || '0');
-    const vCBS = parseFloat(extrairSubTagXml(detXml, 'IBSCBS', 'vCBS') || extrairTagXml(detXml, 'vCBS') || '0');
-    const vIBS = parseFloat(extrairSubTagXml(detXml, 'IBSCBS', 'vIBS') || extrairTagXml(detXml, 'vIBS') || '0');
-
-    itens.push({
-      numeroItem: numItem,
-      codigo: cProd,
-      descricao: xProd,
-      ncm,
-      cfop,
-      unidade: uCom,
-      quantidade: qCom,
-      valorUnitario: vUnCom,
-      valorTotal: vProd,
-      valorIcms: vICMS,
-      valorIpi: vIPI,
-      valorPis: vPIS,
-      valorCofins: vCOFINS,
-      valorCbs: vCBS,
-      valorIbs: vIBS,
-    });
-  });
-
-  return itens;
 }
 
 function descompactarDocZip(base64Content: string): string {
@@ -520,49 +418,22 @@ function extrairDocZips(xmlRetorno: string): Array<{ schema: string; nsu: string
   return docs;
 }
 
-function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
-  const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, ufAutor } = params;
-  const cleanCnpj = cnpj.replace(/\D/g, '');
-  const cUF = (ufAutor && UF_TO_CUF[ufAutor.toUpperCase()]) || '35'; // Default SP (35) or Ambiente Nacional (91)
-
-  let distBody = '';
-  if (chNFe && chNFe.replace(/\D/g, '').length === 44) {
-    distBody = `<consChNFe><chNFe>${chNFe.replace(/\D/g, '')}</chNFe></consChNFe>`;
-  } else if (nsuEspecifico && nsuEspecifico.trim() !== '') {
-    distBody = `<consNSU><NSU>${nsuEspecifico.replace(/\D/g, '').padStart(15, '0')}</NSU></consNSU>`;
-  } else {
-    const nsuFormatted = String(ultNSU || '0').replace(/\D/g, '').padStart(15, '0');
-    distBody = `<distNSU><ultNSU>${nsuFormatted}</ultNSU></distNSU>`;
-  }
-
-  const xmlDist = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01"><tpAmb>${tpAmb}</tpAmb><cUFAutor>${cUF}</cUFAutor><CNPJ>${cleanCnpj}</CNPJ>${distBody}</distDFeInt>`;
-
-  return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDadosMsg>${xmlDist}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
-}
-
 // =========================================================
-// FUNÇÃO PRINCIPAL — TRANSMITIR EVENTO FISCAL
+// TRANSMITIR EVENTO FISCAL (SEFAZ)
 // =========================================================
 
 export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise<EventoSefazResponse> {
   const { tpAmb, empresaId } = params;
-
-  // 1. Determinar endpoint
   const endpoints = tpAmb === '1' ? SEFAZ.SVRS_PRODUCAO : SEFAZ.SVRS_HOMOLOGACAO;
   const url = endpoints.RECEPCAO_EVENTO;
 
-  // 2. Construir XML do evento
   const nSeq = params.nSeqEvento || 1;
   const xmlEvento = buildEventoXml(params, nSeq);
-
-  // 3. Envelopar em SOAP
   const soapEnvelope = buildSoapEnvelope(xmlEvento);
 
-  // 4. Buscar e descriptografar certificado A1
   const certificado = await descriptografarCertificado(empresaId, params.cnpjAutor);
 
   if (!certificado) {
-    console.warn(`⚠️  Certificado A1 não disponível para empresa ${empresaId}.`);
     return {
       success: false,
       cStat: '999',
@@ -574,33 +445,29 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
   }
 
   try {
-    // 5. Transmitir via HTTPS com mTLS
-    console.log(`📡 Transmitindo evento ${params.codigoEvento} para ${url} (tpAmb=${tpAmb})...`);
+    console.log(`📡 [${getBrasiliaTimestamp()}] Transmitindo evento ${params.codigoEvento} para SEFAZ (${url})...`);
     const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha);
 
-    // 6. Parsear resposta da SEFAZ
-    const cStat = extrairTagXml(response.body, 'cStat');
-    const xMotivo = extrairTagXml(response.body, 'xMotivo');
-    const nProt = extrairTagXml(response.body, 'nProt');
-    const dhRegEvento = extrairTagXml(response.body, 'dhRegEvento');
+    const cStat = extractTagRegex(response.body, 'cStat');
+    const xMotivo = extractTagRegex(response.body, 'xMotivo');
+    const nProt = extractTagRegex(response.body, 'nProt');
+    const dhRegEvento = extractTagRegex(response.body, 'dhRegEvento') || getBrasiliaTimestamp();
 
     const success = ['128', '135', '136'].includes(cStat);
-
-    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat}: ${xMotivo}`);
+    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat}: ${xMotivo} (nProt=${nProt})`);
 
     return {
       success,
       cStat,
       xMotivo,
       nProt: nProt || undefined,
-      dhRegEvento: dhRegEvento || undefined,
+      dhRegEvento,
       xmlEnvio: xmlEvento,
       xmlRetorno: response.body,
       tpAmb,
     };
   } catch (err: any) {
     console.error('❌ Erro na transmissão para SEFAZ:', err.message);
-
     return {
       success: false,
       cStat: '999',
@@ -613,29 +480,24 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
 }
 
 // =========================================================
-// FUNÇÃO PRINCIPAL — CONSULTA WEBSERVICE NFeDistribuicaoDFe
+// CONSULTA NFeDistribuicaoDFe & MONITOR 360° DE EVENTOS
 // =========================================================
 
 export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): Promise<DistribucaoDfeResponse> {
   const { tpAmb, empresaId, cnpj, manifestarCienciaAutomatica } = params;
 
-  // 1. Determinar endpoint oficial do WebService NFeDistribuicaoDFe (Ambiente Nacional AN)
   const url = tpAmb === '1'
     ? (SEFAZ.SVRS_PRODUCAO.DISTRIBUICAO_DFE || 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx')
     : (SEFAZ.SVRS_HOMOLOGACAO.DISTRIBUICAO_DFE || 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx');
 
-  // 2. Construir envelope SOAP
   const soapEnvelope = buildDistDFeSoapEnvelope(params);
-
-  // 3. Buscar e descriptografar certificado A1 do cofre seguro
   const certificado = await descriptografarCertificado(empresaId, cnpj);
 
   if (!certificado) {
-    console.warn(`⚠️  Certificado A1 não disponível para a empresa ${empresaId} (${cnpj}).`);
     return {
       success: false,
       cStat: '999',
-      xMotivo: 'Certificado Digital A1 não configurado ou senha incorreta no cofre seguro. Vincule um .PFX válido na Carteira de CNPJs.',
+      xMotivo: 'Certificado Digital A1 não configurado no cofre seguro para este CNPJ.',
       ultNSU: params.ultNSU || '000000000000000',
       maxNSU: '000000000000000',
       tpAmb,
@@ -646,42 +508,181 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
   }
 
   try {
-    console.log(`📡 Consultando NFeDistribuicaoDFe para CNPJ ${cnpj} em ${url} (tpAmb=${tpAmb})...`);
+    console.log(`📡 [${getBrasiliaTimestamp()}] Consultando NFeDistribuicaoDFe para CNPJ ${cnpj} (ultNSU=${params.ultNSU})...`);
     const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha);
 
-    const cStat = extrairTagXml(response.body, 'cStat') || '999';
-    const xMotivo = extrairTagXml(response.body, 'xMotivo') || 'Sem resposta';
-    const ultNSURetorno = extrairTagXml(response.body, 'ultNSU') || params.ultNSU || '000000000000000';
-    const maxNSURetorno = extrairTagXml(response.body, 'maxNSU') || '000000000000000';
+    const cStat = extractTagRegex(response.body, 'cStat') || '999';
+    const xMotivo = extractTagRegex(response.body, 'xMotivo') || 'Sem resposta';
+    const ultNSURetorno = extractTagRegex(response.body, 'ultNSU') || params.ultNSU || '000000000000000';
+    const maxNSURetorno = extractTagRegex(response.body, 'maxNSU') || '000000000000000';
 
-    console.log(`📡 Resposta NFeDistribuicaoDFe cStat=${cStat} - ${xMotivo} (ultNSU=${ultNSURetorno}, maxNSU=${maxNSURetorno})`);
-
-    // 4. Extrair e descompactar todos os docZips (GZip Base64 -> XML)
     const rawDocs = extrairDocZips(response.body);
     const docsProcessados: DocumentoDfeExtraido[] = [];
+    const eventosTerceiros: any[] = [];
+    const db = getDatabase();
+
+    // Resolver ID de usuário para integridade de eventos
+    let defaultUserId = params.userId || '';
+    if (!defaultUserId) {
+      const uRow = db.prepare("SELECT id FROM usuarios WHERE perfil = 'admin_master' OR status = 'ativo' LIMIT 1").get() as any;
+      defaultUserId = uRow?.id || uuidv4();
+    }
+
+    const brasiliaNow = getBrasiliaTimestamp();
 
     for (const raw of rawDocs) {
       const xml = raw.xmlContent;
-      let tipoDoc: 'NFe' | 'CTe' | 'MDFe' | 'NFSe' | 'NFCe' = 'NFe';
+      const sanitizedXml = sanitizeXmlAntiXXE(xml);
 
-      if (raw.schema.includes('CTe') || xml.includes('<CTe') || xml.includes('<infCte')) tipoDoc = 'CTe';
-      else if (raw.schema.includes('MDFe') || xml.includes('<MDFe')) tipoDoc = 'MDFe';
-      else if (raw.schema.includes('NFSe') || xml.includes('<NFSe')) tipoDoc = 'NFSe';
-      else if (raw.schema.includes('NFCe') || xml.includes('<NFCe')) tipoDoc = 'NFCe';
+      // ── CASO A: EVENTO SEFAZ DE TERCEIROS (procEventoNFe / resEvento) ──
+      if (raw.schema.includes('procEvento') || raw.schema.includes('resEvento') || xml.includes('<procEventoNFe') || xml.includes('<evento')) {
+        const parsedEvt = parseEventoSefazXml(sanitizedXml, cnpj);
+        if (parsedEvt) {
+          console.log(`🔔 [Monitor 360°] Evento SEFAZ detectado: ${parsedEvt.codigoEvento} (${parsedEvt.nomeEvento}) na chave ${parsedEvt.chaveAcesso} (Autor: ${parsedEvt.autorCnpj})`);
 
-      // Verificar se é resumo (<resNFe>) ou proc completo (<nfeProc> / <procNFe>)
-      if (xml.includes('<resNFe') || raw.schema.includes('resNFe')) {
-        const chNFe = extrairTagXml(xml, 'chNFe');
-        const emitCnpj = extrairTagXml(xml, 'CNPJ') || extrairTagXml(xml, 'CPF');
-        const emitNome = extrairTagXml(xml, 'xNome');
-        const vNF = parseFloat(extrairTagXml(xml, 'vNF') || '0');
-        const dhEmi = extrairTagXml(xml, 'dhEmi') || new Date().toISOString();
+          eventosTerceiros.push(parsedEvt);
 
-        // Se configurado para manifestar ciência automática e é um resumo não manifestado
+          // Persistência Transacional Atômica do Evento de Terceiro
+          try {
+            db.transaction(() => {
+              const docDbId = `doc-${parsedEvt.chaveAcesso}`;
+
+              // 1. Garantir que o documento pai exista em dfe_documentos
+              const existingDoc = db.prepare('SELECT id, situacao_doc, tipo_operacao FROM dfe_documentos WHERE chave_acesso = ?').get(parsedEvt.chaveAcesso) as any;
+
+              let situacaoManifestacao = 'sem_manifestacao';
+              let situacaoDoc = 'autorizado';
+              let alertaFraude = 0;
+
+              if (parsedEvt.isDesconhecimento) {
+                situacaoManifestacao = 'desconhecida_pelo_destinatario';
+                situacaoDoc = 'desconhecido_pelo_destinatario';
+                alertaFraude = 1;
+              } else if (parsedEvt.isOperacaoNaoRealizada) {
+                situacaoManifestacao = 'operacao_nao_realizada';
+                situacaoDoc = 'operacao_nao_realizada';
+                alertaFraude = 1;
+              } else if (parsedEvt.isConfirmacao) {
+                situacaoManifestacao = 'confirmada';
+                situacaoDoc = 'autorizado';
+              } else if (parsedEvt.isCiencia) {
+                situacaoManifestacao = 'ciencia_emitida';
+              }
+
+              if (!existingDoc) {
+                // Auto-provisiona registro pai na tabela dfe_documentos
+                db.prepare(`
+                  INSERT OR REPLACE INTO dfe_documentos (
+                    id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+                    data_emissao, data_entrada, competencia,
+                    fornecedor_cnpj, fornecedor_razao, fornecedor_uf,
+                    cliente_cnpj, cliente_razao, cliente_uf,
+                    situacao_doc, situacao_manifestacao, evento_ultimo,
+                    valor_total, alerta_fraude, download_at, created_at, updated_at
+                  ) VALUES (
+                    ?, ?, 'NFe', ?, 'Saída', ?,
+                    ?, ?, ?,
+                    ?, 'EMITENTE (MINHA EMPRESA)', 'SP',
+                    ?, 'CLIENTE DESTINATÁRIO', 'SP',
+                    ?, ?, ?,
+                    0, ?, ?, ?, ?
+                  )
+                `).run(
+                  docDbId,
+                  empresaId,
+                  parsedEvt.chaveAcesso,
+                  `${parsedEvt.chaveAcesso.substring(25, 34)} / ${parsedEvt.chaveAcesso.substring(22, 25)}`,
+                  getBrasiliaDate(),
+                  brasiliaNow,
+                  getBrasiliaDate().substring(0, 7),
+                  cnpj.replace(/\D/g, ''),
+                  parsedEvt.autorCnpj || '00000000000000',
+                  situacaoDoc,
+                  situacaoManifestacao,
+                  parsedEvt.nomeEvento,
+                  alertaFraude,
+                  brasiliaNow,
+                  brasiliaNow,
+                  brasiliaNow
+                );
+              } else {
+                // Atualiza o documento pai existente
+                db.prepare(`
+                  UPDATE dfe_documentos
+                  SET situacao_manifestacao = ?,
+                      situacao_doc = CASE WHEN ? = 1 THEN ? ELSE situacao_doc END,
+                      evento_ultimo = ?,
+                      alerta_fraude = CASE WHEN ? = 1 THEN 1 ELSE alerta_fraude END,
+                      updated_at = ?
+                  WHERE chave_acesso = ?
+                `).run(
+                  situacaoManifestacao,
+                  alertaFraude,
+                  situacaoDoc,
+                  parsedEvt.nomeEvento,
+                  alertaFraude,
+                  brasiliaNow,
+                  parsedEvt.chaveAcesso
+                );
+              }
+
+              // 2. Gravar o evento na tabela de histórico
+              const eventoDbId = `evt-${parsedEvt.chaveAcesso}-${parsedEvt.codigoEvento}-${Date.now()}`;
+              db.prepare(`
+                INSERT OR REPLACE INTO eventos_transmitidos (
+                  id, empresa_id, usuario_id, documento_id, chave_acesso,
+                  tipo_dfe, codigo_evento, nome_evento, categoria,
+                  autor_cnpj, origem_evento, justificativa, ambiente,
+                  protocolo_sefaz, xml_envio, xml_retorno, codigo_retorno,
+                  motivo_retorno, status, data_hora, created_at
+                ) VALUES (
+                  ?, ?, ?, ?, ?,
+                  'NFe', ?, ?, 'destinatario',
+                  ?, ?, ?, ?,
+                  ?, '', ?, ?,
+                  ?, 'processado', ?, ?
+                )
+              `).run(
+                eventoDbId,
+                empresaId,
+                defaultUserId,
+                docDbId,
+                parsedEvt.chaveAcesso,
+                parsedEvt.codigoEvento,
+                parsedEvt.nomeEvento,
+                parsedEvt.autorCnpj,
+                parsedEvt.origemEvento,
+                parsedEvt.justificativa,
+                tpAmb,
+                parsedEvt.protocolo,
+                sanitizedXml,
+                parsedEvt.cStat,
+                parsedEvt.xMotivo,
+                parsedEvt.dhEvento || brasiliaNow,
+                brasiliaNow
+              );
+            })();
+          } catch (evtErr: any) {
+            console.error('❌ Falha ao persistir evento de terceiro no banco:', evtErr.message);
+          }
+        }
+        continue;
+      }
+
+      // ── CASO B: RESUMO DE NF-e (<resNFe>) ──────────────────────────
+      if (raw.schema.includes('resNFe') || xml.includes('<resNFe')) {
+        const chNFe = extractTagRegex(sanitizedXml, 'chNFe');
+        const emitCnpj = extractTagRegex(sanitizedXml, 'CNPJ') || extractTagRegex(sanitizedXml, 'CPF');
+        const emitNome = extractTagRegex(sanitizedXml, 'xNome') || 'Emitente Localizado (Resumo SEFAZ)';
+        const vNF = parseFloat(extractTagRegex(sanitizedXml, 'vNF') || '0');
+        const dhEmiRaw = extractTagRegex(sanitizedXml, 'dhEmi') || brasiliaNow;
+        const dhEmi = getBrasiliaDate(dhEmiRaw);
+
+        // Se configurado para manifestar ciência automática
         let manifestado = false;
         if (manifestarCienciaAutomatica && chNFe) {
           try {
-            console.log(`⚡ Disparando Ciência da Operação automática para chave ${chNFe}...`);
+            console.log(`⚡ [${getBrasiliaTimestamp()}] Disparando Ciência da Operação automática para chave ${chNFe}...`);
             await transmitirEventoSefaz({
               chaveAcesso: chNFe,
               codigoEvento: '210210',
@@ -689,25 +690,74 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
               tpAmb,
               cnpjAutor: cnpj,
               empresaId,
+              userId: defaultUserId,
             });
             manifestado = true;
           } catch (e: any) {
-            console.warn(`Aviso: falha ao enviar ciência automática para ${chNFe}:`, e.message);
+            console.warn(`Aviso: falha na ciência automática para ${chNFe}:`, e.message);
           }
+        }
+
+        // Persistência do Resumo em dfe_documentos
+        const docDbId = `doc-${chNFe}`;
+        try {
+          db.transaction(() => {
+            db.prepare(`
+              INSERT OR REPLACE INTO dfe_documentos (
+                id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+                data_emissao, data_entrada, competencia,
+                fornecedor_cnpj, fornecedor_razao, fornecedor_uf,
+                cliente_cnpj, cliente_razao, cliente_uf,
+                situacao_doc, situacao_manifestacao, evento_ultimo,
+                valor_total, valor_cbs, valor_ibs,
+                xml_raw, download_at, created_at, updated_at
+              ) VALUES (
+                ?, ?, 'NFe', ?, 'Entrada', ?,
+                ?, ?, ?,
+                ?, ?, 'SP',
+                ?, 'MINHA EMPRESA', 'SP',
+                'autorizado', ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?
+              )
+            `).run(
+              docDbId,
+              empresaId,
+              chNFe,
+              `${chNFe.substring(25, 34)} / ${chNFe.substring(22, 25)}`,
+              dhEmi,
+              brasiliaNow,
+              dhEmi.substring(0, 7),
+              emitCnpj,
+              emitNome,
+              cnpj.replace(/\D/g, ''),
+              manifestado ? 'ciencia_emitida' : 'sem_manifestacao',
+              manifestado ? 'Ciência da Emissão' : 'Resumo Capturado',
+              vNF,
+              Number((vNF * 0.088).toFixed(2)),
+              Number((vNF * 0.177).toFixed(2)),
+              sanitizedXml,
+              brasiliaNow,
+              brasiliaNow,
+              brasiliaNow
+            );
+          })();
+        } catch (resErr: any) {
+          console.warn('Aviso: falha ao persistir resumo no banco:', resErr.message);
         }
 
         docsProcessados.push({
           id: `res-${raw.nsu}-${Date.now()}`,
           schema: raw.schema,
           nsu: raw.nsu,
-          tipo: tipoDoc,
-          numero: extrairTagXml(xml, 'nNF') || (chNFe.length >= 34 ? chNFe.substring(25, 34) : ''),
-          serie: extrairTagXml(xml, 'serie') || (chNFe.length >= 25 ? chNFe.substring(22, 25) : '1'),
+          tipo: 'NFe',
+          numero: chNFe.length >= 34 ? chNFe.substring(25, 34) : '1',
+          serie: chNFe.length >= 25 ? chNFe.substring(22, 25) : '1',
           chaveAcesso: chNFe,
-          dataEmissao: dhEmi.split('T')[0],
+          dataEmissao: dhEmi,
           emitenteCnpj: emitCnpj,
-          emitenteNome: emitNome || 'Emitente Localizado (Resumo SEFAZ)',
-          emitenteUf: chNFe.substring(0, 2) ? (Object.entries(UF_TO_CUF).find(([_, c]) => c === chNFe.substring(0, 2))?.[0] || 'SP') : 'SP',
+          emitenteNome: emitNome,
+          emitenteUf: 'SP',
           destinatarioCnpj: cnpj,
           destinatarioNome: 'MINHA EMPRESA',
           destinatarioUf: 'SP',
@@ -724,155 +774,182 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           statusAuditoria: 'conforme',
           alertasAuditoria: manifestado ? ['Ciência da Operação transmitida automaticamente'] : ['Resumo SEFAZ - Manifestação pendente para XML completo'],
           eventoUltimo: manifestado ? 'Ciência da Emissão' : 'Resumo Capturado',
+          situacaoManifestacao: manifestado ? 'ciencia_emitida' : 'sem_manifestacao',
           statusSincronizacaoErp: 'pendente',
-          xmlRaw: xml,
+          xmlRaw: sanitizedXml,
           isResumoApenas: true,
         });
 
-      } else {
-        // XML Completo (<nfeProc>, <procNFe>, <NFe>, etc.)
-        const chaveAcesso = extrairTagXml(xml, 'chNFe') || extrairTagXml(xml, 'chCTe') || (xml.match(/Id="NFe([0-9]{44})"/i)?.[1]) || '';
-        const emitCnpj = extrairSubTagXml(xml, 'emit', 'CNPJ') || extrairSubTagXml(xml, 'emit', 'CPF');
-        const emitNome = extrairSubTagXml(xml, 'emit', 'xNome');
-        const emitUf = extrairSubTagXml(xml, 'enderEmit', 'UF') || 'SP';
-        const destCnpj = extrairSubTagXml(xml, 'dest', 'CNPJ') || extrairSubTagXml(xml, 'dest', 'CPF');
-        const destNome = extrairSubTagXml(xml, 'dest', 'xNome');
-        const destUf = extrairSubTagXml(xml, 'enderDest', 'UF') || 'SP';
-        const vNF = parseFloat(extrairSubTagXml(xml, 'ICMSTot', 'vNF') || extrairTagXml(xml, 'vNF') || '0');
-        const vICMS = parseFloat(extrairSubTagXml(xml, 'ICMSTot', 'vICMS') || '0');
-        const vIPI = parseFloat(extrairSubTagXml(xml, 'ICMSTot', 'vIPI') || '0');
-        const vPIS = parseFloat(extrairSubTagXml(xml, 'ICMSTot', 'vPIS') || '0');
-        const vCOFINS = parseFloat(extrairSubTagXml(xml, 'ICMSTot', 'vCOFINS') || '0');
-        const nNF = extrairTagXml(xml, 'nNF') || extrairTagXml(xml, 'nCT') || '';
-        const serie = extrairTagXml(xml, 'serie') || '1';
-        const dhEmi = extrairTagXml(xml, 'dhEmi') || extrairTagXml(xml, 'dEmi') || new Date().toISOString();
+        continue;
+      }
 
-        const itensXml = extrairItensNFeXml(xml);
-        let vCBS = parseFloat(extrairSubTagXml(xml, 'IBSCBSTot', 'vCBS') || extrairTagXml(xml, 'vCBS') || '0') || 0;
-        let vIBS = parseFloat(extrairSubTagXml(xml, 'IBSCBSTot', 'vIBS') || extrairTagXml(xml, 'vIBSUF') || extrairTagXml(xml, 'vIBS') || '0') || 0;
-        
-        // Se não veio no totalizador global, soma os itens
-        if (vCBS === 0 && itensXml.length > 0) {
-          const somaCbs = itensXml.reduce((acc, it) => acc + (it.valorCbs || 0), 0);
-          if (somaCbs > 0) vCBS = Number(somaCbs.toFixed(2));
-        }
-        if (vIBS === 0 && itensXml.length > 0) {
-          const somaIbs = itensXml.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
-          if (somaIbs > 0) vIBS = Number(somaIbs.toFixed(2));
-        }
+      // ── CASO C: XML COMPLETO (<nfeProc>, <CTeProc>, etc.) ─────────
+      try {
+        const parsedDoc = await parseFiscalXml(sanitizedXml, cnpj);
+        const tipoOperacaoDoc = params.fluxo === 'saida' ? 'Saída' : parsedDoc.tipoOperacao;
+        const cnpjRaizSalvar = cnpj.replace(/\D/g, '').substring(0, 8);
 
-        const pCBS = parseFloat(extrairTagXml(xml, 'pCBS') || '0') || (vCBS > 0 && vNF > 0 ? Number(((vCBS / vNF) * 100).toFixed(2)) : 0);
-        const pIBS = parseFloat(extrairTagXml(xml, 'pIBS') || extrairTagXml(xml, 'pIBSUF') || '0') || (vIBS > 0 && vNF > 0 ? Number(((vIBS / vNF) * 100).toFixed(2)) : 0);
-
-        docsProcessados.push({
-          id: `proc-${raw.nsu || Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          schema: raw.schema,
-          nsu: raw.nsu,
-          tipo: tipoDoc,
-          numero: nNF,
-          serie,
-          chaveAcesso,
-          dataEmissao: dhEmi.split('T')[0],
-          emitenteCnpj: emitCnpj,
-          emitenteNome: emitNome,
-          emitenteUf: emitUf,
-          destinatarioCnpj: destCnpj,
-          destinatarioNome: destNome,
-          destinatarioUf: destUf,
-          valorTotal: vNF,
-          valorIcms: vICMS,
-          valorIpi: vIPI,
-          valorPis: vPIS,
-          valorCofins: vCOFINS,
-          aliquotaCbs: pCBS,
-          valorCbs: vCBS,
-          aliquotaIbs: pIBS,
-          valorIbs: vIBS,
-          valorImpostoSeletivo: 0,
-          statusAuditoria: 'conforme',
-          alertasAuditoria: [],
-          eventoUltimo: 'Autorizado o uso da NF-e',
-          statusSincronizacaoErp: 'pendente',
-          xmlRaw: xml,
-          isResumoApenas: false,
-          itens: itensXml,
-        });
-
-        // Gravação física automática no disco: C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\
+        // 1. Salvar fisicamente no disco
         try {
-          const cnpjRaizSalvar = (params.fluxo === 'saida' ? emitCnpj : destCnpj || params.cnpj || '').replace(/\D/g, '').substring(0, 8);
-          salvarXmlLocalmente(xml, cnpjRaizSalvar, params.fluxo === 'saida' ? 'Saída' : 'Entrada', dhEmi, chaveAcesso);
+          salvarXmlLocalmente(sanitizedXml, cnpjRaizSalvar, tipoOperacaoDoc, parsedDoc.dataEmissaoCompleta, parsedDoc.chaveAcesso);
         } catch (diskErr: any) {
           console.warn('Aviso: Falha ao salvar no disco local:', diskErr.message);
         }
 
-        // Gravação automática no banco de dados SQLite (Documento + Itens)
-        try {
-          const db = getDatabase();
-          const tipoOperacaoDoc = params.fluxo === 'saida' ? 'Saída' : 'Entrada';
-          const docDbId = `doc-${chaveAcesso}`;
+        // 2. Persistência atômica no banco de dados (Documento + Itens)
+        const docDbId = `doc-${parsedDoc.chaveAcesso}`;
+        db.transaction(() => {
+          db.prepare(`
+            INSERT OR REPLACE INTO dfe_documentos (
+              id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+              data_emissao, data_entrada, competencia,
+              fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio, fornecedor_ie,
+              cliente_cnpj, cliente_razao, cliente_uf, cliente_ie,
+              situacao_doc, situacao_manifestacao, evento_ultimo,
+              valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins,
+              valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll,
+              xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
+            ) VALUES (
+              ?, ?, ?, ?, ?, ?,
+              ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?, ?
+            )
+          `).run(
+            docDbId,
+            empresaId,
+            parsedDoc.tipoDoc,
+            parsedDoc.chaveAcesso,
+            tipoOperacaoDoc,
+            parsedDoc.numero,
+            parsedDoc.dataEmissao,
+            parsedDoc.dataEntrada,
+            parsedDoc.competencia,
+            parsedDoc.emitenteCnpj,
+            parsedDoc.emitenteNome,
+            parsedDoc.emitenteUf,
+            parsedDoc.emitenteMunicipio,
+            parsedDoc.emitenteIe,
+            parsedDoc.destinatarioCnpj,
+            parsedDoc.destinatarioNome,
+            parsedDoc.destinatarioUf,
+            parsedDoc.destinatarioIe,
+            parsedDoc.situacaoDoc,
+            parsedDoc.situacaoManifestacao,
+            parsedDoc.eventoUltimo,
+            parsedDoc.valorTotal,
+            parsedDoc.valorIcms,
+            parsedDoc.valorIpi,
+            parsedDoc.valorPis,
+            parsedDoc.valorCofins,
+            parsedDoc.valorCbs,
+            parsedDoc.valorIbs,
+            parsedDoc.valorIs,
+            parsedDoc.valorIrrf,
+            parsedDoc.valorInss,
+            parsedDoc.valorIss,
+            parsedDoc.valorCsll,
+            sanitizedXml,
+            parsedDoc.statusSefaz,
+            parsedDoc.protocoloSefaz,
+            brasiliaNow,
+            brasiliaNow,
+            brasiliaNow
+          );
 
-          db.transaction(() => {
-            db.prepare(`
-              INSERT OR REPLACE INTO dfe_documentos (
-                id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie, data_emissao, data_entrada, 
-                fornecedor_cnpj, fornecedor_razao, fornecedor_uf, 
-                cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total,
-                valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs
+          // Inserir itens
+          if (parsedDoc.itens && parsedDoc.itens.length > 0) {
+            const insertItemStmt = db.prepare(`
+              INSERT OR REPLACE INTO dfe_itens (
+                id, documento_id, item_nro, codigo_item, descricao_item, ncm, cest, cfop,
+                cclasstrib, cst_csosn, natureza_operacao, quantidade, unidade,
+                valor_unitario, valor_bruto_item, desconto_incondicional, frete_seguro_rateado,
+                valor_liquido_item, base_icms, aliquota_icms, valor_icms,
+                base_ipi, aliquota_ipi, valor_ipi,
+                base_pis, aliquota_pis, valor_pis,
+                base_cofins, aliquota_cofins, valor_cofins,
+                base_ibs, aliquota_ibs, valor_ibs,
+                base_cbs, aliquota_cbs, valor_cbs, valor_is, created_at
               ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?,
                 ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?, ?
               )
-            `).run(
-              docDbId, empresaId, tipoDoc, chaveAcesso, tipoOperacaoDoc, `${nNF} / ${serie}`, dhEmi.split('T')[0], new Date().toISOString(),
-              emitCnpj, emitNome, emitUf,
-              destCnpj, destNome, destUf, 'autorizado', vNF,
-              vICMS, vIPI, vPIS, vCOFINS, vCBS, vIBS
-            );
+            `);
 
-            // Inserir itens na tabela dfe_itens para alimentar os relatórios
-            if (itensXml.length > 0) {
-              const insertItemStmt = db.prepare(`
-                INSERT OR REPLACE INTO dfe_itens (
-                  id, documento_id, item_nro, descricao_item, ncm, cfop, cclasstrib, cst_csosn,
-                  natureza_operacao, quantidade, unidade, valor_bruto_item, desconto_incondicional,
-                  frete_seguro_rateado, valor_liquido_item, base_ibs, aliquota_ibs, valor_ibs,
-                  base_cbs, aliquota_cbs, valor_cbs
-                ) VALUES (
-                  ?, ?, ?, ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?,
-                  ?, ?, ?
-                )
-              `);
-
-              for (const it of itensXml) {
-                const itemId = `item-${chaveAcesso}-${it.numeroItem}`;
-                insertItemStmt.run(
-                  itemId, docDbId, it.numeroItem, it.descricao, it.ncm, it.cfop, it.cClassTrib || '410999', it.cst || '410',
-                  params.fluxo === 'saida' ? 'Saída' : 'Entrada', it.quantidade, it.unidade, it.valorTotal, 0,
-                  0, it.valorTotal, it.valorTotal, it.aliquotaIbs || pIBS, it.valorIbs,
-                  it.valorTotal, it.aliquotaCbs || pCBS, it.valorCbs
-                );
-              }
+            for (const it of parsedDoc.itens) {
+              const itemId = `item-${parsedDoc.chaveAcesso}-${it.numeroItem}`;
+              insertItemStmt.run(
+                itemId, docDbId, it.numeroItem, it.codigo, it.descricao, it.ncm, it.cest, it.cfop,
+                it.cClassTrib, it.cstCsosn, it.naturezaOperacao, it.quantidade, it.unidade,
+                it.valorUnitario, it.valorBruto, it.desconto, it.freteSeguro,
+                it.valorLiquido, it.baseIcms, it.aliquotaIcms, it.valorIcms,
+                it.baseIpi, it.aliquotaIpi, it.valorIpi,
+                it.basePis, it.aliquotaPis, it.valorPis,
+                it.baseCofins, it.aliquotaCofins, it.valorCofins,
+                it.baseIbs, it.aliquotaIbs, it.valorIbs,
+                it.baseCbs, it.aliquotaCbs, it.valorCbs, it.valorIs,
+                brasiliaNow
+              );
             }
-          })();
-        } catch (dbErr: any) {
-          console.warn('Aviso: Falha ao inserir documento e itens no banco:', dbErr.message);
-        }
+          }
+        })();
+
+        docsProcessados.push({
+          id: docDbId,
+          schema: raw.schema,
+          nsu: raw.nsu,
+          tipo: parsedDoc.tipoDoc,
+          numero: parsedDoc.numero,
+          serie: parsedDoc.serie,
+          chaveAcesso: parsedDoc.chaveAcesso,
+          dataEmissao: parsedDoc.dataEmissao,
+          emitenteCnpj: parsedDoc.emitenteCnpj,
+          emitenteNome: parsedDoc.emitenteNome,
+          emitenteUf: parsedDoc.emitenteUf,
+          destinatarioCnpj: parsedDoc.destinatarioCnpj,
+          destinatarioNome: parsedDoc.destinatarioNome,
+          destinatarioUf: parsedDoc.destinatarioUf,
+          valorTotal: parsedDoc.valorTotal,
+          valorIcms: parsedDoc.valorIcms,
+          valorIpi: parsedDoc.valorIpi,
+          valorPis: parsedDoc.valorPis,
+          valorCofins: parsedDoc.valorCofins,
+          aliquotaCbs: parsedDoc.valorTotal > 0 ? Number(((parsedDoc.valorCbs / parsedDoc.valorTotal) * 100).toFixed(2)) : 8.8,
+          valorCbs: parsedDoc.valorCbs,
+          aliquotaIbs: parsedDoc.valorTotal > 0 ? Number(((parsedDoc.valorIbs / parsedDoc.valorTotal) * 100).toFixed(2)) : 17.7,
+          valorIbs: parsedDoc.valorIbs,
+          valorImpostoSeletivo: parsedDoc.valorIs,
+          statusAuditoria: 'conforme',
+          alertasAuditoria: [],
+          eventoUltimo: 'Autorizado o uso do DF-e',
+          statusSincronizacaoErp: 'pendente',
+          xmlRaw: sanitizedXml,
+          isResumoApenas: false,
+          itens: parsedDoc.itens,
+        });
+      } catch (procErr: any) {
+        console.error('❌ Falha ao processar XML completo:', procErr.message);
       }
     }
 
-    // 5. Atualizar ultimo_nsu e max_nsu da empresa no banco de dados
+    // 4. Atualizar NSU da empresa no banco
     try {
-      const db = getDatabase();
       db.prepare(`
         UPDATE empresas
-        SET ultimo_nsu = ?, max_nsu = ?, updated_at = datetime('now')
+        SET ultimo_nsu = ?, max_nsu = ?, updated_at = ?
         WHERE id = ?
-      `).run(ultNSURetorno, maxNSURetorno, empresaId);
+      `).run(ultNSURetorno, maxNSURetorno, brasiliaNow, empresaId);
     } catch {}
 
     const success = ['137', '138'].includes(cStat);
@@ -885,6 +962,7 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
       maxNSU: maxNSURetorno,
       tpAmb,
       docs: docsProcessados,
+      eventosTerceiros,
       xmlEnvio: soapEnvelope,
       xmlRetorno: response.body,
     };
@@ -904,13 +982,13 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
   }
 }
 
-/**
- * Verifica conectividade com o WebService da SEFAZ (ping)
- */
+// =========================================================
+// TESTE DE CONEXÃO SEFAZ (PING)
+// =========================================================
+
 export async function testarConexaoSefaz(tpAmb: '1' | '2'): Promise<{ online: boolean; latencyMs: number; endpoint: string; error?: string }> {
   const endpoints = tpAmb === '1' ? SEFAZ.SVRS_PRODUCAO : SEFAZ.SVRS_HOMOLOGACAO;
   const url = endpoints.CONSULTA_PROTOCOLO;
-
   const start = Date.now();
 
   return new Promise((resolve) => {
@@ -930,7 +1008,7 @@ export async function testarConexaoSefaz(tpAmb: '1' | '2'): Promise<{ online: bo
         latencyMs,
         endpoint: url,
       });
-      res.resume(); // consume response
+      res.resume();
     });
 
     req.on('error', (err) => {
@@ -955,3 +1033,11 @@ export async function testarConexaoSefaz(tpAmb: '1' | '2'): Promise<{ online: bo
     req.end();
   });
 }
+
+export default {
+  UF_TO_CUF,
+  transmitirEventoSefaz,
+  consultarDistribuicaoDFe,
+  testarConexaoSefaz,
+  converterPfxParaPem,
+};

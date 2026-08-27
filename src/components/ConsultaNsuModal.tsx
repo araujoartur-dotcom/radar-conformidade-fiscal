@@ -233,6 +233,10 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         setResults([]);
       }
 
+      if (data.eventosTerceiros && data.eventosTerceiros.length > 0) {
+        addLog(`🔔 [Monitor 360°] ${data.eventosTerceiros.length} evento(s) de terceiros / manifestações de clientes identificado(s) e auditado(s) no banco.`);
+      }
+
     } catch (err: any) {
       if (err.name === 'TimeoutError' || err.name === 'AbortError') {
         addLog(`❌ Timeout: A SEFAZ não respondeu dentro de 60 segundos.`);
