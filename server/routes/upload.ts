@@ -14,6 +14,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { salvarXmlLocalmente } from '../utils/fileStorage';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
@@ -220,6 +221,100 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
         }
       }
     })();
+
+    // 3.1 Sincronização em segundo plano no Supabase (se configurado)
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase.from('dfe_documentos').upsert({
+            id: docId,
+            empresa_id: empresaId,
+            tipo_doc: parsed.tipoDoc,
+            chave_acesso: parsed.chaveAcesso,
+            tipo_operacao: parsed.tipoOperacao,
+            numero_serie: parsed.numero,
+            data_emissao: parsed.dataEmissao,
+            data_entrada: parsed.dataEntrada,
+            competencia: parsed.competencia,
+            fornecedor_cnpj: parsed.emitenteCnpj,
+            fornecedor_razao: parsed.emitenteNome,
+            fornecedor_uf: parsed.emitenteUf,
+            fornecedor_municipio: parsed.emitenteMunicipio,
+            fornecedor_ie: parsed.emitenteIe || '',
+            cliente_cnpj: parsed.destinatarioCnpj,
+            cliente_razao: parsed.destinatarioNome,
+            cliente_uf: parsed.destinatarioUf,
+            cliente_ie: parsed.destinatarioIe || '',
+            situacao_doc: parsed.situacaoDoc,
+            situacao_manifestacao: parsed.situacaoManifestacao,
+            evento_ultimo: parsed.eventoUltimo,
+            valor_total: parsed.valorTotal,
+            valor_icms: parsed.valorIcms,
+            valor_ipi: parsed.valorIpi,
+            valor_pis: parsed.valorPis,
+            valor_cofins: parsed.valorCofins,
+            valor_cbs: parsed.valorCbs,
+            valor_ibs: parsed.valorIbs,
+            valor_is: parsed.valorIs,
+            valor_irrf: parsed.valorIrrf,
+            valor_inss: parsed.valorInss,
+            valor_iss: parsed.valorIss,
+            valor_csll: parsed.valorCsll,
+            xml_raw: parsed.xmlRaw,
+            status_sefaz: parsed.statusSefaz,
+            protocolo_sefaz: parsed.protocoloSefaz,
+            download_at: brasiliaNow,
+            updated_at: brasiliaNow
+          }, { onConflict: 'chave_acesso' });
+
+          if (parsed.itens && parsed.itens.length > 0) {
+            const supaItens = parsed.itens.map(it => ({
+              id: uuidv4(),
+              documento_id: docId,
+              item_nro: it.numeroItem,
+              codigo_item: it.codigo,
+              descricao_item: it.descricao,
+              ncm: it.ncm,
+              cest: it.cest,
+              cfop: it.cfop,
+              cclasstrib: it.cClassTrib,
+              cst_csosn: it.cstCsosn,
+              natureza_operacao: it.naturezaOperacao,
+              quantidade: it.quantidade,
+              unidade: it.unidade,
+              valor_unitario: it.valorUnitario,
+              valor_bruto_item: it.valorBruto,
+              desconto_incondicional: it.desconto,
+              frete_seguro_rateado: it.freteSeguro,
+              valor_liquido_item: it.valorLiquido,
+              base_icms: it.baseIcms,
+              aliquota_icms: it.aliquotaIcms,
+              valor_icms: it.valorIcms,
+              base_ipi: it.baseIpi,
+              aliquota_ipi: it.aliquotaIpi,
+              valor_ipi: it.valorIpi,
+              base_pis: it.basePis,
+              aliquota_pis: it.aliquotaPis,
+              valor_pis: it.valorPis,
+              base_cofins: it.baseCofins,
+              aliquota_cofins: it.aliquotaCofins,
+              valor_cofins: it.valorCofins,
+              base_ibs: it.baseIbs,
+              aliquota_ibs: it.aliquotaIbs,
+              valor_ibs: it.valorIbs,
+              base_cbs: it.baseCbs,
+              aliquota_cbs: it.aliquotaCbs,
+              valor_cbs: it.valorCbs,
+              valor_is: it.valorIs
+            }));
+            await supabase.from('dfe_itens').upsert(supaItens);
+          }
+        } catch (supaErr: any) {
+          console.warn('⚠️ Supabase upload sync warning:', supaErr?.message || supaErr);
+        }
+      }
+    }
 
     // 4. Salvar fisicamente no disco em C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\
     try {

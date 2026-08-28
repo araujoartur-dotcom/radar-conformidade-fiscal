@@ -742,6 +742,43 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
               brasiliaNow
             );
           })();
+
+          // Sincronização segura no Supabase (Resumo)
+          if (isSupabaseConfigured()) {
+            const supabase = getSupabaseAdmin();
+            if (supabase) {
+              try {
+                await supabase.from('dfe_documentos').upsert({
+                  id: docDbId,
+                  empresa_id: empresaId,
+                  tipo_doc: 'NFe',
+                  chave_acesso: chNFe,
+                  tipo_operacao: 'Entrada',
+                  numero_serie: `${chNFe.substring(25, 34)} / ${chNFe.substring(22, 25)}`,
+                  data_emissao: dhEmi,
+                  data_entrada: brasiliaNow,
+                  competencia: dhEmi.substring(0, 7),
+                  fornecedor_cnpj: emitCnpj,
+                  fornecedor_razao: emitNome,
+                  fornecedor_uf: 'SP',
+                  cliente_cnpj: cnpj.replace(/\D/g, ''),
+                  cliente_razao: 'MINHA EMPRESA',
+                  cliente_uf: 'SP',
+                  situacao_doc: 'autorizado',
+                  situacao_manifestacao: manifestado ? 'ciencia_emitida' : 'sem_manifestacao',
+                  evento_ultimo: manifestado ? 'Ciência da Emissão' : 'Resumo Capturado',
+                  valor_total: vNF,
+                  valor_cbs: Number((vNF * 0.088).toFixed(2)),
+                  valor_ibs: Number((vNF * 0.177).toFixed(2)),
+                  xml_raw: sanitizedXml,
+                  download_at: brasiliaNow,
+                  updated_at: brasiliaNow
+                }, { onConflict: 'chave_acesso' });
+              } catch (supaErr: any) {
+                console.warn('⚠️ Supabase sync warning (resumo):', supaErr?.message || supaErr);
+              }
+            }
+          }
         } catch (resErr: any) {
           console.warn('Aviso: falha ao persistir resumo no banco:', resErr.message);
         }
@@ -904,6 +941,100 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
             }
           }
         })();
+
+        // Sincronização segura no Supabase (XML Completo + Itens)
+        if (isSupabaseConfigured()) {
+          const supabase = getSupabaseAdmin();
+          if (supabase) {
+            try {
+              await supabase.from('dfe_documentos').upsert({
+                id: docDbId,
+                empresa_id: empresaId,
+                tipo_doc: parsedDoc.tipoDoc,
+                chave_acesso: parsedDoc.chaveAcesso,
+                tipo_operacao: tipoOperacaoDoc,
+                numero_serie: parsedDoc.numero,
+                data_emissao: parsedDoc.dataEmissao,
+                data_entrada: parsedDoc.dataEntrada,
+                competencia: parsedDoc.competencia,
+                fornecedor_cnpj: parsedDoc.emitenteCnpj,
+                fornecedor_razao: parsedDoc.emitenteNome,
+                fornecedor_uf: parsedDoc.emitenteUf,
+                fornecedor_municipio: parsedDoc.emitenteMunicipio,
+                fornecedor_ie: parsedDoc.emitenteIe || '',
+                cliente_cnpj: parsedDoc.destinatarioCnpj,
+                cliente_razao: parsedDoc.destinatarioNome,
+                cliente_uf: parsedDoc.destinatarioUf,
+                cliente_ie: parsedDoc.destinatarioIe || '',
+                situacao_doc: parsedDoc.situacaoDoc,
+                situacao_manifestacao: parsedDoc.situacaoManifestacao,
+                evento_ultimo: parsedDoc.eventoUltimo,
+                valor_total: parsedDoc.valorTotal,
+                valor_icms: parsedDoc.valorIcms,
+                valor_ipi: parsedDoc.valorIpi,
+                valor_pis: parsedDoc.valorPis,
+                valor_cofins: parsedDoc.valorCofins,
+                valor_cbs: parsedDoc.valorCbs,
+                valor_ibs: parsedDoc.valorIbs,
+                valor_is: parsedDoc.valorIs,
+                valor_irrf: parsedDoc.valorIrrf,
+                valor_inss: parsedDoc.valorInss,
+                valor_iss: parsedDoc.valorIss,
+                valor_csll: parsedDoc.valorCsll,
+                xml_raw: sanitizedXml,
+                status_sefaz: parsedDoc.statusSefaz,
+                protocolo_sefaz: parsedDoc.protocoloSefaz,
+                download_at: brasiliaNow,
+                updated_at: brasiliaNow
+              }, { onConflict: 'chave_acesso' });
+
+              if (parsedDoc.itens && parsedDoc.itens.length > 0) {
+                const supaItens = parsedDoc.itens.map(it => ({
+                  id: uuidv4(),
+                  documento_id: docDbId,
+                  item_nro: it.numeroItem,
+                  codigo_item: it.codigo,
+                  descricao_item: it.descricao,
+                  ncm: it.ncm,
+                  cest: it.cest,
+                  cfop: it.cfop,
+                  cclasstrib: it.cClassTrib,
+                  cst_csosn: it.cstCsosn,
+                  natureza_operacao: it.naturezaOperacao,
+                  quantidade: it.quantidade,
+                  unidade: it.unidade,
+                  valor_unitario: it.valorUnitario,
+                  valor_bruto_item: it.valorBruto,
+                  desconto_incondicional: it.desconto,
+                  frete_seguro_rateado: it.freteSeguro,
+                  valor_liquido_item: it.valorLiquido,
+                  base_icms: it.baseIcms,
+                  aliquota_icms: it.aliquotaIcms,
+                  valor_icms: it.valorIcms,
+                  base_ipi: it.baseIpi,
+                  aliquota_ipi: it.aliquotaIpi,
+                  valor_ipi: it.valorIpi,
+                  base_pis: it.basePis,
+                  aliquota_pis: it.aliquotaPis,
+                  valor_pis: it.valorPis,
+                  base_cofins: it.baseCofins,
+                  aliquota_cofins: it.aliquotaCofins,
+                  valor_cofins: it.valorCofins,
+                  base_ibs: it.baseIbs,
+                  aliquota_ibs: it.aliquotaIbs,
+                  valor_ibs: it.valorIbs,
+                  base_cbs: it.baseCbs,
+                  aliquota_cbs: it.aliquotaCbs,
+                  valor_cbs: it.valorCbs,
+                  valor_is: it.valorIs
+                }));
+                await supabase.from('dfe_itens').upsert(supaItens);
+              }
+            } catch (supaErr: any) {
+              console.warn('⚠️ Supabase sync warning (full XML):', supaErr?.message || supaErr);
+            }
+          }
+        }
 
         docsProcessados.push({
           id: docDbId,
