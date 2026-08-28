@@ -37,10 +37,11 @@ export default function App() {
     return saved || 'central_kpis';
   });
 
-  // Persist activeMode on navigation
+  // Persist activeMode on navigation and reload documents
   useEffect(() => {
     if (activeMode) {
       localStorage.setItem('@RadarFiscal:activeMode', activeMode);
+      loadDocumentos();
     }
   }, [activeMode]);
 
@@ -110,33 +111,45 @@ export default function App() {
     if (!empresaAtiva) return;
     const res = await get<{ success: boolean; data: any[] }>('/upload/documentos');
     if (res.ok && res.data?.data) {
-      const mappedList: DfeXmlItem[] = res.data.data.map(doc => ({
-        id: doc.id,
-        chaveAcesso: doc.chave_acesso,
-        tipo: doc.tipo_doc as any,
-        numero: doc.numero_serie.split(' / ')[0] || '',
-        serie: doc.numero_serie.split(' / ')[1] || '',
-        dataEmissao: doc.data_emissao,
-        emitenteCnpj: doc.fornecedor_cnpj,
-        emitenteNome: doc.fornecedor_razao,
-        emitenteUf: doc.fornecedor_uf,
-        destinatarioCnpj: doc.cliente_cnpj,
-        destinatarioNome: doc.cliente_razao,
-        destinatarioUf: doc.cliente_uf,
-        valorTotal: doc.valor_total,
-        valorIcms: (doc as any).valor_icms || 0,
-        valorIpi: (doc as any).valor_ipi || 0,
-        valorPis: (doc as any).valor_pis || 0,
-        valorCofins: (doc as any).valor_cofins || 0,
-        aliquotaCbs: (doc as any).aliquota_cbs || 0,
-        valorCbs: (doc as any).valor_cbs || 0,
-        aliquotaIbs: (doc as any).aliquota_ibs || 0,
-        valorIbs: (doc as any).valor_ibs || 0,
-        valorImpostoSeletivo: (doc as any).valor_imposto_seletivo || 0,
-        statusAuditoria: 'conforme',
-        alertasAuditoria: [],
-        statusSincronizacaoErp: 'pendente'
-      }));
+      const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
+        const docTotal = Number(doc.valor_total) || 0;
+        const cbsVal = doc.valor_cbs !== null && doc.valor_cbs !== undefined ? Number(doc.valor_cbs) : Number((docTotal * 0.088).toFixed(2));
+        const ibsVal = doc.valor_ibs !== null && doc.valor_ibs !== undefined ? Number(doc.valor_ibs) : Number((docTotal * 0.177).toFixed(2));
+        const numSerieParts = (doc.numero_serie || '').split(' / ');
+        
+        return {
+          id: doc.id,
+          chaveAcesso: doc.chave_acesso,
+          tipo: (doc.tipo_doc as any) || 'NFe',
+          numero: numSerieParts[0] || (doc.chave_acesso ? doc.chave_acesso.substring(25, 34) : '1'),
+          serie: numSerieParts[1] || '1',
+          dataEmissao: doc.data_emissao ? String(doc.data_emissao).split('T')[0] : new Date().toISOString().split('T')[0],
+          emitenteCnpj: doc.fornecedor_cnpj || '00000000000000',
+          emitenteNome: doc.fornecedor_razao || 'FORNECEDOR',
+          emitenteUf: doc.fornecedor_uf || 'SP',
+          destinatarioCnpj: doc.cliente_cnpj || '00000000000000',
+          destinatarioNome: doc.cliente_razao || 'CLIENTE',
+          destinatarioUf: doc.cliente_uf || 'SP',
+          valorTotal: docTotal,
+          valorIcms: Number(doc.valor_icms) || 0,
+          valorIpi: Number(doc.valor_ipi) || 0,
+          valorPis: Number(doc.valor_pis) || 0,
+          valorCofins: Number(doc.valor_cofins) || 0,
+          aliquotaCbs: docTotal > 0 && cbsVal > 0 ? Number(((cbsVal / docTotal) * 100).toFixed(2)) : 8.8,
+          valorCbs: cbsVal,
+          aliquotaIbs: docTotal > 0 && ibsVal > 0 ? Number(((ibsVal / docTotal) * 100).toFixed(2)) : 17.7,
+          valorIbs: ibsVal,
+          valorImpostoSeletivo: Number(doc.valor_is) || 0,
+          eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
+          situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
+          alertaFraude: Boolean(doc.alerta_fraude),
+          statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
+          alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
+          statusSincronizacaoErp: 'pendente',
+          xmlRaw: doc.xml_raw || '',
+          downloadAt: doc.download_at || '',
+        };
+      });
       setDfeList(mappedList);
     }
   };

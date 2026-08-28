@@ -589,6 +589,22 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     } catch {}
   };
 
+  const handleResetBatch = () => {
+    setRawChavesText('');
+    setBatchItems([]);
+    setBatchProgress({
+      current: 0,
+      total: 0,
+      successCount: 0,
+      errorCount: 0,
+      etaSeconds: 0
+    });
+    setIsBatchRunning(false);
+    setIsBatchPaused(false);
+    setResults(null);
+    setLogs([]);
+  };
+
   const handleConfirmImport = () => {
     if (results && results.length > 0) {
       onImportDfeItems(results);
@@ -888,11 +904,11 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                       {rawChavesText && (
                         <button
                           type="button"
-                          onClick={() => { setRawChavesText(''); setBatchItems([]); }}
+                          onClick={handleResetBatch}
                           disabled={isBatchRunning}
-                          className="px-2 py-1 rounded-lg text-slate-400 hover:text-rose-400 text-[11px] transition-all cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 text-rose-300 hover:text-white text-[11px] font-bold transition-all cursor-pointer"
                         >
-                          Limpar
+                          ✕ Limpar
                         </button>
                       )}
                     </div>
@@ -944,7 +960,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                         </div>
 
                         <div className="flex items-center gap-2">
-                          {isBatchRunning && (
+                          {isBatchRunning ? (
                             <>
                               <button
                                 type="button"
@@ -964,6 +980,15 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
                                 <span>Cancelar</span>
                               </button>
                             </>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleResetBatch}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border border-slate-700 shadow-sm"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>Nova Busca / Limpar Lote</span>
+                            </button>
                           )}
                         </div>
                       </div>
