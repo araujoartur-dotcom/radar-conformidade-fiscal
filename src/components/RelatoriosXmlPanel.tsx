@@ -90,6 +90,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
       if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
       if (empresaAtiva?.id) query.append('empresaId', empresaAtiva.id);
+      query.append('limit', '25000');
       
       const response = await fetch(`${getApiBaseUrl()}/relatorios/xml?${query.toString()}`, {
         headers: {

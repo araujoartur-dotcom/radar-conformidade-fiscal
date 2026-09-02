@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt, Zap } from 'lucide-react';
+import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt, Zap, Search } from 'lucide-react';
 import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
 import { parseDfeXmlString } from '../utils/xmlParser';
 import { DanfeModal } from './DanfeModal';
@@ -40,11 +40,13 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
+  const [listSearch, setListSearch] = useState<string>('');
+  const [visibleLimit, setVisibleLimit] = useState<number>(100);
 
   const { get, post } = useApi();
 
   const loadDocumentos = async () => {
-    const res = await get<{ success: boolean; data: any[] }>('/upload/documentos');
+    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
     if (res.ok && res.data?.data) {
       const mappedList: DfeXmlItem[] = res.data.data.map(doc => ({
         id: doc.id,
@@ -272,68 +274,129 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <FileCode className="w-4 h-4 text-cyan-400" />
-              Documentos Importados ({dfeList.length})
+              Documentos Importados ({dfeList.length.toLocaleString('pt-BR')})
             </h3>
+            {dfeList.length > 0 && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
+                Mostrando {Math.min(visibleLimit, dfeList.length).toLocaleString('pt-BR')} de {dfeList.length.toLocaleString('pt-BR')}
+              </span>
+            )}
           </div>
 
+          {/* Quick Filter */}
+          {dfeList.length > 5 && (
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Filtrar por número, prestador, CNPJ, chave..."
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
+              />
+            </div>
+          )}
+
           <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-            {dfeList.map((item) => {
-              const isSelected = selectedDfe?.id === item.id;
-              return (
-                <div
-                  key={item.id}
-                  onClick={() => setSelectedDfe(item)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-blue-950/60 border-blue-500 shadow-md shadow-blue-500/10'
-                      : item.alertaFraude
-                      ? 'bg-red-950/30 border-red-800/80 hover:bg-red-950/50'
-                      : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-bold text-white px-2 py-0.5 rounded bg-blue-900/80 border border-blue-700">
-                          {item.tipo} {item.numero}
-                        </span>
-                        <span className="text-[11px] font-mono text-slate-400">
-                          Série {item.serie}
-                        </span>
-                        {item.alertaFraude && (
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-600 text-white shadow-sm animate-pulse flex items-center gap-1">
-                            <ShieldAlert className="w-3 h-3" />
-                            DESCONHECIDA
+            {dfeList
+              .filter(item => {
+                if (!listSearch) return true;
+                const q = listSearch.toLowerCase();
+                return (
+                  (item.numero || '').toLowerCase().includes(q) ||
+                  (item.chaveAcesso || '').toLowerCase().includes(q) ||
+                  (item.emitenteNome || '').toLowerCase().includes(q) ||
+                  (item.emitenteCnpj || '').includes(q) ||
+                  (item.tipo || '').toLowerCase().includes(q)
+                );
+              })
+              .slice(0, visibleLimit)
+              .map((item) => {
+                const isSelected = selectedDfe?.id === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedDfe(item)}
+                    className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-blue-950/60 border-blue-500 shadow-md shadow-blue-500/10'
+                        : item.alertaFraude
+                        ? 'bg-red-950/30 border-red-800/80 hover:bg-red-950/50'
+                        : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/50'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-white px-2 py-0.5 rounded bg-blue-900/80 border border-blue-700">
+                            {item.tipo} {item.numero}
                           </span>
-                        )}
-                        {item.situacaoManifestacao === 'confirmada_pelo_destinatario' && (
-                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
-                            Confirmada
+                          <span className="text-[11px] font-mono text-slate-400">
+                            Série {item.serie}
                           </span>
-                        )}
+                          {item.alertaFraude && (
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-600 text-white shadow-sm animate-pulse flex items-center gap-1">
+                              <ShieldAlert className="w-3 h-3" />
+                              DESCONHECIDA
+                            </span>
+                          )}
+                          {item.situacaoManifestacao === 'confirmada_pelo_destinatario' && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                              Confirmada
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs font-semibold text-slate-200 truncate max-w-[280px]">
+                          {item.emitenteNome}
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 font-mono">
+                          CNPJ: {item.emitenteCnpj} ({item.emitenteUf})
+                        </div>
                       </div>
 
-                      <div className="text-xs font-semibold text-slate-200 truncate max-w-[280px]">
-                        {item.emitenteNome}
-                      </div>
-
-                      <div className="text-[11px] text-slate-400 font-mono">
-                        CNPJ: {item.emitenteCnpj} ({item.emitenteUf})
-                      </div>
-                    </div>
-
-                    <div className="text-right space-y-1 shrink-0">
-                      <div className="text-sm font-bold text-emerald-400 font-mono">
-                        {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </div>
-                      <div className="text-xs font-mono text-slate-400">
-                        {formatBrasiliaDate(item.dataEmissao)}
+                      <div className="text-right space-y-1 shrink-0">
+                        <div className="text-sm font-bold text-emerald-400 font-mono">
+                          {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </div>
+                        <div className="text-xs font-mono text-slate-400">
+                          {formatBrasiliaDate(item.dataEmissao)}
+                        </div>
                       </div>
                     </div>
                   </div>
+                );
+              })}
+
+            {/* Pagination / Batch Loader */}
+            {dfeList.length > visibleLimit && (
+              <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex items-center justify-between gap-2 text-xs">
+                <span className="text-slate-400 font-mono text-[11px]">
+                  Mais documentos disponíveis
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setVisibleLimit(prev => prev + 100)}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs"
+                  >
+                    + 100
+                  </button>
+                  <button
+                    onClick={() => setVisibleLimit(prev => prev + 500)}
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs"
+                  >
+                    + 500
+                  </button>
+                  <button
+                    onClick={() => setVisibleLimit(dfeList.length)}
+                    className="px-2.5 py-1 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 hover:bg-cyan-900 font-bold text-xs"
+                  >
+                    Ver Todos ({dfeList.length.toLocaleString('pt-BR')})
+                  </button>
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         </div>
 

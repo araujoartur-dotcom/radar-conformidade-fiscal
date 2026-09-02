@@ -722,13 +722,16 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
 
     // ── ESTRATÉGIA 1: TENTAR SUPABASE PRIMEIRO (fonte durável) ──
     let documentos: any[] = [];
+    let totalCount = 0;
     let supabaseFetched = false;
+    const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
+    const requestedOffset = parseInt(req.query.offset as string) || 0;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
-          let supaQuery = supabase.from('dfe_documentos').select('*');
+          let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
 
           // Filtros de tenant
           if (!isSuperadmin && tenantCnpjClean) {
@@ -747,9 +750,9 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
           if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') supaQuery = supaQuery.eq('tipo_doc', String(req.query.tipoDoc));
           if (req.query.chaveAcesso) supaQuery = supaQuery.ilike('chave_acesso', `%${req.query.chaveAcesso}%`);
 
-          const { data: supaDocs, error: supaErr } = await supaQuery
+          const { data: supaDocs, count: supaTotal, error: supaErr } = await supaQuery
             .order('data_emissao', { ascending: false })
-            .limit(parseInt(req.query.limit as string) || 200);
+            .range(requestedOffset, requestedOffset + requestedLimit - 1);
 
           if (!supaErr && supaDocs && supaDocs.length > 0) {
             documentos = supaDocs.map(d => ({
@@ -757,8 +760,9 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
               empresa_nome: d.fornecedor_razao || d.cliente_razao || 'EMPRESA',
               empresa_cnpj: d.fornecedor_cnpj || d.cliente_cnpj || '',
             }));
+            totalCount = supaTotal || documentos.length;
             supabaseFetched = true;
-            console.log(`📡 GET /documentos: ${documentos.length} documentos carregados do Supabase.`);
+            console.log(`📡 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do Supabase.`);
           } else if (supaErr) {
             console.warn('⚠️ Supabase query error:', supaErr.message);
           }
@@ -777,12 +781,17 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         LEFT JOIN empresas e ON e.id = d.empresa_id
         WHERE 1=1
       `;
+      let countQuery = `
+        SELECT COUNT(*) as total
+        FROM dfe_documentos d
+        WHERE 1=1
+      `;
       const params: any[] = [];
+      const countParams: any[] = [];
 
       if (!isSuperadmin) {
         if (tenantCnpjClean) {
-          // Matching flexível: empresa_id OU CNPJ no cliente/fornecedor OU vínculo usuario_empresa
-          query += `
+          const tenantFilter = `
             AND (
               d.empresa_id = ?
               OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
@@ -790,60 +799,173 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
               OR d.fornecedor_cnpj LIKE ?
             )
           `;
-          params.push(activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+          query += tenantFilter;
+          countQuery += tenantFilter;
+          const filterParams = [activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`];
+          params.push(...filterParams);
+          countParams.push(...filterParams);
         } else if (activeEmpresaId) {
-          query += `
+          const tenantFilter = `
             AND (
               d.empresa_id = ?
               OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
             )
           `;
-          params.push(activeEmpresaId, req.user?.userId || '');
-        }
-        // Se não tem activeEmpresaId NEM tenantCnpjClean → não aplica filtro de tenant,
-        // retorna todos os documentos acessíveis via usuario_empresa
-        if (!activeEmpresaId && !tenantCnpjClean) {
-          query += `
-            AND (
-              d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-              OR d.empresa_id IS NOT NULL
-            )
-          `;
-          params.push(req.user?.userId || '');
+          query += tenantFilter;
+          countQuery += tenantFilter;
+          const filterParams = [activeEmpresaId, req.user?.userId || ''];
+          params.push(...filterParams);
+          countParams.push(...filterParams);
         }
       } else if (isSuperadmin && empresaIdParam) {
-        // admin_master filtrando por empresa específica
         query += ' AND d.empresa_id = ?';
+        countQuery += ' AND d.empresa_id = ?';
         params.push(empresaIdParam);
+        countParams.push(empresaIdParam);
       }
-      // admin_master SEM filtro: não adiciona WHERE → retorna TODOS os documentos
 
       if (req.query.tipoOperacao) {
         query += ' AND d.tipo_operacao = ?';
+        countQuery += ' AND d.tipo_operacao = ?';
         params.push(req.query.tipoOperacao);
+        countParams.push(req.query.tipoOperacao);
       }
       if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
         query += ' AND d.tipo_doc = ?';
+        countQuery += ' AND d.tipo_doc = ?';
         params.push(req.query.tipoDoc);
+        countParams.push(req.query.tipoDoc);
       }
       if (req.query.chaveAcesso) {
         query += ' AND d.chave_acesso LIKE ?';
+        countQuery += ' AND d.chave_acesso LIKE ?';
         params.push(`%${req.query.chaveAcesso}%`);
+        countParams.push(`%${req.query.chaveAcesso}%`);
       }
+
+      const totalRow = db.prepare(countQuery).get(...countParams) as { total: number };
+      totalCount = totalRow?.total || 0;
 
       query += ' ORDER BY d.data_emissao DESC, d.created_at DESC';
       query += ' LIMIT ? OFFSET ?';
-      params.push(parseInt(req.query.limit as string) || 200);
-      params.push(parseInt(req.query.offset as string) || 0);
+      params.push(requestedLimit);
+      params.push(requestedOffset);
 
       documentos = db.prepare(query).all(...params) as any[];
-      console.log(`💾 GET /documentos: ${documentos.length} documentos carregados do SQLite local.`);
+      console.log(`💾 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do SQLite local.`);
     }
 
-    res.json({ success: true, data: documentos, source: supabaseFetched ? 'supabase' : 'sqlite' });
+    res.json({ 
+      success: true, 
+      data: documentos, 
+      total: totalCount || documentos.length,
+      limit: requestedLimit,
+      offset: requestedOffset,
+      source: supabaseFetched ? 'supabase' : 'sqlite' 
+    });
   } catch (err: any) {
     console.error('❌ Erro ao buscar documentos:', err);
     res.status(500).json({ success: false, error: 'Erro ao buscar documentos.', details: err.message });
+  }
+});
+
+// =========================================================
+// GET /api/upload/stats — Agregações e Totalizadores Globais no Banco
+// =========================================================
+router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const activeEmpresaId = req.user?.empresaAtivaId;
+    const isSuperadmin = req.user?.perfil === 'admin_master';
+    const empresaIdParam = req.query.empresaId as string;
+
+    let tenantCnpjClean = '';
+    if (activeEmpresaId) {
+      const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
+      if (emp?.cnpj_completo) {
+        tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
+      }
+    }
+
+    // Tentar Supabase primeiro
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          let supaQuery = supabase.from('dfe_documentos').select('tipo_doc, valor_total, valor_icms, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll');
+          if (!isSuperadmin && tenantCnpjClean) {
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
+          } else if (!isSuperadmin && empresaIdParam) {
+            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+          }
+          if (isSuperadmin && empresaIdParam) {
+            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+          }
+
+          const { data, error } = await supaQuery;
+          if (!error && data && data.length > 0) {
+            const stats = {
+              totalDocs: data.length,
+              nfeCount: data.filter(d => d.tipo_doc === 'NFe' || d.tipo_doc === '55').length,
+              nfceCount: data.filter(d => d.tipo_doc === 'NFCe' || d.tipo_doc === '65').length,
+              cteCount: data.filter(d => d.tipo_doc === 'CTe' || d.tipo_doc === '57').length,
+              nfseCount: data.filter(d => d.tipo_doc === 'NFSe').length,
+              totalValor: data.reduce((acc, d) => acc + (Number(d.valor_total) || 0), 0),
+              totalIcms: data.reduce((acc, d) => acc + (Number(d.valor_icms) || 0), 0),
+              totalPis: data.reduce((acc, d) => acc + (Number(d.valor_pis) || 0), 0),
+              totalCofins: data.reduce((acc, d) => acc + (Number(d.valor_cofins) || 0), 0),
+              totalCbs: data.reduce((acc, d) => acc + (Number(d.valor_cbs) || (Number(d.valor_total) * 0.088) || 0), 0),
+              totalIbs: data.reduce((acc, d) => acc + (Number(d.valor_ibs) || (Number(d.valor_total) * 0.177) || 0), 0),
+              totalIs: data.reduce((acc, d) => acc + (Number(d.valor_is) || 0), 0),
+              totalIrrf: data.reduce((acc, d) => acc + (Number(d.valor_irrf) || 0), 0),
+              totalInss: data.reduce((acc, d) => acc + (Number(d.valor_inss) || 0), 0),
+              totalIss: data.reduce((acc, d) => acc + (Number(d.valor_iss) || 0), 0),
+            };
+            return res.json({ success: true, data: stats, source: 'supabase' });
+          }
+        } catch (e: any) {
+          console.warn('⚠️ Supabase stats query fallback:', e?.message);
+        }
+      }
+    }
+
+    // SQLite Aggregates
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    if (!isSuperadmin) {
+      if (tenantCnpjClean) {
+        whereClause += ' AND (d.empresa_id = ? OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?) OR d.cliente_cnpj LIKE ? OR d.fornecedor_cnpj LIKE ?)';
+        params.push(activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+      }
+    } else if (isSuperadmin && empresaIdParam) {
+      whereClause += ' AND d.empresa_id = ?';
+      params.push(empresaIdParam);
+    }
+
+    const row = db.prepare(`
+      SELECT 
+        COUNT(*) as totalDocs,
+        SUM(CASE WHEN tipo_doc IN ('NFe', '55') THEN 1 ELSE 0 END) as nfeCount,
+        SUM(CASE WHEN tipo_doc IN ('NFCe', '65') THEN 1 ELSE 0 END) as nfceCount,
+        SUM(CASE WHEN tipo_doc IN ('CTe', '57') THEN 1 ELSE 0 END) as cteCount,
+        SUM(CASE WHEN tipo_doc = 'NFSe' THEN 1 ELSE 0 END) as nfseCount,
+        COALESCE(SUM(valor_total), 0) as totalValor,
+        COALESCE(SUM(valor_icms), 0) as totalIcms,
+        COALESCE(SUM(valor_pis), 0) as totalPis,
+        COALESCE(SUM(valor_cofins), 0) as totalCofins,
+        COALESCE(SUM(valor_cbs), 0) as totalCbs,
+        COALESCE(SUM(valor_ibs), 0) as totalIbs,
+        COALESCE(SUM(valor_is), 0) as totalIs,
+        COALESCE(SUM(valor_irrf), 0) as totalIrrf,
+        COALESCE(SUM(valor_inss), 0) as totalInss,
+        COALESCE(SUM(valor_iss), 0) as totalIss
+      FROM dfe_documentos d
+      ${whereClause}
+    `).get(...params) as any;
+
+    res.json({ success: true, data: row, source: 'sqlite' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

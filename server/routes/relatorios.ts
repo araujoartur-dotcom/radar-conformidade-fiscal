@@ -182,16 +182,21 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    query += ' ORDER BY d.data_emissao DESC, d.created_at DESC LIMIT 500';
+    const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
+    const requestedOffset = parseInt(req.query.offset as string) || 0;
+
+    query += ' ORDER BY d.data_emissao DESC, d.created_at DESC LIMIT ? OFFSET ?';
+    params.push(requestedLimit, requestedOffset);
 
     let rows = db.prepare(query).all(...params) as any[];
+    let totalCount = rows.length;
 
     // Fallback: Se não encontrou no SQLite e o Supabase está configurado, tenta carregar do Supabase
     if (rows.length === 0 && isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
-          let supaQuery = supabase.from('dfe_documentos').select('*');
+          let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
           if (targetEmpresaId && !isSuperadmin) {
             supaQuery = supaQuery.eq('empresa_id', targetEmpresaId);
           }
@@ -202,8 +207,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           if (tipoDoc && tipoDoc !== 'TODOS') supaQuery = supaQuery.eq('tipo_doc', String(tipoDoc));
           if (situacaoDoc && situacaoDoc !== 'TODAS') supaQuery = supaQuery.eq('situacao_doc', String(situacaoDoc));
 
-          const { data: supaDocs, error: supaErr } = await supaQuery.order('data_emissao', { ascending: false }).limit(200);
+          const { data: supaDocs, count: supaCount, error: supaErr } = await supaQuery
+            .order('data_emissao', { ascending: false })
+            .range(requestedOffset, requestedOffset + requestedLimit - 1);
+
           if (!supaErr && supaDocs && supaDocs.length > 0) {
+            totalCount = supaCount || supaDocs.length;
             rows = supaDocs.map(d => ({
               docId: d.id,
               empresaId: d.empresa_id,
@@ -232,14 +241,18 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
               docValorCbs: d.valor_cbs,
               docValorIbs: d.valor_ibs,
               docValorIs: d.valor_is,
+              docValorIrrf: d.valor_irrf,
+              docValorInss: d.valor_inss,
+              docValorIss: d.valor_iss,
+              docValorCsll: d.valor_csll,
               itemNro: 1,
-              descricaoItem: 'Item Principal / Operação Global',
-              ncm: '2711.19.10',
+              descricaoItem: d.tipo_doc === 'NFSe' ? 'Prestação de Serviços Profissionais' : 'Item Principal / Operação Global',
+              ncm: d.tipo_doc === 'NFSe' ? '17.01' : '2711.19.10',
               cest: '',
-              cfop: '1102',
+              cfop: d.tipo_doc === 'NFSe' ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102'),
               cClassTrib: '000001',
               cstCsosn: '000',
-              naturezaOperacao: 'Operação Fiscal',
+              naturezaOperacao: d.tipo_doc === 'NFSe' ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal',
               quantidade: 1,
               unidade: 'UN',
               valorUnitario: d.valor_total,
@@ -429,7 +442,13 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       };
     });
 
-    res.json({ success: true, data: mapped, total: mapped.length });
+    res.json({ 
+      success: true, 
+      data: mapped, 
+      total: totalCount || mapped.length,
+      limit: requestedLimit,
+      offset: requestedOffset
+    });
   } catch (err: any) {
     console.error('❌ Erro no endpoint /api/relatorios/xml:', err);
     res.status(500).json({ success: false, error: 'Erro interno ao gerar relatório: ' + err.message });

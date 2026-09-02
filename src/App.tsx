@@ -109,7 +109,7 @@ export default function App() {
 
   const loadDocumentos = async () => {
     if (!empresaAtiva) return;
-    const res = await get<{ success: boolean; data: any[] }>('/upload/documentos');
+    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
     if (res.ok && res.data?.data) {
       const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
         const docTotal = Number(doc.valor_total) || 0;
