@@ -73,6 +73,10 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         d.valor_cbs as docValorCbs,
         d.valor_ibs as docValorIbs,
         d.valor_is as docValorIs,
+        d.valor_irrf as docValorIrrf,
+        d.valor_inss as docValorInss,
+        d.valor_iss as docValorIss,
+        d.valor_csll as docValorCsll,
         i.item_nro as itemNro,
         i.descricao_item as descricaoItem,
         i.ncm,
@@ -259,7 +263,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const cfopMap = new Map(cfops.map(c => [c.cfop, c]));
 
     const mapped = rows.map(r => {
-      const itemCfop = r.cfop || '1102';
+      const itemCfop = r.cfop || (r.tipoDoc === 'NFSe' ? '1933' : '1102');
       const cfopInfo = cfopMap.get(itemCfop) || { tratamento_padrao: 'Elegível', exige_onerosidade: 1 };
       
       const docTotal = Number(r.docValorTotal) || 0;
@@ -274,6 +278,54 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       let resultadoElegibilidade = 'Elegível';
       if (cfopInfo.tratamento_padrao === 'Não elegível') resultadoElegibilidade = 'Não elegível';
       if (cfopInfo.tratamento_padrao === 'Depende') resultadoElegibilidade = 'Pendente';
+
+      // ==========================================
+      // RETENÇÕES NA FONTE (NFS-E / SERVIÇOS)
+      // ==========================================
+      const isNfse = r.tipoDoc === 'NFSe' || itemCfop === '1933' || itemCfop === '2933';
+      const valorIrrf = Number(r.docValorIrrf) || 0;
+      const valorInss = Number(r.docValorInss) || 0;
+      const valorIssRetido = Number(r.docValorIss) || 0;
+      const valorCsllRetido = Number(r.docValorCsll) || (isNfse && docTotal > 0 ? Number((docTotal * 0.01).toFixed(2)) : 0);
+      const valorPisRetido = isNfse ? (Number(r.docValorPis) || (docTotal > 0 ? Number((docTotal * 0.0065).toFixed(2)) : 0)) : 0;
+      const valorCofinsRetido = isNfse ? (Number(r.docValorCofins) || (docTotal > 0 ? Number((docTotal * 0.03).toFixed(2)) : 0)) : 0;
+
+      const totalRetencoes = valorIrrf + valorInss + valorIssRetido + valorCsllRetido + valorPisRetido + valorCofinsRetido;
+      const valorLiquidoServico = docTotal > 0 ? Math.max(0, docTotal - totalRetencoes) : docTotal;
+
+      const aliquotaIrrf = docTotal > 0 && valorIrrf > 0 ? Number(((valorIrrf / docTotal) * 100).toFixed(2)) : (isNfse ? 1.5 : 0);
+      const aliquotaInss = docTotal > 0 && valorInss > 0 ? Number(((valorInss / docTotal) * 100).toFixed(2)) : (isNfse ? 11.0 : 0);
+      const aliquotaCsllRetido = 1.0;
+      const aliquotaPisRetido = 0.65;
+      const aliquotaCofinsRetido = 3.0;
+      const aliquotaIssRetido = docTotal > 0 && valorIssRetido > 0 ? Number(((valorIssRetido / docTotal) * 100).toFixed(2)) : 5.0;
+
+      // Diagnóstico contra a Matriz de Retenções (Lei 10.833/03, RIR/2018, LC 116/03)
+      let diagnosticoRetencao: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' = 'CONFORME';
+      let motivoDiagnosticoRetencao = 'Retenções em conformidade legal';
+
+      if (isNfse) {
+        if (docTotal <= 215.00 && totalRetencoes === 0) {
+          diagnosticoRetencao = 'DISPENSADO_LIMITE';
+          motivoDiagnosticoRetencao = 'Dispensa de CRF (imposto <= R$ 10,00 - Art. 31 da Lei 10.833/03)';
+        } else if (totalRetencoes > 0) {
+          const crfTotal = valorPisRetido + valorCofinsRetido + valorCsllRetido;
+          const crfAliq = docTotal > 0 ? (crfTotal / docTotal) * 100 : 0;
+          if (valorIrrf > 0 && aliquotaIrrf !== 1.5 && aliquotaIrrf !== 1.0) {
+            diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
+            motivoDiagnosticoRetencao = `Alíquota IRRF aplicada (${aliquotaIrrf}%) diverge do padrão legal (1,50% ou 1,00% - Art. 714/716 RIR/2018)`;
+          } else if (crfTotal > 0 && Math.abs(crfAliq - 4.65) > 0.25) {
+            diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
+            motivoDiagnosticoRetencao = `Alíquota CRF/PCC (${crfAliq.toFixed(2)}%) diverge do padrão (4,65% - Art. 30 Lei 10.833/03)`;
+          } else {
+            diagnosticoRetencao = 'CONFORME';
+            motivoDiagnosticoRetencao = 'Retenções destacadas com 100% de aderência à Lei 10.833/03 e RIR/2018';
+          }
+        } else if (docTotal > 5000) {
+          diagnosticoRetencao = 'FALTA_RETENCAO';
+          motivoDiagnosticoRetencao = 'Serviço com valor superior a R$ 5.000 sem destaque de retenção na fonte (verificar se optante pelo Simples Nacional)';
+        }
+      }
 
       return {
         id: r.itemId || `doc-item-${r.chaveAcesso}`,
@@ -299,13 +351,13 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         alertaFraude: Boolean(r.alertaFraude),
         
         itemNro: r.itemNro || 1,
-        descricaoItem: r.descricaoItem || 'Item Principal / Operação Global',
-        ncm: r.ncm || '2711.19.10',
+        descricaoItem: r.descricaoItem || (isNfse ? 'Prestação de Serviços Profissionais / Técnicos' : 'Item Principal / Operação Global'),
+        ncm: r.ncm || (isNfse ? '17.01' : '2711.19.10'),
         cest: r.cest || '',
         cfop: itemCfop,
         cClassTrib: r.cClassTrib || '000001',
         cstCsosn: r.cstCsosn || '000',
-        naturezaOperacao: r.naturezaOperacao || 'Operação Fiscal',
+        naturezaOperacao: r.naturezaOperacao || (isNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal'),
         quantidade: r.quantidade || 1,
         unidade: r.unidade || 'UN',
         valorUnitario: r.valorUnitario || docTotal,
@@ -339,21 +391,41 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         criterioOnerosidade: 'Pagamento Confirmado',
         evidenciaCobranca: true,
         
-        tipoAquisicao: 'insumo',
+        tipoAquisicao: isNfse ? 'servico' : 'insumo',
         destinacao: 'atividade_tributada',
-        regraAplicadaId: 'ELEG_001',
+        regraAplicadaId: isNfse ? 'RET_SRV_001' : 'ELEG_001',
         resultadoElegibilidade,
-        motivoPadronizado: 'Processado via API de relatórios',
+        motivoPadronizado: isNfse ? 'Serviço com retenções na fonte mapeadas' : 'Processado via API de relatórios',
         evidencia: 'XML DF-e válido e auditado',
         
         usuarioCaptura: 'Processo Automático',
         rotinaCaptura: 'Robô SEFAZ / Upload',
         
-        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude),
+        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO',
         
         temEventoAfetaCredito: Boolean(r.alertaFraude),
         creditoOriginalTotal: creditoEsperadoIbs + creditoEsperadoCbs,
-        creditoEstornadoTotal: 0
+        creditoEstornadoTotal: 0,
+
+        // Campos de Retenção na Fonte (NFS-e / Serviços)
+        valorIrrf,
+        aliquotaIrrf,
+        valorInss,
+        aliquotaInss,
+        valorPisRetido,
+        aliquotaPisRetido,
+        valorCofinsRetido,
+        aliquotaCofinsRetido,
+        valorCsllRetido,
+        aliquotaCsllRetido,
+        valorIssRetido,
+        aliquotaIssRetido,
+        totalRetencoes,
+        valorLiquidoServico,
+        codigoServicoLc116: r.ncm && r.ncm !== '2711.19.10' ? r.ncm : (isNfse ? '17.01' : ''),
+        discriminacaoServico: r.descricaoItem || (isNfse ? 'Prestação de Serviços Profissionais / Técnicos' : ''),
+        diagnosticoRetencao,
+        motivoDiagnosticoRetencao
       };
     });
 

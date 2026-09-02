@@ -169,7 +169,20 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     tipoDoc = 'CTe';
   } else if (sanitized.includes('<infMDFe') || sanitized.includes('<MDFe')) {
     tipoDoc = 'MDFe';
-  } else if (sanitized.includes('<infNfse') || sanitized.includes('<NFSe') || sanitized.includes('<CompNfse') || sanitized.includes('<DPS')) {
+  } else if (
+    sanitized.includes('<infNfse') || 
+    sanitized.includes('<NFSe') || 
+    sanitized.includes('<Nfse') ||
+    sanitized.includes('<CompNfse') || 
+    sanitized.includes('<DPS') ||
+    sanitized.includes('<infDPS') ||
+    sanitized.includes('<ConsultarNfseResposta') ||
+    sanitized.includes('<GerarNfseResposta') ||
+    sanitized.includes('<EnviarLoteRpsResposta') ||
+    sanitized.includes('<ChaveRPS') ||
+    sanitized.includes('<ValorServicos') ||
+    sanitized.includes('<ItemListaServico')
+  ) {
     tipoDoc = 'NFSe';
   } else if (sanitized.includes('mod=65') || sanitized.includes('<tpAmb') && sanitized.includes('mod=65')) {
     tipoDoc = 'NFCe';
@@ -179,14 +192,22 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   let chaveAcesso = extractTagRegex(sanitized, 'chNFe') 
     || extractTagRegex(sanitized, 'chCTe') 
     || extractTagRegex(sanitized, 'chMDFe')
+    || extractTagRegex(sanitized, 'chNFSe')
     || (sanitized.match(/Id="[a-zA-Z]*([0-9]{44,50})"/i)?.[1])
     || (sanitized.match(/<infNFe[^>]*Id="NFe([0-9]{44})"/i)?.[1])
+    || (sanitized.match(/<infNFSe[^>]*Id="([a-zA-Z0-9_-]+)"/i)?.[1])
+    || (sanitized.match(/<InfNfse[^>]*Id="([a-zA-Z0-9_-]+)"/i)?.[1])
     || '';
 
-  // 3. Emitente
+  // 3. Emitente (Prestador / Fornecedor / Transportador)
   const emitCnpj = extractSubTagRegex(sanitized, 'emit', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'prest', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'prestador', 'Cnpj') 
+    || extractSubTagRegex(sanitized, 'PrestadorServico', 'Cnpj')
+    || extractSubTagRegex(sanitized, 'IdentificacaoPrestador', 'Cnpj')
+    || extractSubTagRegex(sanitized, 'CPFCNPJPrestador', 'CNPJ')
+    || extractSubTagRegex(sanitized, 'CPFCNPJPrestador', 'Cnpj')
+    || extractTagRegex(sanitized, 'CPFCNPJPrestador')
     || extractSubTagRegex(sanitized, 'rem', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'emit', 'CPF')
     || extractTagRegex(sanitized, 'CNPJ');
@@ -194,27 +215,49 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   const emitNome = extractSubTagRegex(sanitized, 'emit', 'xNome') 
     || extractSubTagRegex(sanitized, 'prest', 'xNome') 
     || extractSubTagRegex(sanitized, 'prestador', 'RazaoSocial') 
+    || extractSubTagRegex(sanitized, 'PrestadorServico', 'RazaoSocial')
+    || extractSubTagRegex(sanitized, 'IdentificacaoPrestador', 'RazaoSocial')
+    || extractTagRegex(sanitized, 'RazaoSocialPrestador')
     || extractSubTagRegex(sanitized, 'rem', 'xNome') 
-    || 'EMITENTE';
+    || 'PRESTADOR DE SERVIÇOS';
 
-  const emitFant = extractSubTagRegex(sanitized, 'emit', 'xFant') || emitNome;
-  const emitUf = extractSubTagRegex(sanitized, 'enderEmit', 'UF') || extractSubTagRegex(sanitized, 'enderReme', 'UF') || 'SP';
-  const emitMun = extractSubTagRegex(sanitized, 'enderEmit', 'xMun') || extractSubTagRegex(sanitized, 'enderReme', 'xMun') || '';
+  const emitFant = extractSubTagRegex(sanitized, 'emit', 'xFant') 
+    || extractSubTagRegex(sanitized, 'PrestadorServico', 'NomeFantasia')
+    || emitNome;
+  const emitUf = extractSubTagRegex(sanitized, 'enderEmit', 'UF') 
+    || extractSubTagRegex(sanitized, 'enderReme', 'UF') 
+    || extractSubTagRegex(sanitized, 'Endereco', 'Uf')
+    || extractSubTagRegex(sanitized, 'prest', 'UF')
+    || 'SP';
+  const emitMun = extractSubTagRegex(sanitized, 'enderEmit', 'xMun') 
+    || extractSubTagRegex(sanitized, 'enderReme', 'xMun') 
+    || extractSubTagRegex(sanitized, 'Endereco', 'CodigoMunicipio')
+    || '';
   const emitIe = extractSubTagRegex(sanitized, 'emit', 'IE') || extractSubTagRegex(sanitized, 'rem', 'IE') || '';
 
-  // 4. Destinatário
+  // 4. Destinatário (Tomador / Cliente)
   const destCnpj = extractSubTagRegex(sanitized, 'dest', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'toma', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'tomador', 'Cnpj') 
+    || extractSubTagRegex(sanitized, 'TomadorServico', 'Cnpj')
+    || extractSubTagRegex(sanitized, 'IdentificacaoTomador', 'Cnpj')
+    || extractSubTagRegex(sanitized, 'CPFCNPJTomador', 'CNPJ')
+    || extractSubTagRegex(sanitized, 'CPFCNPJTomador', 'Cnpj')
+    || extractTagRegex(sanitized, 'CPFCNPJTomador')
     || extractSubTagRegex(sanitized, 'dest', 'CPF') 
     || '';
 
   const destNome = extractSubTagRegex(sanitized, 'dest', 'xNome') 
     || extractSubTagRegex(sanitized, 'toma', 'xNome') 
     || extractSubTagRegex(sanitized, 'tomador', 'RazaoSocial') 
-    || 'DESTINATÁRIO';
+    || extractSubTagRegex(sanitized, 'TomadorServico', 'RazaoSocial')
+    || extractTagRegex(sanitized, 'RazaoSocialTomador')
+    || 'TOMADOR DE SERVIÇOS';
 
-  const destUf = extractSubTagRegex(sanitized, 'enderDest', 'UF') || extractSubTagRegex(sanitized, 'endNac', 'UF') || 'SP';
+  const destUf = extractSubTagRegex(sanitized, 'enderDest', 'UF') 
+    || extractSubTagRegex(sanitized, 'endNac', 'UF') 
+    || extractSubTagRegex(sanitized, 'TomadorServico', 'Uf')
+    || 'SP';
   const destMun = extractSubTagRegex(sanitized, 'enderDest', 'xMun') || '';
   const destIe = extractSubTagRegex(sanitized, 'dest', 'IE') || '';
 
@@ -224,9 +267,13 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractTagRegex(sanitized, 'nNFSe') 
     || extractTagRegex(sanitized, 'nDPS') 
     || extractTagRegex(sanitized, 'Numero') 
+    || extractTagRegex(sanitized, 'NumeroNfse')
     || (chaveAcesso.length >= 34 ? chaveAcesso.substring(25, 34) : '1');
 
   const serie = extractTagRegex(sanitized, 'serie') 
+    || extractTagRegex(sanitized, 'Serie')
+    || extractTagRegex(sanitized, 'SerieDPS')
+    || extractTagRegex(sanitized, 'SerieRPS')
     || (chaveAcesso.length >= 25 ? chaveAcesso.substring(22, 25) : '1');
 
   // 6. Datas e Horários no Fuso de Brasília
@@ -234,12 +281,13 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractTagRegex(sanitized, 'dhProc') 
     || extractTagRegex(sanitized, 'dEmi') 
     || extractTagRegex(sanitized, 'DataEmissao') 
+    || extractTagRegex(sanitized, 'DataEmissaoRPS')
     || '';
 
   const dataEmissao = rawDhEmi ? getBrasiliaDate(rawDhEmi) : getBrasiliaDate();
   const dataEmissaoCompleta = rawDhEmi ? getBrasiliaTimestamp(rawDhEmi) : getBrasiliaTimestamp();
   const dataEntrada = getBrasiliaTimestamp();
-  const competencia = dataEmissao.substring(0, 7);
+  const competencia = extractTagRegex(sanitized, 'Competencia')?.substring(0, 7) || dataEmissao.substring(0, 7);
 
   // 7. Tipo de Operação em relação ao Tenant
   let tipoOperacao: 'Entrada' | 'Saída' = 'Entrada';
@@ -257,28 +305,91 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractTagRegex(sanitized, 'vNF')
     || extractTagRegex(sanitized, 'vServ')
     || extractTagRegex(sanitized, 'vServPrest')
+    || extractTagRegex(sanitized, 'ValorServicos')
     || extractTagRegex(sanitized, 'vTPrest')
+    || extractTagRegex(sanitized, 'ValorTotal')
     || extractTagRegex(sanitized, 'vLiquido')
     || '0'
   ) || 0;
 
   const valorIcms = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vICMS') || extractTagRegex(sanitized, 'vICMS') || '0') || 0;
   const valorIpi = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vIPI') || extractTagRegex(sanitized, 'vIPI') || '0') || 0;
-  const valorPis = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vPIS') || extractTagRegex(sanitized, 'vPIS') || extractTagRegex(sanitized, 'vPis') || '0') || 0;
-  const valorCofins = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vCOFINS') || extractTagRegex(sanitized, 'vCOFINS') || extractTagRegex(sanitized, 'vCofins') || '0') || 0;
+  const valorPis = parseFloat(
+    extractSubTagRegex(sanitized, 'ICMSTot', 'vPIS') 
+    || extractTagRegex(sanitized, 'vPIS') 
+    || extractTagRegex(sanitized, 'ValorPis') 
+    || extractTagRegex(sanitized, 'vPis') 
+    || extractTagRegex(sanitized, 'vRetPIS')
+    || '0'
+  ) || 0;
+
+  const valorCofins = parseFloat(
+    extractSubTagRegex(sanitized, 'ICMSTot', 'vCOFINS') 
+    || extractTagRegex(sanitized, 'vCOFINS') 
+    || extractTagRegex(sanitized, 'ValorCofins') 
+    || extractTagRegex(sanitized, 'vCofins') 
+    || extractTagRegex(sanitized, 'vRetCOFINS')
+    || '0'
+  ) || 0;
 
   let valorCbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vCBS') || extractSubTagRegex(sanitized, 'gCBS', 'vCBS') || extractTagRegex(sanitized, 'vCBS') || '0') || 0;
   let valorIbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vIBS') || extractSubTagRegex(sanitized, 'gIBS', 'vIBS') || extractTagRegex(sanitized, 'vIBSUF') || extractTagRegex(sanitized, 'vIBS') || '0') || 0;
   const valorIs = parseFloat(extractSubTagRegex(sanitized, 'ISTot', 'vIS') || extractTagRegex(sanitized, 'vIS') || '0') || 0;
 
-  // Retenções na Fonte (NFS-e)
-  const valorIrrf = parseFloat(extractTagRegex(sanitized, 'vRetIRRF') || extractTagRegex(sanitized, 'vIR') || '0') || 0;
-  const valorInss = parseFloat(extractTagRegex(sanitized, 'vRetCP') || extractTagRegex(sanitized, 'vINSS') || '0') || 0;
-  const valorIss = parseFloat(extractTagRegex(sanitized, 'vISSQN') || extractTagRegex(sanitized, 'vISS') || '0') || 0;
-  const valorCsll = parseFloat(extractTagRegex(sanitized, 'vRetCSLL') || extractTagRegex(sanitized, 'vCSLL') || '0') || 0;
+  // Retenções na Fonte (NFS-e & Padrões Municipais / ABRASF / Nacional)
+  const valorIrrf = parseFloat(
+    extractTagRegex(sanitized, 'vRetIRRF') 
+    || extractTagRegex(sanitized, 'vIR') 
+    || extractTagRegex(sanitized, 'ValorIr') 
+    || extractTagRegex(sanitized, 'ValorIRRF')
+    || extractTagRegex(sanitized, 'ValorIR')
+    || '0'
+  ) || 0;
+
+  const valorInss = parseFloat(
+    extractTagRegex(sanitized, 'vRetCP') 
+    || extractTagRegex(sanitized, 'vINSS') 
+    || extractTagRegex(sanitized, 'ValorInss') 
+    || extractTagRegex(sanitized, 'ValorINSS')
+    || extractTagRegex(sanitized, 'vCP')
+    || '0'
+  ) || 0;
+
+  const valorIss = parseFloat(
+    extractTagRegex(sanitized, 'vISSQN') 
+    || extractTagRegex(sanitized, 'ValorIssRetido') 
+    || extractTagRegex(sanitized, 'vISS') 
+    || extractTagRegex(sanitized, 'ValorIss') 
+    || extractTagRegex(sanitized, 'ValorISS')
+    || '0'
+  ) || 0;
+
+  const valorCsll = parseFloat(
+    extractTagRegex(sanitized, 'vRetCSLL') 
+    || extractTagRegex(sanitized, 'vCSLL') 
+    || extractTagRegex(sanitized, 'ValorCsll') 
+    || extractTagRegex(sanitized, 'ValorCSLL')
+    || '0'
+  ) || 0;
+
+  // Dados Específicos de Serviço
+  const itemListaServico = extractTagRegex(sanitized, 'ItemListaServico') 
+    || extractTagRegex(sanitized, 'cTribNac') 
+    || extractTagRegex(sanitized, 'cServ') 
+    || extractTagRegex(sanitized, 'CodigoServico') 
+    || extractTagRegex(sanitized, 'CodigoTributacaoMunicipio')
+    || extractTagRegex(sanitized, 'CodigoCnae')
+    || '170501';
+
+  const discriminacaoServico = extractTagRegex(sanitized, 'Discriminacao') 
+    || extractTagRegex(sanitized, 'xDescServ') 
+    || extractTagRegex(sanitized, 'xTribNac') 
+    || extractTagRegex(sanitized, 'xDisc') 
+    || extractTagRegex(sanitized, 'discriminacao')
+    || (tipoDoc === 'NFSe' ? 'Prestação de Serviços Profissionais / Técnicos' : 'Mercadoria / Operação Fiscal');
 
   // Protocolo SEFAZ
-  const protocoloSefaz = extractTagRegex(sanitized, 'nProt') || '';
+  const protocoloSefaz = extractTagRegex(sanitized, 'nProt') || extractTagRegex(sanitized, 'CodigoVerificacao') || '';
   const statusSefaz = protocoloSefaz ? 'autorizado' : 'autorizado';
 
   // 9. Extração dos Itens (<det>)
@@ -294,7 +405,7 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     const xProd = extractTagRegex(prodXml, 'xProd') || 'Item de Mercadoria / Serviço';
     const ncm = extractTagRegex(prodXml, 'NCM') || '';
     const cest = extractTagRegex(prodXml, 'CEST') || '';
-    const cfop = extractTagRegex(prodXml, 'CFOP') || (tipoDoc === 'CTe' ? '5353' : '5102');
+    const cfop = extractTagRegex(prodXml, 'CFOP') || (tipoDoc === 'CTe' ? '5353' : (tipoDoc === 'NFSe' ? '1933' : '5102'));
     const uCom = extractTagRegex(prodXml, 'uCom') || 'UN';
     const qCom = parseFloat(extractTagRegex(prodXml, 'qCom') || '1') || 1;
     const vUnCom = parseFloat(extractTagRegex(prodXml, 'vUnCom') || '0') || 0;
@@ -365,6 +476,50 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
       valorIs: 0,
     });
   });
+
+  // 10. Se for NFS-e ou não tiver itens <det>, gerar o item analítico do serviço
+  if (itens.length === 0 && valorTotal > 0) {
+    const totalRetencoes = valorIrrf + valorInss + valorIss + valorCsll + valorPis + valorCofins;
+    const valorLiquido = valorTotal - totalRetencoes;
+
+    itens.push({
+      numeroItem: 1,
+      codigo: itemListaServico,
+      descricao: discriminacaoServico,
+      ncm: '00000000',
+      cest: '',
+      cfop: tipoOperacao === 'Entrada' ? '1933' : '5933',
+      cClassTrib: '000001',
+      cstCsosn: '000',
+      naturezaOperacao: 'Prestação de Serviços (NFS-e)',
+      quantidade: 1,
+      unidade: 'UN',
+      valorUnitario: valorTotal,
+      valorBruto: valorTotal,
+      desconto: 0,
+      freteSeguro: 0,
+      valorLiquido: valorLiquido > 0 ? valorLiquido : valorTotal,
+      baseIcms: 0,
+      aliquotaIcms: 0,
+      valorIcms: 0,
+      baseIpi: 0,
+      aliquotaIpi: 0,
+      valorIpi: 0,
+      basePis: valorTotal,
+      aliquotaPis: valorPis > 0 ? Number(((valorPis / valorTotal) * 100).toFixed(2)) : 0.65,
+      valorPis,
+      baseCofins: valorTotal,
+      aliquotaCofins: valorCofins > 0 ? Number(((valorCofins / valorTotal) * 100).toFixed(2)) : 3.0,
+      valorCofins,
+      baseCbs: valorTotal,
+      aliquotaCbs: valorCbs > 0 ? Number(((valorCbs / valorTotal) * 100).toFixed(2)) : 8.8,
+      valorCbs: valorCbs > 0 ? valorCbs : Number((valorTotal * 0.088).toFixed(2)),
+      baseIbs: valorTotal,
+      aliquotaIbs: valorIbs > 0 ? Number(((valorIbs / valorTotal) * 100).toFixed(2)) : 17.7,
+      valorIbs: valorIbs > 0 ? valorIbs : Number((valorTotal * 0.177).toFixed(2)),
+      valorIs: 0,
+    });
+  }
 
   // Se os totalizadores de CBS/IBS globais vieram 0, soma dos itens
   if (valorCbs === 0 && itens.length > 0) {

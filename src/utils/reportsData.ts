@@ -221,58 +221,105 @@ export function exportReportToExcel(
   items: XmlItemDetailReport[],
   reportTitle: string = 'Relatorio_Razao_Entradas'
 ) {
-  const exportRows = items.map(it => ({
-    'Empresa (CNPJ/Filial)': it.empresaCnpj,
-    'Razão Social Empresa': it.empresaNome,
-    'Tipo Doc': it.tipoDoc,
-    'Chave de Acesso': it.chaveAcesso,
-    'Número / Série': it.numeroSerie,
-    'Data Emissão': it.dataEmissao,
-    'Data Entrada': it.dataEntrada,
-    'Competência': it.competencia,
-    'CNPJ Fornecedor': it.fornecedorCnpj,
-    'Razão Fornecedor': it.fornecedorRazao,
-    'UF Fornecedor': it.fornecedorUf,
-    'Situação Doc': it.situacaoDoc.toUpperCase(),
-    'Item Nro': it.itemNro,
-    'Descrição Item': it.descricaoItem,
-    'NCM / NBS': it.ncm,
-    'CFOP': it.cfop,
-    'cClassTrib': it.cClassTrib,
-    'CST/CSOSN': it.cstCsosn,
-    'Natureza Operação': it.naturezaOperacao,
-    'Quantidade': it.quantidade,
-    'Unid': it.unidade,
-    'Valor Bruto (R$)': it.valorBrutoItem,
-    'Desconto Incondicional (R$)': it.descontoIncondicional,
-    'Frete/Seguro (R$)': it.freteSeguroRateado,
-    'Valor Líquido Item (R$)': it.valorLiquidoItem,
-    'Base IBS (R$)': it.baseIbs,
-    'Alíquota IBS (%)': it.aliquotaIbs,
-    'Valor IBS (R$)': it.valorIbs,
-    'Base CBS (R$)': it.baseCbs,
-    'Alíquota CBS (%)': it.aliquotaCbs,
-    'Valor CBS (R$)': it.valorCbs,
-    'Crédito Esperado IBS (R$)': it.creditoEsperadoIbs,
-    'Crédito Esperado CBS (R$)': it.creditoEsperadoCbs,
-    'Crédito Apropriado IBS (R$)': it.creditoApropriadoIbs,
-    'Crédito Apropriado CBS (R$)': it.creditoApropriadoCbs,
-    'Diferença Crédito IBS (R$)': it.diferencaCreditoIbs,
-    'Diferença Crédito CBS (R$)': it.diferencaCreditoCbs,
-    'Indicador Onerosidade': it.indicadorOnerosidade,
-    'Critério Onerosidade': it.criterioOnerosidade,
-    'Resultado Elegibilidade': it.resultadoElegibilidade,
-    'Regra Aplicada': it.regraAplicadaId,
-    'Motivo Elegibilidade': it.motivoPadronizado,
-    'Exceção / Pendência': it.isExcecao ? 'SIM' : 'NÃO',
-    'Tipo Exceção': it.tipoExcecao || '-',
-    'Pedido / Contrato': it.pedidoContrato || '-',
-    'Lançamento Contábil ERP': it.lancamentoContabil || '-'
-  }));
+  const isRetencoesReport = reportTitle.toLowerCase().includes('retenc') || reportTitle.toLowerCase().includes('servico');
+
+  const exportRows = isRetencoesReport
+    ? items.map(it => {
+        const valorBruto = it.valorBrutoItem || it.valorLiquidoItem || 0;
+        const irrf = it.valorIrrf || 0;
+        const inss = it.valorInss || 0;
+        const iss = it.valorIssRetido || 0;
+        const csll = it.valorCsllRetido || 0;
+        const pis = it.valorPisRetido || 0;
+        const cofins = it.valorCofinsRetido || 0;
+        const crf = pis + cofins + csll;
+        const totalRet = it.totalRetencoes || (irrf + inss + iss + crf);
+        const valorLiq = it.valorLiquidoServico || Math.max(0, valorBruto - totalRet);
+
+        return {
+          'Tipo Doc': it.tipoDoc,
+          'Número / Série': it.numeroSerie,
+          'Chave de Acesso / DPS': it.chaveAcesso,
+          'Data Emissão': it.dataEmissao,
+          'Competência': it.competencia,
+          'CNPJ Prestador': it.fornecedorCnpj,
+          'Razão Social Prestador': it.fornecedorRazao,
+          'UF Prestador': it.fornecedorUf,
+          'CNPJ Tomador': it.clienteCnpj,
+          'Razão Social Tomador': it.clienteRazao,
+          'Código Serviço (LC 116/03)': it.codigoServicoLc116 || '17.01',
+          'Discriminação do Serviço': it.discriminacaoServico || it.descricaoItem,
+          'Valor Bruto Serviços (R$)': valorBruto,
+          'IRRF Retido (R$)': irrf,
+          'Alíquota IRRF (%)': it.aliquotaIrrf || (irrf > 0 ? 1.5 : 0),
+          'PIS Retido (R$)': pis,
+          'COFINS Retida (R$)': cofins,
+          'CSLL Retida (R$)': csll,
+          'Total CRF / PCC 4,65% (R$)': crf,
+          'INSS Retido (R$)': inss,
+          'Alíquota INSS (%)': it.aliquotaInss || (inss > 0 ? 11.0 : 0),
+          'ISSQN Retido (R$)': iss,
+          'Alíquota ISS (%)': it.aliquotaIssRetido || (iss > 0 ? 5.0 : 0),
+          'Total Retenções Fonte (R$)': totalRet,
+          'Valor Líquido a Pagar (R$)': valorLiq,
+          'Diagnóstico Matriz Fiscal': it.diagnosticoRetencao || 'CONFORME',
+          'Motivo Diagnóstico': it.motivoDiagnosticoRetencao || 'Retenções em conformidade legal',
+          'Base Legal': 'Lei 10.833/03, RIR/2018 e LC 116/03'
+        };
+      })
+    : items.map(it => ({
+        'Empresa (CNPJ/Filial)': it.empresaCnpj,
+        'Razão Social Empresa': it.empresaNome,
+        'Tipo Doc': it.tipoDoc,
+        'Chave de Acesso': it.chaveAcesso,
+        'Número / Série': it.numeroSerie,
+        'Data Emissão': it.dataEmissao,
+        'Data Entrada': it.dataEntrada,
+        'Competência': it.competencia,
+        'CNPJ Fornecedor': it.fornecedorCnpj,
+        'Razão Fornecedor': it.fornecedorRazao,
+        'UF Fornecedor': it.fornecedorUf,
+        'Situação Doc': it.situacaoDoc.toUpperCase(),
+        'Item Nro': it.itemNro,
+        'Descrição Item': it.descricaoItem,
+        'NCM / NBS': it.ncm,
+        'CFOP': it.cfop,
+        'cClassTrib': it.cClassTrib,
+        'CST/CSOSN': it.cstCsosn,
+        'Natureza Operação': it.naturezaOperacao,
+        'Quantidade': it.quantidade,
+        'Unid': it.unidade,
+        'Valor Bruto (R$)': it.valorBrutoItem,
+        'Desconto Incondicional (R$)': it.descontoIncondicional,
+        'Frete/Seguro (R$)': it.freteSeguroRateado,
+        'Valor Líquido Item (R$)': it.valorLiquidoItem,
+        'Base IBS (R$)': it.baseIbs,
+        'Alíquota IBS (%)': it.aliquotaIbs,
+        'Valor IBS (R$)': it.valorIbs,
+        'Base CBS (R$)': it.baseCbs,
+        'Alíquota CBS (%)': it.aliquotaCbs,
+        'Valor CBS (R$)': it.valorCbs,
+        'Crédito Esperado IBS (R$)': it.creditoEsperadoIbs,
+        'Crédito Esperado CBS (R$)': it.creditoEsperadoCbs,
+        'Crédito Apropriado IBS (R$)': it.creditoApropriadoIbs,
+        'Crédito Apropriado CBS (R$)': it.creditoApropriadoCbs,
+        'Diferença Crédito IBS (R$)': it.diferencaCreditoIbs,
+        'Diferença Crédito CBS (R$)': it.diferencaCreditoCbs,
+        'Indicador Onerosidade': it.indicadorOnerosidade,
+        'Critério Onerosidade': it.criterioOnerosidade,
+        'Resultado Elegibilidade': it.resultadoElegibilidade,
+        'Regra Aplicada': it.regraAplicadaId,
+        'Motivo Elegibilidade': it.motivoPadronizado,
+        'Exceção / Pendência': it.isExcecao ? 'SIM' : 'NÃO',
+        'Tipo Exceção': it.tipoExcecao || '-',
+        'Pedido / Contrato': it.pedidoContrato || '-',
+        'Lançamento Contábil ERP': it.lancamentoContabil || '-'
+      }));
 
   const worksheet = XLSX.utils.json_to_sheet(exportRows);
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Relatorio_Fiscal_SEFAZ');
+  const sheetName = isRetencoesReport ? 'Retencoes_Fonte_NFSe' : 'Relatorio_Fiscal_SEFAZ';
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
   // Auto column widths
   const colWidths = Object.keys(exportRows[0] || {}).map(key => ({

@@ -317,7 +317,8 @@ export type ReportTabType =
   | 'estornos_ajustes'      // #5 Estornos / Ajustes / Eventos
   | 'mapa_cfop'             // #6 Mapa CFOP x Tratamento
   | 'mapa_cclasstrib'       // #7 Mapa cClassTrib x Alíquota/Base
-  | 'onerosidade_auditoria';// #8 Onerosidade - Auditoria e Evidências
+  | 'onerosidade_auditoria' // #8 Onerosidade - Auditoria e Evidências
+  | 'retencoes_fonte';      // #9 Retenções na Fonte (NFS-e / Serviços)
 
 export interface ReportFilterState {
   cnpjEmitente: string;     // CNPJ do Fornecedor / Emitente
@@ -421,6 +422,26 @@ export interface XmlItemDetailReport {
   creditoEstornadoTotal: number;
   dataEventoAfetaCredito?: string;
   usuarioAprovacaoEvento?: string;
+
+  // Retenções na Fonte (NFS-e / Serviços) — Lei 10.833/03, RIR/2018, LC 116/03
+  valorIrrf?: number;
+  aliquotaIrrf?: number;
+  valorInss?: number;
+  aliquotaInss?: number;
+  valorPisRetido?: number;
+  aliquotaPisRetido?: number;
+  valorCofinsRetido?: number;
+  aliquotaCofinsRetido?: number;
+  valorCsllRetido?: number;
+  aliquotaCsllRetido?: number;
+  valorIssRetido?: number;
+  aliquotaIssRetido?: number;
+  totalRetencoes?: number;
+  valorLiquidoServico?: number;
+  codigoServicoLc116?: string;
+  discriminacaoServico?: string;
+  diagnosticoRetencao?: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL';
+  motivoDiagnosticoRetencao?: string;
 }
 
 export interface MapaCfopItem {

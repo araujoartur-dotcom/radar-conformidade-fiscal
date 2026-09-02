@@ -30,7 +30,17 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
 
   // 1. Identificar Tipo de DF-e (NF-e, CT-e, NFS-e)
   let tipo: TipoDFe = 'NFe';
-  if (xmlDoc.getElementsByTagName('NFSe').length > 0 || xmlDoc.getElementsByTagName('infNFSe').length > 0 || xmlDoc.getElementsByTagName('CompNfse').length > 0 || xmlDoc.getElementsByTagName('DPS').length > 0) {
+  if (
+    xmlDoc.getElementsByTagName('NFSe').length > 0 || 
+    xmlDoc.getElementsByTagName('infNFSe').length > 0 || 
+    xmlDoc.getElementsByTagName('Nfse').length > 0 ||
+    xmlDoc.getElementsByTagName('InfNfse').length > 0 ||
+    xmlDoc.getElementsByTagName('CompNfse').length > 0 || 
+    xmlDoc.getElementsByTagName('DPS').length > 0 ||
+    xmlDoc.getElementsByTagName('infDPS').length > 0 ||
+    xmlDoc.getElementsByTagName('ValorServicos').length > 0 ||
+    xmlDoc.getElementsByTagName('ItemListaServico').length > 0
+  ) {
     tipo = 'NFSe';
   } else if (xmlDoc.getElementsByTagName('infCte').length > 0 || xmlDoc.getElementsByTagName('CTe').length > 0) {
     tipo = 'CTe';
@@ -39,9 +49,10 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
   }
 
   // 2. Extração da Chave de Acesso
-  let chaveAcesso = getTagValue(xmlDoc, 'chNFe') || getTagValue(xmlDoc, 'chCTe') || '';
+  let chaveAcesso = getTagValue(xmlDoc, 'chNFe') || getTagValue(xmlDoc, 'chCTe') || getTagValue(xmlDoc, 'chNFSe') || '';
   if (!chaveAcesso) {
     const infNode = xmlDoc.getElementsByTagName('infNFSe')[0]
+      || xmlDoc.getElementsByTagName('InfNfse')[0]
       || xmlDoc.getElementsByTagName('infNFe')[0]
       || xmlDoc.getElementsByTagName('infNfe')[0]
       || xmlDoc.getElementsByTagName('infCTe')[0]
@@ -56,21 +67,72 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
   }
 
   // 3. Dados Básicos do Documento
-  let numero = getTagValue(xmlDoc, 'nNF') || getTagValue(xmlDoc, 'nCT') || getTagValue(xmlDoc, 'nNFSe') || getTagValue(xmlDoc, 'nDPS') || getTagValue(xmlDoc, 'Numero') || '1';
-  let serie = getTagValue(xmlDoc, 'serie') || '1';
-  let dataEmissaoRaw = getTagValue(xmlDoc, 'dhEmi') || getTagValue(xmlDoc, 'dhProc') || getTagValue(xmlDoc, 'dEmi') || getTagValue(xmlDoc, 'DataEmissao') || new Date().toISOString();
+  let numero = getTagValue(xmlDoc, 'nNF') 
+    || getTagValue(xmlDoc, 'nCT') 
+    || getTagValue(xmlDoc, 'nNFSe') 
+    || getTagValue(xmlDoc, 'nDPS') 
+    || getTagValue(xmlDoc, 'Numero') 
+    || getTagValue(xmlDoc, 'NumeroNfse')
+    || '1';
+  let serie = getTagValue(xmlDoc, 'serie') 
+    || getTagValue(xmlDoc, 'Serie')
+    || getTagValue(xmlDoc, 'SerieDPS')
+    || '1';
+  let dataEmissaoRaw = getTagValue(xmlDoc, 'dhEmi') 
+    || getTagValue(xmlDoc, 'dhProc') 
+    || getTagValue(xmlDoc, 'dEmi') 
+    || getTagValue(xmlDoc, 'DataEmissao') 
+    || getTagValue(xmlDoc, 'DataEmissaoRPS')
+    || new Date().toISOString();
   let dataEmissao = dataEmissaoRaw.split('T')[0];
 
   // 4. Emitente (Prestador / Fornecedor / Transportador)
-  let emitenteCnpj = getSubTagValue('emit', 'CNPJ') || getSubTagValue('prest', 'CNPJ') || getSubTagValue('prestador', 'Cnpj') || getSubTagValue('rem', 'CNPJ') || '';
-  let emitenteNome = getSubTagValue('emit', 'xNome') || getSubTagValue('prest', 'xNome') || getSubTagValue('prestador', 'RazaoSocial') || getSubTagValue('rem', 'xNome') || 'EMITENTE';
-  let emitenteUf = getSubTagValue('enderEmit', 'UF') || getSubTagValue('enderNac', 'UF') || getSubTagValue('enderReme', 'UF') || getSubTagValue('prest', 'UF') || 'SP';
+  let emitenteCnpj = getSubTagValue('emit', 'CNPJ') 
+    || getSubTagValue('prest', 'CNPJ') 
+    || getSubTagValue('prestador', 'Cnpj') 
+    || getSubTagValue('PrestadorServico', 'Cnpj')
+    || getSubTagValue('IdentificacaoPrestador', 'Cnpj')
+    || getSubTagValue('CPFCNPJPrestador', 'CNPJ')
+    || getSubTagValue('CPFCNPJPrestador', 'Cnpj')
+    || getTagValue(xmlDoc, 'CPFCNPJPrestador')
+    || getSubTagValue('rem', 'CNPJ') 
+    || '';
+  let emitenteNome = getSubTagValue('emit', 'xNome') 
+    || getSubTagValue('prest', 'xNome') 
+    || getSubTagValue('prestador', 'RazaoSocial') 
+    || getSubTagValue('PrestadorServico', 'RazaoSocial')
+    || getSubTagValue('IdentificacaoPrestador', 'RazaoSocial')
+    || getTagValue(xmlDoc, 'RazaoSocialPrestador')
+    || getSubTagValue('rem', 'xNome') 
+    || 'PRESTADOR DE SERVIÇOS';
+  let emitenteUf = getSubTagValue('enderEmit', 'UF') 
+    || getSubTagValue('enderNac', 'UF') 
+    || getSubTagValue('enderReme', 'UF') 
+    || getSubTagValue('prest', 'UF') 
+    || getSubTagValue('Endereco', 'Uf')
+    || 'SP';
   let emitenteIe = getSubTagValue('emit', 'IE') || getSubTagValue('rem', 'IE') || '';
 
   // 5. Destinatário (Tomador / Cliente)
-  let destinatarioCnpj = getSubTagValue('dest', 'CNPJ') || getSubTagValue('toma', 'CNPJ') || getSubTagValue('tomador', 'Cnpj') || '';
-  let destinatarioNome = getSubTagValue('dest', 'xNome') || getSubTagValue('toma', 'xNome') || getSubTagValue('tomador', 'RazaoSocial') || 'SUPERGASBRAS ENERGIA LTDA';
-  let destinatarioUf = getSubTagValue('enderDest', 'UF') || getSubTagValue('endNac', 'UF') || 'PR';
+  let destinatarioCnpj = getSubTagValue('dest', 'CNPJ') 
+    || getSubTagValue('toma', 'CNPJ') 
+    || getSubTagValue('tomador', 'Cnpj') 
+    || getSubTagValue('TomadorServico', 'Cnpj')
+    || getSubTagValue('IdentificacaoTomador', 'Cnpj')
+    || getSubTagValue('CPFCNPJTomador', 'CNPJ')
+    || getSubTagValue('CPFCNPJTomador', 'Cnpj')
+    || getTagValue(xmlDoc, 'CPFCNPJTomador')
+    || '';
+  let destinatarioNome = getSubTagValue('dest', 'xNome') 
+    || getSubTagValue('toma', 'xNome') 
+    || getSubTagValue('tomador', 'RazaoSocial') 
+    || getSubTagValue('TomadorServico', 'RazaoSocial')
+    || getTagValue(xmlDoc, 'RazaoSocialTomador')
+    || 'SUPERGASBRAS ENERGIA LTDA';
+  let destinatarioUf = getSubTagValue('enderDest', 'UF') 
+    || getSubTagValue('endNac', 'UF') 
+    || getSubTagValue('TomadorServico', 'Uf')
+    || 'PR';
   let destinatarioIe = getSubTagValue('dest', 'IE') || '';
 
   // 6. Valores Globais e Tributos

@@ -11,10 +11,11 @@ import { RelatorioEstornosAjustes } from './relatorios/RelatorioEstornosAjustes'
 import { RelatorioMapaCfop } from './relatorios/RelatorioMapaCfop';
 import { RelatorioMapaCClassTrib } from './relatorios/RelatorioMapaCClassTrib';
 import { RelatorioOnerosidade } from './relatorios/RelatorioOnerosidade';
+import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
-  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud
+  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -319,6 +320,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     { id: 'mapa_cfop' as ReportTabType, label: '6) Mapa CFOP (#6)', icon: BookOpen },
     { id: 'mapa_cclasstrib' as ReportTabType, label: '7) Mapa cClassTrib (#7)', icon: Tag },
     { id: 'onerosidade_auditoria' as ReportTabType, label: '8) Onerosidade Auditoria (#8)', icon: Scale },
+    { id: 'retencoes_fonte' as ReportTabType, label: '9) Retenções na Fonte (#9)', icon: Receipt, badge: 'NFS-e / Serviços' },
   ];
 
   return (
@@ -686,6 +688,13 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
         {activeTab === 'onerosidade_auditoria' && (
           <RelatorioOnerosidade
+            items={filteredItems}
+            onOpenDetail={(it) => setSelectedItemForModal(it)}
+          />
+        )}
+
+        {activeTab === 'retencoes_fonte' && (
+          <RelatorioRetencoesFonte
             items={filteredItems}
             onOpenDetail={(it) => setSelectedItemForModal(it)}
           />
