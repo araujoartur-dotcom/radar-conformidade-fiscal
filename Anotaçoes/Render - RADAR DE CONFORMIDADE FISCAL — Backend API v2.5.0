@@ -1,0 +1,125 @@
+Web Service
+radar-conformidade-fiscal
+Node
+0.5c-512mb
+
+Connect
+
+Manual Deploy
+Service ID:
+srv-da0dtqc9v7es7395f950
+
+araujoartur-dotcom / radar-conformidade-fiscal
+main
+https://radar-conformidade-fiscal.onrender.com
+
+August 27, 2026 at 11:27 PM
+live
+09cca0c
+feat(supabase): add dedicated test:supabase audit script and verify all 13 schema tables
+
+All logs
+Search
+Search logs
+
+
+Live tail
+
+
+
+==> Downloading cache...
+==> Cloning from https://github.com/araujoartur-dotcom/radar-conformidade-fiscal
+==> Checking out commit 09cca0c53585ecd0b91cd105d4873084f289725e in branch main
+==> Downloaded 158MB in 3s. Extraction took 3s.
+==> Using Node.js version 24.14.1 (default)
+==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+==> Using Bun version 1.3.14 (default)
+==> Docs on specifying a Bun version: https://render.com/docs/bun-version
+==> Running build command 'npm install'...
+up to date, audited 315 packages in 657ms
+43 packages are looking for funding
+  run `npm fund` for details
+2 high severity vulnerabilities
+To address issues that do not require attention, run:
+  npm audit fix
+Some issues need review, and may require choosing
+a different dependency.
+Run `npm audit` for details.
+==> Uploading build...
+==> Uploaded in 3.4s. Compression took 0.9s
+==> Build successful 🎉
+==> Deploying...
+==> Setting WEB_CONCURRENCY=1 by default, based on available CPUs in the instance
+==> Running 'npm start'
+> react-example@0.0.0 start
+> tsx server/index.ts
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+🔧 Inicializando banco de dados...
+✅ Banco SQLite conectado: ./data/radar_fiscal.db
+⚡ Migração: Coluna [fornecedor_ie] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [cliente_ie] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [situacao_manifestacao] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [evento_ultimo] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_icms] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_ipi] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_pis] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_cofins] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_cbs] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_ibs] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_is] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_irrf] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_inss] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_iss] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [valor_csll] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [xml_raw] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [status_sefaz] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [protocolo_sefaz] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [alerta_fraude] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [download_at] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [updated_at] adicionada na tabela [dfe_documentos].
+⚡ Migração: Coluna [codigo_item] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [cest] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_unitario] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [base_icms] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [aliquota_icms] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_icms] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [base_ipi] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [aliquota_ipi] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_ipi] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [base_pis] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [aliquota_pis] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_pis] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [base_cofins] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [aliquota_cofins] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_cofins] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [valor_is] adicionada na tabela [dfe_itens].
+⚡ Migração: Coluna [documento_id] adicionada na tabela [eventos_transmitidos].
+⚡ Migração: Coluna [autor_cnpj] adicionada na tabela [eventos_transmitidos].
+⚡ Migração: Coluna [origem_evento] adicionada na tabela [eventos_transmitidos].
+✅ Schema do banco de dados inicializado com sucesso em Horário Oficial de Brasília [2026-08-27T23:27:33-03:00].
+🌱 Populando banco de dados com dados iniciais...
+✅ Seed concluído: Admin, Empresa Homologação, Alíquotas Ad Valorem/Ad Rem, Anexos NCM, CFOP, cClassTrib.
+⚡ Conexão Supabase inicializada com sucesso: https://vhkkmklzsstoxoenpyua.supabase.co
+🌱 Verificando dados iniciais no Supabase...
+✅ Seed do Supabase validado e sincronizado.
+============================================================
+  🚀 RADAR DE CONFORMIDADE FISCAL — Backend API v2.5.0
+============================================================
+  🌐 URL:         http://0.0.0.0:10000
+  📋 Ambiente:    production
+  🔒 CORS:        *
+  💾 Banco:       SQLite (WAL mode) / Supabase
+  🔐 Auth:        JWT + bcrypt
+============================================================
+  📌 Credenciais do Admin Padrão:
+     E-mail:  admin@radarfiscal.com.br
+     Senha:   Admin@RadarFiscal2026!
+==> Your service is live 🎉
+==> 
+==> ///////////////////////////////////////////////////////////
+==> 
+==> Available at your primary URL https://radar-conformidade-fiscal.onrender.com
+==> 
+==> ///////////////////////////////////////////////////////////
+Need better ways to work with logs? Try theRender CLI, Render MCP Server, or set up a log stream integration 

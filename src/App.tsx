@@ -49,7 +49,7 @@ export default function App() {
   const [selectedTenantCnpj, setSelectedTenantCnpj] = useState<string>('');
 
   // SEFAZ Environment State (Homologação = tpAmb 2, Produção = tpAmb 1)
-  const [ambienteSefaz, setAmbienteSefaz] = useState<AmbienteSefaz>('homologacao');
+  const [ambienteSefaz, setAmbienteSefaz] = useState<AmbienteSefaz>('producao');
 
   // Certificate State (starts empty until user registers company and activates .PFX)
   const [certificado, setCertificado] = useState<CertificadoA1>({

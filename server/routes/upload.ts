@@ -19,6 +19,7 @@ import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { salvarXmlLocalmente } from '../utils/fileStorage';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 import { parseFiscalXml } from '../utils/xmlParser';
+import { resolveSupabaseEmpresaId } from '../utils/tenantHelper';
 
 const router = Router();
 
@@ -227,9 +228,17 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
-          await supabase.from('dfe_documentos').upsert({
+          // Resolver ID válido da empresa no Supabase para integridade de FK
+          const supaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
+            id: empresaId,
+            cnpj_completo: empresaRow?.cnpj_completo || parsed.destinatarioCnpj || parsed.emitenteCnpj,
+            cnpj_raiz: empresaRow?.cnpj_raiz || cleanCnpjRaiz,
+            razao_social: empresaRow?.razao_social || parsed.destinatarioNome || parsed.emitenteNome
+          });
+
+          const { error: docError } = await supabase.from('dfe_documentos').upsert({
             id: docId,
-            empresa_id: empresaId,
+            empresa_id: supaEmpresaId,
             tipo_doc: parsed.tipoDoc,
             chave_acesso: parsed.chaveAcesso,
             tipo_operacao: parsed.tipoOperacao,
@@ -268,7 +277,9 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
             updated_at: brasiliaNow
           }, { onConflict: 'chave_acesso' });
 
-          if (parsed.itens && parsed.itens.length > 0) {
+          if (docError) {
+            console.error('❌ Erro ao gravar dfe_documentos no Supabase:', docError.message, docError.details);
+          } else if (parsed.itens && parsed.itens.length > 0) {
             const supaItens = parsed.itens.map(it => ({
               id: uuidv4(),
               documento_id: docId,
@@ -308,7 +319,10 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
               valor_cbs: it.valorCbs,
               valor_is: it.valorIs
             }));
-            await supabase.from('dfe_itens').upsert(supaItens);
+            const { error: itemError } = await supabase.from('dfe_itens').upsert(supaItens);
+            if (itemError) {
+              console.error('❌ Erro ao gravar dfe_itens no Supabase:', itemError.message, itemError.details);
+            }
           }
         } catch (supaErr: any) {
           console.warn('⚠️ Supabase upload sync warning:', supaErr?.message || supaErr);
@@ -343,7 +357,348 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
 });
 
 // =========================================================
+// POST /api/upload/batch-xml — Ingestão Turbo em Lote (Centenas/Milhares)
+// =========================================================
+router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { xmls } = req.body;
+    if (!xmls || !Array.isArray(xmls) || xmls.length === 0) {
+      res.status(400).json({ success: false, error: 'Nenhum lote de XMLs fornecido.' });
+      return;
+    }
+
+    const db = getDatabase();
+    let empresaId = req.user?.empresaAtivaId;
+
+    if (!empresaId) {
+      const userRow = db.prepare('SELECT empresa_ativa_id FROM usuarios WHERE id = ?').get(req.user?.userId) as any;
+      if (userRow?.empresa_ativa_id) {
+        empresaId = userRow.empresa_ativa_id;
+      }
+    }
+
+    let empresaRow: any = null;
+    if (empresaId) {
+      empresaRow = db.prepare('SELECT id, cnpj_completo, cnpj_raiz, razao_social FROM empresas WHERE id = ?').get(empresaId);
+    }
+
+    if (!empresaRow) {
+      empresaRow = db.prepare('SELECT id, cnpj_completo, cnpj_raiz, razao_social FROM empresas ORDER BY created_at ASC LIMIT 1').get();
+      empresaId = empresaRow?.id || 'empresa-matriz-01';
+    }
+
+    const brasiliaNow = getBrasiliaTimestamp();
+    const cleanCnpjRaiz = (empresaRow?.cnpj_raiz || '00000000').substring(0, 8);
+
+    const parsedBatch: Array<{ parsed: any; raw: string }> = [];
+    const parseErrors: Array<{ index: number; error: string }> = [];
+
+    // 1. Parsing Concorrente
+    await Promise.all(
+      xmls.map(async (xmlStr: string, idx: number) => {
+        try {
+          if (!xmlStr || typeof xmlStr !== 'string' || !xmlStr.includes('<')) return;
+          const parsed = await parseFiscalXml(xmlStr, empresaRow?.cnpj_completo);
+          parsedBatch.push({ parsed, raw: xmlStr });
+        } catch (err: any) {
+          parseErrors.push({ index: idx, error: err.message });
+        }
+      })
+    );
+
+    if (parsedBatch.length === 0) {
+      res.status(400).json({ success: false, error: 'Nenhum XML válido pôde ser parseado no lote.', errors: parseErrors });
+      return;
+    }
+
+    // 2. Persistência Atômica no SQLite (1 Transação única para todo o lote)
+    const insertDocStmt = db.prepare(`
+      INSERT OR REPLACE INTO dfe_documentos (
+        id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+        data_emissao, data_entrada, competencia,
+        fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio, fornecedor_ie,
+        cliente_cnpj, cliente_razao, cliente_uf, cliente_ie,
+        situacao_doc, situacao_manifestacao, evento_ultimo,
+        valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins,
+        valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll,
+        xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?
+      )
+    `);
+
+    const deleteItensStmt = db.prepare('DELETE FROM dfe_itens WHERE documento_id = ?');
+
+    const insertItemStmt = db.prepare(`
+      INSERT INTO dfe_itens (
+        id, documento_id, item_nro, codigo_item, descricao_item, ncm, cest, cfop,
+        cclasstrib, cst_csosn, natureza_operacao, quantidade, unidade,
+        valor_unitario, valor_bruto_item, desconto_incondicional, frete_seguro_rateado,
+        valor_liquido_item, base_icms, aliquota_icms, valor_icms,
+        base_ipi, aliquota_ipi, valor_ipi,
+        base_pis, aliquota_pis, valor_pis,
+        base_cofins, aliquota_cofins, valor_cofins,
+        base_ibs, aliquota_ibs, valor_ibs,
+        base_cbs, aliquota_cbs, valor_cbs, valor_is, created_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?, ?
+      )
+    `);
+
+    db.transaction(() => {
+      for (const item of parsedBatch) {
+        const docId = `doc-${item.parsed.chaveAcesso}`;
+        insertDocStmt.run(
+          docId,
+          empresaId,
+          item.parsed.tipoDoc,
+          item.parsed.chaveAcesso,
+          item.parsed.tipoOperacao,
+          item.parsed.numero,
+          item.parsed.dataEmissao,
+          item.parsed.dataEntrada,
+          item.parsed.competencia,
+          item.parsed.emitenteCnpj,
+          item.parsed.emitenteNome,
+          item.parsed.emitenteUf,
+          item.parsed.emitenteMunicipio,
+          item.parsed.emitenteIe || '',
+          item.parsed.destinatarioCnpj,
+          item.parsed.destinatarioNome,
+          item.parsed.destinatarioUf,
+          item.parsed.destinatarioIe || '',
+          item.parsed.situacaoDoc,
+          item.parsed.situacaoManifestacao,
+          item.parsed.eventoUltimo,
+          item.parsed.valorTotal,
+          item.parsed.valorIcms,
+          item.parsed.valorIpi,
+          item.parsed.valorPis,
+          item.parsed.valorCofins,
+          item.parsed.valorCbs,
+          item.parsed.valorIbs,
+          item.parsed.valorIs,
+          item.parsed.valorIrrf,
+          item.parsed.valorInss,
+          item.parsed.valorIss,
+          item.parsed.valorCsll,
+          item.raw,
+          item.parsed.statusSefaz,
+          item.parsed.protocoloSefaz,
+          brasiliaNow,
+          brasiliaNow,
+          brasiliaNow
+        );
+
+        deleteItensStmt.run(docId);
+
+        if (item.parsed.itens && item.parsed.itens.length > 0) {
+          for (const it of item.parsed.itens) {
+            const itemId = `item-${item.parsed.chaveAcesso}-${it.numeroItem}`;
+            insertItemStmt.run(
+              itemId,
+              docId,
+              it.numeroItem,
+              it.codigo,
+              it.descricao,
+              it.ncm,
+              it.cest,
+              it.cfop,
+              it.cClassTrib,
+              it.cstCsosn,
+              it.naturezaOperacao,
+              it.quantidade,
+              it.unidade,
+              it.valorUnitario,
+              it.valorBruto,
+              it.desconto,
+              it.freteSeguro,
+              it.valorLiquido,
+              it.baseIcms,
+              it.aliquotaIcms,
+              it.valorIcms,
+              it.baseIpi,
+              it.aliquotaIpi,
+              it.valorIpi,
+              it.basePis,
+              it.aliquotaPis,
+              it.valorPis,
+              it.baseCofins,
+              it.aliquotaCofins,
+              it.valorCofins,
+              it.baseIbs,
+              it.aliquotaIbs,
+              it.valorIbs,
+              it.baseCbs,
+              it.aliquotaCbs,
+              it.valorCbs,
+              it.valorIs,
+              brasiliaNow
+            );
+          }
+        }
+      }
+    })();
+
+    // 3. Sincronização em Lote no Supabase
+    let supaSuccess = false;
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const supaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
+            id: empresaId,
+            cnpj_completo: empresaRow?.cnpj_completo,
+            cnpj_raiz: cleanCnpjRaiz,
+            razao_social: empresaRow?.razao_social
+          });
+
+          const supaDocs = parsedBatch.map(b => ({
+            id: `doc-${b.parsed.chaveAcesso}`,
+            empresa_id: supaEmpresaId,
+            tipo_doc: b.parsed.tipoDoc,
+            chave_acesso: b.parsed.chaveAcesso,
+            tipo_operacao: b.parsed.tipoOperacao,
+            numero_serie: b.parsed.numero,
+            data_emissao: b.parsed.dataEmissao,
+            data_entrada: b.parsed.dataEntrada,
+            competencia: b.parsed.competencia,
+            fornecedor_cnpj: b.parsed.emitenteCnpj,
+            fornecedor_razao: b.parsed.emitenteNome,
+            fornecedor_uf: b.parsed.emitenteUf,
+            fornecedor_municipio: b.parsed.emitenteMunicipio,
+            fornecedor_ie: b.parsed.emitenteIe || '',
+            cliente_cnpj: b.parsed.destinatarioCnpj,
+            cliente_razao: b.parsed.destinatarioNome,
+            cliente_uf: b.parsed.destinatarioUf,
+            cliente_ie: b.parsed.destinatarioIe || '',
+            situacao_doc: b.parsed.situacaoDoc,
+            situacao_manifestacao: b.parsed.situacaoManifestacao,
+            evento_ultimo: b.parsed.eventoUltimo,
+            valor_total: b.parsed.valorTotal,
+            valor_icms: b.parsed.valorIcms,
+            valor_ipi: b.parsed.valorIpi,
+            valor_pis: b.parsed.valorPis,
+            valor_cofins: b.parsed.valorCofins,
+            valor_cbs: b.parsed.valorCbs,
+            valor_ibs: b.parsed.valorIbs,
+            valor_is: b.parsed.valorIs,
+            valor_irrf: b.parsed.valorIrrf,
+            valor_inss: b.parsed.valorInss,
+            valor_iss: b.parsed.valorIss,
+            valor_csll: b.parsed.valorCsll,
+            xml_raw: b.raw,
+            status_sefaz: b.parsed.statusSefaz,
+            protocolo_sefaz: b.parsed.protocoloSefaz,
+            download_at: brasiliaNow,
+            updated_at: brasiliaNow
+          }));
+
+          const { error: supaDocErr } = await supabase.from('dfe_documentos').upsert(supaDocs, { onConflict: 'chave_acesso' });
+
+          if (!supaDocErr) {
+            const allItens: any[] = [];
+            for (const b of parsedBatch) {
+              if (b.parsed.itens && b.parsed.itens.length > 0) {
+                const docId = `doc-${b.parsed.chaveAcesso}`;
+                for (const it of b.parsed.itens) {
+                  allItens.push({
+                    id: uuidv4(),
+                    documento_id: docId,
+                    item_nro: it.numeroItem,
+                    codigo_item: it.codigo,
+                    descricao_item: it.descricao,
+                    ncm: it.ncm,
+                    cest: it.cest,
+                    cfop: it.cfop,
+                    cclasstrib: it.cClassTrib,
+                    cst_csosn: it.cstCsosn,
+                    natureza_operacao: it.naturezaOperacao,
+                    quantidade: it.quantidade,
+                    unidade: it.unidade,
+                    valor_unitario: it.valorUnitario,
+                    valor_bruto_item: it.valorBruto,
+                    desconto_incondicional: it.desconto,
+                    frete_seguro_rateado: it.freteSeguro,
+                    valor_liquido_item: it.valorLiquido,
+                    base_icms: it.baseIcms,
+                    aliquota_icms: it.aliquotaIcms,
+                    valor_icms: it.valorIcms,
+                    base_ipi: it.baseIpi,
+                    aliquota_ipi: it.aliquotaIpi,
+                    valor_ipi: it.valorIpi,
+                    base_pis: it.basePis,
+                    aliquota_pis: it.aliquotaPis,
+                    valor_pis: it.valorPis,
+                    base_cofins: it.baseCofins,
+                    aliquota_cofins: it.aliquotaCofins,
+                    valor_cofins: it.valorCofins,
+                    base_ibs: it.baseIbs,
+                    aliquota_ibs: it.aliquotaIbs,
+                    valor_ibs: it.valorIbs,
+                    base_cbs: it.baseCbs,
+                    aliquota_cbs: it.aliquotaCbs,
+                    valor_cbs: it.valorCbs,
+                    valor_is: it.valorIs
+                  });
+                }
+              }
+            }
+
+            if (allItens.length > 0) {
+              await supabase.from('dfe_itens').upsert(allItens);
+            }
+            supaSuccess = true;
+          } else {
+            console.error('❌ Erro no Supabase Batch Docs:', supaDocErr.message);
+          }
+        } catch (supaErr: any) {
+          console.warn('⚠️ Supabase batch sync warning:', supaErr?.message || supaErr);
+        }
+      }
+    }
+
+    // Totais do Lote
+    const batchTotalValor = parsedBatch.reduce((acc, curr) => acc + curr.parsed.valorTotal, 0);
+    const batchTotalCbs = parsedBatch.reduce((acc, curr) => acc + curr.parsed.valorCbs, 0);
+    const batchTotalIbs = parsedBatch.reduce((acc, curr) => acc + curr.parsed.valorIbs, 0);
+    const batchTotalItens = parsedBatch.reduce((acc, curr) => acc + (curr.parsed.itens?.length || 0), 0);
+
+    res.json({
+      success: true,
+      processedCount: parsedBatch.length,
+      totalItens: batchTotalItens,
+      totalValor: batchTotalValor,
+      totalCbs: batchTotalCbs,
+      totalIbs: batchTotalIbs,
+      supaSynced: supaSuccess,
+      errorsCount: parseErrors.length,
+      errors: parseErrors
+    });
+  } catch (err: any) {
+    console.error('❌ Erro no batch XML:', err);
+    res.status(500).json({ success: false, error: 'Erro ao processar lote de XMLs.', details: err.message });
+  }
+});
+
+// =========================================================
 // GET /api/upload/documentos — Consulta de Documentos (Multi-Tenant)
+// Fonte Primária: Supabase (persistente) → Fallback: SQLite (cache local)
 // =========================================================
 router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -352,6 +707,7 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
     const activeEmpresaId = req.user?.empresaAtivaId;
     const empresaIdParam = (req.query.empresaId as string) || activeEmpresaId;
 
+    // Resolver CNPJ do tenant ativo (para matching flexível)
     let tenantCnpjClean = '';
     if (activeEmpresaId) {
       const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
@@ -359,88 +715,132 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
       }
     }
-
-    let query = `
-      SELECT d.*, COALESCE(e.razao_social, d.cliente_razao, d.fornecedor_razao) as empresa_nome, COALESCE(e.cnpj_completo, d.cliente_cnpj, d.fornecedor_cnpj) as empresa_cnpj
-      FROM dfe_documentos d
-      LEFT JOIN empresas e ON e.id = d.empresa_id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
-
-    if (!isSuperadmin) {
-      if (activeEmpresaId && tenantCnpjClean) {
-        query += `
-          AND (
-            d.empresa_id = ?
-            OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-            OR d.cliente_cnpj LIKE ?
-            OR d.fornecedor_cnpj LIKE ?
-          )
-        `;
-        params.push(activeEmpresaId, req.user?.userId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
-      } else if (activeEmpresaId) {
-        query += `
-          AND (
-            d.empresa_id = ?
-            OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-          )
-        `;
-        params.push(activeEmpresaId, req.user?.userId);
-      }
-    } else if (empresaIdParam) {
-      query += ' AND (d.empresa_id = ? OR d.empresa_id IS NULL)';
-      params.push(empresaIdParam);
+    // Fallback: usar o CNPJ do JWT se empresa ativa não tem CNPJ
+    if (!tenantCnpjClean && req.user?.empresaCnpj) {
+      tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
     }
 
-    if (req.query.tipoOperacao) {
-      query += ' AND d.tipo_operacao = ?';
-      params.push(req.query.tipoOperacao);
-    }
-    if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
-      query += ' AND d.tipo_doc = ?';
-      params.push(req.query.tipoDoc);
-    }
-    if (req.query.chaveAcesso) {
-      query += ' AND d.chave_acesso LIKE ?';
-      params.push(`%${req.query.chaveAcesso}%`);
-    }
+    // ── ESTRATÉGIA 1: TENTAR SUPABASE PRIMEIRO (fonte durável) ──
+    let documentos: any[] = [];
+    let supabaseFetched = false;
 
-    query += ' ORDER BY d.data_emissao DESC, d.created_at DESC';
-    query += ' LIMIT ? OFFSET ?';
-    params.push(parseInt(req.query.limit as string) || 100);
-    params.push(parseInt(req.query.offset as string) || 0);
-
-    let documentos = db.prepare(query).all(...params) as any[];
-
-    // Fallback Supabase se o banco local estiver vazio
-    if (documentos.length === 0 && isSupabaseConfigured()) {
+    if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*');
-          if (empresaIdParam && !isSuperadmin) {
+
+          // Filtros de tenant
+          if (!isSuperadmin && tenantCnpjClean) {
+            // Usuário comum: documentos onde ele é cliente OU fornecedor
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
+          } else if (!isSuperadmin && empresaIdParam) {
             supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
           }
+          // admin_master: sem filtro de tenant = vê TUDO (ou filtra se selecionou empresa)
+          if (isSuperadmin && empresaIdParam) {
+            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+          }
+
+          // Filtros opcionais
           if (req.query.tipoOperacao) supaQuery = supaQuery.eq('tipo_operacao', String(req.query.tipoOperacao));
           if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') supaQuery = supaQuery.eq('tipo_doc', String(req.query.tipoDoc));
           if (req.query.chaveAcesso) supaQuery = supaQuery.ilike('chave_acesso', `%${req.query.chaveAcesso}%`);
 
-          const { data: supaDocs, error: supaErr } = await supaQuery.order('data_emissao', { ascending: false }).limit(100);
+          const { data: supaDocs, error: supaErr } = await supaQuery
+            .order('data_emissao', { ascending: false })
+            .limit(parseInt(req.query.limit as string) || 200);
+
           if (!supaErr && supaDocs && supaDocs.length > 0) {
             documentos = supaDocs.map(d => ({
               ...d,
-              empresa_nome: d.cliente_razao || d.fornecedor_razao || 'EMPRESA ATIVA',
-              empresa_cnpj: d.cliente_cnpj || d.fornecedor_cnpj || '00000000000000',
+              empresa_nome: d.fornecedor_razao || d.cliente_razao || 'EMPRESA',
+              empresa_cnpj: d.fornecedor_cnpj || d.cliente_cnpj || '',
             }));
+            supabaseFetched = true;
+            console.log(`📡 GET /documentos: ${documentos.length} documentos carregados do Supabase.`);
+          } else if (supaErr) {
+            console.warn('⚠️ Supabase query error:', supaErr.message);
           }
         } catch (e: any) {
-          console.warn('⚠️ Supabase documentos query warning:', e?.message || e);
+          console.warn('⚠️ Supabase query exception:', e?.message || e);
         }
       }
     }
 
-    res.json({ success: true, data: documentos });
+    // ── ESTRATÉGIA 2: SQLite LOCAL (fallback / cache rápido) ──
+    if (!supabaseFetched) {
+      let query = `
+        SELECT d.*, COALESCE(e.razao_social, d.fornecedor_razao, d.cliente_razao) as empresa_nome, 
+               COALESCE(e.cnpj_completo, d.fornecedor_cnpj, d.cliente_cnpj) as empresa_cnpj
+        FROM dfe_documentos d
+        LEFT JOIN empresas e ON e.id = d.empresa_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (!isSuperadmin) {
+        if (tenantCnpjClean) {
+          // Matching flexível: empresa_id OU CNPJ no cliente/fornecedor OU vínculo usuario_empresa
+          query += `
+            AND (
+              d.empresa_id = ?
+              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+              OR d.cliente_cnpj LIKE ?
+              OR d.fornecedor_cnpj LIKE ?
+            )
+          `;
+          params.push(activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+        } else if (activeEmpresaId) {
+          query += `
+            AND (
+              d.empresa_id = ?
+              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+            )
+          `;
+          params.push(activeEmpresaId, req.user?.userId || '');
+        }
+        // Se não tem activeEmpresaId NEM tenantCnpjClean → não aplica filtro de tenant,
+        // retorna todos os documentos acessíveis via usuario_empresa
+        if (!activeEmpresaId && !tenantCnpjClean) {
+          query += `
+            AND (
+              d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+              OR d.empresa_id IS NOT NULL
+            )
+          `;
+          params.push(req.user?.userId || '');
+        }
+      } else if (isSuperadmin && empresaIdParam) {
+        // admin_master filtrando por empresa específica
+        query += ' AND d.empresa_id = ?';
+        params.push(empresaIdParam);
+      }
+      // admin_master SEM filtro: não adiciona WHERE → retorna TODOS os documentos
+
+      if (req.query.tipoOperacao) {
+        query += ' AND d.tipo_operacao = ?';
+        params.push(req.query.tipoOperacao);
+      }
+      if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
+        query += ' AND d.tipo_doc = ?';
+        params.push(req.query.tipoDoc);
+      }
+      if (req.query.chaveAcesso) {
+        query += ' AND d.chave_acesso LIKE ?';
+        params.push(`%${req.query.chaveAcesso}%`);
+      }
+
+      query += ' ORDER BY d.data_emissao DESC, d.created_at DESC';
+      query += ' LIMIT ? OFFSET ?';
+      params.push(parseInt(req.query.limit as string) || 200);
+      params.push(parseInt(req.query.offset as string) || 0);
+
+      documentos = db.prepare(query).all(...params) as any[];
+      console.log(`💾 GET /documentos: ${documentos.length} documentos carregados do SQLite local.`);
+    }
+
+    res.json({ success: true, data: documentos, source: supabaseFetched ? 'supabase' : 'sqlite' });
   } catch (err: any) {
     console.error('❌ Erro ao buscar documentos:', err);
     res.status(500).json({ success: false, error: 'Erro ao buscar documentos.', details: err.message });

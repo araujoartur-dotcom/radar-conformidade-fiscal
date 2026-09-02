@@ -25,6 +25,7 @@ import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { salvarXmlLocalmente } from '../utils/fileStorage';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 import { parseFiscalXml, parseEventoSefazXml, sanitizeXmlAntiXXE, extractTagRegex, extractSubTagRegex } from '../utils/xmlParser';
+import { resolveSupabaseEmpresaId } from '../utils/tenantHelper';
 
 // =========================================================
 // TABELA IBGE UF -> cUF
@@ -748,9 +749,16 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
             const supabase = getSupabaseAdmin();
             if (supabase) {
               try {
-                await supabase.from('dfe_documentos').upsert({
+                const supaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
+                  id: empresaId,
+                  cnpj_completo: cnpj,
+                  cnpj_raiz: cnpj.substring(0, 8),
+                  razao_social: emitNome
+                });
+
+                const { error: summaryErr } = await supabase.from('dfe_documentos').upsert({
                   id: docDbId,
-                  empresa_id: empresaId,
+                  empresa_id: supaEmpresaId,
                   tipo_doc: 'NFe',
                   chave_acesso: chNFe,
                   tipo_operacao: 'Entrada',
@@ -774,8 +782,12 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
                   download_at: brasiliaNow,
                   updated_at: brasiliaNow
                 }, { onConflict: 'chave_acesso' });
+
+                if (summaryErr) {
+                  console.warn('⚠️ Supabase summary sync error:', summaryErr.message);
+                }
               } catch (supaErr: any) {
-                console.warn('⚠️ Supabase sync warning (resumo):', supaErr?.message || supaErr);
+                console.warn('⚠️ Supabase summary sync exception:', supaErr?.message || supaErr);
               }
             }
           }
@@ -947,9 +959,16 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
           const supabase = getSupabaseAdmin();
           if (supabase) {
             try {
-              await supabase.from('dfe_documentos').upsert({
+              const supaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
+                id: empresaId,
+                cnpj_completo: cnpj || parsedDoc.destinatarioCnpj || parsedDoc.emitenteCnpj,
+                cnpj_raiz: (cnpj || parsedDoc.destinatarioCnpj || parsedDoc.emitenteCnpj).replace(/\D/g, '').substring(0, 8),
+                razao_social: parsedDoc.destinatarioNome || parsedDoc.emitenteNome
+              });
+
+              const { error: docError } = await supabase.from('dfe_documentos').upsert({
                 id: docDbId,
-                empresa_id: empresaId,
+                empresa_id: supaEmpresaId,
                 tipo_doc: parsedDoc.tipoDoc,
                 chave_acesso: parsedDoc.chaveAcesso,
                 tipo_operacao: tipoOperacaoDoc,
@@ -988,7 +1007,9 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
                 updated_at: brasiliaNow
               }, { onConflict: 'chave_acesso' });
 
-              if (parsedDoc.itens && parsedDoc.itens.length > 0) {
+              if (docError) {
+                console.error('❌ Erro ao sincronizar dfe_documentos no Supabase:', docError.message);
+              } else if (parsedDoc.itens && parsedDoc.itens.length > 0) {
                 const supaItens = parsedDoc.itens.map(it => ({
                   id: uuidv4(),
                   documento_id: docDbId,
@@ -1028,7 +1049,10 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
                   valor_cbs: it.valorCbs,
                   valor_is: it.valorIs
                 }));
-                await supabase.from('dfe_itens').upsert(supaItens);
+                const { error: itensError } = await supabase.from('dfe_itens').upsert(supaItens);
+                if (itensError) {
+                  console.error('❌ Erro ao sincronizar dfe_itens no Supabase:', itensError.message);
+                }
               }
             } catch (supaErr: any) {
               console.warn('⚠️ Supabase sync warning (full XML):', supaErr?.message || supaErr);

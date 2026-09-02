@@ -1,0 +1,46 @@
+Excelente pergunta! Vou te explicar exatamente como a arquitetura do sistema trata os usuários e por que aquele comportamento estava acontecendo.
+
+### O papel do `admin_master` vs. Usuário da Empresa
+
+No Radar Fiscal, nós temos uma arquitetura **Multi-Tenant** (múltiplas empresas no mesmo sistema, mas com dados isolados). Para isso, o sistema trabalha com perfis de acesso:
+
+1. **Usuário Comum (ex: `analista_fiscal` ou `contador_gestor`):**
+   * Esse usuário **pertence** a uma ou mais empresas.
+   * Ele **obrigatoriamente** precisa ter um `empresa_ativa_id`.
+   * Quando ele faz uma busca, o sistema **trava** a busca apenas para os CNPJs (cliente ou fornecedor) vinculados a essa empresa ativa. Ele nunca vê dados de outras empresas.
+
+2. **O seu usuário (`admin_master`):**
+   * O seu perfil é o de dono/administrador global da plataforma.
+   * O conceito do `admin_master` é que ele **pode ver tudo**. Ele não precisa, necessariamente, estar "preso" a uma empresa ativa no dia a dia. Por isso, no banco de dados, o seu `empresa_ativa_id` estava como `NULL` (vazio).
+
+### O que era o Bug?
+
+O sistema antigo não estava preparado para um `admin_master` com a empresa vazia. Ele fazia a seguinte lógica:
+> *"O usuário é admin? Sim.*
+> *Ele selecionou alguma empresa no filtro? Não.*
+> *Qual é a empresa ativa dele? Nenhuma (NULL).*
+> *Então vou buscar no banco todos os documentos onde a empresa_id seja NULL!"*
+
+Como **nenhum** documento no banco é gravado sem empresa (todo documento pertence a um CNPJ), a busca retornava **ZERO documentos**, dando a impressão de que os dados tinham sumido.
+
+### Como eu corrigi?
+
+Eu alterei a inteligência da busca (`GET /documentos`). Agora a lógica é:
+> *"O usuário é admin? Sim.*
+> *Ele selecionou alguma empresa no filtro? Não.*
+> *Então eu não vou filtrar por empresa nenhuma. Vou trazer **TODOS os documentos** de toda a base de dados!"*
+
+### Respondendo à sua pergunta: "É melhor eu já criar o usuário da empresa?"
+
+Depende do que você quer testar:
+
+**Se você está operando/testando como o "Dono da Plataforma":**
+Continue usando o seu `admin@radarfiscal.com.br`. Com a correção que eu fiz, você agora verá uma visão "Deus", enxergando os documentos de todas as empresas cadastradas misturados na mesma tela (o que é ótimo para auditoria).
+
+**Se você quer testar a experiência real que o seu cliente vai ter:**
+Aí sim! É altamente recomendável que você **crie um usuário de teste** com perfil `analista_fiscal`, vincule ele à empresa específica e faça login com ele. Assim você garante que o isolamento de dados (Multi-Tenant) está perfeito e que o cliente A nunca vai ver a nota do cliente B.
+
+---
+
+> ⚠️ **Lembrete Crítico:**
+> A correção do filtro já está no código, **mas a correção das colunas faltantes no Supabase ainda precisa ser executada por você!** Você já rodou o script [`fix-supabase-tables.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/fix-supabase-tables.sql) no SQL Editor do Supabase conforme detalhei no passo a passo anterior? Sem rodar esse script, os documentos continuarão não sendo salvos!

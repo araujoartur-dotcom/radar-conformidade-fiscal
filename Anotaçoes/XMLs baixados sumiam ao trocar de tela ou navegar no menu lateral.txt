@@ -1,0 +1,65 @@
+
+Aqui está o **Relatório Técnico Certeiro** com o diagnóstico do que estava acontecendo, as causas-raízes identificadas e as correções estruturais definitivas que foram implementadas e enviadas para produção.
+
+---
+
+### 🔍 Diagnóstico e Causas-Raízes dos Problemas
+
+#### 1. Por que os XMLs baixados sumiam ao trocar de tela ou navegar no menu lateral?
+* **Causa Raiz Identificada:**
+  1. Quando o WebService da SEFAZ baixava os XMLs, eles ficavam armazenados no banco de dados e temporariamente na memória do React (`dfeList`).
+  2. Ao clicar em qualquer outro item do menu lateral (Central de KPIs, Relatórios Fiscais, Central de Eventos, Auditoria Fiscal) ou retornar para "XMLs & Ref. Tributária", os componentes montavam e disparavam o `loadDocumentos()` chamando o endpoint `GET /api/upload/documentos`.
+  3. No backend ([server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)), a query SQL possuía um **`INNER JOIN empresas e ON e.id = d.empresa_id`** e um filtro estrito de `usuario_empresa`. 
+  4. Quando os documentos baixados da SEFAZ eram persistidos com o ID da sessão ou vinculados pelo CNPJ da empresa ativa, o `INNER JOIN` não encontrava a linha exata em `empresas` por divergência de ID interno e **retornava um array vazio (`[]`)**.
+  5. O frontend recebia `[]` e executava `setDfeList([])`, **sobrescrevendo e zerando os dados da tela**.
+
+* **Correção Definitiva Aplicada:**
+  - Em [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts), o `INNER JOIN` foi substituído por **`LEFT JOIN empresas e ON e.id = d.empresa_id`** e adicionamos resolução inteligente pelo CNPJ da empresa ativa (`d.cliente_cnpj` ou `d.fornecedor_cnpj`).
+  - Em [src/App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx), o `loadDocumentos()` foi encapsulado com proteção contra valores nulos e agora recarrega os dados reais do banco SQLite/Supabase a cada troca de aba no sidebar.
+
+---
+
+#### 2. Por que o botão "Limpar" não restaurava a tela e o botão "Buscar" desaparecia?
+* **Causa Raiz Identificada:**
+  - No modal de consulta em lote ([src/components/ConsultaNsuModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx)), a tela exibia a barra de progresso sempre que `batchProgress.total > 0`.
+  - Ao finalizar o download de um lote, o botão "Iniciar Download de X XMLs" ficava oculto pelo bloco de conclusão.
+  - O botão "Limpar" existente limpava a caixa de texto (`setRawChavesText('')`), mas **não resetava o estado `batchProgress`** (que permanecia com `total > 0`). Com isso, a tela continuava mostrando o card de lote anterior e não permitia iniciar nova busca.
+
+* **Correção Definitiva Aplicada:**
+  - Criada a função `handleResetBatch()` que zera 100% dos estados (`rawChavesText`, `batchItems`, `batchProgress`, `results` e logs).
+  - O botão "✕ Limpar" agora dispara o reset total.
+  - Adicionado o botão de ação rápida **"🔄 Nova Busca / Limpar Lote"** diretamente dentro do card de conclusão do processamento.
+
+---
+
+#### 3. Integração Multidocumentos (NF-e, CT-e, NFS-e) e Interação nos Módulos
+* **Arquitetura Unificada:**
+  - O parser ([src/utils/xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/xmlParser.ts) e [server/utils/xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts)) processa nativamente:
+    - **NF-e (Modelo 55)** e **NFC-e (Modelo 65)**
+    - **CT-e (Modelo 57)**: fretes, chaves vinculadas e municípios de origem/destino.
+    - **NFS-e**: retenções na fonte (IRRF, INSS, CSLL, PIS, COFINS, ISSQN) e IBS/CBS municipal.
+  - Todos os documentos persistem na tabela unificada `dfe_documentos` e no diretório físico `C:\SEFAZ\XMLs\[CNPJ_RAIZ]\[Entrada|Saida]\[Ano]\[Mes]\`.
+  - **Conexão dos Módulos do Sidebar:**
+    - **Central de KPIs (BI Fiscal):** Exibe o total geral e a quebra por modelo (NF-e, NFC-e, CT-e, NFS-e).
+    - **XMLs & Ref. Tributária:** Visualizador DANFE/DACTE, XML raw, split payment e auditoria de alíquotas.
+    - **Central de Eventos:** Filtros de eventos para NF-e, CT-e e NFS-e.
+    - **Relatórios Fiscais:** Os 8 relatórios analíticos alimentados por todos os tipos de DF-e.
+
+---
+
+#### 4. Consistência das Alíquotas e Reforma Tributária
+* **Zero Hardcoding e Parâmetros Unificados:**
+  - A tabela [server/db/seed.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts) e o motor dinâmico [src/utils/reformaTransicao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reformaTransicao.ts) aplicam rigorosamente as alíquotas do Comitê Gestor:
+    - **CBS Federal**: **9,21%**
+    - **IBS Estadual**: **13,70%**
+    - **IBS Municipal**: **5,00%**
+    - **Total IBS**: **18,70%**
+    - **Carga Plena IVA Dual**: **27,91%**
+  - Todas as telas (Central de KPIs, Simulador 2026–2033, Relatórios e Visualizadores de XML) consomem a mesma fonte dinâmica de dados via `/tables/aliquotas/ad-valorem`.
+
+---
+
+### 🚀 Status da Entrega e Deploy
+- **Testes Automatizados:** **39/39 aprovados (100%)** em [server/test_suite.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/test_suite.ts).
+- **Compilação Frontend:** `npm run build` concluído com sucesso (`dist/` gerado sem erros).
+- **Deploy:** Commit `2926451` sincronizado no repositório `origin/main` (atualização automática em produção no Render e Netlify).

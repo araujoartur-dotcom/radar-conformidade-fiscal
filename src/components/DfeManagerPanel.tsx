@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt } from 'lucide-react';
+import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt, Zap } from 'lucide-react';
 import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
 import { parseDfeXmlString } from '../utils/xmlParser';
 import { DanfeModal } from './DanfeModal';
 import { XmlViewerModal } from './XmlViewerModal';
 import { ConsultaNsuModal } from './ConsultaNsuModal';
 import { SplitPaymentModal } from './SplitPaymentModal';
+import { TurboIngestModal } from './TurboIngestModal';
 import { formatBrasiliaDate, formatBrasiliaDateTime } from '../utils/timezone';
 import { useApi } from '../hooks/useApi';
 
@@ -35,6 +36,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [xmlModalItem, setXmlModalItem] = useState<DfeXmlItem | null>(null);
   const [splitModalDoc, setSplitModalDoc] = useState<DfeXmlItem | null>(null);
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
+  const [isTurboModalOpen, setIsTurboModalOpen] = useState<boolean>(false);
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
@@ -140,6 +142,15 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
+              onClick={() => setIsTurboModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-orange-500/25 transition-all cursor-pointer border border-amber-300/40 animate-pulse hover:animate-none"
+              title="Carga ultrarrápida de pastas inteiras com 20k+ XMLs ou pacotes ZIP"
+            >
+              <Zap className="w-4 h-4 fill-slate-950" />
+              <span>🚀 Motor Turbo V12 (Carga 20k+)</span>
+            </button>
+
+            <button
               onClick={() => {
                 setModalFluxo('entrada');
                 setIsConsultaNsuOpen(true);
@@ -232,6 +243,24 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
               {uploadSuccessMsg}
             </div>
           )}
+
+          <div className="mt-4 pt-4 border-t border-slate-800/80 w-full flex flex-wrap items-center justify-between gap-3 relative z-10">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Precisa importar 10.000 a 50.000 XMLs de uma pasta ou arquivo .ZIP?</span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsTurboModalOpen(true);
+              }}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all cursor-pointer border border-amber-300/40"
+            >
+              <Zap className="w-3.5 h-3.5 fill-slate-950" />
+              <span>Abrir Motor Turbo V12</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -602,6 +631,15 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           if (newItems.length > 0) {
             setSelectedDfe(newItems[0]);
           }
+        }}
+      />
+
+      {/* Motor Turbo V12 Mass Ingestion Modal (20k+) */}
+      <TurboIngestModal
+        isOpen={isTurboModalOpen}
+        onClose={() => setIsTurboModalOpen(false)}
+        onSuccess={() => {
+          loadDocumentos();
         }}
       />
     </div>

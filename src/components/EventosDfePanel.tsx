@@ -157,7 +157,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           nomeEvento: activeEventoDef.nome,
           categoria: activeEventoDef.categoria,
           justificativa: justificativa.trim() || undefined,
-          tpAmb: '2', // Simulando homologação por padrão na interface
+          tpAmb: '1', // Produção por padrão
           tipoDfe: selectedTipoDfe
         })
       });
@@ -196,7 +196,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       if (data.success) {
         alert(`Evento transmitido com sucesso! Protocolo: ${data.protocoloSefaz}`);
       } else {
-        alert(`Falha na autorização: ${data.xMotivo}`);
+        alert(`Falha na autorização: ${data.xMotivo || 'Serviço da SEFAZ indisponível ou CNPJ sem certificado configurado.'}`);
       }
 
     } catch (err: any) {

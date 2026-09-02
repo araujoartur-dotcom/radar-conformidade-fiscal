@@ -257,7 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_ncm_regras_ncm ON public.ncm_regras_anexos(ncm);
 -- 11. DOCUMENTOS FISCAIS ELETRÔNICOS (DF-e) & ITENS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.dfe_documentos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id VARCHAR(60) PRIMARY KEY,
     empresa_id UUID NOT NULL REFERENCES public.empresas(id) ON DELETE CASCADE,
     tipo_doc VARCHAR(10) NOT NULL,
     chave_acesso VARCHAR(44) NOT NULL UNIQUE,
@@ -301,7 +301,7 @@ CREATE TABLE IF NOT EXISTS public.dfe_documentos (
 
 CREATE TABLE IF NOT EXISTS public.dfe_itens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    documento_id UUID NOT NULL REFERENCES public.dfe_documentos(id) ON DELETE CASCADE,
+    documento_id VARCHAR(60) NOT NULL REFERENCES public.dfe_documentos(id) ON DELETE CASCADE,
     item_nro INTEGER,
     codigo_item VARCHAR(60) DEFAULT '',
     descricao_item TEXT,

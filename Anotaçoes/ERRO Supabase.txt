@@ -1,0 +1,52 @@
+Request started
+01/09/2026, 20:49:19
+
+Postgres
+Message
+insert or update on table "dfe_itens" violates foreign key constraint "dfe_itens_documento_id_fkey"
+
+Status
+23503
+
+Command
+SELECT
+
+Database
+postgres
+
+User
+authenticator
+
+Query
+WITH pgrst_source AS (INSERT INTO "public"."dfe_itens"("aliquota_cbs", "aliquota_cofins", "aliquota_ibs", "aliquota_icms", "aliquota_ipi", "aliquota_pis", "base_cbs", "base_cofins", "base_ibs", "base_icms", "base_ipi", "base_pis", "cclasstrib", "cest", "cfop", "codigo_item", "cst_csosn", "desconto_incondicional", "descricao_item", "documento_id", "frete_seguro_rateado", "id", "item_nro", "natureza_operacao", "ncm", "quantidade", "unidade", "valor_bruto_item", "valor_cbs", "valor_cofins", "valor_ibs", "valor_icms", "valor_ipi", "valor_is", "valor_liquido_item", "valor_pis", "valor_unitario") SELECT "pgrst_body"."aliquota_cbs", "pgrst_body"."aliquota_cofins", "pgrst_body"."aliquota_ibs", "pgrst_body"."aliquota_icms", "pgrst_body"."aliquota_ipi", "pgrst_body"."aliquota_pis", "pgrst_body"."base_cbs", "pgrst_body"."base_cofins", "pgrst_body"."base_ibs", "pgrst_body"."base_icms", "pgrst_body"."base_ipi", "pgrst_body"."base_pis", "pgrst_body"."cclasstrib", "pgrst_body"."cest", "pgrst_body"."cfop", "pgrst_body"."codigo_item", "pgrst_body"."cst_csosn", "pgrst_body"."desconto_incondicional", "pgrst_body"."descricao_item", "pgrst_body"."documento_id", "pgrst_body"."frete_seguro_rateado", "pgrst_body"."id", "pgrst_body"."item_nro", "pgrst_body"."natureza_operacao", "pgrst_body"."ncm", "pgrst_body"."quantidade", "pgrst_body"."unidade", "pgrst_body"."valor_bruto_item", "pgrst_body"."valor_cbs", "pgrst_body"."valor_cofins", "pgrst_body"."valor_ibs", "pgrst_body"."valor_icms", "pgrst_body"."valor_ipi", "pgrst_body"."valor_is", "pgrst_body"."valor_liquido_item", "pgrst_body"."valor_pis", "pgrst_body"."valor_unitario" FROM (SELECT $1 AS json_data) pgrst_payload, LATERAL (SELECT "aliquota_cbs", "aliquota_cofins", "aliquota_ibs", "aliquota_icms", "aliquota_ipi", "aliquota_pis", "base_cbs", "base_cofins", "base_ibs", "base_icms", "base_ipi", "base_pis", "cclasstrib", "cest", "cfop", "codigo_item", "cst_csosn", "desconto_incondicional", "descricao_item", "documento_id", "frete_seguro_rateado", "id", "item_nro", "natureza_operacao", "ncm", "quantidade", "unidade", "valor_bruto_item", "valor_cbs", "valor_cofins", "valor_ibs", "valor_icms", "valor_ipi", "valor_is", "valor_liquido_item", "valor_pis", "valor_unitario" FROM json_to_recordset(pgrst_payload.json_data) AS _("aliquota_cbs" numeric(6,3), "aliquota_cofins" numeric(6,3), "aliquota_ibs" numeric(6,3), "aliquota_icms" numeric(6,3), "aliquota_ipi" numeric(6,3), "aliquota_pis" numeric(6,3), "base_cbs" numeric(15,2), "base_cofins" numeric(15,2), "base_ibs" numeric(15,2), "base_icms" numeric(15,2), "base_ipi" numeric(15,2), "base_pis" numeric(15,2), "cclasstrib" character varying(6), "cest" character varying(10), "cfop" character varying(4), "codigo_item" character varying(60), "cst_csosn" character varying(10), "desconto_incondicional" numeric(15,2), "descricao_item" text, "documento_id" character varying(60), "frete_seguro_rateado" numeric(15,2), "id" uuid, "item_nro" integer, "natureza_operacao" character varying(100), "ncm" character varying(10), "quantidade" numeric(15,4), "unidade" character varying(10), "valor_bruto_item" numeric(15,2), "valor_cbs" numeric(15,2), "valor_cofins" numeric(15,2), "valor_ibs" numeric(15,2), "valor_icms" numeric(15,2), "valor_ipi" numeric(15,2), "valor_is" numeric(15,2), "valor_liquido_item" numeric(15,2), "valor_pis" numeric(15,2), "valor_unitario" numeric(15,4)) ) pgrst_body WHERE set_config('pgrst.inserted', (coalesce(nullif(current_setting('pgrst.inserted', true), '')::int, 0) + 1)::text, true) <> '0' ON CONFLICT("id") DO UPDATE SET "aliquota_cbs" = EXCLUDED."aliquota_cbs", "aliquota_cofins" = EXCLUDED."aliquota_cofins", "aliquota_ibs" = EXCLUDED."aliquota_ibs", "aliquota_icms" = EXCLUDED."aliquota_icms", "aliquota_ipi" = EXCLUDED."aliquota_ipi", "aliquota_pis" = EXCLUDED."aliquota_pis", "base_cbs" = EXCLUDED."base_cbs", "base_cofins" = EXCLUDED."base_cofins", "base_ibs" = EXCLUDED."base_ibs", "base_icms" = EXCLUDED."base_icms", "base_ipi" = EXCLUDED."base_ipi", "base_pis" = EXCLUDED."base_pis", "cclasstrib" = EXCLUDED."cclasstrib", "cest" = EXCLUDED."cest", "cfop" = EXCLUDED."cfop", "codigo_item" = EXCLUDED."codigo_item", "cst_csosn" = EXCLUDED."cst_csosn", "desconto_incondicional" = EXCLUDED."desconto_incondicional", "descricao_item" = EXCLUDED."descricao_item", "documento_id" = EXCLUDED."documento_id", "frete_seguro_rateado" = EXCLUDED."frete_seguro_rateado", "id" = EXCLUDED."id", "item_nro" = EXCLUDED."item_nro", "natureza_operacao" = EXCLUDED."natureza_operacao", "ncm" = EXCLUDED."ncm", "quantidade" = EXCLUDED."quantidade", "unidade" = EXCLUDED."unidade", "valor_bruto_item" = EXCLUDED."valor_bruto_item", "valor_cbs" = EXCLUDED."valor_cbs", "valor_cofins" = EXCLUDED."valor_cofins", "valor_ibs" = EXCLUDED."valor_ibs", "valor_icms" = EXCLUDED."valor_icms", "valor_ipi" = EXCLUDED."valor_ipi", "valor_is" = EXCLUDED."valor_is", "valor_liquido_item" = EXCLUDED."valor_liquido_item", "valor_pis" = EXCLUDED."valor_pis", "valor_unitario" = EXCLUDED."valor_unitario"WHERE set_config('pgrst.inserted', (coalesce(nullif(current_setting('pgrst.inserted', true), '')::int, 0) - 1)::text, true) <> '-1' RETURNING 1) SELECT '' AS total_result_set, pg_catalog.count(_postgrest_t) AS page_total, array[]::text[] AS header, ''::text AS body, nullif(current_setting('response.headers', true), '') AS response_headers, nullif(current_setting('response.status', true), '') AS response_status, nullif(current_setting('pgrst.inserted', true),'')::int AS response_inserted FROM (SELECT * FROM pgrst_source) _postgrest_t
+
+Details
+Key (documento_id)=(doc-53260661602199005858550990016160991971088260) is not present in table "dfe_documentos".
+
+
+Connection & Session Details
+Backend Type
+client backend
+
+Connection From
+::1:63609
+
+Session ID
+6a97632f.2f2ea
+
+Process ID
+193258
+
+Query ID
+-1366570371903380766
+
+Transaction ID
+33437
+
+Virtual TX ID
+47/3406
+
+Session Started
+01/09/2026, 20:43:43
+
+Operation result

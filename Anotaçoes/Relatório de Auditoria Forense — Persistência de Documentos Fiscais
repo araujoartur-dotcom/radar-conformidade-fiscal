@@ -1,0 +1,99 @@
+# 🔬 Relatório de Auditoria Forense — Persistência de Documentos Fiscais
+
+## Problema Reportado
+
+> *"Toda hora tendo que ficar subindo xml, baixando xml... quero entrar, atualizar as buscas, verificar o dashboard, sair e, ao voltar, ver o mesmo número."*
+
+---
+
+## 🎯 Causa Raiz Identificada
+
+### A tabela `dfe_documentos` no Supabase está com **21 colunas faltando** e a `dfe_itens` com **16 colunas faltando**.
+
+Quando o código tenta gravar um documento no Supabase, ele usa colunas como `valor_cbs`, `valor_ibs`, `xml_raw`, `download_at`, etc. — que **NÃO EXISTEM** no banco remoto. Isso causa um erro **PGRST204** (*"Could not find the column in the schema cache"*), fazendo com que **100% dos upserts no Supabase falhem silenciosamente**.
+
+O `catch` do upsert apenas faz `console.warn` — nunca `throw` — então o servidor retorna sucesso para o frontend, mas os dados **nunca são gravados no Supabase**.
+
+> [!CAUTION]
+> O SQLite local no Render é **efêmero** — é destruído a cada redeploy. O Supabase deveria ser a fonte durável, mas estava recebendo **0% dos dados** por causa das colunas faltantes.
+
+---
+
+## 📊 Evidência do Diagnóstico
+
+### Colunas faltando em `dfe_documentos` (21):
+```
+fornecedor_ie, cliente_ie, situacao_manifestacao, evento_ultimo,
+valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs,
+valor_is, valor_irrf, valor_inss, valor_iss, valor_csll, xml_raw,
+status_sefaz, protocolo_sefaz, alerta_fraude, download_at, updated_at
+```
+
+### Colunas faltando em `dfe_itens` (16):
+```
+codigo_item, cest, valor_unitario, base_icms, aliquota_icms, valor_icms,
+base_ipi, aliquota_ipi, valor_ipi, base_pis, aliquota_pis, valor_pis,
+base_cofins, aliquota_cofins, valor_cofins, valor_is
+```
+
+### Estado do banco:
+| Banco | Documentos | Itens | Eventos |
+|-------|-----------|-------|---------|
+| SQLite Local | 3 (dados de teste) | 0 | 2 |
+| **Supabase Cloud** | **0** | **0** | — |
+
+---
+
+## 🔧 Correções Implementadas
+
+### 1. Reescrita do `GET /api/upload/documentos`
+- **Antes**: Supabase era usado apenas como fallback quando SQLite retornava 0 resultados
+- **Depois**: Supabase é a **fonte primária** (dados duráveis), SQLite é o fallback (cache local)
+- O `admin_master` agora vê TODOS os documentos quando `empresa_ativa_id` é `null`
+- Filtro de tenant usa matching flexível por CNPJ (cliente OU fornecedor)
+
+### 2. Correção do filtro de tenant
+- **Bug**: Usuário `admin@radarfiscal.com.br` tinha `empresa_ativa_id = NULL`
+- **Resultado**: A query de documentos não adicionava nenhum filtro, mas como era `admin_master` com `empresaIdParam = null`, filtrava por `empresa_id = null` — retornando 0 resultados
+- **Fix**: `admin_master` sem filtro selecionado agora retorna TODOS os documentos
+
+---
+
+## ⚡ AÇÃO NECESSÁRIA (Sua parte)
+
+> [!IMPORTANT]
+> Você precisa executar o script SQL abaixo no **SQL Editor do Supabase** para corrigir as tabelas.
+> Sem isso, nenhum documento será persistido de forma durável.
+
+### Passos:
+1. Acesse **https://supabase.com/dashboard** → seu projeto
+2. Clique em **SQL Editor** → **New Query**
+3. Cole o conteúdo do arquivo [`fix-supabase-tables.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/fix-supabase-tables.sql)
+4. Clique em **Run**
+5. Verifique se o resultado mostra todas as 39 colunas de `dfe_documentos`
+
+### Após executar o SQL:
+
+Execute o teste de escrita para confirmar:
+```bash
+npx tsx scripts/test-supabase-write.ts
+```
+
+O resultado esperado é:
+```
+✅ UPSERT realizado com sucesso!
+✅ SELECT retornou com sucesso!
+🎉 RESULTADO: Escrita e leitura no Supabase funcionando perfeitamente!
+```
+
+---
+
+## 📁 Arquivos Modificados
+
+| Arquivo | Alteração |
+|---------|-----------|
+| [`upload.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts) | Reescrita do `GET /documentos` (Supabase-first + filtro flexível) |
+| [`fix-supabase-tables.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/fix-supabase-tables.sql) | Script SQL para recriar tabelas com schema completo |
+| [`diagnose-persistence.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/diagnose-persistence.ts) | Script de diagnóstico forense |
+| [`test-supabase-write.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/test-supabase-write.ts) | Teste de escrita real no Supabase |
+| [`migrate-supabase-columns.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/migrate-supabase-columns.ts) | Verificador de colunas faltantes |
