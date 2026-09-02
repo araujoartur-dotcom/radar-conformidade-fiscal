@@ -1,0 +1,87 @@
+# Arquitetura Hot/Cold Tiering (Cache Quente 60 Dias) & Motor Turbo Exportador em Streaming (.ZIP)
+
+Este plano detalha a implementação de duas capacidades de alto desempenho para o **Radar de Conformidade Fiscal**:
+1. **Camada de Cache Quente (*Hot Data Layer* — Últimos 60 dias):** Resposta instantânea (< 5ms) para 90% do volume transacional diário de notas e fechamentos fiscais, com fallback automático e indexado para dados frios (*Cold Storage* — histórico de 5+ anos).
+2. **Motor Turbo Exportador em Streaming (.ZIP) para Fiscalização:** Download massivo de dezenas de milhares de XMLs organizados em pastas fiscais padronizadas (`NFe_Mod55`, `CTe_Mod57`, `NFSe_Servicos`, `Eventos`) com geração sob demanda de manifesto analítico em `.XLSX`.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Estratégia de Invalidação do Cache:** O Hot Cache se auto-invalida e sincroniza em tempo real sempre que novos XMLs forem importados pelo Upload Manual, Motor Turbo V12 ou Captura Automática da SEFAZ, garantindo 0% de dados defasados.
+>
+> **Streaming de ZIP:** A exportação de 21.000+ XMLs será transmitida diretamente em formato *chunked stream* HTTP, impedindo qualquer sobrecarga de memória RAM no servidor e no navegador.
+
+---
+
+## Proposed Changes
+
+### Backend — Camada de Cache & Exportação Turbo
+
+#### [NEW] [hotCacheService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/hotCacheService.ts)
+- Implementa armazenamento em memória com TTL inteligente e particionamento por tenant/empresa.
+- Mantém em buffer estruturado os documentos emitidos nos últimos 60 dias.
+- Métodos: `getHotDocs(empresaId)`, `setHotDocs(empresaId, docs)`, `invalidate(empresaId)`, `getMetrics()`.
+- Headers HTTP informativos: `X-Cache: HIT` / `X-Cache-Time: 3ms`.
+
+#### [NEW] [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts)
+- Endpoint `GET /api/export/fiscal-zip` e `POST /api/export/fiscal-zip`.
+- Filtros: período (últimos 2 meses, ano fiscal ou todos os 21k+ documentos), modelos de DF-e e status.
+- Empacota os XMLs com `JSZip` / streaming contínuo sem estouro de buffer.
+- Estrutura automática de pastas para entrega ao Fisco:
+  ```text
+  📦 Auditoria_Fiscal_[CNPJ]_[Data].zip
+   ├── 📁 NFe_Mercadorias/
+   │    └── 📁 2026-08/
+   │         └── 352608...-nfe.xml
+   ├── 📁 CTe_Transportes/
+   ├── 📁 NFSe_Servicos/
+   ├── 📁 Eventos_Manifestacao_CCe/
+   └── 📊 Manifesto_Sumario_Auditoria.xlsx
+  ```
+
+#### [MODIFY] [server/app.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/app.ts)
+- Registrar a nova rota `app.use('/api/export', exportRoutes)`.
+
+#### [MODIFY] [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+- Integrar consulta de dados quentes via `hotCacheService` quando a busca for sem filtro de data ou nos últimos 60 dias.
+- Invalidar cache automaticamente nos métodos de upload e ingestão.
+
+#### [MODIFY] [server/routes/relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)
+- Integrar atalho de cache para agregações de relatórios dos últimos 2 meses.
+
+---
+
+### Frontend — Cockpit de Exportação Fiscal & Indicador de Performance
+
+#### [NEW] [ExportacaoFiscalModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ExportacaoFiscalModal.tsx)
+- Modal corporativo de Exportação Fiscal para Fiscalização e Auditoria.
+- Seletores:
+  - **Período:** Últimos 60 Dias (Hot Cache Instantâneo), Competência Específica (Mês/Ano) ou Base Histórica Completa (21.000+ XMLs).
+  - **Modelos:** NF-e (Mod 55), CT-e (Mod 57), NFS-e (Serviços), NFC-e (Mod 65), Eventos SEFAZ.
+  - **Opções:** Incluir Planilha Sumário `.XLSX` consolidada com batimento tributário da Reforma (CBS/IBS/IS).
+- Barra de progresso e download em streaming.
+
+#### [MODIFY] [Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)
+- Adicionar botão de ação rápida: `📦 Pacote Auditor Fiscal (.ZIP)` abrindo o modal.
+- Indicador sutil de `⚡ Hot Cache Ativo (< 5ms)` no status da barra.
+
+#### [MODIFY] [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+- Adicionar atalho direto no painel de relatórios para exportar os XMLs filtrados em `.ZIP` junto com a planilha analítica.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Executar script de validação de latência do Hot Cache (`scripts/test-hot-cache.ts`):
+  - Validar tempo de resposta < 10ms na segunda consulta.
+  - Validar invalidação após ingestão de novos XMLs.
+- Executar script de teste de exportação em lote (`scripts/test-export-zip.ts`):
+  - Validar geração de `.ZIP` com integridade de arquivos e manifesto `.XLSX`.
+
+### Manual Verification
+- Clicar em "Pacote Auditor Fiscal (.ZIP)" no Header.
+- Selecionar "Base Completa" e confirmar o download do arquivo `.ZIP` estruturado com pastas organizadas.
+- Navegar pelas telas de Relatórios e verificar carregamento instantâneo.

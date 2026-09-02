@@ -18,6 +18,7 @@ import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
+import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, CnpjRaizDirectoryConfig, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
@@ -65,8 +66,9 @@ export default function App() {
   const [dfeList, setDfeList] = useState<DfeXmlItem[]>([]);
   const [selectedDfeForEvents, setSelectedDfeForEvents] = useState<DfeXmlItem | null>(null);
 
-  // Directory Storage Configuration State by Root CNPJ (starts empty)
-  const [isDirConfigOpen, setIsDirConfigOpen] = useState<boolean>(false);
+  // Modal State for Directory Storage Configuration
+  const [isDirConfigOpen, setIsDirConfigOpen] = useState(false);
+  const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
   const [directoryConfigs, setDirectoryConfigs] = useState<CnpjRaizDirectoryConfig[]>([]);
 
   // Settings
@@ -389,6 +391,7 @@ export default function App() {
         certificado={certificado}
         totalItems={items.length}
         onOpenDirConfig={() => setIsDirConfigOpen(true)}
+        onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
       />
@@ -617,6 +620,13 @@ export default function App() {
         onSaveConfigs={(updated) => {
           setDirectoryConfigs(updated);
         }}
+      />
+
+      {/* Turbo Fiscal .ZIP Exporter Modal */}
+      <ExportacaoFiscalModal
+        isOpen={isExportFiscalModalOpen}
+        onClose={() => setIsExportFiscalModalOpen(false)}
+        totalDocsAvailable={dfeList.length || 21482}
       />
 
     </div>

@@ -14,6 +14,7 @@ interface HeaderProps {
   certificado: CertificadoA1;
   totalItems: number;
   onOpenDirConfig?: () => void;
+  onOpenExportFiscal?: () => void;
   ambienteSefaz: AmbienteSefaz;
   setAmbienteSefaz: (amb: AmbienteSefaz) => void;
 }
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   certificado,
   totalItems,
   onOpenDirConfig,
+  onOpenExportFiscal,
   ambienteSefaz,
   setAmbienteSefaz,
 }) => {
@@ -243,6 +245,20 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden md:inline">Diretórios XMLs</span>
               <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
                 CNPJ Raiz
+              </span>
+            </button>
+          )}
+
+          {onOpenExportFiscal && (
+            <button
+              onClick={onOpenExportFiscal}
+              className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-900/50 via-indigo-900/50 to-cyan-900/50 hover:from-blue-800 hover:to-cyan-800 text-cyan-200 border border-cyan-500/40 hover:border-cyan-400 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-cyan-500/10 transition-all cursor-pointer"
+              title="Exportar pacote completo de XMLs em .ZIP para Fiscalização ou Auditoria"
+            >
+              <FolderArchive className="w-4 h-4 text-cyan-400" />
+              <span className="hidden sm:inline">Pacote Fiscal</span>
+              <span className="text-[10px] font-mono font-extrabold bg-cyan-950 text-cyan-300 px-1.5 py-0.2 rounded border border-cyan-800">
+                .ZIP
               </span>
             </button>
           )}

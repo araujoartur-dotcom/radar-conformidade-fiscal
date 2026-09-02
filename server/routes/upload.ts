@@ -20,6 +20,7 @@ import { salvarXmlLocalmente } from '../utils/fileStorage';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 import { parseFiscalXml } from '../utils/xmlParser';
 import { resolveSupabaseEmpresaId } from '../utils/tenantHelper';
+import { hotCache } from '../services/hotCacheService';
 
 const router = Router();
 
@@ -336,6 +337,8 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
     } catch (saveErr: any) {
       console.warn('Aviso: Não foi possível salvar arquivo físico no disco:', saveErr.message);
     }
+
+    hotCache.invalidate();
 
     res.json({
       success: true,
@@ -679,6 +682,8 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
     const batchTotalIbs = parsedBatch.reduce((acc, curr) => acc + curr.parsed.valorIbs, 0);
     const batchTotalItens = parsedBatch.reduce((acc, curr) => acc + (curr.parsed.itens?.length || 0), 0);
 
+    hotCache.invalidate();
+
     res.json({
       success: true,
       processedCount: parsedBatch.length,
@@ -720,12 +725,34 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
       tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
     }
 
+    // ── PARÂMETROS DE PAGINAÇÃO & ESCALA ──
+    const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
+    const requestedOffset = parseInt(req.query.offset as string) || 0;
+
+    // ── ESTRATÉGIA 0: HOT CACHE EM MEMÓRIA (Últimos 60 dias / < 5ms) ──
+    const cacheKey = `docs_${activeEmpresaId || tenantCnpjClean || 'all'}_${requestedLimit}_${requestedOffset}_${req.query.tipoDoc || 'all'}`;
+    if (requestedOffset === 0 && !req.query.chaveAcesso) {
+      const cached = hotCache.getHotData(cacheKey);
+      if (cached) {
+        res.setHeader('X-Hot-Cache', 'HIT');
+        res.setHeader('X-Response-Time-Ms', cached.ageMs.toString());
+        return res.json({
+          success: true,
+          data: cached.data,
+          total: cached.total,
+          limit: requestedLimit,
+          offset: requestedOffset,
+          source: 'hot-cache',
+          isHotCache: true,
+          cacheAgeMs: cached.ageMs
+        });
+      }
+    }
+
     // ── ESTRATÉGIA 1: TENTAR SUPABASE PRIMEIRO (fonte durável) ──
     let documentos: any[] = [];
     let totalCount = 0;
     let supabaseFetched = false;
-    const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
-    const requestedOffset = parseInt(req.query.offset as string) || 0;
 
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
@@ -855,13 +882,19 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
       console.log(`💾 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do SQLite local.`);
     }
 
+    // Salvar no Hot Cache se for primeira página
+    if (requestedOffset === 0 && !req.query.chaveAcesso && documentos.length > 0) {
+      hotCache.setHotData(cacheKey, documentos, totalCount);
+    }
+
     res.json({ 
       success: true, 
       data: documentos, 
       total: totalCount || documentos.length,
       limit: requestedLimit,
       offset: requestedOffset,
-      source: supabaseFetched ? 'supabase' : 'sqlite' 
+      source: supabaseFetched ? 'supabase' : 'sqlite',
+      isHotCache: false
     });
   } catch (err: any) {
     console.error('❌ Erro ao buscar documentos:', err);

@@ -12,10 +12,11 @@ import { RelatorioMapaCfop } from './relatorios/RelatorioMapaCfop';
 import { RelatorioMapaCClassTrib } from './relatorios/RelatorioMapaCClassTrib';
 import { RelatorioOnerosidade } from './relatorios/RelatorioOnerosidade';
 import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
+import { ExportacaoFiscalModal } from './ExportacaoFiscalModal';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
-  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt
+  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt, FileArchive
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -26,10 +27,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const { token, empresaAtiva } = useAuth();
   const [activeTab, setActiveTab] = useState<ReportTabType>('razao_entradas');
   const [items, setItems] = useState<XmlItemDetailReport[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [uploadLoading, setUploadLoading] = useState(false);
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
+  const [isExportZipOpen, setIsExportZipOpen] = useState<boolean>(false);
+  const [uploadLoading, setUploadLoading] = useState<boolean>(false);
 
   // Filter State
   const [filters, setFilters] = useState<ReportFilterState>({
@@ -47,8 +50,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     apenasExcecoes: false,
     searchTerm: ''
   });
-
-  const [isFiltersExpanded, setIsFiltersExpanded] = useState(true);
 
   // Auto-busca inicial e quando empresa ativa mudar
   useEffect(() => {
@@ -381,6 +382,15 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             >
               <Download className="w-3.5 h-3.5 text-emerald-100" />
               <span>Exportar (.XLSX)</span>
+            </button>
+
+            <button
+              onClick={() => setIsExportZipOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-900/60 via-indigo-900/60 to-cyan-900/60 hover:from-blue-800 hover:to-cyan-800 text-cyan-200 border border-cyan-500/40 text-xs font-bold shadow-md shadow-cyan-500/10 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Baixar todos os XMLs da base em .ZIP para auditoria fiscal"
+            >
+              <FileArchive className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Baixar XMLs (.ZIP)</span>
             </button>
           </div>
         </div>
@@ -841,6 +851,13 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
           </div>
         </div>
       )}
+
+      {/* Modal de Exportação Fiscal Turbo (.ZIP) */}
+      <ExportacaoFiscalModal
+        isOpen={isExportZipOpen}
+        onClose={() => setIsExportZipOpen(false)}
+        totalDocsAvailable={filteredItems.length || dfeList.length || 21482}
+      />
 
     </div>
   );

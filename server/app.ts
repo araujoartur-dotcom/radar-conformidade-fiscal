@@ -27,6 +27,7 @@ import usersRoutes from './routes/users';
 import certificatesRoutes from './routes/certificates';
 import auditRoutes from './routes/audit';
 import partnersRoutes from './routes/partners';
+import exportRoutes from './routes/export';
 
 export const app = express();
 
@@ -56,6 +57,7 @@ app.use('/api/sefaz', sefazRoutes);
 app.use('/api/tables', tablesRoutes);
 app.use('/api/relatorios', relatoriosRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/export', exportRoutes);
 app.use('/api/config/certificate', certificatesRoutes);
 app.use('/api/config', credentialsRoutes);
 app.use('/api/tenants', tenantsRoutes);
