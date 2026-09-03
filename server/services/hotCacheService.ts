@@ -9,7 +9,7 @@
  */
 
 interface CachedData {
-  documents: any[];
+  documents: any;
   totalCount: number;
   stats?: any;
   cachedAt: number;
@@ -52,7 +52,7 @@ class HotCacheService {
   /**
    * Retorna dados quentes se válidos no cache
    */
-  public getHotData(tenantKey: string): { data: any[]; total: number; stats?: any; isHit: boolean; ageMs: number } | null {
+  public getHotData(tenantKey: string): { data: any; total: number; stats?: any; isHit: boolean; ageMs: number } | null {
     const entry = this.cache.get(tenantKey);
     if (!entry) {
       this.stats.misses++;
@@ -79,9 +79,9 @@ class HotCacheService {
   }
 
   /**
-   * Grava documentos no Hot Cache
+   * Grava documentos ou agregados no Hot Cache
    */
-  public setHotData(tenantKey: string, documents: any[], totalCount: number, stats?: any): void {
+  public setHotData(tenantKey: string, documents: any, totalCount: number, stats?: any): void {
     this.cache.set(tenantKey, {
       documents,
       totalCount,

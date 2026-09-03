@@ -33,6 +33,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [isExportZipOpen, setIsExportZipOpen] = useState<boolean>(false);
   const [uploadLoading, setUploadLoading] = useState<boolean>(false);
+  const [dbKpis, setDbKpis] = useState<any>(null);
 
   // Filter State
   const [filters, setFilters] = useState<ReportFilterState>({
@@ -103,6 +104,24 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (response.ok) {
         const data = await response.json();
         fetchedItems = (data.data || []) as XmlItemDetailReport[];
+      }
+
+      // Busca simultânea de KPIs agregados no banco (Total Geral + Filtrado)
+      try {
+        const kpiQuery = new URLSearchParams();
+        if (empresaAtiva?.id) kpiQuery.append('empresaId', empresaAtiva.id);
+        if (filters.dataInicio) kpiQuery.append('dataInicio', filters.dataInicio);
+        if (filters.dataFim) kpiQuery.append('dataFim', filters.dataFim);
+        if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') kpiQuery.append('tipoDoc', filters.tipoDoc);
+        const kpiRes = await fetch(`${getApiBaseUrl()}/upload/kpis?${kpiQuery.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (kpiRes.ok) {
+          const kpiJson = await kpiRes.json();
+          if (kpiJson.success) setDbKpis(kpiJson);
+        }
+      } catch (kpiErr) {
+        console.warn('⚠️ Erro ao carregar KPIs agregados:', kpiErr);
       }
       
       // Fallback em memória caso a API ainda não tenha retornado itens mas dfeList esteja populada
@@ -588,34 +607,56 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         )}
       </div>
 
-      {/* Dynamic Report Summary KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+      {/* Dynamic Report Summary KPI Cards (5 Cards Estratégicos com Base de Cálculo IBS/CBS) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total Líquido Filtrado</span>
-          <strong className="text-base sm:text-lg font-black text-emerald-400 font-mono">
-            {filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          <strong className="text-base sm:text-lg font-black text-emerald-400 font-mono truncate">
+            {(dbKpis?.totalFiltrado?.totalValor ?? filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
+          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+            Base Geral: {(dbKpis?.totalGeral?.totalValor ?? 0).toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' })}
+          </span>
+        </div>
+
+        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-teal-500/30 flex flex-col justify-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-teal-300 mb-0.5">&lt;vBC&gt; Base IBS / CBS</span>
+          <strong className="text-base sm:text-lg font-black text-teal-300 font-mono truncate">
+            {(dbKpis?.totalFiltrado?.totalBaseCbs ?? filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </strong>
+          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+            Base Geral: {(dbKpis?.totalGeral?.totalBaseCbs ?? 0).toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' })}
+          </span>
         </div>
 
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total CBS Real (XMLs)</span>
-          <strong className="text-base sm:text-lg font-black text-cyan-400 font-mono">
-            {filteredItems.reduce((acc, it) => acc + (it.valorCbs || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          <strong className="text-base sm:text-lg font-black text-cyan-400 font-mono truncate">
+            {(dbKpis?.totalFiltrado?.totalCbs ?? filteredItems.reduce((acc, it) => acc + (it.valorCbs || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
+          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+            União (0,9% / 8,8%)
+          </span>
         </div>
 
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total IBS Real (XMLs)</span>
-          <strong className="text-base sm:text-lg font-black text-indigo-400 font-mono">
-            {filteredItems.reduce((acc, it) => acc + (it.valorIbs || 0), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          <strong className="text-base sm:text-lg font-black text-indigo-400 font-mono truncate">
+            {(dbKpis?.totalFiltrado?.totalIbs ?? filteredItems.reduce((acc, it) => acc + (it.valorIbs || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
+          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+            Estados/Mun (0,1% / 17,7%)
+          </span>
         </div>
 
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Crédito Esperado IBS+CBS</span>
-          <strong className="text-base sm:text-lg font-black text-teal-300 font-mono">
+          <strong className="text-base sm:text-lg font-black text-purple-300 font-mono truncate">
             {filteredItems.reduce((acc, it) => acc + (it.creditoEsperadoIbs + it.creditoEsperadoCbs), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
+          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
+            {filteredItems.filter(i => i.elegivelIbsCbs).length} itens elegíveis
+          </span>
         </div>
       </div>
 

@@ -41,7 +41,14 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
   const [listSearch, setListSearch] = useState<string>('');
-  const [visibleLimit, setVisibleLimit] = useState<number>(100);
+  const [visibleLimit, setVisibleLimit] = useState<number>(50);
+
+  const handleListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    if (scrollTop + clientHeight >= scrollHeight - 80) {
+      setVisibleLimit(prev => Math.min(dfeList.length, prev + 50));
+    }
+  };
 
   const { get, post } = useApi();
 
@@ -297,7 +304,10 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             </div>
           )}
 
-          <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+          <div 
+            onScroll={handleListScroll}
+            className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 select-none"
+          >
             {dfeList
               .filter(item => {
                 if (!listSearch) return true;

@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, FileText, CheckCircle2,
   AlertTriangle, ArrowUpRight, ArrowDownRight, Layers, PieChart,
   BarChart3, RefreshCw, Filter, Calendar, Building2, Percent,
-  Download, Sparkles, ShieldAlert, Check, HelpCircle, Info
+  Download, Sparkles, ShieldAlert, Check, HelpCircle, Info, Calculator
 } from 'lucide-react';
 import { DfeXmlItem, RegraTransicaoAno, AliquotaTabelaItem } from '../types';
 import { exportToExcel } from '../utils/excel';
@@ -33,6 +33,38 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const [anoSimulado, setAnoSimulado] = useState<number>(2026);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tabelasAliquotas, setTabelasAliquotas] = useState<AliquotaTabelaItem[]>([]);
+
+  // Estado de KPIs Agregados Reais Direto do Banco de Dados (sem LIMIT de 1000)
+  const [dbKpis, setDbKpis] = useState<{
+    totalGeral: any;
+    totalFiltrado: any;
+    source?: string;
+  } | null>(null);
+  const [loadingKpis, setLoadingKpis] = useState(false);
+
+  const loadKpis = async () => {
+    try {
+      setLoadingKpis(true);
+      const res = await get<{ success: boolean; totalGeral: any; totalFiltrado: any; source: string }>(
+        `/upload/kpis?empresaId=${empresaAtiva?.id || ''}&tipoOperacao=${operacaoFilter}`
+      );
+      if (res?.success && res.totalGeral) {
+        setDbKpis({
+          totalGeral: res.totalGeral,
+          totalFiltrado: res.totalFiltrado || res.totalGeral,
+          source: res.source
+        });
+      }
+    } catch (err) {
+      console.warn('⚠️ Falha ao buscar KPIs agregados do banco:', err);
+    } finally {
+      setLoadingKpis(false);
+    }
+  };
+
+  useEffect(() => {
+    loadKpis();
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, operacaoFilter, periodoFilter]);
 
   // Buscar alíquotas cadastradas no banco para cálculo 100% dinâmico
   useEffect(() => {
@@ -73,20 +105,31 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     });
   }, [baseItems, operacaoFilter, empresaAtiva]);
 
-  // Agregações Gerais Dinâmicas por Ano da Transição
-  const totalValor = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorTotal || 0), 0), [filteredItems]);
-  const totalCbs = useMemo(() => (totalValor * regraAno.aliquotaCbs) / 100, [totalValor, regraAno]);
-  const totalIbsUf = useMemo(() => (totalValor * regraAno.aliquotaIbsEstadual) / 100, [totalValor, regraAno]);
-  const totalIbsMun = useMemo(() => (totalValor * regraAno.aliquotaIbsMunicipal) / 100, [totalValor, regraAno]);
-  const totalIbsTotal = useMemo(() => totalIbsUf + totalIbsMun, [totalIbsUf, totalIbsMun]);
-  const totalIvaDual = useMemo(() => totalCbs + totalIbsTotal, [totalCbs, totalIbsTotal]);
-  const totalQtd = filteredItems.length;
+  // ── AGREGAÇÕES FISCAIS DESACOPLADAS (BANCO DE DADOS AGREGADO SUM/COUNT) ──
+  // Prioriza o cálculo real do banco de dados (que engloba todos os 21.000+ XMLs)
+  const totalValor = dbKpis?.totalFiltrado?.totalValor ?? filteredItems.reduce((acc, i) => acc + (i.valorTotal || 0), 0);
+  const totalValorGeral = dbKpis?.totalGeral?.totalValor ?? totalValor;
+  const totalQtd = dbKpis?.totalFiltrado?.totalDocs ?? filteredItems.length;
+  const totalQtdGeral = dbKpis?.totalGeral?.totalDocs ?? totalQtd;
+
+  // Base de Cálculo IBS / CBS (<vBC> dos Grupos IBS/CBS)
+  const totalBaseCbsFiltrada = dbKpis?.totalFiltrado?.totalBaseCbs ?? totalValor;
+  const totalBaseCbsGeral = dbKpis?.totalGeral?.totalBaseCbs ?? totalValorGeral;
+  const totalBaseIbsFiltrada = dbKpis?.totalFiltrado?.totalBaseIbs ?? totalValor;
+  const totalBaseIbsGeral = dbKpis?.totalGeral?.totalBaseIbs ?? totalValorGeral;
+
+  // CBS e IBS calculados pela regra de transição do ano sobre a Base de Cálculo
+  const totalCbs = (totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100;
+  const totalIbsUf = (totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100;
+  const totalIbsMun = (totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100;
+  const totalIbsTotal = totalIbsUf + totalIbsMun;
+  const totalIvaDual = totalCbs + totalIbsTotal;
 
   // Tributos do Regime Atual Destacados nos XMLs
-  const totalIcmsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorIcms || 0), 0), [filteredItems]);
-  const totalPisReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorPis || 0), 0), [filteredItems]);
-  const totalCofinsReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorCofins || 0), 0), [filteredItems]);
-  const totalIpiReal = useMemo(() => filteredItems.reduce((acc, i) => acc + (i.valorIpi || 0), 0), [filteredItems]);
+  const totalIcmsReal = dbKpis?.totalFiltrado?.totalIcms ?? filteredItems.reduce((acc, i) => acc + (i.valorIcms || 0), 0);
+  const totalPisReal = dbKpis?.totalFiltrado?.totalPis ?? filteredItems.reduce((acc, i) => acc + (i.valorPis || 0), 0);
+  const totalCofinsReal = dbKpis?.totalFiltrado?.totalCofins ?? filteredItems.reduce((acc, i) => acc + (i.valorCofins || 0), 0);
+  const totalIpiReal = dbKpis?.totalFiltrado?.totalIpi ?? filteredItems.reduce((acc, i) => acc + (i.valorIpi || 0), 0);
 
   // Agregações por Modelo de DF-e
   const dfeTypeCounts = useMemo<Record<string, DfeTypeStat>>(() => {
@@ -96,6 +139,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       'CTe': { label: 'CT-e (Mod 57) Transportes', qtd: 0, valor: 0, color: 'text-indigo-400', bg: 'bg-indigo-500', border: 'border-indigo-500/30' },
       'NFSe': { label: 'NFS-e Serviços', qtd: 0, valor: 0, color: 'text-purple-400', bg: 'bg-purple-500', border: 'border-purple-500/30' }
     };
+
+    if (dbKpis?.totalFiltrado) {
+      counts['NFe'].qtd = dbKpis.totalFiltrado.nfeCount || 0;
+      counts['NFCe'].qtd = dbKpis.totalFiltrado.nfceCount || 0;
+      counts['CTe'].qtd = dbKpis.totalFiltrado.cteCount || 0;
+      counts['NFSe'].qtd = dbKpis.totalFiltrado.nfseCount || 0;
+      counts['NFe'].valor = totalValor;
+      return counts;
+    }
 
     filteredItems.forEach(item => {
       const t = item.tipo || 'NFe';
@@ -109,7 +161,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     });
 
     return counts;
-  }, [filteredItems]);
+  }, [filteredItems, dbKpis, totalValor]);
 
   const maxQtdType = Math.max(...Object.values(dfeTypeCounts).map((c: DfeTypeStat) => c.qtd), 1);
   const maxValorTributario = Math.max(totalValor, 1);
@@ -317,10 +369,10 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
         </div>
       </div>
 
-      {/* ── TOP KPI METRIC CARDS ────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── TOP KPI METRIC CARDS (5 CARDS ESTRATÉGICOS) ────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         
-        {/* Card 1: Valor Total */}
+        {/* Card 1: Valor Total dos DF-e */}
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -330,16 +382,42 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-white">
+          <div className="text-2xl font-extrabold font-mono text-white truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValor)}>
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValor)}
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-bold">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>Volume Consolidado ({totalQtd} Documentos)</span>
+          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60">
+            <div className="flex items-center gap-1.5 text-emerald-400 font-bold truncate">
+              <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+              <span>{totalQtd.toLocaleString('pt-BR')} Docs no Período</span>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 shrink-0 ml-1" title="Base Total Acumulada da Empresa sem corte de filtro">
+              Base: {totalQtdGeral.toLocaleString('pt-BR')} docs
+            </span>
           </div>
         </div>
 
-        {/* Card 2: CBS Federal */}
+        {/* Card 2: Base de Cálculo IBS / CBS (<vBC>) */}
+        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-teal-500/30 hover:border-teal-400/60 shadow-xl space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
+              Base de Cálculo IBS / CBS
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-teal-950 border border-teal-800 flex items-center justify-center text-teal-300">
+              <Calculator className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-teal-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBaseCbsFiltrada)}>
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBaseCbsFiltrada)}
+          </div>
+          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 font-medium">
+            <span className="text-teal-400/90 font-bold truncate">&lt;vBC&gt; Consolidado no Período</span>
+            <span className="text-[10px] font-mono text-slate-500 shrink-0 ml-1" title="Base de Cálculo Acumulada de toda a base">
+              Total: {new Intl.NumberFormat('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' }).format(totalBaseCbsGeral)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: CBS Federal */}
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -349,15 +427,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               <Building2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-cyan-300">
+          <div className="text-2xl font-extrabold font-mono text-cyan-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}>
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}
           </div>
-          <div className="text-[11px] text-slate-400 font-medium">
-            União • {anoSimulado === 2026 ? 'Alíquota de Teste (0,9%)' : 'Contribuição sobre Bens & Serviços'}
+          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
+            União • {anoSimulado === 2026 ? 'Alíquota Teste (0,9%)' : 'Contribuição s/ Bens & Serviços'}
           </div>
         </div>
 
-        {/* Card 3: IBS Estadual (UF) */}
+        {/* Card 4: IBS Estadual (UF) */}
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -367,15 +445,15 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               <Layers className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-indigo-300">
+          <div className="text-2xl font-extrabold font-mono text-indigo-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}>
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}
           </div>
-          <div className="text-[11px] text-slate-400 font-medium">
-            Estados • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
+          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
+            Estados • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 
-        {/* Card 4: IBS Municipal (MUN) */}
+        {/* Card 5: IBS Municipal (MUN) */}
         <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
@@ -385,11 +463,11 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               <Percent className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-purple-300">
+          <div className="text-2xl font-extrabold font-mono text-purple-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}>
             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}
           </div>
-          <div className="text-[11px] text-slate-400 font-medium">
-            Municípios • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota de Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
+          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
+            Municípios • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
           </div>
         </div>
 

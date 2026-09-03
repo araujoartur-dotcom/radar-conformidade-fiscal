@@ -381,6 +381,8 @@ export function initializeSchema(): void {
   addColumnIfNotExists('dfe_documentos', 'valor_cofins', 'REAL DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'valor_cbs', 'REAL DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'valor_ibs', 'REAL DEFAULT 0');
+  addColumnIfNotExists('dfe_documentos', 'base_cbs', 'REAL DEFAULT 0');
+  addColumnIfNotExists('dfe_documentos', 'base_ibs', 'REAL DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'valor_is', 'REAL DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'valor_irrf', 'REAL DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'valor_inss', 'REAL DEFAULT 0');
@@ -447,7 +449,10 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_usuario_empresa_usuario ON usuario_empresa(usuario_id);
     CREATE INDEX IF NOT EXISTS idx_usuario_empresa_empresa ON usuario_empresa(empresa_id);
     CREATE INDEX IF NOT EXISTS idx_certificados_empresa ON certificados(empresa_id);
+    CREATE INDEX IF NOT EXISTS idx_dfe_docs_emissao ON dfe_documentos(data_emissao);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_empresa_emissao ON dfe_documentos(empresa_id, data_emissao);
+    CREATE INDEX IF NOT EXISTS idx_dfe_docs_tipo_emissao ON dfe_documentos(tipo_doc, data_emissao);
+    CREATE INDEX IF NOT EXISTS idx_dfe_docs_kpi_covering ON dfe_documentos(empresa_id, data_emissao, tipo_doc, valor_total, base_cbs, base_ibs, valor_cbs, valor_ibs);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_chave ON dfe_documentos(chave_acesso);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_fornecedor ON dfe_documentos(fornecedor_cnpj);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_cliente ON dfe_documentos(cliente_cnpj);

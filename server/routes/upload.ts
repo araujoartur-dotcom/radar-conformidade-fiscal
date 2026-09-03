@@ -21,6 +21,7 @@ import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 import { parseFiscalXml } from '../utils/xmlParser';
 import { resolveSupabaseEmpresaId } from '../utils/tenantHelper';
 import { hotCache } from '../services/hotCacheService';
+import { getDecoupledKpiAggregates } from '../services/kpiAggregationService';
 
 const router = Router();
 
@@ -882,121 +883,99 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
       console.log(`💾 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do SQLite local.`);
     }
 
-    // Salvar no Hot Cache se for primeira página
+    // Salva no Hot Cache se for a primeira página e sem busca específica por chave
     if (requestedOffset === 0 && !req.query.chaveAcesso && documentos.length > 0) {
       hotCache.setHotData(cacheKey, documentos, totalCount);
     }
 
-    res.json({ 
-      success: true, 
-      data: documentos, 
-      total: totalCount || documentos.length,
+    res.json({
+      success: true,
+      data: documentos,
+      total: totalCount,
       limit: requestedLimit,
       offset: requestedOffset,
+      page: Math.floor(requestedOffset / requestedLimit) + 1,
+      hasMore: (requestedOffset + documentos.length) < totalCount,
       source: supabaseFetched ? 'supabase' : 'sqlite',
-      isHotCache: false
     });
   } catch (err: any) {
-    console.error('❌ Erro ao buscar documentos:', err);
-    res.status(500).json({ success: false, error: 'Erro ao buscar documentos.', details: err.message });
+    console.error('❌ Erro ao listar documentos fiscais:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 // =========================================================
-// GET /api/upload/stats — Agregações e Totalizadores Globais no Banco
+// GET /api/upload/stats & /api/upload/kpis — Agregações e Totalizadores Globais no Banco
 // =========================================================
-router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const { dataInicio, dataFim, tipoDoc, tipoOperacao, empresaId } = req.query as Record<string, string>;
     const db = getDatabase();
-    const activeEmpresaId = req.user?.empresaAtivaId;
+    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
     const isSuperadmin = req.user?.perfil === 'admin_master';
-    const empresaIdParam = req.query.empresaId as string;
 
     let tenantCnpjClean = '';
     if (activeEmpresaId) {
       const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
-      if (emp?.cnpj_completo) {
-        tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
-      }
+      if (emp?.cnpj_completo) tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
     }
+    if (!tenantCnpjClean && req.user?.empresaCnpj) tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
 
-    // Tentar Supabase primeiro
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        try {
-          let supaQuery = supabase.from('dfe_documentos').select('tipo_doc, valor_total, valor_icms, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll');
-          if (!isSuperadmin && tenantCnpjClean) {
-            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
-          } else if (!isSuperadmin && empresaIdParam) {
-            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
-          }
-          if (isSuperadmin && empresaIdParam) {
-            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
-          }
+    const result = await getDecoupledKpiAggregates({
+      empresaId: activeEmpresaId,
+      tenantCnpj: tenantCnpjClean,
+      dataInicio,
+      dataFim,
+      tipoDoc,
+      tipoOperacao,
+      isSuperadmin
+    });
 
-          const { data, error } = await supaQuery;
-          if (!error && data && data.length > 0) {
-            const stats = {
-              totalDocs: data.length,
-              nfeCount: data.filter(d => d.tipo_doc === 'NFe' || d.tipo_doc === '55').length,
-              nfceCount: data.filter(d => d.tipo_doc === 'NFCe' || d.tipo_doc === '65').length,
-              cteCount: data.filter(d => d.tipo_doc === 'CTe' || d.tipo_doc === '57').length,
-              nfseCount: data.filter(d => d.tipo_doc === 'NFSe').length,
-              totalValor: data.reduce((acc, d) => acc + (Number(d.valor_total) || 0), 0),
-              totalIcms: data.reduce((acc, d) => acc + (Number(d.valor_icms) || 0), 0),
-              totalPis: data.reduce((acc, d) => acc + (Number(d.valor_pis) || 0), 0),
-              totalCofins: data.reduce((acc, d) => acc + (Number(d.valor_cofins) || 0), 0),
-              totalCbs: data.reduce((acc, d) => acc + (Number(d.valor_cbs) || (Number(d.valor_total) * 0.088) || 0), 0),
-              totalIbs: data.reduce((acc, d) => acc + (Number(d.valor_ibs) || (Number(d.valor_total) * 0.177) || 0), 0),
-              totalIs: data.reduce((acc, d) => acc + (Number(d.valor_is) || 0), 0),
-              totalIrrf: data.reduce((acc, d) => acc + (Number(d.valor_irrf) || 0), 0),
-              totalInss: data.reduce((acc, d) => acc + (Number(d.valor_inss) || 0), 0),
-              totalIss: data.reduce((acc, d) => acc + (Number(d.valor_iss) || 0), 0),
-            };
-            return res.json({ success: true, data: stats, source: 'supabase' });
-          }
-        } catch (e: any) {
-          console.warn('⚠️ Supabase stats query fallback:', e?.message);
-        }
-      }
+    res.json({
+      success: true,
+      totalGeral: result.totalGeral,
+      totalFiltrado: result.totalFiltrado,
+      source: result.source,
+      executionTimeMs: result.executionTimeMs
+    });
+  } catch (err: any) {
+    console.error('❌ Erro na agregação de KPIs:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { dataInicio, dataFim, tipoDoc, tipoOperacao, empresaId } = req.query as Record<string, string>;
+    const db = getDatabase();
+    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
+    const isSuperadmin = req.user?.perfil === 'admin_master';
+
+    let tenantCnpjClean = '';
+    if (activeEmpresaId) {
+      const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
+      if (emp?.cnpj_completo) tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
     }
+    if (!tenantCnpjClean && req.user?.empresaCnpj) tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
 
-    // SQLite Aggregates
-    let whereClause = 'WHERE 1=1';
-    const params: any[] = [];
-    if (!isSuperadmin) {
-      if (tenantCnpjClean) {
-        whereClause += ' AND (d.empresa_id = ? OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?) OR d.cliente_cnpj LIKE ? OR d.fornecedor_cnpj LIKE ?)';
-        params.push(activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
-      }
-    } else if (isSuperadmin && empresaIdParam) {
-      whereClause += ' AND d.empresa_id = ?';
-      params.push(empresaIdParam);
-    }
+    const result = await getDecoupledKpiAggregates({
+      empresaId: activeEmpresaId,
+      tenantCnpj: tenantCnpjClean,
+      dataInicio,
+      dataFim,
+      tipoDoc,
+      tipoOperacao,
+      isSuperadmin
+    });
 
-    const row = db.prepare(`
-      SELECT 
-        COUNT(*) as totalDocs,
-        SUM(CASE WHEN tipo_doc IN ('NFe', '55') THEN 1 ELSE 0 END) as nfeCount,
-        SUM(CASE WHEN tipo_doc IN ('NFCe', '65') THEN 1 ELSE 0 END) as nfceCount,
-        SUM(CASE WHEN tipo_doc IN ('CTe', '57') THEN 1 ELSE 0 END) as cteCount,
-        SUM(CASE WHEN tipo_doc = 'NFSe' THEN 1 ELSE 0 END) as nfseCount,
-        COALESCE(SUM(valor_total), 0) as totalValor,
-        COALESCE(SUM(valor_icms), 0) as totalIcms,
-        COALESCE(SUM(valor_pis), 0) as totalPis,
-        COALESCE(SUM(valor_cofins), 0) as totalCofins,
-        COALESCE(SUM(valor_cbs), 0) as totalCbs,
-        COALESCE(SUM(valor_ibs), 0) as totalIbs,
-        COALESCE(SUM(valor_is), 0) as totalIs,
-        COALESCE(SUM(valor_irrf), 0) as totalIrrf,
-        COALESCE(SUM(valor_inss), 0) as totalInss,
-        COALESCE(SUM(valor_iss), 0) as totalIss
-      FROM dfe_documentos d
-      ${whereClause}
-    `).get(...params) as any;
-
-    res.json({ success: true, data: row, source: 'sqlite' });
+    res.json({
+      success: true,
+      data: result.totalGeral,
+      totalGeral: result.totalGeral,
+      totalFiltrado: result.totalFiltrado,
+      source: result.source,
+      executionTimeMs: result.executionTimeMs
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

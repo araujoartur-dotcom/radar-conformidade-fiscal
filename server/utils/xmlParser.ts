@@ -93,6 +93,8 @@ export interface ParsedDfeDoc {
   valorCofins: number;
   valorCbs: number;
   valorIbs: number;
+  baseCbs: number;
+  baseIbs: number;
   valorIs: number;
   valorIrrf: number;
   valorInss: number;
@@ -336,6 +338,27 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   let valorIbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vIBS') || extractSubTagRegex(sanitized, 'gIBS', 'vIBS') || extractTagRegex(sanitized, 'vIBSUF') || extractTagRegex(sanitized, 'vIBS') || '0') || 0;
   const valorIs = parseFloat(extractSubTagRegex(sanitized, 'ISTot', 'vIS') || extractTagRegex(sanitized, 'vIS') || '0') || 0;
 
+  // Base de Cálculo IBS e CBS (<vBC> de dentro dos grupos de IBS/CBS)
+  let baseCbs = parseFloat(
+    extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCCBS')
+    || extractSubTagRegex(sanitized, 'gCBS', 'vBC')
+    || extractSubTagRegex(sanitized, 'CBS', 'vBC')
+    || extractTagRegex(sanitized, 'vBCCBS')
+    || '0'
+  ) || 0;
+
+  let baseIbs = parseFloat(
+    extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCIBS')
+    || extractSubTagRegex(sanitized, 'gIBS', 'vBC')
+    || extractSubTagRegex(sanitized, 'IBS', 'vBC')
+    || extractTagRegex(sanitized, 'vBCIBS')
+    || '0'
+  ) || 0;
+
+  // Fallback da Reforma (EC 132/23): Se a tag explícita de 2026 vier zerada, a base de cálculo é o valor da operação
+  if (baseCbs === 0 && valorTotal > 0) baseCbs = valorTotal;
+  if (baseIbs === 0 && valorTotal > 0) baseIbs = valorTotal;
+
   // Retenções na Fonte (NFS-e & Padrões Municipais / ABRASF / Nacional)
   const valorIrrf = parseFloat(
     extractTagRegex(sanitized, 'vRetIRRF') 
@@ -569,6 +592,8 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     valorCofins,
     valorCbs,
     valorIbs,
+    baseCbs,
+    baseIbs,
     valorIs,
     valorIrrf,
     valorInss,

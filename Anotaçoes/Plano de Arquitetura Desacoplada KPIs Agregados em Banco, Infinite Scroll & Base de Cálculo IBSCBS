@@ -1,0 +1,111 @@
+# Plano de Arquitetura Desacoplada: KPIs Agregados em Banco, Infinite Scroll & Base de Cálculo IBS/CBS
+
+Este plano atualizado incorpora:
+1. **Novo Card de KPI: "Base de Cálculo IBS / CBS"** posicionado imediatamente ao lado de "Valor Total dos DF-e", extraindo a tag `<vBC>` dos grupos de IBS e CBS do XML.
+2. **Desacoplamento Total de KPIs:** Dois totalizadores independentes da paginação da interface, calculados 100% no banco de dados via `SUM/COUNT` (Total Geral da Base + Total Filtrado no Período).
+3. **Listagem Paginada Sob Demanda (Infinite Scroll):** Lotes leves de 50 a 100 registros com rolagem contínua fluida a 60 FPS.
+4. **Índices de Cobertura e Particionamento Hot/Cold:** Índices dedicados para respostas em < 15ms.
+
+---
+
+## 1. Mapeamento da Base de Cálculo do IBS e CBS (<vBC>)
+
+### Tags Oficiais Extraídas do XML:
+* **No Totalizador do Documento (RTC / Reforma Tributária):**
+  - `<total><IBSCBSTot><vBCCBS>` e `<total><IBSCBSTot><vBCIBS>`
+* **Nos Itens da Nota Fiscal:**
+  - `<det><imposto><IBSCBS><gCBS><vBC>` (Base de Cálculo da CBS)
+  - `<det><imposto><IBSCBS><gIBS><vBC>` (Base de Cálculo do IBS)
+* **Regra de Transição / Fallback Fiscal Oficial:**
+  - Caso o XML ainda não contenha as tags RTC explícitas de 2026 preenchidas pelo ERP, utiliza-se a base de cálculo tributável ampla da EC 132/23 (Valor da Operação deduzido de descontos incondicionais e tributos não incidentes).
+
+### Banco de Dados:
+* Adicionar as colunas `base_cbs` e `base_ibs` na tabela `dfe_documentos` (tipo `NUMERIC(15,2) DEFAULT 0`).
+* Na agregação SQL `/api/upload/kpis`, calcular `SUM(base_cbs)` e `SUM(base_ibs)` diretamente no banco.
+
+---
+
+## 2. Layout dos Cards no Topo da Central de KPIs & Dashboards
+
+O grid superior passará a contar com os 5 cards estratégicos da Reforma:
+
+```
+┌─────────────────────────┬─────────────────────────┬─────────────────────────┬─────────────────────────┬─────────────────────────┐
+│ 1. VALOR TOTAL DF-E     │ 2. BASE DE CÁLCULO      │ 3. CBS FEDERAL          │ 4. IBS ESTADUAL         │ 5. IBS MUNICIPAL        │
+│    (<vNF> / <vTPrest>)  │    IBS / CBS (<vBC>)    │    (0,90% / 8,80%)      │    (0,05% / 17,70%)     │    (0,05% / Municipal)  │
+│                         │                         │                         │                         │                         │
+│   R$ 1.284.500.000,00   │   R$ 1.150.200.000,00   │   R$ 10.351.800,00      │   R$ 575.100,00         │   R$ 575.100,00         │
+│                         │                         │                         │                         │                         │
+│   • Filtrado: 8.340 doc │   • <vBC> no Período    │   • União               │   • Estados             │   • Municípios          │
+│   • Base Total: 21.482  │   • Base Total: R$ 1,1B │   • Teste / Transição   │   • Teste / Transição   │   • Teste / Transição   │
+└─────────────────────────┴─────────────────────────┴─────────────────────────┴─────────────────────────┴─────────────────────────┘
+```
+
+---
+
+## 3. Arquitetura Desacoplada: KPIs vs Listagem
+
+```
+                            ┌────────────────────────────────────────────────────────┐
+                            │                 RADAR FISCAL (FRONTEND)                │
+                            └───────────────┬────────────────────────┬───────────────┘
+                                            │                        │
+               1. CANAL DE KPIS & TOTAIS    │                        │ 2. CANAL DE LISTAGEM GRID
+                 (Chamada Independente)     │                        │    (Infinite Scroll 50/100)
+                                            ▼                        ▼
+                                ┌──────────────────────┐  ┌──────────────────────┐
+                                │ GET /api/upload/kpis │  │ GET /api/upload/docs │
+                                │ (dataInicio, dataFim)│  │ (page, limit=100)    │
+                                └──────────┬───────────┘  └──────────┬───────────┘
+                                           │                         │
+                                           ▼                         ▼
+      ┌────────────────────────────────────────────────────────────────────────────────────────┐
+      │                                   CAMADA DE BACKEND                                    │
+      ├──────────────────────────────────────────────────────┬─────────────────────────────────┤
+      │ • Se período <= 60 dias: Hot Cache em Memória (<5ms) │ • Se período > 60 dias: Cold DB │
+      └──────────────────────────────────┬───────────────────┴─────────────────┬───────────────┘
+                                         │                                     │
+                                         ▼                                     ▼
+      ┌────────────────────────────────────────────────────────────────────────────────────────┐
+      │                             BANCO DE DADOS (SQLITE / SUPABASE)                         │
+      ├────────────────────────────────────────────────────────────────────────────────────────┤
+      │  A) Queries Agregadas (SUM / COUNT sem LIMIT):                                         │
+      │     - Total Geral: COUNT(*), SUM(valor_total), SUM(base_cbs), SUM(base_ibs)           │
+      │     - Total Filtrado: COUNT(*) e SUM(...) com filtro data_emissao e tenant             │
+      │  B) Índices Otimizados:                                                                │
+      │     - idx_dfe_docs_emissao (data_emissao DESC)                                         │
+      │     - idx_dfe_docs_empresa_emissao (empresa_id, data_emissao DESC)                     │
+      │     - idx_dfe_docs_kpi_covering (empresa_id, data_emissao, valor_total, base_cbs...)   │
+      └────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Detalhamento dos Componentes
+
+### Backend
+1. **`server/utils/xmlParser.ts`**: Extrair `<vBC>` dos grupos `<gCBS>`, `<gIBS>`, `<IBSCBSTot>` e alimentar `baseCbs` e `baseIbs`.
+2. **`server/db/schema.ts` e migração**: Garantir que as colunas `base_cbs` e `base_ibs` existam em `dfe_documentos`.
+3. **`server/routes/upload.ts` (GET `/api/upload/kpis`)**: Retorna `totalGeral` e `totalFiltrado` com `totalValor`, `totalBaseCbs`, `totalBaseIbs`, `totalCbs`, `totalIbs`, etc.
+4. **`server/routes/upload.ts` (GET `/api/upload/documentos`)**: Suporta `page` e `limit` para Infinite Scroll, com flag `hasMore`.
+
+### Frontend
+1. **`src/components/CentralKpisPanel.tsx`**:
+   - Adicionar o Card **"Base de Cálculo IBS / CBS"** ao lado de "Valor Total dos DF-e".
+   - Consumir o endpoint `/api/upload/kpis` para que os 5 cards reflitam a soma agregada do banco.
+2. **`src/components/DfeManagerPanel.tsx`**:
+   - Implementar Infinite Scroll no painel esquerdo de documentos (carrega de 50 em 50 conforme a rolagem).
+3. **`src/components/RelatoriosXmlPanel.tsx`**:
+   - Atualizar os cartões superiores para usarem os totalizadores de base de cálculo e valores reais do banco de dados.
+
+---
+
+## 5. Plano de Verificação
+
+1. **Testes Automatizados:**
+   - Script de teste validando o cálculo de `totalBaseCbs` e `totalBaseIbs` diretamente no banco de dados.
+   - `npm run lint` e `npm run build` com zero erros.
+2. **Verificação Manual:**
+   - Verificar a exibição do novo card **Base de Cálculo IBS / CBS** na tela.
+   - Confirmar que a quantidade de documentos exibe a totalidade da base (ex: 21.482 documentos) sem corte de 1.000.
+   - Testar o filtro de período e verificar o cálculo dinâmico da base de cálculo e impostos.
