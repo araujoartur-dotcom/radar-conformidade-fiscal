@@ -52,6 +52,34 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
 
   const { get, post } = useApi();
 
+  const [dbKpis, setDbKpis] = useState<{
+    totalValor: number;
+    totalDocs: number;
+    totalCbs: number;
+    totalIbs: number;
+  } | null>(null);
+
+  const loadKpis = async () => {
+    try {
+      const res = await get<{ success: boolean; totalGeral: any }>('/upload/kpis');
+      const payload = (res as any)?.data || res;
+      if (payload?.success && payload.totalGeral) {
+        setDbKpis({
+          totalValor: Number(payload.totalGeral.totalValor) || 0,
+          totalDocs: Number(payload.totalGeral.totalDocs) || 0,
+          totalCbs: Number(payload.totalGeral.totalCbs) || 0,
+          totalIbs: Number(payload.totalGeral.totalIbs) || 0,
+        });
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar KPIs no painel DFe:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadKpis();
+  }, [dfeList.length]);
+
   const loadDocumentos = async () => {
     const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
     if (res.ok && res.data?.data) {
@@ -133,10 +161,11 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
     setIsUploading(false);
   };
 
-  // Total Metrics
-  const totalValor = dfeList.reduce((acc, curr) => acc + curr.valorTotal, 0);
-  const totalCbs = dfeList.reduce((acc, curr) => acc + curr.valorCbs, 0);
-  const totalIbs = dfeList.reduce((acc, curr) => acc + curr.valorIbs, 0);
+  // Total Metrics Reais da Base (engloba todos os 21.000+ XMLs via banco)
+  const totalValor = dbKpis?.totalValor ?? dfeList.reduce((acc, curr) => acc + curr.valorTotal, 0);
+  const totalCbs = dbKpis?.totalCbs ?? dfeList.reduce((acc, curr) => acc + curr.valorCbs, 0);
+  const totalIbs = dbKpis?.totalIbs ?? dfeList.reduce((acc, curr) => acc + curr.valorIbs, 0);
+  const totalDocsCount = dbKpis?.totalDocs ?? dfeList.length;
 
   return (
     <div className="space-y-6">
@@ -281,11 +310,11 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <FileCode className="w-4 h-4 text-cyan-400" />
-              Documentos Importados ({dfeList.length.toLocaleString('pt-BR')})
+              Documentos Importados ({totalDocsCount.toLocaleString('pt-BR')})
             </h3>
-            {dfeList.length > 0 && (
+            {totalDocsCount > 0 && (
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                Mostrando {Math.min(visibleLimit, dfeList.length).toLocaleString('pt-BR')} de {dfeList.length.toLocaleString('pt-BR')}
+                Mostrando {Math.min(visibleLimit, dfeList.length).toLocaleString('pt-BR')} de {totalDocsCount.toLocaleString('pt-BR')}
               </span>
             )}
           </div>

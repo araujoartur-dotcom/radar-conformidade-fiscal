@@ -1,0 +1,25 @@
+Entendido perfeitamente! Você está coberto de razão: na apuração fiscal, qualquer suposição ou assunção automática de base ou valor de IBS/CBS onde o documento original não destacou o imposto geraria apuração de crédito indevido, distorcendo os livros e relatórios de conformidade.
+
+A regra de fallback foi completamente removida de ponta a ponta do sistema no commit edcca01.
+
+🛡️ O que foi ajustado:
+Parser de XML (xmlParser.ts):
+
+Removida qualquer regra que atribuía o valorTotal à baseCbs ou baseIbs em ausência das tags.
+Se o XML não contiver os grupos/tags <IBSCBSTot>, <gCBS><vBC> ou <gIBS><vBC>, o sistema atribui estritamente 0 (baseCbs = 0, baseIbs = 0, valorCbs = 0, valorIbs = 0).
+Itens de serviço de NFS-e sem destaque de IBS/CBS também ficam com valores e bases zerados.
+Agregações em Banco de Dados (kpiAggregationService.ts):
+
+O somatório do banco agora faz COALESCE(SUM(base_cbs), 0) e COALESCE(SUM(valor_cbs), 0).
+Não há mais multiplicação automática por 0,9% ou 0,05% sobre o total da nota se o XML não tiver destacado o imposto.
+Painel de Relatórios Fiscais (relatorios.ts e RelatoriosXmlPanel.tsx):
+
+Removida a fórmula de contingência (docTotal * 0.177 e docTotal * 0.088).
+As colunas de Base, Alíquota, Valor do IBS/CBS e Crédito Esperado refletem exclusivamente o que consta dentro do XML. Se o documento não tem IBS/CBS, o crédito apurado é R$ 0,00.
+Card de Base de Cálculo IBS/CBS (CentralKpisPanel.tsx):
+
+A caixa <vBC> ao lado do Valor Total soma apenas as tags <vBC> realmente declaradas nos XMLs do período.
+🚀 Deploy em Produção
+Build e Lint: 100% aprovados sem erros.
+Commit: edcca01 enviado ao repositório main. Netlify e Render já estão atualizando o ambiente com essa correção!
+Walkthrough

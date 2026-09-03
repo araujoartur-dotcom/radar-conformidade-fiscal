@@ -48,11 +48,12 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       const res = await get<{ success: boolean; totalGeral: any; totalFiltrado: any; source: string }>(
         `/upload/kpis?empresaId=${empresaAtiva?.id || ''}&tipoOperacao=${operacaoFilter}`
       );
-      if (res?.success && res.totalGeral) {
+      const payload = (res as any)?.data || res;
+      if (payload?.success && payload.totalGeral) {
         setDbKpis({
-          totalGeral: res.totalGeral,
-          totalFiltrado: res.totalFiltrado || res.totalGeral,
-          source: res.source
+          totalGeral: payload.totalGeral,
+          totalFiltrado: payload.totalFiltrado || payload.totalGeral,
+          source: payload.source
         });
       }
     } catch (err) {
@@ -123,8 +124,16 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const totalIbsRealXml = dbKpis?.totalFiltrado?.totalIbs ?? filteredItems.reduce((acc, i) => acc + (i.valorIbs || 0), 0);
 
   const totalCbs = totalCbsRealXml > 0 ? totalCbsRealXml : ((totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100);
-  const totalIbsUf = (totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100;
-  const totalIbsMun = (totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100;
+
+  // Rateio do IBS entre Estadual e Municipal (se não vier discriminado na tag vIBSUF/Mun, divide 50/50 o IBS do XML)
+  const totalIbsUf = (dbKpis?.totalFiltrado?.totalIbsUf && dbKpis.totalFiltrado.totalIbsUf > 0)
+    ? dbKpis.totalFiltrado.totalIbsUf
+    : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100));
+
+  const totalIbsMun = (dbKpis?.totalFiltrado?.totalIbsMun && dbKpis.totalFiltrado.totalIbsMun > 0)
+    ? dbKpis.totalFiltrado.totalIbsMun
+    : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100));
+
   const totalIbsTotal = totalIbsRealXml > 0 ? totalIbsRealXml : (totalIbsUf + totalIbsMun);
   const totalIvaDual = totalCbs + totalIbsTotal;
 
