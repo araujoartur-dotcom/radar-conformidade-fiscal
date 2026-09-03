@@ -338,7 +338,7 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   let valorIbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vIBS') || extractSubTagRegex(sanitized, 'gIBS', 'vIBS') || extractTagRegex(sanitized, 'vIBSUF') || extractTagRegex(sanitized, 'vIBS') || '0') || 0;
   const valorIs = parseFloat(extractSubTagRegex(sanitized, 'ISTot', 'vIS') || extractTagRegex(sanitized, 'vIS') || '0') || 0;
 
-  // Base de Cálculo IBS e CBS (<vBC> de dentro dos grupos de IBS/CBS)
+  // Base de Cálculo IBS e CBS (<vBC> estritamente constante nos grupos de IBS/CBS do XML)
   let baseCbs = parseFloat(
     extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCCBS')
     || extractSubTagRegex(sanitized, 'gCBS', 'vBC')
@@ -354,10 +354,6 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractTagRegex(sanitized, 'vBCIBS')
     || '0'
   ) || 0;
-
-  // Fallback da Reforma (EC 132/23): Se a tag explícita de 2026 vier zerada, a base de cálculo é o valor da operação
-  if (baseCbs === 0 && valorTotal > 0) baseCbs = valorTotal;
-  if (baseIbs === 0 && valorTotal > 0) baseIbs = valorTotal;
 
   // Retenções na Fonte (NFS-e & Padrões Municipais / ABRASF / Nacional)
   const valorIrrf = parseFloat(
@@ -490,10 +486,10 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
       baseCofins: itemBaseCofins,
       aliquotaCofins: itemAliqCofins,
       valorCofins: itemCofins,
-      baseCbs: vProd,
+      baseCbs: parseFloat(extractSubTagRegex(detXml, 'gCBS', 'vBC') || extractSubTagRegex(detXml, 'CBS', 'vBC') || '0') || 0,
       aliquotaCbs: itemAliqCbs,
       valorCbs: itemCbs,
-      baseIbs: vProd,
+      baseIbs: parseFloat(extractSubTagRegex(detXml, 'gIBS', 'vBC') || extractSubTagRegex(detXml, 'IBS', 'vBC') || '0') || 0,
       aliquotaIbs: itemAliqIbs,
       valorIbs: itemIbs,
       valorIs: 0,
@@ -528,18 +524,18 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
       baseIpi: 0,
       aliquotaIpi: 0,
       valorIpi: 0,
-      basePis: valorTotal,
-      aliquotaPis: valorPis > 0 ? Number(((valorPis / valorTotal) * 100).toFixed(2)) : 0.65,
+      basePis: valorPis > 0 ? valorTotal : 0,
+      aliquotaPis: valorPis > 0 ? Number(((valorPis / valorTotal) * 100).toFixed(2)) : 0,
       valorPis,
-      baseCofins: valorTotal,
-      aliquotaCofins: valorCofins > 0 ? Number(((valorCofins / valorTotal) * 100).toFixed(2)) : 3.0,
+      baseCofins: valorCofins > 0 ? valorTotal : 0,
+      aliquotaCofins: valorCofins > 0 ? Number(((valorCofins / valorTotal) * 100).toFixed(2)) : 0,
       valorCofins,
-      baseCbs: valorTotal,
-      aliquotaCbs: valorCbs > 0 ? Number(((valorCbs / valorTotal) * 100).toFixed(2)) : 8.8,
-      valorCbs: valorCbs > 0 ? valorCbs : Number((valorTotal * 0.088).toFixed(2)),
-      baseIbs: valorTotal,
-      aliquotaIbs: valorIbs > 0 ? Number(((valorIbs / valorTotal) * 100).toFixed(2)) : 17.7,
-      valorIbs: valorIbs > 0 ? valorIbs : Number((valorTotal * 0.177).toFixed(2)),
+      baseCbs: valorCbs > 0 ? valorTotal : 0,
+      aliquotaCbs: valorCbs > 0 ? Number(((valorCbs / valorTotal) * 100).toFixed(2)) : 0,
+      valorCbs,
+      baseIbs: valorIbs > 0 ? valorTotal : 0,
+      aliquotaIbs: valorIbs > 0 ? Number(((valorIbs / valorTotal) * 100).toFixed(2)) : 0,
+      valorIbs,
       valorIs: 0,
     });
   }

@@ -128,8 +128,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (fetchedItems.length === 0 && dfeList && dfeList.length > 0) {
         fetchedItems = dfeList.map((doc, idx) => {
           const docTotal = Number(doc.valorTotal) || 0;
-          const valIbs = Number(doc.valorIbs) || Number((docTotal * 0.177).toFixed(2));
-          const valCbs = Number(doc.valorCbs) || Number((docTotal * 0.088).toFixed(2));
+          const valIbs = Number(doc.valorIbs) || 0;
+          const valCbs = Number(doc.valorCbs) || 0;
           return {
             id: `mem-${doc.chaveAcesso}-${idx}`,
             empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
@@ -171,11 +171,11 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             valorIpi: Number(doc.valorIpi) || 0,
             valorPis: Number(doc.valorPis) || 0,
             valorCofins: Number(doc.valorCofins) || 0,
-            baseIbs: docTotal,
-            aliquotaIbs: 17.7,
+            baseIbs: valIbs > 0 ? docTotal : 0,
+            aliquotaIbs: valIbs > 0 ? (doc.aliquotaIbs || 0) : 0,
             valorIbs: valIbs,
-            baseCbs: docTotal,
-            aliquotaCbs: 8.8,
+            baseCbs: valCbs > 0 ? docTotal : 0,
+            aliquotaCbs: valCbs > 0 ? (doc.aliquotaCbs || 0) : 0,
             valorCbs: valCbs,
             valorIs: Number(doc.valorImpostoSeletivo) || 0,
             creditoEsperadoIbs: valIbs,

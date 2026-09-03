@@ -86,19 +86,19 @@ function accumulateDoc(totals: KpiTotals, doc: any) {
   totals.totalDocs += 1;
   totals.totalValor += vTotal;
 
-  // Base de Cálculo IBS / CBS (<vBC> de dentro dos grupos IBS/CBS com fallback ao valor do DF-e)
-  const baseCbs = Number(doc.base_cbs) || vTotal;
-  const baseIbs = Number(doc.base_ibs) || vTotal;
+  // Base de Cálculo IBS / CBS (<vBC> estritamente constante nos grupos IBS/CBS do XML)
+  const baseCbs = Number(doc.base_cbs) || 0;
+  const baseIbs = Number(doc.base_ibs) || 0;
   totals.totalBaseCbs += baseCbs;
   totals.totalBaseIbs += baseIbs;
 
-  // CBS Federal (alíquota teste 2026 de 0,90% ou destacada no XML)
-  const vCbs = Number(doc.valor_cbs) > 0 ? Number(doc.valor_cbs) : (baseCbs * 0.009);
+  // CBS Federal (estritamente o que consta no XML)
+  const vCbs = Number(doc.valor_cbs) || 0;
   totals.totalCbs += vCbs;
 
-  // IBS Estadual e Municipal (alíquota teste 2026 de 0,05% cada ou destacada)
-  const vIbsUf = Number(doc.valor_ibs_uf) > 0 ? Number(doc.valor_ibs_uf) : (baseIbs * 0.0005);
-  const vIbsMun = Number(doc.valor_ibs_mun) > 0 ? Number(doc.valor_ibs_mun) : (baseIbs * 0.0005);
+  // IBS Estadual e Municipal (estritamente o que consta no XML)
+  const vIbsUf = Number(doc.valor_ibs_uf) || 0;
+  const vIbsMun = Number(doc.valor_ibs_mun) || 0;
   const vIbs = Number(doc.valor_ibs) > 0 ? Number(doc.valor_ibs) : (vIbsUf + vIbsMun);
   totals.totalIbsUf += vIbsUf;
   totals.totalIbsMun += vIbsMun;
@@ -235,8 +235,8 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
       SUM(CASE WHEN tipo_doc IN ('CTe', '57') THEN 1 ELSE 0 END) as cteCount,
       SUM(CASE WHEN tipo_doc = 'NFSe' THEN 1 ELSE 0 END) as nfseCount,
       COALESCE(SUM(valor_total), 0) as totalValor,
-      COALESCE(SUM(base_cbs), SUM(valor_total), 0) as totalBaseCbs,
-      COALESCE(SUM(base_ibs), SUM(valor_total), 0) as totalBaseIbs,
+      COALESCE(SUM(base_cbs), 0) as totalBaseCbs,
+      COALESCE(SUM(base_ibs), 0) as totalBaseIbs,
       COALESCE(SUM(valor_icms), 0) as totalIcms,
       COALESCE(SUM(valor_pis), 0) as totalPis,
       COALESCE(SUM(valor_cofins), 0) as totalCofins,
@@ -278,8 +278,8 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
       SUM(CASE WHEN tipo_doc IN ('CTe', '57') THEN 1 ELSE 0 END) as cteCount,
       SUM(CASE WHEN tipo_doc = 'NFSe' THEN 1 ELSE 0 END) as nfseCount,
       COALESCE(SUM(valor_total), 0) as totalValor,
-      COALESCE(SUM(base_cbs), SUM(valor_total), 0) as totalBaseCbs,
-      COALESCE(SUM(base_ibs), SUM(valor_total), 0) as totalBaseIbs,
+      COALESCE(SUM(base_cbs), 0) as totalBaseCbs,
+      COALESCE(SUM(base_ibs), 0) as totalBaseIbs,
       COALESCE(SUM(valor_icms), 0) as totalIcms,
       COALESCE(SUM(valor_pis), 0) as totalPis,
       COALESCE(SUM(valor_cofins), 0) as totalCofins,
@@ -295,12 +295,12 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
 
   const mapRowToTotals = (row: any): KpiTotals => {
     const tValor = Number(row?.totalValor) || 0;
-    const bCbs = Number(row?.totalBaseCbs) || tValor;
-    const bIbs = Number(row?.totalBaseIbs) || tValor;
-    const cbs = Number(row?.totalCbs) > 0 ? Number(row?.totalCbs) : (bCbs * 0.009);
-    const ibs = Number(row?.totalIbs) > 0 ? Number(row?.totalIbs) : (bIbs * 0.001);
-    const ibsUf = bIbs * 0.0005;
-    const ibsMun = bIbs * 0.0005;
+    const bCbs = Number(row?.totalBaseCbs) || 0;
+    const bIbs = Number(row?.totalBaseIbs) || 0;
+    const cbs = Number(row?.totalCbs) || 0;
+    const ibs = Number(row?.totalIbs) || 0;
+    const ibsUf = Number(row?.totalIbsUf) || 0;
+    const ibsMun = Number(row?.totalIbsMun) || 0;
 
     return {
       totalDocs: Number(row?.totalDocs) || 0,

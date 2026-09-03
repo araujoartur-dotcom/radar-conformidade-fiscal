@@ -280,8 +280,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       const cfopInfo = cfopMap.get(itemCfop) || { tratamento_padrao: 'Elegível', exige_onerosidade: 1 };
       
       const docTotal = Number(r.docValorTotal) || 0;
-      const itemValIbs = r.valorIbs !== null && r.valorIbs !== undefined ? Number(r.valorIbs) : (Number(r.docValorIbs) || Number((docTotal * 0.177).toFixed(2)));
-      const itemValCbs = r.valorCbs !== null && r.valorCbs !== undefined ? Number(r.valorCbs) : (Number(r.docValorCbs) || Number((docTotal * 0.088).toFixed(2)));
+      const itemValIbs = r.valorIbs !== null && r.valorIbs !== undefined ? Number(r.valorIbs) : (Number(r.docValorIbs) || 0);
+      const itemValCbs = r.valorCbs !== null && r.valorCbs !== undefined ? Number(r.valorCbs) : (Number(r.docValorCbs) || 0);
 
       const creditoEsperadoIbs = itemValIbs;
       const creditoEsperadoCbs = itemValCbs;
@@ -384,11 +384,11 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         valorPis: r.valorPis !== null && r.valorPis !== undefined ? Number(r.valorPis) : (Number(r.docValorPis) || 0),
         valorCofins: r.valorCofins !== null && r.valorCofins !== undefined ? Number(r.valorCofins) : (Number(r.docValorCofins) || 0),
         
-        baseIbs: r.baseIbs || docTotal,
-        aliquotaIbs: r.aliquotaIbs || 17.7,
+        baseIbs: r.baseIbs !== null && r.baseIbs !== undefined ? Number(r.baseIbs) : 0,
+        aliquotaIbs: r.aliquotaIbs !== null && r.aliquotaIbs !== undefined ? Number(r.aliquotaIbs) : 0,
         valorIbs: itemValIbs,
-        baseCbs: r.baseCbs || docTotal,
-        aliquotaCbs: r.aliquotaCbs || 8.8,
+        baseCbs: r.baseCbs !== null && r.baseCbs !== undefined ? Number(r.baseCbs) : 0,
+        aliquotaCbs: r.aliquotaCbs !== null && r.aliquotaCbs !== undefined ? Number(r.aliquotaCbs) : 0,
         valorCbs: itemValCbs,
         valorIs: r.valorIs || r.docValorIs || 0,
         

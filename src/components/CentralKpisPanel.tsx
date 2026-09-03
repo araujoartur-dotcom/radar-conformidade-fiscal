@@ -112,17 +112,20 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const totalQtd = dbKpis?.totalFiltrado?.totalDocs ?? filteredItems.length;
   const totalQtdGeral = dbKpis?.totalGeral?.totalDocs ?? totalQtd;
 
-  // Base de Cálculo IBS / CBS (<vBC> dos Grupos IBS/CBS)
-  const totalBaseCbsFiltrada = dbKpis?.totalFiltrado?.totalBaseCbs ?? totalValor;
-  const totalBaseCbsGeral = dbKpis?.totalGeral?.totalBaseCbs ?? totalValorGeral;
-  const totalBaseIbsFiltrada = dbKpis?.totalFiltrado?.totalBaseIbs ?? totalValor;
-  const totalBaseIbsGeral = dbKpis?.totalGeral?.totalBaseIbs ?? totalValorGeral;
+  // Base de Cálculo IBS / CBS (<vBC> estritamente constante nos Grupos IBS/CBS do XML)
+  const totalBaseCbsFiltrada = dbKpis?.totalFiltrado?.totalBaseCbs ?? filteredItems.reduce((acc, i) => acc + (i.baseCbs || 0), 0);
+  const totalBaseCbsGeral = dbKpis?.totalGeral?.totalBaseCbs ?? totalBaseCbsFiltrada;
+  const totalBaseIbsFiltrada = dbKpis?.totalFiltrado?.totalBaseIbs ?? filteredItems.reduce((acc, i) => acc + (i.baseIbs || 0), 0);
+  const totalBaseIbsGeral = dbKpis?.totalGeral?.totalBaseIbs ?? totalBaseIbsFiltrada;
 
-  // CBS e IBS calculados pela regra de transição do ano sobre a Base de Cálculo
-  const totalCbs = (totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100;
+  // CBS e IBS estritamente do XML (ou aplicados sobre a Base Real do XML)
+  const totalCbsRealXml = dbKpis?.totalFiltrado?.totalCbs ?? filteredItems.reduce((acc, i) => acc + (i.valorCbs || 0), 0);
+  const totalIbsRealXml = dbKpis?.totalFiltrado?.totalIbs ?? filteredItems.reduce((acc, i) => acc + (i.valorIbs || 0), 0);
+
+  const totalCbs = totalCbsRealXml > 0 ? totalCbsRealXml : ((totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100);
   const totalIbsUf = (totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100;
   const totalIbsMun = (totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100;
-  const totalIbsTotal = totalIbsUf + totalIbsMun;
+  const totalIbsTotal = totalIbsRealXml > 0 ? totalIbsRealXml : (totalIbsUf + totalIbsMun);
   const totalIvaDual = totalCbs + totalIbsTotal;
 
   // Tributos do Regime Atual Destacados nos XMLs
