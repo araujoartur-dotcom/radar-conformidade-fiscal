@@ -100,6 +100,7 @@ export interface ParsedDfeDoc {
   valorInss: number;
   valorIss: number;
   valorCsll: number;
+  regimeTributario?: string;
 
   // Itens
   itens: ParsedItemDetail[];
@@ -237,6 +238,10 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || '';
   const emitIe = extractSubTagRegex(sanitized, 'emit', 'IE') || extractSubTagRegex(sanitized, 'rem', 'IE') || '';
 
+  // 3b. Código de Regime Tributário (CRT) do Emitente
+  // 1 = Simples Nacional, 2 = SN Sublimite Excedido, 3 = Regime Normal, 4 = MEI
+  const regimeTributario = extractSubTagRegex(sanitized, 'emit', 'CRT') || extractTagRegex(sanitized, 'CRT') || '';
+
   // 4. Destinatário (Tomador / Cliente)
   const destCnpj = extractSubTagRegex(sanitized, 'dest', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'toma', 'CNPJ') 
@@ -341,6 +346,8 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   // Base de Cálculo IBS e CBS (<vBC> estritamente constante nos grupos de IBS/CBS do XML)
   let baseCbs = parseFloat(
     extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCCBS')
+    || extractSubTagRegex(sanitized, 'gIBSCBS', 'vBC')
+    || extractSubTagRegex(sanitized, 'IBSCBS', 'vBC')
     || extractSubTagRegex(sanitized, 'gCBS', 'vBC')
     || extractSubTagRegex(sanitized, 'CBS', 'vBC')
     || extractTagRegex(sanitized, 'vBCCBS')
@@ -349,6 +356,8 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
 
   let baseIbs = parseFloat(
     extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCIBS')
+    || extractSubTagRegex(sanitized, 'gIBSCBS', 'vBC')
+    || extractSubTagRegex(sanitized, 'IBSCBS', 'vBC')
     || extractSubTagRegex(sanitized, 'gIBS', 'vBC')
     || extractSubTagRegex(sanitized, 'IBS', 'vBC')
     || extractTagRegex(sanitized, 'vBCIBS')
@@ -486,10 +495,22 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
       baseCofins: itemBaseCofins,
       aliquotaCofins: itemAliqCofins,
       valorCofins: itemCofins,
-      baseCbs: parseFloat(extractSubTagRegex(detXml, 'gCBS', 'vBC') || extractSubTagRegex(detXml, 'CBS', 'vBC') || '0') || 0,
+      baseCbs: parseFloat(
+        extractSubTagRegex(detXml, 'gIBSCBS', 'vBC')
+        || extractSubTagRegex(detXml, 'IBSCBS', 'vBC')
+        || extractSubTagRegex(detXml, 'gCBS', 'vBC')
+        || extractSubTagRegex(detXml, 'CBS', 'vBC')
+        || '0'
+      ) || 0,
       aliquotaCbs: itemAliqCbs,
       valorCbs: itemCbs,
-      baseIbs: parseFloat(extractSubTagRegex(detXml, 'gIBS', 'vBC') || extractSubTagRegex(detXml, 'IBS', 'vBC') || '0') || 0,
+      baseIbs: parseFloat(
+        extractSubTagRegex(detXml, 'gIBSCBS', 'vBC')
+        || extractSubTagRegex(detXml, 'IBSCBS', 'vBC')
+        || extractSubTagRegex(detXml, 'gIBS', 'vBC')
+        || extractSubTagRegex(detXml, 'IBS', 'vBC')
+        || '0'
+      ) || 0,
       aliquotaIbs: itemAliqIbs,
       valorIbs: itemIbs,
       valorIs: 0,
@@ -550,6 +571,16 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     if (somaIbs > 0) valorIbs = Number(somaIbs.toFixed(2));
   }
 
+  // Se as bases de cálculo de CBS/IBS globais vieram 0, soma dos itens
+  if (baseCbs === 0 && itens.length > 0) {
+    const somaBaseCbs = itens.reduce((acc, it) => acc + (it.baseCbs || 0), 0);
+    if (somaBaseCbs > 0) baseCbs = Number(somaBaseCbs.toFixed(2));
+  }
+  if (baseIbs === 0 && itens.length > 0) {
+    const somaBaseIbs = itens.reduce((acc, it) => acc + (it.baseIbs || 0), 0);
+    if (somaBaseIbs > 0) baseIbs = Number(somaBaseIbs.toFixed(2));
+  }
+
   // Se não tem chave, gera identificador padronizado
   if (!chaveAcesso) {
     chaveAcesso = `MANUAL-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
@@ -595,6 +626,7 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     valorInss,
     valorIss,
     valorCsll,
+    regimeTributario,
     itens,
     xmlRaw: sanitized,
   };

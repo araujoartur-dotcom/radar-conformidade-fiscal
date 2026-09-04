@@ -40,6 +40,24 @@ interface RegraElegibilidade {
   base_legal: string;
 }
 
+export interface InferenciaParamItem {
+  id: string;
+  codigo: string;
+  descricao: string;
+  icms_medio: number;
+  pis_medio: number;
+  cofins_medio: number;
+  ipi_medio: number;
+  iss_medio: number;
+  aplica_simples_nac: number;
+  aplica_cte: number;
+  aplica_nfse: number;
+  inicio_vigencia: string;
+  final_vigencia: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export const REGRAS_RETENCAO_SERVICOS = [
   {
     codigo: 'RET-IRRF-01',
@@ -117,7 +135,7 @@ export const REGRAS_RETENCAO_SERVICOS = [
 
 export const TabelasFiscaisPanel: React.FC = () => {
   const { get, post, put, del } = useApi();
-  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'cclasstrib' | 'cfop' | 'regras'>('ad_valorem');
+  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'cclasstrib' | 'cfop' | 'regras' | 'inferencia'>('ad_valorem');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
 
@@ -125,6 +143,25 @@ export const TabelasFiscaisPanel: React.FC = () => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(''), 4000);
   };
+
+  // ── TAB 8: ALÍQUOTAS MÉDIAS (INFERÊNCIA SIMULADOR) ─────────
+  const [inferenciaList, setInferenciaList] = useState<InferenciaParamItem[]>([]);
+  const [showModalInferencia, setShowModalInferencia] = useState(false);
+  const [editingInferencia, setEditingInferencia] = useState<InferenciaParamItem | null>(null);
+  const [inferenciaForm, setInferenciaForm] = useState({
+    codigo: 'INF_001',
+    descricao: '',
+    icms_medio: 0.0,
+    pis_medio: 0.0,
+    cofins_medio: 0.0,
+    ipi_medio: 0.0,
+    iss_medio: 0.0,
+    aplica_simples_nac: 1,
+    aplica_cte: 0,
+    aplica_nfse: 0,
+    inicio_vigencia: '2026-01-01',
+    final_vigencia: '2099-12-31'
+  });
 
   // ── TAB 1: AD VALOREM STATE ──────────────────────────────
   const [adValoremList, setAdValoremList] = useState<AliquotaTabelaItem[]>([]);
@@ -208,13 +245,14 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const reloadData = async () => {
     setLoading(true);
     try {
-      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras] = await Promise.all([
+      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras, resInfer] = await Promise.all([
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem'),
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-rem'),
         get<{ success: boolean; data: NcmRegraAnexoItem[] }>('/tables/anexos-ncm'),
         get<{ success: boolean; data: CClassRule[] }>('/tables/cclasstrib'),
         get<{ success: boolean; data: CfopRule[] }>('/tables/cfop'),
-        get<{ success: boolean; data: RegraElegibilidade[] }>('/tables/regras')
+        get<{ success: boolean; data: RegraElegibilidade[] }>('/tables/regras'),
+        get<{ success: boolean; data: InferenciaParamItem[] }>('/tables/inferencia')
       ]);
 
       if (resAdVal.ok && resAdVal.data?.data) setAdValoremList(resAdVal.data.data);
@@ -223,6 +261,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
       if (resClass.ok && resClass.data?.data) setCClassRules(resClass.data.data);
       if (resCfop.ok && resCfop.data?.data) setCfopRules(resCfop.data.data);
       if (resRegras.ok && resRegras.data?.data) setRegras(resRegras.data.data);
+      if (resInfer.ok && resInfer.data?.data) setInferenciaList(resInfer.data.data);
     } catch (err) {
       console.error('Erro ao recarregar tabelas fiscais:', err);
     } finally {
@@ -493,6 +532,71 @@ export const TabelasFiscaisPanel: React.FC = () => {
     }
   };
 
+  // ── INFERÊNCIA HANDLERS ──────────────────────────────────
+  const handleOpenNewInferencia = () => {
+    setEditingInferencia(null);
+    const nextCod = 'INF_' + String(inferenciaList.length + 1).padStart(3, '0');
+    setInferenciaForm({
+      codigo: nextCod,
+      descricao: '',
+      icms_medio: 0.0,
+      pis_medio: 0.0,
+      cofins_medio: 0.0,
+      ipi_medio: 0.0,
+      iss_medio: 0.0,
+      aplica_simples_nac: 1,
+      aplica_cte: 0,
+      aplica_nfse: 0,
+      inicio_vigencia: '2026-01-01',
+      final_vigencia: '2099-12-31'
+    });
+    setShowModalInferencia(true);
+  };
+
+  const handleEditInferencia = (item: InferenciaParamItem) => {
+    setEditingInferencia(item);
+    setInferenciaForm({
+      codigo: item.codigo,
+      descricao: item.descricao,
+      icms_medio: Number(item.icms_medio) || 0,
+      pis_medio: Number(item.pis_medio) || 0,
+      cofins_medio: Number(item.cofins_medio) || 0,
+      ipi_medio: Number(item.ipi_medio) || 0,
+      iss_medio: Number(item.iss_medio) || 0,
+      aplica_simples_nac: item.aplica_simples_nac ? 1 : 0,
+      aplica_cte: item.aplica_cte ? 1 : 0,
+      aplica_nfse: item.aplica_nfse ? 1 : 0,
+      inicio_vigencia: item.inicio_vigencia || '2026-01-01',
+      final_vigencia: item.final_vigencia || '2099-12-31'
+    });
+    setShowModalInferencia(true);
+  };
+
+  const handleSaveInferencia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await post('/tables/inferencia', inferenciaForm);
+    if (res.ok) {
+      showSuccess('Parâmetro de inferência gravado com sucesso!');
+      setShowModalInferencia(false);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao gravar parâmetro de inferência');
+    }
+  };
+
+  const handleDeleteInferencia = async (id?: string) => {
+    if (!id) return;
+    if (confirm('Deseja realmente excluir este parâmetro de inferência?')) {
+      const res = await del(`/tables/inferencia/${id}`);
+      if (res.ok) {
+        showSuccess('Parâmetro de inferência removido com sucesso!');
+        await reloadData();
+      } else {
+        alert(res.error || 'Erro ao excluir parâmetro');
+      }
+    }
+  };
+
   // ── FILTERED NCMS ────────────────────────────────────────
   const filteredNcms = ncmList.filter(n => {
     if (ncmFilterTipo !== 'todos' && n.tipo_tratamento !== ncmFilterTipo) return false;
@@ -597,6 +701,18 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <ShieldCheck className="w-4 h-4" />
           <span>Regras Elegibilidade ({regras.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('inferencia')}
+          className={`flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'inferencia'
+              ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <SlidersHorizontal className="w-4 h-4 text-violet-400" />
+          <span>Inferência Simulador ({inferenciaList.length})</span>
         </button>
       </div>
 
@@ -1172,6 +1288,123 @@ export const TabelasFiscaisPanel: React.FC = () => {
       )}
 
       {/* ═══════════════════════════════════════════════════════
+          TAB 8: ALÍQUOTAS MÉDIAS PARA INFERÊNCIA (SIMULADOR)
+      ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'inferencia' && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-violet-400" />
+                Parâmetros de Inferência — Alíquotas Médias do Simulador
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5 max-w-3xl">
+                Alíquotas médias de ICMS, PIS, COFINS, IPI e ISS aplicadas exclusivamente pelo <strong>Simulador Comparativo de Transição</strong> da Central de KPIs quando os XMLs não discriminam os tributos (ex: Simples Nacional CRT 1/4 e CT-e sem PIS/COFINS). Os relatórios e dados do XML continuam refletindo <strong>estritamente</strong> os valores originais.
+              </p>
+            </div>
+
+            <button
+              onClick={handleOpenNewInferencia}
+              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-violet-600/20 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Novo Parâmetro de Inferência</span>
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Código</th>
+                  <th className="py-3 px-4">Descrição do Contexto</th>
+                  <th className="py-3 px-4 text-right">ICMS (%)</th>
+                  <th className="py-3 px-4 text-right">PIS (%)</th>
+                  <th className="py-3 px-4 text-right">COFINS (%)</th>
+                  <th className="py-3 px-4 text-right">IPI (%)</th>
+                  <th className="py-3 px-4 text-right">ISS (%)</th>
+                  <th className="py-3 px-4">Aplica-se em</th>
+                  <th className="py-3 px-4">Vigência</th>
+                  <th className="py-3 px-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {inferenciaList.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="py-8 text-center text-slate-500 font-sans">
+                      Nenhum parâmetro de inferência cadastrado. Clique em "Novo Parâmetro de Inferência" para cadastrar.
+                    </td>
+                  </tr>
+                ) : (
+                  inferenciaList.map((item) => (
+                    <tr key={item.id || item.codigo} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-bold text-violet-400">{item.codigo}</td>
+                      <td className="py-3 px-4 font-sans text-slate-200 font-semibold">{item.descricao}</td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-200">
+                        {Number(item.icms_medio).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-200">
+                        {Number(item.pis_medio).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-200">
+                        {Number(item.cofins_medio).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-200">
+                        {Number(item.ipi_medio).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 text-right font-bold text-slate-200">
+                        {Number(item.iss_medio).toFixed(2)}%
+                      </td>
+                      <td className="py-3 px-4 font-sans">
+                        <div className="flex flex-wrap gap-1">
+                          {item.aplica_simples_nac ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                              Simples CRT 1/4
+                            </span>
+                          ) : null}
+                          {item.aplica_cte ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                              CT-e Frete
+                            </span>
+                          ) : null}
+                          {item.aplica_nfse ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                              NFS-e Serviços
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 font-sans text-slate-400 text-[11px]">
+                        {item.inicio_vigencia} a {item.final_vigencia}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => handleEditInferencia(item)}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-violet-400 transition-colors cursor-pointer"
+                            title="Editar Parâmetro"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteInferencia(item.id)}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-rose-400 transition-colors cursor-pointer"
+                            title="Excluir Parâmetro"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
           MODAL: AD VALOREM (%)
       ═══════════════════════════════════════════════════════ */}
       {showModalAdValorem && (
@@ -1516,6 +1749,177 @@ export const TabelasFiscaisPanel: React.FC = () => {
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button type="button" onClick={() => setShowModalNcm(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold">Cancelar</button>
                 <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">Salvar NCM</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: PARÂMETRO DE INFERÊNCIA (SIMULADOR)
+      ═══════════════════════════════════════════════════════ */}
+      {showModalInferencia && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-violet-400" />
+                {editingInferencia ? `Editar Parâmetro (${inferenciaForm.codigo})` : 'Novo Parâmetro de Inferência'}
+              </h3>
+              <button onClick={() => setShowModalInferencia(false)} className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveInferencia} className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Código *</label>
+                  <input
+                    type="text"
+                    value={inferenciaForm.codigo}
+                    onChange={(e) => setInferenciaForm({ ...inferenciaForm, codigo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-violet-500"
+                    required
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="font-bold text-slate-300 block mb-1">Descrição do Contexto *</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Alíquotas Médias - Simples Nacional"
+                    value={inferenciaForm.descricao}
+                    onChange={(e) => setInferenciaForm({ ...inferenciaForm, descricao: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-violet-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-2">Alíquotas Médias a Deduzir no Simulador (%)</label>
+                <div className="grid grid-cols-5 gap-2">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block mb-1">ICMS (%)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={inferenciaForm.icms_medio}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, icms_medio: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono text-center focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block mb-1">PIS (%)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={inferenciaForm.pis_medio}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, pis_medio: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono text-center focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block mb-1">COFINS (%)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={inferenciaForm.cofins_medio}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, cofins_medio: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono text-center focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block mb-1">IPI (%)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={inferenciaForm.ipi_medio}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, ipi_medio: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono text-center focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block mb-1">ISS (%)</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={inferenciaForm.iss_medio}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, iss_medio: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono text-center focus:outline-none focus:border-violet-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-2">Contextos de Aplicação</label>
+                <div className="space-y-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <label className="flex items-center gap-2.5 text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inferenciaForm.aplica_simples_nac === 1}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, aplica_simples_nac: e.target.checked ? 1 : 0 })}
+                      className="rounded border-slate-700 text-violet-600 focus:ring-violet-500 bg-slate-900 w-4 h-4"
+                    />
+                    <span>Aplicar ao <strong>Simples Nacional (CRT 1 e CRT 4 / MEI)</strong></span>
+                  </label>
+                  <label className="flex items-center gap-2.5 text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inferenciaForm.aplica_cte === 1}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, aplica_cte: e.target.checked ? 1 : 0 })}
+                      className="rounded border-slate-700 text-violet-600 focus:ring-violet-500 bg-slate-900 w-4 h-4"
+                    />
+                    <span>Aplicar ao <strong>CT-e</strong> (Frete de Transporte sem PIS/COFINS no XML)</span>
+                  </label>
+                  <label className="flex items-center gap-2.5 text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={inferenciaForm.aplica_nfse === 1}
+                      onChange={(e) => setInferenciaForm({ ...inferenciaForm, aplica_nfse: e.target.checked ? 1 : 0 })}
+                      className="rounded border-slate-700 text-violet-600 focus:ring-violet-500 bg-slate-900 w-4 h-4"
+                    />
+                    <span>Aplicar à <strong>NFS-e</strong> (Serviços Municipais)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Início de Vigência *</label>
+                  <input
+                    type="date"
+                    value={inferenciaForm.inicio_vigencia}
+                    onChange={(e) => setInferenciaForm({ ...inferenciaForm, inicio_vigencia: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-violet-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Final de Vigência *</label>
+                  <input
+                    type="date"
+                    value={inferenciaForm.final_vigencia}
+                    onChange={(e) => setInferenciaForm({ ...inferenciaForm, final_vigencia: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-violet-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalInferencia(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold cursor-pointer shadow-lg shadow-violet-600/30"
+                >
+                  Salvar Parâmetro
+                </button>
               </div>
             </form>
           </div>

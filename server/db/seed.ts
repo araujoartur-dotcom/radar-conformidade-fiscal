@@ -16,10 +16,13 @@ import { AUTH } from '../config';
 export function seedDatabase(): void {
   const db = getDatabase();
 
+  // Sempre garantir que parametros_inferencia estejam populados
+  seedParametrosInferencia(db);
+
   // Verificar se já foi populado
   const existingUsers = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as any;
   if (existingUsers.count > 0) {
-    console.log('ℹ️  Banco já possui dados. Seed ignorado.');
+    console.log('ℹ️  Banco já possui dados de usuários/empresas.');
     return;
   }
 
@@ -115,7 +118,7 @@ export function seedDatabase(): void {
   // MAPA cClassTrib x ALÍQUOTA / REGRA (6 Dígitos)
   // =========================================================
   const cclasstrib = [
-    { code: '000001', desc: 'Operação Tributada Integralmente IBS/CBS', trat: 'tributado', cred: 'Sim', aliq: '26.5% (8.8% CBS + 17.7% IBS)', alertas: 'Verificar se houver destaque zerado em documento tributado.' },
+    { code: '000001', desc: 'Operação Tributada Integralmente IBS/CBS', trat: 'tributado', cred: 'Sim', aliq: 'Alíquota Padrão Vigente', alertas: 'Verificar se houver destaque zerado em documento tributado.' },
     { code: '100001', desc: 'Alíquota Reduzida de Cesta Básica / Saúde', trat: 'aliquota_reduzida', cred: 'Sim', aliq: '10.6% (60% de Redução IBS/CBS)', alertas: 'Conferir enquadramento NCM na lista anexa do regulamento.' },
     { code: '200001', desc: 'Isenção / Imunidade Constitucional', trat: 'isento', cred: 'Não', aliq: '0.00%', alertas: 'Crédito bloqueado por ausência de incidência na entrada.' },
     { code: '300001', desc: 'Não Incidência / Exportação', trat: 'nao_incidencia', cred: 'Não', aliq: '0.00%', alertas: 'Não gera crédito de entrada.' },
@@ -189,6 +192,31 @@ export function seedDatabase(): void {
     stmtNcm.run(uuid(), n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
   }
 
-  console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas Ad Valorem/Ad Rem, Anexos NCM, CFOP, cClassTrib.');
+  console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas Ad Valorem/Ad Rem, Anexos NCM, CFOP, cClassTrib, Parâmetros de Inferência.');
+}
+
+export function seedParametrosInferencia(db: any): void {
+  try {
+    const countRow = db.prepare('SELECT COUNT(*) as count FROM parametros_inferencia').get() as any;
+    if (countRow && countRow.count > 0) return;
+
+    const parametrosInferencia = [
+      { codigo: 'INF_001', descricao: 'Alíquotas Médias - Simples Nacional (CRT 1/4)', icms: 3.50, pis: 0.55, cofins: 2.56, ipi: 0.00, iss: 3.50, sn: 1, cte: 0, nfse: 0 },
+      { codigo: 'INF_002', descricao: 'Alíquotas Médias - CT-e (PIS/COFINS Transporte)', icms: 0.00, pis: 1.65, cofins: 7.60, ipi: 0.00, iss: 0.00, sn: 0, cte: 1, nfse: 0 },
+      { codigo: 'INF_003', descricao: 'Alíquotas Médias - NFS-e Serviços', icms: 0.00, pis: 0.65, cofins: 3.00, ipi: 0.00, iss: 5.00, sn: 0, cte: 0, nfse: 1 },
+    ];
+
+    const stmtInf = db.prepare(`
+      INSERT OR REPLACE INTO parametros_inferencia (id, codigo, descricao, icms_medio, pis_medio, cofins_medio, ipi_medio, iss_medio, aplica_simples_nac, aplica_cte, aplica_nfse)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const p of parametrosInferencia) {
+      stmtInf.run(uuid(), p.codigo, p.descricao, p.icms, p.pis, p.cofins, p.ipi, p.iss, p.sn, p.cte, p.nfse);
+    }
+    console.log('✅ Parâmetros de inferência populados com sucesso (INF_001, INF_002, INF_003).');
+  } catch (err: any) {
+    console.warn('⚠️ Erro ao verificar/popular parametros_inferencia:', err.message);
+  }
 }
 

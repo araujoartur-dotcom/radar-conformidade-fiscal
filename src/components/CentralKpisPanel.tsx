@@ -3,7 +3,7 @@ import {
   TrendingUp, TrendingDown, DollarSign, FileText, CheckCircle2,
   AlertTriangle, ArrowUpRight, ArrowDownRight, Layers, PieChart,
   BarChart3, RefreshCw, Filter, Calendar, Building2, Percent,
-  Download, Sparkles, ShieldAlert, Check, HelpCircle, Info, Calculator
+  Download, Sparkles, ShieldAlert, Check, HelpCircle, Info, Calculator, Scale
 } from 'lucide-react';
 import { DfeXmlItem, RegraTransicaoAno, AliquotaTabelaItem } from '../types';
 import { exportToExcel } from '../utils/excel';
@@ -142,6 +142,23 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const totalPisReal = dbKpis?.totalFiltrado?.totalPis ?? filteredItems.reduce((acc, i) => acc + (i.valorPis || 0), 0);
   const totalCofinsReal = dbKpis?.totalFiltrado?.totalCofins ?? filteredItems.reduce((acc, i) => acc + (i.valorCofins || 0), 0);
   const totalIpiReal = dbKpis?.totalFiltrado?.totalIpi ?? filteredItems.reduce((acc, i) => acc + (i.valorIpi || 0), 0);
+  const totalIssReal = dbKpis?.totalFiltrado?.totalIss ?? filteredItems.reduce((acc, i) => acc + (i.valorIss || 0), 0);
+
+  // ── SIMULADOR COMPARATIVO DE TRANSIÇÃO (Reforma vs Atual) ──
+  // Base Líquida = vNF - todos os tributos atuais informados ou inferidos
+  const baseLiquidaSimulada = dbKpis?.totalFiltrado?.totalBaseLiquida ?? Math.max(0, totalValor - (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal));
+  
+  // Alíquotas do ano simulado cadastradas nos Parâmetros Fiscais (via getRegraTransicaoAno)
+  const cbsSimuladaAno = (baseLiquidaSimulada * regraAno.aliquotaCbs) / 100;
+  const ibsEstSimuladaAno = (baseLiquidaSimulada * regraAno.aliquotaIbsEstadual) / 100;
+  const ibsMunSimuladaAno = (baseLiquidaSimulada * regraAno.aliquotaIbsMunicipal) / 100;
+  const ibsTotalSimuladoAno = ibsEstSimuladaAno + ibsMunSimuladaAno;
+  const totalReformaSimulada = cbsSimuladaAno + ibsTotalSimuladoAno;
+
+  // Custo tributário total do Regime Atual (incluindo inferências de SN e CT-e)
+  const totalRegimeAtualSimulado = dbKpis?.totalFiltrado?.totalRegimeAtual ?? (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal);
+  const deltaTransicao = totalReformaSimulada - totalRegimeAtualSimulado;
+  const percentualDelta = totalRegimeAtualSimulado > 0 ? ((deltaTransicao / totalRegimeAtualSimulado) * 100) : 0;
 
   // Agregações por Modelo de DF-e
   const dfeTypeCounts = useMemo<Record<string, DfeTypeStat>>(() => {
@@ -378,6 +395,188 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               📉 ICMS/ISS reduzidos em {regraAno.percentualReducaoIcmsIss}%
             </span>
           )}
+        </div>
+      </div>
+
+      {/* ── PAINEL DO SIMULADOR COMPARATIVO DE CARGA TRIBUTÁRIA (EC 132/23 & LC 214/25) ── */}
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900/90 to-slate-950 border border-indigo-500/30 shadow-2xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300">
+              <Scale className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-extrabold text-white">Simulador Comparativo de Custo Tributário</h3>
+                <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                  Ano Simulado: {anoSimulado}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Cálculo com aplicação das alíquotas cadastradas nos Parâmetros sobre o Valor Total subtraído dos tributos atuais (Base Líquida)
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Base Líquida Tributável</span>
+            <strong className="text-lg font-black text-teal-300 font-mono">
+              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(baseLiquidaSimulada)}
+            </strong>
+          </div>
+        </div>
+
+        {/* Grade Comparativa: Regime Atual vs Reforma Tributária */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Coluna 1: Regime Atual */}
+          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                Regime Tributário Atual (Vigente)
+              </span>
+              <span className="text-[10px] text-slate-500">XMLs + Inferências Médias</span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">ICMS ({dbKpis?.totalFiltrado?.simplesNacDocsCount ? 'Destacado + SN Inferido' : 'Destacado'}):</span>
+                <span className="font-mono text-slate-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIcmsReal + (dbKpis?.totalFiltrado?.icmsInferido || 0))}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">PIS ({dbKpis?.totalFiltrado?.cteInferidosCount ? 'Destacado + CT-e Inferido' : 'Destacado'}):</span>
+                <span className="font-mono text-slate-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalPisReal + (dbKpis?.totalFiltrado?.pisInferido || 0))}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">COFINS ({dbKpis?.totalFiltrado?.cteInferidosCount ? 'Destacado + CT-e Inferido' : 'Destacado'}):</span>
+                <span className="font-mono text-slate-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCofinsReal + (dbKpis?.totalFiltrado?.cofinsInferido || 0))}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">IPI Destacado:</span>
+                <span className="font-mono text-slate-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIpiReal)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">ISS Destacado:</span>
+                <span className="font-mono text-slate-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIssReal + (dbKpis?.totalFiltrado?.issInferido || 0))}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+              <span className="text-xs font-extrabold text-slate-300">Custo Atual Consolidado:</span>
+              <strong className="text-base font-black text-amber-300 font-mono">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRegimeAtualSimulado)}
+              </strong>
+            </div>
+          </div>
+
+          {/* Coluna 2: Regime Reforma */}
+          <div className="p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+              <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+                Regime Reforma (IVA Dual {anoSimulado})
+              </span>
+              <span className="text-[10px] text-cyan-500 font-semibold">Alíquotas dos Parâmetros</span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">CBS Federal ({regraAno.aliquotaCbs.toFixed(2)}%):</span>
+                <span className="font-mono text-cyan-300 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cbsSimuladaAno)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">IBS Estadual ({regraAno.aliquotaIbsEstadual.toFixed(2)}%):</span>
+                <span className="font-mono text-indigo-300 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ibsEstSimuladaAno)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">IBS Municipal ({regraAno.aliquotaIbsMunicipal.toFixed(2)}%):</span>
+                <span className="font-mono text-purple-300 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ibsMunSimuladaAno)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">Total IBS ({regraAno.aliquotaIbsTotal.toFixed(2)}%):</span>
+                <span className="font-mono text-indigo-200 font-semibold">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(ibsTotalSimuladoAno)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-900">
+                <span className="text-slate-400">Alíquota Efetiva IVA Total:</span>
+                <span className="font-mono text-cyan-400 font-bold">
+                  {regraAno.aliquotaIvaTotal.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
+              <span className="text-xs font-extrabold text-cyan-200">Custo Reforma Simulado:</span>
+              <strong className="text-base font-black text-cyan-300 font-mono">
+                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReformaSimulada)}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        {/* Banner de Impacto / Delta Tributário */}
+        <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          deltaTransicao <= 0 
+            ? 'bg-gradient-to-r from-emerald-950/60 via-slate-900 to-teal-950/60 border-emerald-500/40' 
+            : 'bg-gradient-to-r from-rose-950/60 via-slate-900 to-amber-950/60 border-rose-500/40'
+        }`}>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-white">Impacto da Reforma ({anoSimulado}):</span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold ${
+                deltaTransicao <= 0 ? 'bg-emerald-900/80 text-emerald-300' : 'bg-rose-900/80 text-rose-300'
+              }`}>
+                {deltaTransicao <= 0 ? 'ECONOMIA PROJETADA' : 'ACRÉSCIMO DE CARGA'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Diferença entre a Carga da Reforma ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReformaSimulada)}) e a Carga Vigente ({new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRegimeAtualSimulado)})
+            </p>
+          </div>
+
+          <div className="text-right shrink-0">
+            <strong className={`text-xl sm:text-2xl font-black font-mono block ${
+              deltaTransicao <= 0 ? 'text-emerald-400' : 'text-rose-400'
+            }`}>
+              {deltaTransicao <= 0 ? '-' : '+'}{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(deltaTransicao))}
+            </strong>
+            <span className={`text-xs font-mono font-bold ${
+              deltaTransicao <= 0 ? 'text-emerald-300' : 'text-rose-300'
+            }`}>
+              ({percentualDelta.toFixed(1)}% vs regime atual)
+            </span>
+          </div>
+        </div>
+
+        {/* Rodapé Informativo de Inferências Aplicadas */}
+        <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-800/80 gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 font-mono">
+              📦 {dbKpis?.totalFiltrado?.cteInferidosCount || 0} CT-e com PIS/COFINS Médio Inferido
+            </span>
+            <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400 font-mono">
+              🏢 {dbKpis?.totalFiltrado?.simplesNacDocsCount || 0} Docs Simples Nacional (CRT 1/4) Inferidos
+            </span>
+          </div>
+          <span className="italic text-[10px]">
+            * Alíquotas médias configuradas na tela de Parâmetros & Tabelas Fiscais
+          </span>
         </div>
       </div>
 

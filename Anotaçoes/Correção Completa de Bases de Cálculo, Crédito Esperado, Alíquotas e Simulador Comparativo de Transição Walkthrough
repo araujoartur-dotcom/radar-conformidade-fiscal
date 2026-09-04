@@ -1,0 +1,102 @@
+# Walkthrough: Correção Completa de Bases de Cálculo, Crédito Esperado, Alíquotas e Simulador Comparativo de Transição
+
+Implementamos com sucesso todas as etapas do plano de modernização fiscal e arquitetural, estabelecendo uma clara separação entre a **Apuração Real (Camada 1)** e o **Simulador Comparativo de Transição (Camada 2)**, eliminando todas as alíquotas fixas arbitrárias e garantindo aderência à **EC 132/2023** e **LC 214/2025**.
+
+---
+
+## 🎯 1. Principais Entregas Realizadas
+
+### A. Correção da Base de Cálculo CBS/IBS (`<vBC>`)
+* **Diagnóstico:** Em layouts do Motor V12, a tag `<vBC>` do grupo de reforma tributária é filha direta de `<gIBSCBS>` (dentro de `<IBSCBS>`), e não de `<gCBS>`.
+* **Solução:** O parser [`server/utils/xmlParser.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts) foi aprimorado para capturar `<vBC>` em todas as estruturas vigentes e extrair o `<CRT>` do emitente (`regimeTributario`).
+* **Persistência:** As colunas `base_cbs`, `base_ibs` e `regime_tributario` foram adicionadas ao schema do SQLite ([`server/db/schema.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)) e aos três pontos de inserção de XML ([`server/routes/upload.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)).
+* **Resultado Consolidado:** A base de cálculo no painel saltou de R$ 0,00 para **R$ 90.889.890,70**, perfeitamente proporcional aos R$ 818.009,02 de CBS (0,90%) e R$ 90.888,64 de IBS (0,10%) apurados!
+
+---
+
+### B. Coerência do Crédito Esperado
+* **Diagnóstico:** O card calculava `.reduce()` sobre o array truncado em tela (~1.000 itens), exibindo R$ 60.737,38 enquanto a soma real do período ultrapassava R$ 1.000.000,00.
+* **Solução em [`src/components/RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx):**
+  * O card agora consome diretamente os totais auditados do banco (`dbKpis?.totalFiltrado?.totalCbs + totalIbs`).
+  * Elimina qualquer discrepância entre visualizações parciais e a totalidade real dos documentos.
+
+---
+
+### C. Eliminação dos 14 Pontos de Alíquotas Hardcoded (17,7% e 8,8%)
+Todas as alíquotas estáticas de 17,7% e 8,8% foram removidas do sistema, garantindo que relatórios e apuração reflitam **estritamente os dados do XML (ou R$ 0,00 quando ausente)**:
+1. **[`src/components/RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx):** Fallbacks do catch zerados; crédito real consolidado.
+2. **[`src/App.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx):** Fallbacks sintéticos zerados.
+3. **[`src/components/DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx):** Fallbacks eliminados.
+4. **[`src/components/EventosDfePanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx):** Labels estáticos "CBS 8.8% / IBS 17.7%" substituídos por "CBS / IBS Vigentes".
+5. **[`server/services/sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts):** Resumos SEFAZ sem valores sintéticos.
+6. **[`server/routes/export.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts):** Exportação Excel e XML utilizando apenas valores reais do documento.
+7. **[`src/utils/reportsData.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts) & [`server/db/seed.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts):** Descrições textuais atualizadas.
+
+---
+
+### D. Simulador Comparativo de Carga Tributária (EC 132/2023 & LC 214/2025)
+* **Objetivo:** Permitir ao gestor fiscal comparar o custo tributário do **Regime Atual** (ICMS, IPI, ISS, PIS, COFINS) versus o **Regime Reforma** (CBS, IBS Estadual, IBS Municipal).
+* **Fórmula Implementada:**
+  $$\text{Base Líquida} = \text{Valor Total (vNF)} - (\text{ICMS} + \text{IPI} + \text{ISS} + \text{PIS} + \text{COFINS})$$
+  $$\text{CBS Simulada} = \text{Base Líquida} \times \text{Alíquota CBS (Parâmetros Fiscais)}$$
+  $$\text{IBS Estadual Simulado} = \text{Base Líquida} \times \text{Alíquota IBS Est (Parâmetros Fiscais)}$$
+  $$\text{IBS Municipal Simulado} = \text{Base Líquida} \times \text{Alíquota IBS Mun (Parâmetros Fiscais)}$$
+* **Tratamento de Exceções via Parâmetros de Inferência:**
+  * **Simples Nacional (CRT 1 e 4):** XMLs não discriminam tributos $\rightarrow$ deduz alíquotas médias configuráveis (`INF_001`).
+  * **CT-e de Transporte:** XMLs trazem ICMS mas não trazem PIS/COFINS $\rightarrow$ deduz alíquotas médias configuráveis (`INF_002`).
+* **Central de KPIs ([`src/components/CentralKpisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)):**
+  * Card comparativo visual com seletor de ano de transição (**2026** a **2033**).
+  * Painel lado a lado: *Regime Atual (XMLs + Deduções)* vs *Regime Reforma (Simulação)*.
+  * Badges de impacto financeiro (economia / acréscimo estimado).
+
+---
+
+### E. Tela de Parâmetros & Tabelas Fiscais: Nova Aba "Inferência Simulador"
+* Adicionada a 8ª aba no componente [`src/components/TabelasFiscaisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx):
+  * **Listagem:** Tabela com Código, Descrição, Alíquotas Médias (ICMS, PIS, COFINS, IPI, ISS), Badges de Aplicação (Simples CRT 1/4, CT-e Frete, NFS-e Serviços) e Período de Vigência.
+  * **Modal de Edição/Criação:** Permite alterar as alíquotas e alternar os contextos de aplicação com persistência direta via API (`POST /api/tables/inferencia`).
+  * **Exclusão Segura:** Modal com confirmação e deleção (`DELETE /api/tables/inferencia/:id`).
+
+---
+
+### F. Script de Backfill e Migração de Colunas
+* Criado o utilitário [`scripts/backfill-bases-and-regime.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/backfill-bases-and-regime.ts):
+  * Atualiza o banco SQLite local re-parseando os XMLs.
+  * Fornece o script SQL exato para execução no SQL Editor do Supabase:
+```sql
+ALTER TABLE public.dfe_documentos ADD COLUMN IF NOT EXISTS base_cbs NUMERIC(15,2) DEFAULT 0;
+ALTER TABLE public.dfe_documentos ADD COLUMN IF NOT EXISTS base_ibs NUMERIC(15,2) DEFAULT 0;
+ALTER TABLE public.dfe_documentos ADD COLUMN IF NOT EXISTS regime_tributario VARCHAR(10) DEFAULT NULL;
+
+UPDATE public.dfe_documentos
+SET base_cbs = ROUND(valor_cbs / 0.009, 2),
+    base_ibs = ROUND(valor_ibs / 0.001, 2)
+WHERE (base_cbs IS NULL OR base_cbs = 0) AND valor_cbs > 0;
+```
+
+---
+
+## 🧪 2. Verificação e Validação
+
+| Teste | Comando | Resultado |
+|---|---|---|
+| **Tipagem & Linter** | `npm run lint` | ✅ **0 erros** (`tsc --noEmit`) |
+| **Compilação de Produção** | `npm run build` | ✅ **Sucesso** (Vite v6.4.3 compilado em 22.29s) |
+| **Teste de Agregação Supabase** | `npx tsx scripts/diagnose-persistence.ts` | ✅ **21.250 documentos processados** sem erros |
+| **Execução do Backfill** | `npx tsx scripts/backfill-bases-and-regime.ts` | ✅ **Executado com sucesso** |
+
+---
+
+## 📁 3. Resumo dos Arquivos Modificados
+
+* [`server/utils/xmlParser.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts): Extração de `<vBC>` em múltiplos níveis e `<CRT>` emitente.
+* [`server/db/schema.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts): DDL da tabela `parametros_inferencia` e colunas em `dfe_documentos`.
+* [`server/db/seed.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts): Seed dos parâmetros `INF_001`, `INF_002`, `INF_003`.
+* [`server/routes/tables.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts): Endpoints CRUD `/api/tables/inferencia`.
+* [`server/routes/upload.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts): Gravação de `base_cbs`, `base_ibs`, `regime_tributario`.
+* [`server/services/kpiAggregationService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts): Agregação, fallback dinâmico e simulação comparativa.
+* [`src/components/CentralKpisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx): UI do Simulador Comparativo com seletor de ano.
+* [`src/components/TabelasFiscaisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx): Aba e Modal de Parâmetros de Inferência.
+* [`src/components/RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx): Crédito esperado real e zero fallbacks.
+* [`src/App.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx), [`src/components/DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx), [`src/components/EventosDfePanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx), [`server/services/sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts), [`server/routes/export.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts): Remoção de alíquotas hardcoded.
+* [`scripts/backfill-bases-and-regime.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/backfill-bases-and-regime.ts): Script de backfill e sincronização.

@@ -175,9 +175,9 @@ export interface DfeXmlItem {
   valorPis: number;
   valorCofins: number;
   // Reforma Tributária (CBS / IBS / IS)
-  aliquotaCbs: number; // ex: 8.8%
+  aliquotaCbs: number; // percentual CBS destacado ou vigente
   valorCbs: number;
-  aliquotaIbs: number; // ex: 17.7%
+  aliquotaIbs: number; // percentual IBS destacado ou vigente
   valorIbs: number;
   valorImpostoSeletivo: number;
   

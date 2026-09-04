@@ -203,8 +203,8 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
           <vPIS>${Number(doc.valor_pis || 0).toFixed(2)}</vPIS>
           <vCOFINS>${Number(doc.valor_cofins || 0).toFixed(2)}</vCOFINS>
           <vIPI>${Number(doc.valor_ipi || 0).toFixed(2)}</vIPI>
-          <vCBS>${Number(doc.valor_cbs || (Number(doc.valor_total || 0) * 0.088)).toFixed(2)}</vCBS>
-          <vIBS>${Number(doc.valor_ibs || (Number(doc.valor_total || 0) * 0.177)).toFixed(2)}</vIBS>
+          <vCBS>${Number(doc.valor_cbs || 0).toFixed(2)}</vCBS>
+          <vIBS>${Number(doc.valor_ibs || 0).toFixed(2)}</vIBS>
         </ICMSTot>
       </total>
     </inf${tipo}>
@@ -235,8 +235,8 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
       const totalPis = docs.reduce((acc, d) => acc + Number(d.valor_pis || 0), 0);
       const totalCofins = docs.reduce((acc, d) => acc + Number(d.valor_cofins || 0), 0);
       const totalIpi = docs.reduce((acc, d) => acc + Number(d.valor_ipi || 0), 0);
-      const totalCbs = docs.reduce((acc, d) => acc + Number(d.valor_cbs || (Number(d.valor_total) * 0.088) || 0), 0);
-      const totalIbs = docs.reduce((acc, d) => acc + Number(d.valor_ibs || (Number(d.valor_total) * 0.177) || 0), 0);
+      const totalCbs = docs.reduce((acc, d) => acc + Number(d.valor_cbs || 0), 0);
+      const totalIbs = docs.reduce((acc, d) => acc + Number(d.valor_ibs || 0), 0);
 
       const resumoData = [
         ['MANIFESTO DE AUDITORIA & CONFORMIDADE FISCAL', ''],
@@ -279,8 +279,8 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
         'Valor PIS (R$)': Number(d.valor_pis || 0),
         'Valor COFINS (R$)': Number(d.valor_cofins || 0),
         'Valor IPI (R$)': Number(d.valor_ipi || 0),
-        'Valor CBS (R$)': Number(d.valor_cbs || (Number(d.valor_total) * 0.088) || 0),
-        'Valor IBS (R$)': Number(d.valor_ibs || (Number(d.valor_total) * 0.177) || 0),
+        'Valor CBS (R$)': Number(d.valor_cbs || 0),
+        'Valor IBS (R$)': Number(d.valor_ibs || 0),
         'Alerta de Risco': d.alerta_fraude ? 'SIM (Risco Detectado)' : 'NÃO (Conforme)'
       }));
       const wsLista = XLSX.utils.json_to_sheet(listaRows);

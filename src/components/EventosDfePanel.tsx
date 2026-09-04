@@ -442,13 +442,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                   {/* Dual Tax Ref. Tributaria Breakdown */}
                   <div className="grid grid-cols-2 gap-2 pt-1 text-[11px]">
                     <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                      <span className="text-slate-400 block text-[10px]">Projeção CBS (8.8%):</span>
+                      <span className="text-slate-400 block text-[10px]">Valor CBS:</span>
                       <span className="font-bold text-cyan-300 font-mono">
                         {currentDocument.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </span>
                     </div>
                     <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                      <span className="text-slate-400 block text-[10px]">Projeção IBS (17.7%):</span>
+                      <span className="text-slate-400 block text-[10px]">Valor IBS:</span>
                       <span className="font-bold text-indigo-300 font-mono">
                         {currentDocument.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </span>
@@ -771,7 +771,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               </p>
 
               <div className="space-y-1.5 pt-2 border-t border-slate-800 text-xs">
-                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Retenção na Fonte:</span><strong className="text-emerald-300 font-mono">CBS 8.8% / IBS 17.7%</strong></div>
+                <div className="flex justify-between text-[11px]"><span className="text-slate-400">Retenção na Fonte:</span><strong className="text-emerald-300 font-mono">Conforme Legislação</strong></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">Eventos Tomador:</span><strong className="text-emerald-300 font-mono">Aceite (200100) / Contestação</strong></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">Alíquotas Reduzidas:</span><strong className="text-emerald-400 font-mono">Saúde, Educação e Profissões</strong></div>
                 <div className="flex justify-between text-[11px]"><span className="text-slate-400">Integração ABRASF:</span><strong className="text-cyan-400 font-mono">Padrão Nacional REST</strong></div>

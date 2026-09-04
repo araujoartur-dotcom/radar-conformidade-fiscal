@@ -1,0 +1,359 @@
+# Correção Completa: Base de Cálculo, Crédito Esperado, Alíquotas Hardcoded e Simulador Comparativo
+
+## Contexto
+
+Três inconsistências graves + evolução para Simulador Comparativo de Transição:
+
+1. **Base de Cálculo IBS/CBS = R$ 0,00** — nunca salva no banco (INSERT e SELECT omitem colunas)
+2. **Crédito Esperado R$ 60k vs CBS+IBS R$ 1M+** — .reduce() sobre array paginado vs total real
+3. **14 pontos com alíquotas hardcoded 17,7%/8,8%** — divergem dos parâmetros cadastrados (0,9% / 0,01% / 0%)
+4. **Simulador de Transição** — comparativo entre carga atual (regime vigente) e carga reforma (IVA Dual)
+5. **Simples Nacional (CRT 1/4)** — sem tributos individuais no XML → alíquotas médias inferidas
+6. **CT-e** — sem PIS/COFINS → alíquota média configurável para inferência
+
+---
+
+## Arquitetura: Duas Camadas Conceituais
+
+### Camada 1 — Apuração Real (Módulos XML + Relatórios)
+
+> Dados exclusivamente do XML. Se não tem CBS/IBS/Base no XML, é **R$ 0,00**.
+> Nenhuma estimativa, nenhuma alíquota aplicada.
+
+### Camada 2 — Simulador Comparativo de Transição (Central de KPIs)
+
+> Simulação com deduções + alíquotas dos Parâmetros Fiscais cadastrados.
+
+**Fórmula do Simulador:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    CÁLCULO DA BASE LÍQUIDA SIMULADA                │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Base Líquida = Valor Total (vNF)                                   │
+│               - ICMS (do XML, ou inferido se SN)                    │
+│               - IPI  (do XML, ou 0 se SN/CTe)                      │
+│               - ISS  (do XML, ou inferido se SN/NFSe)              │
+│               - PIS  (do XML, ou inferido se SN/CTe)               │
+│               - COFINS (do XML, ou inferido se SN/CTe)             │
+│                                                                     │
+│  CBS Simulada    = Base Líquida × Alíquota CBS (Parâmetros)        │
+│  IBS Estadual    = Base Líquida × Alíquota IBS Est (Parâmetros)    │
+│  IBS Municipal   = Base Líquida × Alíquota IBS Mun (Parâmetros)   │
+│                                                                     │
+│  COMPARAÇÃO:                                                        │
+│  Regime Atual    = ICMS + IPI + ISS + PIS + COFINS (reais/inferidos)│
+│  Regime Reforma  = CBS + IBS Estadual + IBS Municipal (simulados)   │
+│  Delta           = Regime Reforma - Regime Atual (economia/aumento) │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Tratamento por CRT (Código de Regime Tributário)
+
+A tag `<CRT>` no XML identifica o regime do **emitente**:
+
+| CRT | Regime | Tributos no XML? | Tratamento no Simulador |
+|-----|--------|-------------------|-------------------------|
+| **1** | Simples Nacional | ❌ Normalmente não destacados | Inferir com alíquotas médias configuráveis |
+| **2** | Simples Nacional (sublimite excedido) | ✅ Destacados normalmente | Deduzir tributos reais do XML |
+| **3** | Regime Normal (Lucro Presumido/Real) | ✅ Destacados normalmente | Deduzir tributos reais do XML |
+| **4** | MEI | ❌ Não destacados | Inferir com alíquotas médias configuráveis |
+
+### Tratamento por Tipo de Documento
+
+| Tipo Doc | PIS/COFINS no XML? | ICMS no XML? | Tratamento |
+|----------|-------------------|--------------|------------|
+| **NF-e** (CRT 3) | ✅ Sim | ✅ Sim | Dedução real do XML |
+| **NF-e** (CRT 1/4) | ❌ Não | ❌ Não | Inferir com alíquotas médias |
+| **CT-e** | ❌ Não traz PIS/COFINS | ✅ ICMS presente | Inferir PIS/COFINS com alíquota média |
+| **NFS-e** | Depende do município | ❌ ISS sim | Inferir tributos faltantes |
+
+---
+
+## Proposed Changes
+
+### Componente 1: Persistência da Base de Cálculo + CRT no Banco
+
+#### [MODIFY] [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts)
+
+- Extrair tag `<CRT>` do XML (dentro de `<emit>`) e incluir no retorno como `regimeTributario`
+- Já extrai `baseCbs`/`baseIbs` corretamente ✅
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+
+- Adicionar migração: `addColumnIfNotExists('dfe_documentos', 'regime_tributario', 'TEXT DEFAULT NULL')` — para armazenar o CRT do emitente (1, 2, 3 ou 4)
+
+#### [MODIFY] [upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+
+- **INSERT Individual + Motor V12 + Upsert Supabase**: Adicionar `base_cbs, base_ibs, regime_tributario` nas colunas
+
+#### [MODIFY] [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)
+
+- Adicionar `base_cbs, base_ibs` ao `selectFields` do Supabase (L160)
+
+---
+
+### Componente 2: Parâmetros Fiscais de Inferência
+
+Nova seção na tabela de Parâmetros Fiscais para alíquotas médias de inferência, usadas exclusivamente pelo Simulador quando o XML não traz tributos destacados.
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+
+```sql
+CREATE TABLE IF NOT EXISTS parametros_inferencia (
+  id                    TEXT PRIMARY KEY,
+  codigo                TEXT NOT NULL UNIQUE,
+  descricao             TEXT NOT NULL,
+  -- Alíquotas médias para inferência (quando XML não destaca)
+  icms_medio            REAL NOT NULL DEFAULT 18.00,    -- ICMS médio (%)
+  pis_medio             REAL NOT NULL DEFAULT 1.65,     -- PIS médio (%)
+  cofins_medio          REAL NOT NULL DEFAULT 7.60,     -- COFINS médio (%)
+  ipi_medio             REAL NOT NULL DEFAULT 0.00,     -- IPI médio (%)
+  iss_medio             REAL NOT NULL DEFAULT 5.00,     -- ISS médio (%)
+  -- Contextos de aplicação
+  aplica_simples_nac    INTEGER NOT NULL DEFAULT 1,     -- Usar para CRT 1/4
+  aplica_cte            INTEGER NOT NULL DEFAULT 1,     -- Usar PIS/COFINS para CT-e
+  aplica_nfse           INTEGER NOT NULL DEFAULT 0,     -- Usar para NFS-e
+  inicio_vigencia       TEXT NOT NULL DEFAULT '2026-01-01',
+  final_vigencia        TEXT NOT NULL DEFAULT '2099-12-31',
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+#### [MODIFY] [seed.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts)
+
+Seed com valores padrão iniciais:
+```typescript
+{ codigo: 'INF_001', descricao: 'Alíquotas Médias - Simples Nacional (CRT 1/4)',
+  icms_medio: 3.50, pis_medio: 0.55, cofins_medio: 2.56, ipi_medio: 0.00, iss_medio: 3.50,
+  aplica_simples_nac: 1, aplica_cte: 0, aplica_nfse: 0 },
+
+{ codigo: 'INF_002', descricao: 'Alíquotas Médias - CT-e (PIS/COFINS Transporte)',
+  icms_medio: 0.00, pis_medio: 1.65, cofins_medio: 7.60, ipi_medio: 0.00, iss_medio: 0.00,
+  aplica_simples_nac: 0, aplica_cte: 1, aplica_nfse: 0 },
+
+{ codigo: 'INF_003', descricao: 'Alíquotas Médias - NFS-e Serviços',
+  icms_medio: 0.00, pis_medio: 0.65, cofins_medio: 3.00, ipi_medio: 0.00, iss_medio: 5.00,
+  aplica_simples_nac: 0, aplica_cte: 0, aplica_nfse: 1 }
+```
+
+> [!IMPORTANT]
+> Esses valores são **editáveis pelo usuário** na tela de Parâmetros & Tabelas Fiscais. O seed apenas fornece valores iniciais razoáveis que o gestor fiscal pode ajustar conforme a realidade da empresa.
+
+#### [MODIFY] [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts)
+
+- Adicionar CRUD para `parametros_inferencia` (GET/POST/DELETE)
+
+#### [MODIFY] Tela de Parâmetros & Tabelas Fiscais (Frontend)
+
+- Nova aba ou seção: **"Alíquotas Médias para Inferência (Simulador)"**
+- Tabela editável com as alíquotas médias de ICMS, PIS, COFINS, IPI, ISS
+- Campos: Código, Descrição, Alíquotas (%), Contextos (SN / CT-e / NFS-e), Vigência
+
+---
+
+### Componente 3: Simulador Comparativo no KPI Service
+
+#### [MODIFY] [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)
+
+Adicionar campos ao `KpiTotals`:
+```typescript
+// Simulador de Transição
+totalBaseLiquida: number;      // vNF - tributos atuais (reais ou inferidos)
+totalCbsSimulada: number;      // baseLiquida × aliq CBS parâmetros
+totalIbsEstSimulada: number;   // baseLiquida × aliq IBS Est parâmetros
+totalIbsMunSimulada: number;   // baseLiquida × aliq IBS Mun parâmetros
+totalRegimeAtual: number;      // soma ICMS+IPI+ISS+PIS+COFINS (reais+inferidos)
+totalRegimeReforma: number;    // CBS + IBS simulados
+deltaTransicao: number;        // reforma - atual
+```
+
+No `accumulateDoc()`, a lógica:
+```typescript
+// Determinar se precisa inferir
+const crt = doc.regime_tributario || doc.crt || '3';
+const tipoDoc = (doc.tipo_doc || '').toUpperCase();
+const isSimples = crt === '1' || crt === '4';
+const isCte = tipoDoc === 'CTE' || tipoDoc === '57';
+
+// Tributos reais do XML
+let icms = Number(doc.valor_icms) || 0;
+let pis = Number(doc.valor_pis) || 0;
+let cofins = Number(doc.valor_cofins) || 0;
+let ipi = Number(doc.valor_ipi) || 0;
+let iss = Number(doc.valor_iss) || 0;
+const vTotal = Number(doc.valor_total) || 0;
+
+// Inferência quando XML não destaca
+if (isSimples && icms === 0 && pis === 0 && cofins === 0) {
+  // Usar alíquotas médias SN dos parametros_inferencia
+  icms = vTotal * (paramSN.icms_medio / 100);
+  pis = vTotal * (paramSN.pis_medio / 100);
+  cofins = vTotal * (paramSN.cofins_medio / 100);
+}
+if (isCte && pis === 0 && cofins === 0) {
+  // Usar alíquotas médias CT-e dos parametros_inferencia
+  pis = vTotal * (paramCte.pis_medio / 100);
+  cofins = vTotal * (paramCte.cofins_medio / 100);
+}
+
+const tributosAtuais = icms + ipi + iss + pis + cofins;
+const baseLiquida = Math.max(0, vTotal - tributosAtuais);
+
+// Aplicar alíquotas dos Parâmetros Fiscais (2026 = CBS 0.9%, IBS Est 0.01%)
+const cbsSim = baseLiquida * (regraAno.aliquotaCbs / 100);
+const ibsEstSim = baseLiquida * (regraAno.aliquotaIbsEstadual / 100);
+const ibsMunSim = baseLiquida * (regraAno.aliquotaIbsMunicipal / 100);
+const regimeReforma = cbsSim + ibsEstSim + ibsMunSim;
+
+totals.totalBaseLiquida += baseLiquida;
+totals.totalCbsSimulada += cbsSim;
+totals.totalIbsEstSimulada += ibsEstSim;
+totals.totalIbsMunSimulada += ibsMunSim;
+totals.totalRegimeAtual += tributosAtuais;
+totals.totalRegimeReforma += regimeReforma;
+totals.deltaTransicao = totals.totalRegimeReforma - totals.totalRegimeAtual;
+```
+
+---
+
+### Componente 4: Eliminar 14 pontos de alíquotas hardcoded
+
+**Regra estrita**: relatórios e dados = XML puro. Se não tem, é 0.
+
+| # | Arquivo | Correção |
+|---|---------|----------|
+| 1-4 | [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx) | Remover `0.177`/`0.088`/`17.7`/`8.8` no catch → usar `0` |
+| 5-6 | [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx) | Remover fallbacks `0.088`/`0.177`/`8.8`/`17.7` → usar `0` |
+| 7 | [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx) | Fallback `0` em vez de `8.8`/`17.7` |
+| 8-9 | [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx) | Remover labels "CBS 8.8% / IBS 17.7%" |
+| 10-12 | [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts) | Resumos SEFAZ: `valor_cbs: 0, valor_ibs: 0` (sem estimativa) |
+| 13-14 | [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts) | XML e planilha: `Number(doc.valor_cbs) \|\| 0` |
+
+---
+
+### Componente 5: Crédito Esperado coerente
+
+#### [MODIFY] [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+
+- Card "Crédito Esperado IBS+CBS" (L655): usar `dbKpis?.totalFiltrado?.totalCbs + totalIbs` quando disponível
+
+---
+
+### Componente 6: Backfill dos 21.250 XMLs
+
+#### [NEW] Script de migração (executado uma vez na inicialização)
+
+1. Buscar documentos com `base_cbs = 0 AND valor_cbs > 0` que possuam `xml_raw`
+2. Re-parsear com `parseFiscalXml()` para extrair `baseCbs`, `baseIbs` e `CRT`
+3. Atualizar SQLite e Supabase com os valores corretos
+
+---
+
+### Componente 7: UI do Simulador Comparativo na Central de KPIs
+
+#### [MODIFY] [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+
+Nova seção visual no painel de KPIs:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│           ⚖️ SIMULADOR COMPARATIVO DE CARGA TRIBUTÁRIA           │
+│              Ano: 2026 (Teste e Calibração)                      │
+├────────────────────────────┬─────────────────────────────────────┤
+│ 📊 REGIME ATUAL (XMLs)     │ 🔄 REGIME REFORMA (Simulação)       │
+├────────────────────────────┼─────────────────────────────────────┤
+│ ICMS:     R$ 140.765.337   │ CBS (0,90%):     R$ 5.834.XXX      │
+│ PIS:      R$   5.022.161   │ IBS Est (0,01%): R$    64.XXX      │
+│ COFINS:   R$  23.148.282   │ IBS Mun (0,00%): R$         0      │
+│ IPI:      R$   1.234.567   │                                     │
+│ ISS:      R$     456.789   │                                     │
+├────────────────────────────┼─────────────────────────────────────┤
+│ TOTAL:    R$ 170.627.136   │ TOTAL:  R$  5.899.XXX               │
+├────────────────────────────┴─────────────────────────────────────┤
+│ 📉 IMPACTO: -R$ 164.728.XXX (-96,5%)                            │
+│ ℹ️ Base Líquida: R$ 648.XXX.XXX (vNF - tributos atuais)         │
+│ ⚠️ 3.450 docs CRT 1/4 (Simples) com tributos inferidos          │
+│ ⚠️ 1.200 CT-e com PIS/COFINS inferidos                           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+> [!NOTE]
+> Para 2026 (ano teste com alíquotas mínimas) o delta será enorme. Quando o usuário selecionar 2033 (vigência plena), o comparativo mostrará o impacto real da reforma.
+
+---
+
+## Fluxo de Execução
+
+```mermaid
+graph TD
+    A[XML Importado] --> B{CRT do Emitente?}
+    B -->|CRT 3 / CRT 2| C[Deduzir tributos REAIS do XML]
+    B -->|CRT 1 / CRT 4| D[Inferir tributos com alíquotas médias\nParâmetros Fiscais INF_001]
+    
+    A --> E{Tipo Documento?}
+    E -->|CT-e| F[PIS/COFINS inferidos\nParâmetros Fiscais INF_002]
+    E -->|NF-e / NFS-e| G[Usar tributos do XML]
+    
+    C --> H[Base Líquida = vNF - Tributos]
+    D --> H
+    F --> H
+    G --> H
+    
+    H --> I[Aplicar Alíquotas CBS/IBS\nda Tabela de Parâmetros Vigentes]
+    I --> J[Comparativo: Regime Atual vs Reforma]
+    
+    style D fill:#f59e0b,color:#000
+    style F fill:#f59e0b,color:#000
+    style J fill:#10b981,color:#000
+```
+
+---
+
+## Resumo de Arquivos Afetados
+
+| Arquivo | Mudanças |
+|---------|----------|
+| [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts) | Extrair `<CRT>` |
+| [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts) | Nova tabela `parametros_inferencia` + coluna `regime_tributario` |
+| [seed.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/seed.ts) | Seed com alíquotas médias padrão |
+| [upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts) | `base_cbs, base_ibs, regime_tributario` no INSERT |
+| [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts) | CRUD para `parametros_inferencia` |
+| [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts) | Lógica do simulador + `selectFields` |
+| [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx) | UI do simulador comparativo |
+| [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx) | Remover hardcoded + crédito real |
+| [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx) | Remover fallbacks 0.088/0.177 |
+| [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx) | Remover fallbacks 8.8/17.7 |
+| [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx) | Remover labels hardcoded |
+| [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts) | Resumos: CBS/IBS = 0 |
+| [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts) | Exportação: valor real ou 0 |
+| [reportsData.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts) | Remover string "26.5% (8.8% CBS + 17.7% IBS)" |
+| **[NEW]** Script de backfill | Re-parse 21.250 XMLs para `baseCbs`, `baseIbs`, `CRT` |
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Alíquotas médias iniciais para Simples Nacional**: Os valores de seed sugeridos (ICMS 3,50%, PIS 0,55%, COFINS 2,56%) são médias baseadas na faixa 3 do Anexo I do Simples Nacional. Deseja que eu use outros valores? Esses valores serão editáveis na tela de Parâmetros a qualquer momento.
+
+> [!IMPORTANT]
+> **CT-e — alíquota média de PIS/COFINS para transporte**: Sugeri PIS 1,65% e COFINS 7,60% (regime cumulativo de transportadoras no Lucro Real). Se a empresa trabalha mais com transportadoras do Lucro Presumido (PIS 0,65% / COFINS 3,00%), posso ajustar o seed.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `npm run lint` e `npm run build` — zero erros
+
+### Manual Verification
+1. Após backfill: `SELECT SUM(base_cbs), COUNT(DISTINCT regime_tributario) FROM dfe_documentos` → base > 0, CRTs variados
+2. Central de KPIs: Simulador mostra comparativo com tributos reais e inferidos
+3. Relatórios: Valores 100% do XML, sem estimativas
+4. Parâmetros: Nova seção "Alíquotas Médias para Inferência" editável
+5. Nenhum ponto exibe 17,7% ou 8,8%

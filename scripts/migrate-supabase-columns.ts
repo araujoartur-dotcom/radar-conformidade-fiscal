@@ -36,7 +36,8 @@ async function migrateSupabaseColumns() {
     'cliente_cnpj', 'cliente_razao', 'cliente_uf', 'cliente_ie',
     'situacao_doc', 'situacao_manifestacao', 'evento_ultimo',
     'valor_total', 'valor_icms', 'valor_ipi', 'valor_pis', 'valor_cofins',
-    'valor_cbs', 'valor_ibs', 'valor_is', 'valor_irrf', 'valor_inss', 'valor_iss', 'valor_csll',
+    'valor_cbs', 'valor_ibs', 'base_cbs', 'base_ibs', 'regime_tributario',
+    'valor_is', 'valor_irrf', 'valor_inss', 'valor_iss', 'valor_csll',
     'xml_raw', 'status_sefaz', 'protocolo_sefaz', 'alerta_fraude',
     'download_at', 'created_at', 'updated_at'
   ];
@@ -60,6 +61,9 @@ async function migrateSupabaseColumns() {
     console.log('   ──────────────────────────────────────────');
     
     const columnDefs: Record<string, string> = {
+      'base_cbs': 'NUMERIC(15,2) DEFAULT 0',
+      'base_ibs': 'NUMERIC(15,2) DEFAULT 0',
+      'regime_tributario': 'VARCHAR(10) DEFAULT NULL',
       'download_at': 'TIMESTAMPTZ DEFAULT NULL',
       'alerta_fraude': 'BOOLEAN DEFAULT FALSE',
       'fornecedor_municipio': "VARCHAR(100) DEFAULT ''",

@@ -79,7 +79,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     descricaoInterna: 'Operação Tributada Integralmente IBS/CBS',
     tratamentoEsperado: 'tributado',
     permiteCredito: 'Sim',
-    aliquotaEsperada: '26.5% (8.8% CBS + 17.7% IBS)',
+    aliquotaEsperada: 'Alíquota Padrão Vigente',
     alertas: 'Verificar se houver destaque zerado em documento tributado.'
   },
   {

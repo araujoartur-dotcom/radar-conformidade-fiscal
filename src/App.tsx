@@ -115,8 +115,8 @@ export default function App() {
     if (res.ok && res.data?.data) {
       const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
         const docTotal = Number(doc.valor_total) || 0;
-        const cbsVal = doc.valor_cbs !== null && doc.valor_cbs !== undefined ? Number(doc.valor_cbs) : Number((docTotal * 0.088).toFixed(2));
-        const ibsVal = doc.valor_ibs !== null && doc.valor_ibs !== undefined ? Number(doc.valor_ibs) : Number((docTotal * 0.177).toFixed(2));
+        const cbsVal = doc.valor_cbs !== null && doc.valor_cbs !== undefined ? Number(doc.valor_cbs) : 0;
+        const ibsVal = doc.valor_ibs !== null && doc.valor_ibs !== undefined ? Number(doc.valor_ibs) : 0;
         const numSerieParts = (doc.numero_serie || '').split(' / ');
         
         return {
@@ -137,9 +137,9 @@ export default function App() {
           valorIpi: Number(doc.valor_ipi) || 0,
           valorPis: Number(doc.valor_pis) || 0,
           valorCofins: Number(doc.valor_cofins) || 0,
-          aliquotaCbs: docTotal > 0 && cbsVal > 0 ? Number(((cbsVal / docTotal) * 100).toFixed(2)) : 8.8,
+          aliquotaCbs: docTotal > 0 && cbsVal > 0 ? Number(((cbsVal / docTotal) * 100).toFixed(2)) : 0,
           valorCbs: cbsVal,
-          aliquotaIbs: docTotal > 0 && ibsVal > 0 ? Number(((ibsVal / docTotal) * 100).toFixed(2)) : 17.7,
+          aliquotaIbs: docTotal > 0 && ibsVal > 0 ? Number(((ibsVal / docTotal) * 100).toFixed(2)) : 0,
           valorIbs: ibsVal,
           valorImpostoSeletivo: Number(doc.valor_is) || 0,
           eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',

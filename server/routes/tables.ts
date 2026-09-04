@@ -691,6 +691,88 @@ router.delete('/regras/:id', requireAuth, async (req: AuthenticatedRequest, res:
   }
 });
 
+// =========================================================
+// 8. PARÂMETROS DE INFERÊNCIA (ALÍQUOTAS MÉDIAS P/ SIMULADOR)
+// =========================================================
+
+/** GET /api/tables/inferencia — Listar parâmetros de inferência */
+router.get('/inferencia', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM parametros_inferencia 
+      ORDER BY codigo
+    `).all();
+
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar parâmetros de inferência: ' + err.message });
+  }
+});
+
+/** POST /api/tables/inferencia — Gravar ou atualizar parâmetro de inferência */
+router.post('/inferencia', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const {
+      codigo, descricao,
+      icms_medio, pis_medio, cofins_medio, ipi_medio, iss_medio,
+      aplica_simples_nac, aplica_cte, aplica_nfse,
+      inicio_vigencia, final_vigencia
+    } = req.body;
+
+    if (!codigo || !descricao) {
+      res.status(400).json({ error: 'codigo e descricao são obrigatórios.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const id = uuid();
+
+    db.prepare(`
+      INSERT INTO parametros_inferencia (
+        id, codigo, descricao,
+        icms_medio, pis_medio, cofins_medio, ipi_medio, iss_medio,
+        aplica_simples_nac, aplica_cte, aplica_nfse,
+        inicio_vigencia, final_vigencia, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo) DO UPDATE SET
+        descricao = excluded.descricao,
+        icms_medio = excluded.icms_medio,
+        pis_medio = excluded.pis_medio,
+        cofins_medio = excluded.cofins_medio,
+        ipi_medio = excluded.ipi_medio,
+        iss_medio = excluded.iss_medio,
+        aplica_simples_nac = excluded.aplica_simples_nac,
+        aplica_cte = excluded.aplica_cte,
+        aplica_nfse = excluded.aplica_nfse,
+        inicio_vigencia = excluded.inicio_vigencia,
+        final_vigencia = excluded.final_vigencia,
+        updated_at = datetime('now')
+    `).run(
+      id, codigo, descricao,
+      Number(icms_medio) || 0, Number(pis_medio) || 0, Number(cofins_medio) || 0, Number(ipi_medio) || 0, Number(iss_medio) || 0,
+      aplica_simples_nac ? 1 : 0, aplica_cte ? 1 : 0, aplica_nfse ? 1 : 0,
+      inicio_vigencia || '2026-01-01', final_vigencia || '2099-12-31'
+    );
+
+    res.status(201).json({ success: true, message: 'Parâmetro de inferência salvo com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar parâmetro de inferência: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/inferencia/:id — Excluir parâmetro de inferência */
+router.delete('/inferencia/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare('DELETE FROM parametros_inferencia WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Parâmetro de inferência excluído com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir parâmetro de inferência: ' + err.message });
+  }
+});
+
 export default router;
 
 

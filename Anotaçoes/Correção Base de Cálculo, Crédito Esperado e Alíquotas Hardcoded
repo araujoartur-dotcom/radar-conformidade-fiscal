@@ -1,0 +1,161 @@
+# Correção Completa: Base de Cálculo, Crédito Esperado e Alíquotas Hardcoded
+
+## Contexto
+
+O usuário identificou três inconsistências graves e interligadas:
+
+1. **Base de Cálculo IBS/CBS = R$ 0,00** — impossível se os tributos (CBS R$ 818k / IBS R$ 90k) existem.
+2. **Crédito Esperado R$ 60.737 vs CBS+IBS R$ 1M+** — absurdo sem integração CGIBS/RFB.
+3. **Alíquotas hardcoded 17,7% / 8,8%** espalhadas em 14+ pontos do código, divergindo dos parâmetros fiscais cadastrados (0,9% CBS / 0,01% IBS Estadual / 0% IBS Municipal para 2026).
+
+> [!CAUTION]
+> As alíquotas 17,7% IBS e 8,8% CBS correspondem à vigência plena (2033+). Para 2026 (ano de teste), os parâmetros cadastrados são: **CBS 0,9000%**, **IBS Estadual 0,0100%**, **IBS Municipal 0,0000%**. Qualquer estimativa deve consultar a tabela de parâmetros, nunca usar valores fixos.
+
+---
+
+## Diagnóstico Completo
+
+### Bug 1: Base de Cálculo nunca salva no banco
+
+| Camada | Arquivo | Problema |
+|--------|---------|----------|
+| Parser | [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts#L341-L356) | ✅ Extrai `baseCbs` e `baseIbs` corretamente das tags `<vBCCBS>`, `<vBCIBS>`, `<vBC>` |
+| INSERT SQLite (Individual) | [upload.ts L91-L110](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts#L91-L110) | ❌ **Omite** `base_cbs, base_ibs` na lista de colunas |
+| INSERT SQLite (Motor V12) | [upload.ts L419-L438](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts#L419-L438) | ❌ **Omite** `base_cbs, base_ibs` na lista de colunas |
+| Upsert Supabase | [upload.ts L575-L614](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts#L575-L614) | ❌ **Omite** `base_cbs, base_ibs` no mapeamento |
+| SELECT KPI Supabase | [kpiAggregationService.ts L160](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts#L160) | ❌ **Omite** `base_cbs, base_ibs` no `selectFields` |
+
+> **Resultado em cascata**: as colunas existem no schema com `DEFAULT 0`, mas nunca recebem valor → KPIs mostram R$ 0,00.
+
+### Bug 2: Crédito Esperado desacoplado do total real
+
+| Local | Problema |
+|-------|----------|
+| [RelatoriosXmlPanel.tsx L655](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx#L655) | `.reduce(filteredItems)` opera sobre array paginado (~10k rows do JOIN doc×item), enquanto CBS/IBS Real usa `dbKpis` do banco (21.250 docs). Grandezas incompatíveis. |
+
+### Bug 3: 14 pontos com alíquotas hardcoded 0.177/0.088
+
+| # | Arquivo | Linha | Ocorrência |
+|---|---------|-------|------------|
+| 1 | [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx#L217) | 217 | `docTotal * 0.177` no catch |
+| 2 | [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx#L218) | 218 | `docTotal * 0.088` no catch |
+| 3 | [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx#L261) | 261 | `aliquotaIbs: 17.7` no catch |
+| 4 | [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx#L264) | 264 | `aliquotaCbs: 8.8` no catch |
+| 5 | [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx#L118-L119) | 118-119 | Fallback `0.088`/`0.177` no mapeamento de docs |
+| 6 | [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx#L140-L142) | 140-142 | Fallback `aliquotaCbs: 8.8` / `aliquotaIbs: 17.7` |
+| 7 | [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx#L104-L106) | 104-106 | Fallback `8.8` / `17.7` nas alíquotas |
+| 8 | [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx#L445-L451) | 445, 451 | Labels "Projeção CBS (8.8%)" / "IBS (17.7%)" |
+| 9 | [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx#L774) | 774 | Label "CBS 8.8% / IBS 17.7%" |
+| 10 | [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L738-L739) | 738-739 | `vNF * 0.088` / `vNF * 0.177` no INSERT resumo |
+| 11 | [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L779-L780) | 779-780 | Supabase upsert com `vNF * 0.088`/`0.177` |
+| 12 | [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L818-L821) | 818-821 | Objeto retornado com alíquotas fixas 8.8/17.7 |
+| 13 | [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts#L206-L207) | 206-207 | XML exportado com `valor_total * 0.088` / `0.177` |
+| 14 | [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts#L238-L239) | 238-239, 282-283 | Planilha Excel com fallback `0.088`/`0.177` |
+
+---
+
+## Proposed Changes
+
+### Componente 1: Persistência da Base de Cálculo
+
+#### [MODIFY] [upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+
+- **INSERT Individual (L91-151)**: Adicionar `base_cbs, base_ibs` na lista de colunas + `parsed.baseCbs, parsed.baseIbs` nos valores
+- **INSERT Motor V12 (L419-560)**: Mesmo ajuste no `insertDocStmt`
+- **Upsert Supabase (L575-614)**: Adicionar `base_cbs: b.parsed.baseCbs, base_ibs: b.parsed.baseIbs`
+
+#### [MODIFY] [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)
+
+- **L160**: Adicionar `base_cbs, base_ibs` ao `selectFields`
+
+---
+
+### Componente 2: Eliminar alíquotas hardcoded — regra estrita
+
+**Regra**: Relatórios e dados devem refletir **exclusivamente** o que consta no XML. Se o XML não tem IBS/CBS, o valor é **0** (zero). Qualquer estimativa de transição nos KPIs usa as alíquotas dos **Parâmetros Fiscais cadastrados** (via `getRegraTransicaoAno()`).
+
+#### [MODIFY] [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+
+- **L217-218 (catch)**: `Number(doc.valorIbs) || 0` e `Number(doc.valorCbs) || 0` — sem multiplicação
+- **L261/264 (catch)**: `aliquotaIbs: 0` e `aliquotaCbs: 0` — sem hardcode
+- **L655 (Card Crédito Esperado)**: Usar `dbKpis?.totalFiltrado?.totalCbs + totalIbs` quando disponível
+
+#### [MODIFY] [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx)
+
+- **L118-119**: `Number(doc.valor_cbs) || 0` e `Number(doc.valor_ibs) || 0` — sem fallback
+- **L140-142**: `aliquotaCbs: 0` e `aliquotaIbs: 0` quando não calculável do XML
+
+#### [MODIFY] [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+
+- **L104-106**: Fallback `0` em vez de `8.8`/`17.7`
+
+#### [MODIFY] [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx)
+
+- **L445/451**: Labels devem exibir "CBS" e "IBS" sem percentuais fixos, ou buscar dos parâmetros
+- **L774**: Remover label fixo "CBS 8.8% / IBS 17.7%"
+
+#### [MODIFY] [sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts)
+
+- **L738-739, 779-780, 818-821**: Quando o SEFAZ retorna apenas resumo (sem XML completo), usar `valor_cbs: 0` e `valor_ibs: 0` (pois o resumo não contém IBS/CBS real). O sistema não deve estimar valores fictícios.
+- **Alternativa**: Se desejável estimar, consultar parâmetros fiscais da tabela `aliquotas_tabelas` no banco.
+
+#### [MODIFY] [export.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/export.ts)
+
+- **L206-207, 238-239, 282-283**: Usar estritamente `Number(doc.valor_cbs) || 0` e `Number(doc.valor_ibs) || 0`. Se o XML não tem, exportar 0.
+
+#### [MODIFY] [reportsData.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts)
+
+- **L82**: Remover string hardcoded `'26.5% (8.8% CBS + 17.7% IBS)'`
+
+---
+
+### Componente 3: Backfill dos 21.250 documentos existentes (Motor V12)
+
+Como os XMLs foram importados via Motor V12, os documentos no Supabase e SQLite possuem `base_cbs = 0` e `base_ibs = 0`. É preciso recalcular a partir do `xml_raw` armazenado.
+
+#### [NEW] Migração de backfill no startup do servidor
+
+Na inicialização do servidor, executar uma vez:
+
+1. **SQLite**: Buscar todos os documentos onde `base_cbs = 0 AND valor_cbs > 0` e que possuam `xml_raw`
+2. Re-parsear o `xml_raw` com `parseFiscalXml()` para extrair `baseCbs`/`baseIbs`
+3. Executar `UPDATE dfe_documentos SET base_cbs = ?, base_ibs = ? WHERE id = ?`
+4. **Supabase**: Para cada chunk de 100 docs, fazer upsert com `base_cbs`/`base_ibs` corrigidos
+
+> [!IMPORTANT]
+> O backfill re-parseia XMLs já armazenados — não é re-importação. Mantém todos os outros campos intactos.
+
+---
+
+## Resumo Visual
+
+```
+┌───────────────────────────────┬────────────────────────────┬────────────────────────────┐
+│ PROBLEMA                      │ CAUSA                      │ CORREÇÃO                   │
+├───────────────────────────────┼────────────────────────────┼────────────────────────────┤
+│ Base Cálculo = R$ 0,00        │ INSERT e SELECT omitem     │ Adicionar colunas +        │
+│                               │ base_cbs/base_ibs          │ backfill via re-parse XML  │
+│                               │                            │                            │
+│ Crédito R$ 60k vs R$ 1M+     │ .reduce() sobre array      │ Usar dbKpis do banco       │
+│                               │ paginado                   │                            │
+│                               │                            │                            │
+│ Alíquotas 17,7%/8,8%          │ 14 pontos com valores      │ Usar valor 0 (estrito XML) │
+│ divergem dos parâmetros       │ hardcoded espalhados       │ ou consultar Parâmetros     │
+│ cadastrados (0,9%/0,01%)      │ no código                  │ Fiscais cadastrados         │
+└───────────────────────────────┴────────────────────────────┴────────────────────────────┘
+```
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- `npm run lint` — zero erros de tipagem
+- `npm run build` — build produção com 0 erros
+
+### Manual Verification
+1. Após backfill, validar no SQLite: `SELECT SUM(base_cbs), SUM(base_ibs) FROM dfe_documentos WHERE valor_cbs > 0` → deve retornar valores > 0
+2. Central de KPIs: card "Base de Cálculo" coerente com CBS/IBS
+3. Relatórios: card "Crédito Esperado" = CBS + IBS total do filtro (não reduzido ao array paginado)
+4. Nenhum ponto do sistema exibe 17,7% ou 8,8% — todas as alíquotas vêm dos Parâmetros Fiscais
+5. Exportação ZIP: XML e planilha refletem valores estritamente do banco (ou 0 quando ausente)

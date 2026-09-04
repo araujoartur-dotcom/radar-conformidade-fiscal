@@ -97,6 +97,7 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
           situacao_doc, situacao_manifestacao, evento_ultimo,
           valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins,
           valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll,
+          base_cbs, base_ibs, regime_tributario,
           xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?,
@@ -106,6 +107,7 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
           ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?,
           ?, ?, ?, ?, ?, ?
         )
       `).run(
@@ -142,6 +144,9 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
         parsed.valorInss,
         parsed.valorIss,
         parsed.valorCsll,
+        parsed.baseCbs,
+        parsed.baseIbs,
+        parsed.regimeTributario || '',
         parsed.xmlRaw,
         parsed.statusSefaz,
         parsed.protocoloSefaz,
@@ -425,6 +430,7 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
         situacao_doc, situacao_manifestacao, evento_ultimo,
         valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins,
         valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, valor_csll,
+        base_cbs, base_ibs, regime_tributario,
         xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
       ) VALUES (
         ?, ?, ?, ?, ?, ?,
@@ -434,6 +440,7 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
         ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?,
         ?, ?, ?, ?, ?, ?
       )
     `);
@@ -501,6 +508,9 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
           item.parsed.valorInss,
           item.parsed.valorIss,
           item.parsed.valorCsll,
+          item.parsed.baseCbs,
+          item.parsed.baseIbs,
+          item.parsed.regimeTributario || '',
           item.raw,
           item.parsed.statusSefaz,
           item.parsed.protocoloSefaz,
@@ -606,6 +616,9 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
             valor_inss: b.parsed.valorInss,
             valor_iss: b.parsed.valorIss,
             valor_csll: b.parsed.valorCsll,
+            base_cbs: b.parsed.baseCbs,
+            base_ibs: b.parsed.baseIbs,
+            regime_tributario: b.parsed.regimeTributario || '',
             xml_raw: b.raw,
             status_sefaz: b.parsed.statusSefaz,
             protocolo_sefaz: b.parsed.protocoloSefaz,

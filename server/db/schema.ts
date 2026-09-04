@@ -253,6 +253,27 @@ export function initializeSchema(): void {
     );
 
     -- =========================================================
+    -- PARÂMETROS DE INFERÊNCIA (ALÍQUOTAS MÉDIAS P/ SIMULADOR)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS parametros_inferencia (
+      id                    TEXT PRIMARY KEY,
+      codigo                TEXT NOT NULL UNIQUE,
+      descricao             TEXT NOT NULL,
+      icms_medio            REAL NOT NULL DEFAULT 18.00,
+      pis_medio             REAL NOT NULL DEFAULT 1.65,
+      cofins_medio          REAL NOT NULL DEFAULT 7.60,
+      ipi_medio             REAL NOT NULL DEFAULT 0.00,
+      iss_medio             REAL NOT NULL DEFAULT 0.00,
+      aplica_simples_nac    INTEGER NOT NULL DEFAULT 0,
+      aplica_cte            INTEGER NOT NULL DEFAULT 0,
+      aplica_nfse           INTEGER NOT NULL DEFAULT 0,
+      inicio_vigencia       TEXT NOT NULL DEFAULT '2026-01-01',
+      final_vigencia        TEXT NOT NULL DEFAULT '2099-12-31',
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
     -- REGRAS DE ANEXOS / NCM / NBS / cClassTrib
     -- =========================================================
     CREATE TABLE IF NOT EXISTS ncm_regras_anexos (
@@ -394,6 +415,7 @@ export function initializeSchema(): void {
   addColumnIfNotExists('dfe_documentos', 'alerta_fraude', 'INTEGER DEFAULT 0');
   addColumnIfNotExists('dfe_documentos', 'download_at', 'TEXT DEFAULT NULL');
   addColumnIfNotExists('dfe_documentos', 'updated_at', 'TEXT DEFAULT NULL');
+  addColumnIfNotExists('dfe_documentos', 'regime_tributario', 'TEXT DEFAULT NULL');
 
   // Migrações em dfe_itens
   addColumnIfNotExists('dfe_itens', 'codigo_item', 'TEXT DEFAULT ""');

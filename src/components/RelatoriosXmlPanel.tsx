@@ -214,8 +214,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (dfeList && dfeList.length > 0) {
         const mapped = dfeList.map((doc, idx) => {
           const docTotal = Number(doc.valorTotal) || 0;
-          const valIbs = Number(doc.valorIbs) || Number((docTotal * 0.177).toFixed(2));
-          const valCbs = Number(doc.valorCbs) || Number((docTotal * 0.088).toFixed(2));
+          const valIbs = Number(doc.valorIbs) || 0;
+          const valCbs = Number(doc.valorCbs) || 0;
           return {
             id: `mem-${doc.chaveAcesso}-${idx}`,
             empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
@@ -257,11 +257,11 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             valorIpi: Number(doc.valorIpi) || 0,
             valorPis: Number(doc.valorPis) || 0,
             valorCofins: Number(doc.valorCofins) || 0,
-            baseIbs: docTotal,
-            aliquotaIbs: 17.7,
+            baseIbs: Number(doc.baseIbs) || 0,
+            aliquotaIbs: docTotal > 0 && valIbs > 0 ? Number(((valIbs / docTotal) * 100).toFixed(2)) : 0,
             valorIbs: valIbs,
-            baseCbs: docTotal,
-            aliquotaCbs: 8.8,
+            baseCbs: Number(doc.baseCbs) || 0,
+            aliquotaCbs: docTotal > 0 && valCbs > 0 ? Number(((valCbs / docTotal) * 100).toFixed(2)) : 0,
             valorCbs: valCbs,
             valorIs: Number(doc.valorImpostoSeletivo) || 0,
             creditoEsperadoIbs: valIbs,
@@ -635,7 +635,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             {(dbKpis?.totalFiltrado?.totalCbs ?? filteredItems.reduce((acc, it) => acc + (it.valorCbs || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
           <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            União (0,9% / 8,8%)
+            União
           </span>
         </div>
 
@@ -645,14 +645,17 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             {(dbKpis?.totalFiltrado?.totalIbs ?? filteredItems.reduce((acc, it) => acc + (it.valorIbs || 0), 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
           <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            Estados/Mun (0,1% / 17,7%)
+            Estados / Municípios
           </span>
         </div>
 
         <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Crédito Esperado IBS+CBS</span>
           <strong className="text-base sm:text-lg font-black text-purple-300 font-mono truncate">
-            {filteredItems.reduce((acc, it) => acc + (it.creditoEsperadoIbs + it.creditoEsperadoCbs), 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            {((dbKpis?.totalFiltrado?.totalCbs ?? 0) + (dbKpis?.totalFiltrado?.totalIbs ?? 0) > 0
+              ? ((dbKpis?.totalFiltrado?.totalCbs ?? 0) + (dbKpis?.totalFiltrado?.totalIbs ?? 0))
+              : filteredItems.reduce((acc, it) => acc + (it.creditoEsperadoIbs + it.creditoEsperadoCbs), 0)
+            ).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
           </strong>
           <span className="text-[9px] font-mono text-slate-500 mt-0.5">
             {filteredItems.filter(i => i.elegivelIbsCbs).length} itens elegíveis
