@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, FileCode, CheckCircle2, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Sparkles, Receipt, Zap, Search } from 'lucide-react';
+import { FileCode, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Receipt, Zap, Search } from 'lucide-react';
 import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
-import { parseDfeXmlString } from '../utils/xmlParser';
 import { DanfeModal } from './DanfeModal';
 import { XmlViewerModal } from './XmlViewerModal';
 import { ConsultaNsuModal } from './ConsultaNsuModal';
@@ -9,6 +8,7 @@ import { SplitPaymentModal } from './SplitPaymentModal';
 import { TurboIngestModal } from './TurboIngestModal';
 import { formatBrasiliaDate, formatBrasiliaDateTime } from '../utils/timezone';
 import { useApi } from '../hooks/useApi';
+import { useKpis } from '../contexts/KpiContext';
 
 interface DfeManagerPanelProps {
   dfeList: DfeXmlItem[];
@@ -38,8 +38,6 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
   const [isTurboModalOpen, setIsTurboModalOpen] = useState<boolean>(false);
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
-  const [isUploading, setIsUploading] = useState<boolean>(false);
-  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string>('');
   const [listSearch, setListSearch] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(50);
 
@@ -50,35 +48,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
     }
   };
 
-  const { get, post } = useApi();
-
-  const [dbKpis, setDbKpis] = useState<{
-    totalValor: number;
-    totalDocs: number;
-    totalCbs: number;
-    totalIbs: number;
-  } | null>(null);
-
-  const loadKpis = async () => {
-    try {
-      const res = await get<{ success: boolean; totalGeral: any }>('/upload/kpis');
-      const payload = (res as any)?.data || res;
-      if (payload?.success && payload.totalGeral) {
-        setDbKpis({
-          totalValor: Number(payload.totalGeral.totalValor) || 0,
-          totalDocs: Number(payload.totalGeral.totalDocs) || 0,
-          totalCbs: Number(payload.totalGeral.totalCbs) || 0,
-          totalIbs: Number(payload.totalGeral.totalIbs) || 0,
-        });
-      }
-    } catch (e) {
-      console.warn('Erro ao carregar KPIs no painel DFe:', e);
-    }
-  };
-
-  useEffect(() => {
-    loadKpis();
-  }, [dfeList.length]);
+  const { get } = useApi();
+  const { kpis, totalGeral } = useKpis();
+  const currentKpis = totalGeral || kpis;
 
   const loadDocumentos = async () => {
     const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
@@ -126,46 +98,11 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
     loadDocumentos();
   }, []);
 
-  // Handle Drag & Drop / File Input
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsUploading(true);
-    setUploadSuccessMsg('');
-
-    const newlyParsedList: DfeXmlItem[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      try {
-        const xmlContent = await file.text();
-        const parsed = parseDfeXmlString(xmlContent, file.name);
-        newlyParsedList.push(parsed);
-
-        // Enviar para o backend
-        await post('/upload/xml', { xmlContent });
-      } catch (err) {
-        console.error('Erro ao processar XML:', err);
-      }
-    }
-
-    if (newlyParsedList.length > 0) {
-      setDfeList(prev => {
-        const existingKeys = new Set(newlyParsedList.map(d => d.chaveAcesso));
-        return [...newlyParsedList, ...prev.filter(d => !existingKeys.has(d.chaveAcesso))];
-      });
-      setSelectedDfe(newlyParsedList[0]);
-      setUploadSuccessMsg(`${newlyParsedList.length} XML(s) importado(s) com sucesso!`);
-    }
-    setIsUploading(false);
-  };
-
-  // Total Metrics Reais da Base (engloba todos os 21.000+ XMLs via banco)
-  const totalValor = dbKpis?.totalValor ?? dfeList.reduce((acc, curr) => acc + curr.valorTotal, 0);
-  const totalCbs = dbKpis?.totalCbs ?? dfeList.reduce((acc, curr) => acc + curr.valorCbs, 0);
-  const totalIbs = dbKpis?.totalIbs ?? dfeList.reduce((acc, curr) => acc + curr.valorIbs, 0);
-  const totalDocsCount = dbKpis?.totalDocs ?? dfeList.length;
+  // Total Metrics Reais da Base (Consolidados via KpiContext - 100% da base 21.000+ XMLs)
+  const totalValor = currentKpis?.totalValor ?? 0;
+  const totalCbs = currentKpis?.totalCbs ?? 0;
+  const totalIbs = currentKpis?.totalIbs ?? 0;
+  const totalDocsCount = currentKpis?.totalDocs ?? dfeList.length;
 
   return (
     <div className="space-y-6">
@@ -244,60 +181,6 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             <div className="text-xl lg:text-2xl font-black text-indigo-400 font-mono tracking-tight">
               {totalIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Upload Dropzone */}
-      <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-md">
-        <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-cyan-500 rounded-xl p-8 bg-slate-950/40 transition-all group cursor-pointer relative">
-          <input
-            type="file"
-            multiple
-            accept=".xml"
-            onChange={handleFileUpload}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-          />
-          <div className="w-14 h-14 rounded-2xl bg-blue-950/60 border border-blue-800 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform shadow-lg shadow-blue-900/20 mb-3">
-            <Upload className="w-7 h-7" />
-          </div>
-          <p className="text-base font-bold text-slate-200">
-            Arraste ou clique para carregar arquivos XML de DF-e (NF-e, NFS-e e CT-e)
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            Suporta múltiplos arquivos XML simultâneos com extração instantânea dos itens e impostos.
-          </p>
-
-          {isUploading && (
-            <div className="mt-4 flex items-center gap-2 text-xs font-semibold text-cyan-400 animate-pulse">
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              Processando e validando arquivos XML...
-            </div>
-          )}
-
-          {uploadSuccessMsg && (
-            <div className="mt-4 px-3 py-1.5 rounded-lg bg-emerald-950/80 text-emerald-300 border border-emerald-800 text-xs font-bold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              {uploadSuccessMsg}
-            </div>
-          )}
-
-          <div className="mt-4 pt-4 border-t border-slate-800/80 w-full flex flex-wrap items-center justify-between gap-3 relative z-10">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Precisa importar 10.000 a 50.000 XMLs de uma pasta ou arquivo .ZIP?</span>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsTurboModalOpen(true);
-              }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-md shadow-orange-500/20 transition-all cursor-pointer border border-amber-300/40"
-            >
-              <Zap className="w-3.5 h-3.5 fill-slate-950" />
-              <span>Abrir Motor Turbo V12</span>
-            </button>
           </div>
         </div>
       </div>

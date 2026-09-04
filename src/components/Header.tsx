@@ -235,20 +235,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {onOpenDirConfig && (
-            <button
-              onClick={onOpenDirConfig}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700 hover:border-cyan-500/50 text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-              title="Configurar diretórios de armazenamento de XMLs por CNPJ Raiz"
-            >
-              <FolderArchive className="w-4 h-4 text-cyan-400" />
-              <span className="hidden md:inline">Diretórios XMLs</span>
-              <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
-                CNPJ Raiz
-              </span>
-            </button>
-          )}
-
           {onOpenExportFiscal && (
             <button
               onClick={onOpenExportFiscal}

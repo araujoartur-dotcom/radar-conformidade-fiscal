@@ -9,6 +9,7 @@ import { DfeXmlItem, RegraTransicaoAno, AliquotaTabelaItem } from '../types';
 import { exportToExcel } from '../utils/excel';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
+import { useKpis } from '../contexts/KpiContext';
 import { getRegraTransicaoAno, ANOS_TRANSICAO, buildCronogramaFromTabelas } from '../utils/reformaTransicao';
 
 interface CentralKpisPanelProps {
@@ -106,47 +107,51 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     });
   }, [baseItems, operacaoFilter, empresaAtiva]);
 
+  const { kpis: globalKpis, totalGeral: globalTotalGeral, totalFiltrado: globalTotalFiltrado } = useKpis();
+  const activeKpis = dbKpis?.totalFiltrado || (operacaoFilter === 'todas' ? globalTotalGeral : globalTotalFiltrado) || globalTotalGeral || globalKpis;
+  const activeTotalGeral = dbKpis?.totalGeral || globalTotalGeral || activeKpis;
+
   // ── AGREGAÇÕES FISCAIS DESACOPLADAS (BANCO DE DADOS AGREGADO SUM/COUNT) ──
   // Prioriza o cálculo real do banco de dados (que engloba todos os 21.000+ XMLs)
-  const totalValor = dbKpis?.totalFiltrado?.totalValor ?? filteredItems.reduce((acc, i) => acc + (i.valorTotal || 0), 0);
-  const totalValorGeral = dbKpis?.totalGeral?.totalValor ?? totalValor;
-  const totalQtd = dbKpis?.totalFiltrado?.totalDocs ?? filteredItems.length;
-  const totalQtdGeral = dbKpis?.totalGeral?.totalDocs ?? totalQtd;
+  const totalValor = activeKpis?.totalValor ?? 0;
+  const totalValorGeral = activeTotalGeral?.totalValor ?? totalValor;
+  const totalQtd = activeKpis?.totalDocs ?? 0;
+  const totalQtdGeral = activeTotalGeral?.totalDocs ?? totalQtd;
 
   // Base de Cálculo IBS / CBS (<vBC> estritamente constante nos Grupos IBS/CBS do XML)
-  const totalBaseCbsFiltrada = dbKpis?.totalFiltrado?.totalBaseCbs ?? filteredItems.reduce((acc, i) => acc + (i.baseCbs || 0), 0);
-  const totalBaseCbsGeral = dbKpis?.totalGeral?.totalBaseCbs ?? totalBaseCbsFiltrada;
-  const totalBaseIbsFiltrada = dbKpis?.totalFiltrado?.totalBaseIbs ?? filteredItems.reduce((acc, i) => acc + (i.baseIbs || 0), 0);
-  const totalBaseIbsGeral = dbKpis?.totalGeral?.totalBaseIbs ?? totalBaseIbsFiltrada;
+  const totalBaseCbsFiltrada = activeKpis?.totalBaseCbs ?? 0;
+  const totalBaseCbsGeral = activeTotalGeral?.totalBaseCbs ?? totalBaseCbsFiltrada;
+  const totalBaseIbsFiltrada = activeKpis?.totalBaseIbs ?? 0;
+  const totalBaseIbsGeral = activeTotalGeral?.totalBaseIbs ?? totalBaseIbsFiltrada;
 
   // CBS e IBS estritamente do XML (ou aplicados sobre a Base Real do XML)
-  const totalCbsRealXml = dbKpis?.totalFiltrado?.totalCbs ?? filteredItems.reduce((acc, i) => acc + (i.valorCbs || 0), 0);
-  const totalIbsRealXml = dbKpis?.totalFiltrado?.totalIbs ?? filteredItems.reduce((acc, i) => acc + (i.valorIbs || 0), 0);
+  const totalCbsRealXml = activeKpis?.totalCbs ?? 0;
+  const totalIbsRealXml = activeKpis?.totalIbs ?? 0;
 
   const totalCbs = totalCbsRealXml > 0 ? totalCbsRealXml : ((totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100);
 
   // Rateio do IBS entre Estadual e Municipal (se não vier discriminado na tag vIBSUF/Mun, divide 50/50 o IBS do XML)
-  const totalIbsUf = (dbKpis?.totalFiltrado?.totalIbsUf && dbKpis.totalFiltrado.totalIbsUf > 0)
-    ? dbKpis.totalFiltrado.totalIbsUf
+  const totalIbsUf = (activeKpis?.totalIbsUf && activeKpis.totalIbsUf > 0)
+    ? activeKpis.totalIbsUf
     : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100));
 
-  const totalIbsMun = (dbKpis?.totalFiltrado?.totalIbsMun && dbKpis.totalFiltrado.totalIbsMun > 0)
-    ? dbKpis.totalFiltrado.totalIbsMun
+  const totalIbsMun = (activeKpis?.totalIbsMun && activeKpis.totalIbsMun > 0)
+    ? activeKpis.totalIbsMun
     : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100));
 
   const totalIbsTotal = totalIbsRealXml > 0 ? totalIbsRealXml : (totalIbsUf + totalIbsMun);
   const totalIvaDual = totalCbs + totalIbsTotal;
 
   // Tributos do Regime Atual Destacados nos XMLs
-  const totalIcmsReal = dbKpis?.totalFiltrado?.totalIcms ?? filteredItems.reduce((acc, i) => acc + (i.valorIcms || 0), 0);
-  const totalPisReal = dbKpis?.totalFiltrado?.totalPis ?? filteredItems.reduce((acc, i) => acc + (i.valorPis || 0), 0);
-  const totalCofinsReal = dbKpis?.totalFiltrado?.totalCofins ?? filteredItems.reduce((acc, i) => acc + (i.valorCofins || 0), 0);
-  const totalIpiReal = dbKpis?.totalFiltrado?.totalIpi ?? filteredItems.reduce((acc, i) => acc + (i.valorIpi || 0), 0);
-  const totalIssReal = dbKpis?.totalFiltrado?.totalIss ?? filteredItems.reduce((acc, i) => acc + (i.valorIss || 0), 0);
+  const totalIcmsReal = activeKpis?.totalIcms ?? 0;
+  const totalPisReal = activeKpis?.totalPis ?? 0;
+  const totalCofinsReal = activeKpis?.totalCofins ?? 0;
+  const totalIpiReal = activeKpis?.totalIpi ?? 0;
+  const totalIssReal = activeKpis?.totalIss ?? 0;
 
   // ── SIMULADOR COMPARATIVO DE TRANSIÇÃO (Reforma vs Atual) ──
   // Base Líquida = vNF - todos os tributos atuais informados ou inferidos
-  const baseLiquidaSimulada = dbKpis?.totalFiltrado?.totalBaseLiquida ?? Math.max(0, totalValor - (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal));
+  const baseLiquidaSimulada = activeKpis?.totalBaseLiquida ?? Math.max(0, totalValor - (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal));
   
   // Alíquotas do ano simulado cadastradas nos Parâmetros Fiscais (via getRegraTransicaoAno)
   const cbsSimuladaAno = (baseLiquidaSimulada * regraAno.aliquotaCbs) / 100;
@@ -156,7 +161,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const totalReformaSimulada = cbsSimuladaAno + ibsTotalSimuladoAno;
 
   // Custo tributário total do Regime Atual (incluindo inferências de SN e CT-e)
-  const totalRegimeAtualSimulado = dbKpis?.totalFiltrado?.totalRegimeAtual ?? (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal);
+  const totalRegimeAtualSimulado = activeKpis?.totalRegimeAtual ?? (totalIcmsReal + totalPisReal + totalCofinsReal + totalIpiReal + totalIssReal);
   const deltaTransicao = totalReformaSimulada - totalRegimeAtualSimulado;
   const percentualDelta = totalRegimeAtualSimulado > 0 ? ((deltaTransicao / totalRegimeAtualSimulado) * 100) : 0;
 
@@ -169,11 +174,11 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       'NFSe': { label: 'NFS-e Serviços', qtd: 0, valor: 0, color: 'text-purple-400', bg: 'bg-purple-500', border: 'border-purple-500/30' }
     };
 
-    if (dbKpis?.totalFiltrado) {
-      counts['NFe'].qtd = dbKpis.totalFiltrado.nfeCount || 0;
-      counts['NFCe'].qtd = dbKpis.totalFiltrado.nfceCount || 0;
-      counts['CTe'].qtd = dbKpis.totalFiltrado.cteCount || 0;
-      counts['NFSe'].qtd = dbKpis.totalFiltrado.nfseCount || 0;
+    if (activeKpis) {
+      counts['NFe'].qtd = activeKpis.nfeCount || 0;
+      counts['NFCe'].qtd = activeKpis.nfceCount || 0;
+      counts['CTe'].qtd = activeKpis.cteCount || 0;
+      counts['NFSe'].qtd = activeKpis.nfseCount || 0;
       counts['NFe'].valor = totalValor;
       return counts;
     }
