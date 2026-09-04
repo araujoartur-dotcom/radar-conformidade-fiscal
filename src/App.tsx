@@ -46,6 +46,19 @@ export default function App() {
     }
   }, [activeMode]);
 
+  // Persistent Sidebar Collapse State
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('@RadarFiscal:sidebarCollapsed') === 'true';
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('@RadarFiscal:sidebarCollapsed', String(next));
+      return next;
+    });
+  };
+
   // Corporate Access & User State
   const [selectedTenantCnpj, setSelectedTenantCnpj] = useState<string>('');
 
@@ -402,11 +415,15 @@ export default function App() {
         {/* Content Layout: Independent Scrollable Sidebar + Independent Scrollable Main Workspace */}
         <div className="flex flex-col lg:flex-row gap-6 w-full flex-1 min-h-0 min-w-0 overflow-hidden">
           
-          {/* Left Config Sidebar with Module Menu (Independent Scroll) */}
-          <div className="w-full lg:w-80 flex-shrink-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-4">
+          {/* Left Config Sidebar with Module Menu (Independent Scroll & Collapsible) */}
+          <div className={`transition-all duration-300 ease-in-out flex-shrink-0 h-full overflow-y-auto custom-scrollbar pr-1 pb-4 ${
+            isSidebarCollapsed ? 'w-full lg:w-20' : 'w-full lg:w-80'
+          }`}>
             <SidebarCertificado
               activeMode={activeMode}
               setActiveMode={setActiveMode}
+              isCollapsed={isSidebarCollapsed}
+              onToggleCollapse={handleToggleSidebar}
               certificado={certificado}
               setCertificado={setCertificado}
               rateLimit={rateLimit}

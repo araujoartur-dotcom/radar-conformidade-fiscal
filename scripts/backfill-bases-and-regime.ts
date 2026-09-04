@@ -41,24 +41,21 @@ async function runBackfill() {
     WHERE id = ?
   `);
 
-  const runBatch = db.transaction((items: any[]) => {
-    for (const doc of items) {
-      try {
-        const parsed = parseFiscalXml(doc.xml_raw);
-        const baseCbs = parsed.baseCbs || 0;
-        const baseIbs = parsed.baseIbs || 0;
-        const crt = parsed.regimeTributario || null;
+  for (const doc of docs) {
+    try {
+      const parsed = await parseFiscalXml(doc.xml_raw);
+      const baseCbs = parsed.baseCbs || 0;
+      const baseIbs = parsed.baseIbs || 0;
+      const crt = parsed.regimeTributario || null;
 
-        updateStmt.run(baseCbs, baseIbs, crt, doc.id);
-        updatedSqlite++;
-      } catch (err: any) {
-        console.warn(`   ⚠️ Erro ao processar doc ${doc.chave_acesso}:`, err.message);
-      }
+      updateStmt.run(baseCbs, baseIbs, crt, doc.id);
+      updatedSqlite++;
+    } catch (err: any) {
+      console.warn(`   ⚠️ Erro ao processar doc ${doc.chave_acesso}:`, err.message);
     }
-  });
+  }
 
   if (docs.length > 0) {
-    runBatch(docs);
     console.log(`   ✅ ${updatedSqlite} documentos atualizados no SQLite com base e CRT!`);
   }
 
