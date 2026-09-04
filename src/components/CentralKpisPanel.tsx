@@ -244,6 +244,35 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     }, 600);
   };
 
+  // Renderizador elegante de valor monetário sem cortes, preparado para dezenas de bilhões
+  const renderKpiValor = (valor: number, colorClass: string) => {
+    const v = Number(valor) || 0;
+    const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    const [inteiro, centavos] = formatted.split(',');
+    
+    // Escala dinâmica de tipografia para garantir visualização perfeita de dezenas de bilhões sem reticências
+    const sizeClass = inteiro.length >= 14 // >= 10 bilhões (ex: 12.345.678.901)
+      ? 'text-base sm:text-lg xl:text-[19px]'
+      : inteiro.length >= 11 // >= 100 milhões (ex: 788.694.097)
+        ? 'text-lg sm:text-xl xl:text-[22px]'
+        : 'text-xl sm:text-2xl xl:text-[25px]';
+
+    return (
+      <div 
+        className="flex items-baseline gap-1 mt-3 min-w-0" 
+        title={`R$ ${formatted}`}
+      >
+        <span className="text-xs font-bold text-slate-400 shrink-0 select-none">R$</span>
+        <span className={`font-black tracking-tight tabular-nums whitespace-nowrap ${sizeClass} ${colorClass}`}>
+          {inteiro}
+        </span>
+        <span className="text-xs font-bold text-slate-400 tabular-nums shrink-0">
+          ,{centavos}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       
@@ -584,102 +613,83 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         
         {/* Card 1: Valor Total dos DF-e */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              Valor Total dos DF-e
+        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-slate-800 hover:border-cyan-500/40 shadow-lg hover:shadow-cyan-500/5 transition-all duration-300 group flex flex-col justify-between min-h-[105px]">
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight">
+              Valor Total DF-e
             </span>
-            <div className="w-8 h-8 rounded-xl bg-cyan-950 border border-cyan-800 flex items-center justify-center text-cyan-400">
-              <DollarSign className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.15)] shrink-0 transition-transform group-hover:scale-105">
+              <DollarSign className="w-4.5 h-4.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-white truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValor)}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValor)}
-          </div>
-          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60">
-            <div className="flex items-center gap-1.5 text-emerald-400 font-bold truncate">
-              <TrendingUp className="w-3.5 h-3.5 shrink-0" />
-              <span>{totalQtd.toLocaleString('pt-BR')} Docs no Período</span>
-            </div>
-            <span className="text-[10px] font-mono text-slate-500 shrink-0 ml-1" title="Base Total Acumulada da Empresa sem corte de filtro">
-              Base: {totalQtdGeral.toLocaleString('pt-BR')} docs
-            </span>
-          </div>
+          {renderKpiValor(totalValor, 'text-white')}
         </div>
 
-        {/* Card 2: Base de Cálculo IBS / CBS (<vBC>) */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-teal-500/30 hover:border-teal-400/60 shadow-xl space-y-2 relative overflow-hidden group">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-teal-400 flex items-center gap-1.5">
-              Base de Cálculo IBS / CBS
+        {/* Card 2: Base de Cálculo IBS / CBS */}
+        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-teal-500/30 hover:border-teal-400/60 shadow-lg hover:shadow-teal-500/5 transition-all duration-300 group flex flex-col justify-between min-h-[105px]">
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-teal-300 leading-tight">
+              Base Cálculo IBS / CBS
             </span>
-            <div className="w-8 h-8 rounded-xl bg-teal-950 border border-teal-800 flex items-center justify-center text-teal-300">
-              <Calculator className="w-4 h-4" />
+            <div className="w-9 h-9 rounded-xl bg-teal-500/10 border border-teal-500/30 flex items-center justify-center text-teal-300 shadow-[0_0_12px_rgba(20,184,166,0.15)] shrink-0 transition-transform group-hover:scale-105">
+              <Calculator className="w-4.5 h-4.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-teal-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBaseCbsFiltrada)}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBaseCbsFiltrada)}
-          </div>
-          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-800/60 font-medium">
-            <span className="text-teal-400/90 font-bold truncate">&lt;vBC&gt; Consolidado no Período</span>
-            <span className="text-[10px] font-mono text-slate-500 shrink-0 ml-1" title="Base de Cálculo Acumulada de toda a base">
-              Total: {new Intl.NumberFormat('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' }).format(totalBaseCbsGeral)}
-            </span>
-          </div>
+          {renderKpiValor(totalBaseCbsFiltrada, 'text-teal-300')}
         </div>
 
         {/* Card 3: CBS Federal */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              CBS Federal ({regraAno.aliquotaCbs.toFixed(2)}%)
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800 flex items-center justify-center text-blue-400">
-              <Building2 className="w-4 h-4" />
+        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-slate-800 hover:border-blue-500/40 shadow-lg hover:shadow-blue-500/5 transition-all duration-300 group flex flex-col justify-between min-h-[105px]">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight block">
+                CBS Federal
+              </span>
+              <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-blue-500/15 text-blue-300 border border-blue-500/20">
+                {regraAno.aliquotaCbs.toFixed(2)}%
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 shadow-[0_0_12px_rgba(59,130,246,0.15)] shrink-0 transition-transform group-hover:scale-105">
+              <Building2 className="w-4.5 h-4.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-cyan-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalCbs)}
-          </div>
-          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
-            União • {anoSimulado === 2026 ? 'Alíquota Teste (0,9%)' : 'Contribuição s/ Bens & Serviços'}
-          </div>
+          {renderKpiValor(totalCbs, 'text-cyan-300')}
         </div>
 
-        {/* Card 4: IBS Estadual (UF) */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Estadual ({regraAno.aliquotaIbsEstadual.toFixed(2)}%)
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-indigo-950 border border-indigo-800 flex items-center justify-center text-indigo-400">
-              <Layers className="w-4 h-4" />
+        {/* Card 4: IBS Estadual */}
+        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-slate-800 hover:border-indigo-500/40 shadow-lg hover:shadow-indigo-500/5 transition-all duration-300 group flex flex-col justify-between min-h-[105px]">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight block">
+                IBS Estadual
+              </span>
+              <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/20">
+                {regraAno.aliquotaIbsEstadual.toFixed(2)}%
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shadow-[0_0_12px_rgba(99,102,241,0.15)] shrink-0 transition-transform group-hover:scale-105">
+              <Layers className="w-4.5 h-4.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-indigo-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsUf)}
-          </div>
-          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
-            Estados • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
-          </div>
+          {renderKpiValor(totalIbsUf, 'text-indigo-300')}
         </div>
 
-        {/* Card 5: IBS Municipal (MUN) */}
-        <div className="p-5 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 hover:border-slate-700 shadow-xl space-y-2 relative overflow-hidden group">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-              IBS Municipal ({regraAno.aliquotaIbsMunicipal.toFixed(2)}%)
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-purple-950 border border-purple-800 flex items-center justify-center text-purple-400">
-              <Percent className="w-4 h-4" />
+        {/* Card 5: IBS Municipal */}
+        <div className="p-4.5 rounded-2xl bg-gradient-to-br from-slate-900/95 via-slate-900/90 to-slate-950 border border-slate-800 hover:border-purple-500/40 shadow-lg hover:shadow-purple-500/5 transition-all duration-300 group flex flex-col justify-between min-h-[105px]">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight block">
+                IBS Municipal
+              </span>
+              <span className="inline-block mt-1 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-purple-500/15 text-purple-300 border border-purple-500/20">
+                {regraAno.aliquotaIbsMunicipal.toFixed(2)}%
+              </span>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.15)] shrink-0 transition-transform group-hover:scale-105">
+              <Percent className="w-4.5 h-4.5" />
             </div>
           </div>
-          <div className="text-2xl font-extrabold font-mono text-purple-300 truncate" title={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}>
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIbsMun)}
-          </div>
-          <div className="text-[11px] text-slate-400 font-medium truncate pt-1 border-t border-slate-800/60">
-            Municípios • {anoSimulado < 2029 ? (anoSimulado === 2026 ? 'Alíquota Teste (0,05%)' : 'Alíquota Zero') : 'Transição Gradativa'}
-          </div>
+          {renderKpiValor(totalIbsMun, 'text-purple-300')}
         </div>
 
       </div>
