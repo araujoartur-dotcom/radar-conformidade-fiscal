@@ -179,13 +179,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setNewCnae(data.cnaePrincipal || '');
         setNewIe(data.ie || '');
         
-        // Mapear Regime Tributário de forma segura
+        // Mapear Regime Tributário de forma consistente e estrita
         const regStr = (data.regimeTributario || '').toLowerCase();
         let regimeMapped: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' = 'Real';
         if (regStr.includes('mei')) {
           regimeMapped = 'MEI';
         } else if (regStr.includes('simples')) {
           regimeMapped = 'Simples Nacional';
+        } else if (regStr.includes('real')) {
+          regimeMapped = 'Real';
         } else if (regStr.includes('presumido')) {
           regimeMapped = 'Presumido';
         }

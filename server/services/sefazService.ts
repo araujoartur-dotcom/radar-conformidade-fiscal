@@ -200,16 +200,36 @@ function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
   return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe"><nfeDadosMsg>${xmlDist}</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>`;
 }
 
+export function buildCteDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
+  const { cnpj, ultNSU, chNFe: chCTe, nsuEspecifico, tpAmb, ufAutor } = params;
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const cUF = (ufAutor && UF_TO_CUF[ufAutor.toUpperCase()]) || '35';
+
+  let distBody = '';
+  if (chCTe && chCTe.replace(/\D/g, '').length === 44) {
+    distBody = `<consChCTe><chCTe>${chCTe.replace(/\D/g, '')}</chCTe></consChCTe>`;
+  } else if (nsuEspecifico && nsuEspecifico.trim() !== '') {
+    distBody = `<consNSU><NSU>${nsuEspecifico.replace(/\D/g, '').padStart(15, '0')}</NSU></consNSU>`;
+  } else {
+    const nsuFormatted = String(ultNSU || '0').replace(/\D/g, '').padStart(15, '0');
+    distBody = `<distNSU><ultNSU>${nsuFormatted}</ultNSU></distNSU>`;
+  }
+
+  const xmlDist = `<distDFeInt xmlns="http://www.portalfiscal.inf.br/cte" versao="1.00"><tpAmb>${tpAmb}</tpAmb><cUFAutor>${cUF}</cUFAutor><CNPJ>${cleanCnpj}</CNPJ>${distBody}</distDFeInt>`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><cteDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeDistribuicaoDFe"><cteDadosMsg>${xmlDist}</cteDadosMsg></cteDistDFeInteresse></soap12:Body></soap12:Envelope>`;
+}
+
 // =========================================================
 // DESCRIPTOGRAFIA DO CERTIFICADO A1
 // =========================================================
 
-interface CertificadoDescriptografado {
+export interface CertificadoDescriptografado {
   pfxBuffer: Buffer;
   senha: string;
 }
 
-async function descriptografarCertificado(empresaId: string, cnpj?: string): Promise<CertificadoDescriptografado | null> {
+export async function descriptografarCertificado(empresaId: string, cnpj?: string): Promise<CertificadoDescriptografado | null> {
   let cert: any = null;
 
   // 1. Tentar buscar no Supabase se configurado
@@ -348,7 +368,13 @@ export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): { ke
   }
 }
 
-async function enviarParaSefaz(url: string, soapEnvelope: string, pfxBuffer: Buffer, senhaPfx: string): Promise<{ statusCode: number; body: string }> {
+async function enviarParaSefaz(
+  url: string,
+  soapEnvelope: string,
+  pfxBuffer: Buffer,
+  senhaPfx: string,
+  soapActionUrl: string = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse'
+): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     let pem;
@@ -361,11 +387,11 @@ async function enviarParaSefaz(url: string, soapEnvelope: string, pfxBuffer: Buf
     const options: https.RequestOptions = {
       hostname: parsedUrl.hostname,
       port: 443,
-      path: parsedUrl.pathname,
+      path: parsedUrl.pathname + parsedUrl.search,
       method: 'POST',
       headers: {
-        'Content-Type': 'application/soap+xml; charset=utf-8; action="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse"',
-        'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse',
+        'Content-Type': `application/soap+xml; charset=utf-8; action="${soapActionUrl}"`,
+        'SOAPAction': soapActionUrl,
         'Content-Length': Buffer.byteLength(soapEnvelope, 'utf8'),
       },
       key: pem.key,
@@ -1138,6 +1164,202 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
 }
 
 // =========================================================
+// CONSULTA CTeDistribuicaoDFe (Transporte / Fretes)
+// =========================================================
+
+export async function consultarDistribuicaoCTe(params: DistribucaoDfeRequest): Promise<DistribucaoDfeResponse> {
+  const { tpAmb, empresaId, cnpj } = params;
+
+  const url = tpAmb === '1'
+    ? (SEFAZ.CTE_SVRS_PRODUCAO?.DISTRIBUICAO_DFE || 'https://cte.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx')
+    : (SEFAZ.CTE_SVRS_HOMOLOGACAO?.DISTRIBUICAO_DFE || 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx');
+
+  const soapEnvelope = buildCteDistDFeSoapEnvelope(params);
+  const certificado = await descriptografarCertificado(empresaId, cnpj);
+
+  if (!certificado) {
+    return {
+      success: false,
+      cStat: '999',
+      xMotivo: 'Certificado Digital A1 não configurado no cofre seguro para este CNPJ.',
+      ultNSU: params.ultNSU || '000000000000000',
+      maxNSU: '000000000000000',
+      tpAmb,
+      docs: [],
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: '',
+    };
+  }
+
+  try {
+    console.log(`📡 [${getBrasiliaTimestamp()}] Consultando CTeDistribuicaoDFe para CNPJ ${cnpj} (ultNSU=${params.ultNSU})...`);
+    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha);
+
+    const cStat = extractTagRegex(response.body, 'cStat') || '999';
+    const xMotivo = extractTagRegex(response.body, 'xMotivo') || 'Sem resposta';
+    const ultNSURetorno = extractTagRegex(response.body, 'ultNSU') || params.ultNSU || '000000000000000';
+    const maxNSURetorno = extractTagRegex(response.body, 'maxNSU') || '000000000000000';
+
+    const rawDocs = extrairDocZips(response.body);
+    const docsProcessados: DocumentoDfeExtraido[] = [];
+    const db = getDatabase();
+    const brasiliaNow = getBrasiliaTimestamp();
+
+    for (const raw of rawDocs) {
+      const xml = raw.xmlContent;
+      const sanitizedXml = sanitizeXmlAntiXXE(xml);
+
+      try {
+        const parsedDoc = await parseFiscalXml(sanitizedXml, cnpj);
+        const docDbId = `doc-cte-${parsedDoc.chaveAcesso}`;
+
+        // Persistência local SQLite
+        db.transaction(() => {
+          db.prepare(`
+            INSERT OR REPLACE INTO dfe_documentos (
+              id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+              data_emissao, data_entrada, competencia,
+              fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio,
+              cliente_cnpj, cliente_razao, cliente_uf,
+              situacao_doc, situacao_manifestacao, evento_ultimo,
+              valor_total, created_at
+            ) VALUES (
+              ?, ?, 'CTe', ?, ?, ?,
+              ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?,
+              'autorizado', 'sem_manifestacao', 'CT-e Autorizado',
+              ?, ?
+            )
+          `).run(
+            docDbId,
+            empresaId,
+            parsedDoc.chaveAcesso,
+            parsedDoc.tipoOperacao,
+            `${parsedDoc.numero} / ${parsedDoc.serie}`,
+            parsedDoc.dataEmissao,
+            brasiliaNow,
+            parsedDoc.competencia,
+            parsedDoc.emitenteCnpj,
+            parsedDoc.emitenteNome,
+            parsedDoc.emitenteUf,
+            parsedDoc.emitenteMunicipio,
+            parsedDoc.destinatarioCnpj,
+            parsedDoc.destinatarioNome,
+            parsedDoc.destinatarioUf,
+            parsedDoc.valorTotal,
+            brasiliaNow
+          );
+        })();
+
+        // Persistência no Supabase
+        if (isSupabaseConfigured()) {
+          const supabase = getSupabaseAdmin();
+          if (supabase) {
+            try {
+              const supaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
+                id: empresaId,
+                cnpj_completo: cnpj,
+                cnpj_raiz: cnpj.substring(0, 8),
+                razao_social: parsedDoc.destinatarioNome
+              });
+
+              await supabase.from('dfe_documentos').upsert({
+                id: docDbId,
+                empresa_id: supaEmpresaId,
+                tipo_doc: 'CTe',
+                chave_acesso: parsedDoc.chaveAcesso,
+                tipo_operacao: parsedDoc.tipoOperacao,
+                numero_serie: `${parsedDoc.numero} / ${parsedDoc.serie}`,
+                data_emissao: parsedDoc.dataEmissao,
+                data_entrada: brasiliaNow,
+                competencia: parsedDoc.competencia,
+                fornecedor_cnpj: parsedDoc.emitenteCnpj,
+                fornecedor_razao: parsedDoc.emitenteNome,
+                fornecedor_uf: parsedDoc.emitenteUf,
+                fornecedor_municipio: parsedDoc.emitenteMunicipio,
+                cliente_cnpj: parsedDoc.destinatarioCnpj,
+                cliente_razao: parsedDoc.destinatarioNome,
+                cliente_uf: parsedDoc.destinatarioUf,
+                situacao_doc: 'autorizado',
+                situacao_manifestacao: 'sem_manifestacao',
+                evento_ultimo: 'CT-e Autorizado',
+                valor_total: parsedDoc.valorTotal,
+                valor_icms: parsedDoc.valorIcms,
+                xml_raw: sanitizedXml,
+                created_at: brasiliaNow,
+                updated_at: brasiliaNow
+              }, { onConflict: 'chave_acesso' });
+            } catch (supaErr: any) {
+              console.warn('⚠️ Erro ao sincronizar CT-e no Supabase:', supaErr?.message);
+            }
+          }
+        }
+
+        docsProcessados.push({
+          id: docDbId,
+          schema: raw.schema,
+          nsu: raw.nsu,
+          tipo: 'CTe',
+          numero: parsedDoc.numero,
+          serie: parsedDoc.serie,
+          chaveAcesso: parsedDoc.chaveAcesso,
+          dataEmissao: parsedDoc.dataEmissao,
+          emitenteCnpj: parsedDoc.emitenteCnpj,
+          emitenteNome: parsedDoc.emitenteNome,
+          emitenteUf: parsedDoc.emitenteUf,
+          destinatarioCnpj: parsedDoc.destinatarioCnpj,
+          destinatarioNome: parsedDoc.destinatarioNome,
+          destinatarioUf: parsedDoc.destinatarioUf,
+          valorTotal: parsedDoc.valorTotal,
+          valorIcms: parsedDoc.valorIcms,
+          valorIpi: 0,
+          valorPis: parsedDoc.valorPis,
+          valorCofins: parsedDoc.valorCofins,
+          aliquotaCbs: 0,
+          valorCbs: 0,
+          aliquotaIbs: 0,
+          valorIbs: 0,
+          valorImpostoSeletivo: 0,
+          statusAuditoria: 'conforme',
+          alertasAuditoria: [],
+          eventoUltimo: 'CT-e Autorizado',
+          statusSincronizacaoErp: 'pendente',
+          xmlRaw: sanitizedXml
+        });
+      } catch (cteErr: any) {
+        console.warn('⚠️ Erro ao processar item CT-e:', cteErr.message);
+      }
+    }
+
+    return {
+      success: ['137', '138'].includes(cStat),
+      cStat,
+      xMotivo,
+      ultNSU: ultNSURetorno,
+      maxNSU: maxNSURetorno,
+      tpAmb,
+      docs: docsProcessados,
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: response.body,
+    };
+  } catch (err: any) {
+    console.error('❌ Erro na consulta CTeDistribuicaoDFe:', err.message);
+    return {
+      success: false,
+      cStat: '999',
+      xMotivo: `Erro de comunicação com a SEFAZ (CT-e): ${err.message}`,
+      ultNSU: params.ultNSU || '000000000000000',
+      maxNSU: '000000000000000',
+      tpAmb,
+      docs: [],
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: '',
+    };
+  }
+}
+
+// =========================================================
 // TESTE DE CONEXÃO SEFAZ (PING)
 // =========================================================
 
@@ -1189,10 +1411,429 @@ export async function testarConexaoSefaz(tpAmb: '1' | '2'): Promise<{ online: bo
   });
 }
 
+// =========================================================
+// MOTOR DE CONSULTA CADASTRO & INSCRIÇÃO ESTADUAL (3 CAMADAS)
+// =========================================================
+
+export const CAD_CONSULTA_CADASTRO_URLS: Record<string, string> = {
+  'AC': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'AL': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'AP': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'AM': 'https://nfe.sefaz.am.gov.br/services2/services/CadConsultaCadastro4',
+  'BA': 'https://nfe.sefaz.ba.gov.br/webservices/CadConsultaCadastro4/CadConsultaCadastro4.asmx',
+  'CE': 'https://nfe.sefaz.ce.gov.br/nfe2/services/CadConsultaCadastro4',
+  'DF': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'ES': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'GO': 'https://nfe.sefaz.go.gov.br/nfe/services/CadConsultaCadastro4',
+  'MA': 'https://cad.sefazrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'MT': 'https://nfe.sefaz.mt.gov.br/nfews/v2/services/CadConsultaCadastro4',
+  'MS': 'https://nfe.fazenda.ms.gov.br/ws/CadConsultaCadastro4',
+  'MG': 'https://nfe.fazenda.mg.gov.br/nfe2/services/CadConsultaCadastro4',
+  'PA': 'https://cad.sefazrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'PB': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'PR': 'https://nfe.fazenda.pr.gov.br/nfe/CadConsultaCadastro4',
+  'PE': 'https://nfe.sefaz.pe.gov.br/nfe-service/services/CadConsultaCadastro4',
+  'PI': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'RJ': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'RN': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'RS': 'https://cad.sefazrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'RO': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'RR': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'SC': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'SP': 'https://nfe.fazenda.sp.gov.br/ws/cadconsultacadastro4.asmx',
+  'SE': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+  'TO': 'https://cad.svrs.rs.gov.br/ws/cadconsultacadastro/cadconsultacadastro4.asmx',
+};
+
+export interface ConsultaCadastroResultado {
+  sucesso: boolean;
+  camadaUtilizada: 'SEFAZ' | 'CNPJA' | 'CNPJ_WS' | 'NONE';
+  cnpj: string;
+  uf: string;
+  ie?: string;
+  tipoIE: string;
+  situaçaoIE: 'Habilitado' | 'Não Habilitado' | 'Baixado' | 'Suspenso' | 'Isento' | 'Não Contribuinte' | 'Pendente';
+  xRegApur?: string;
+  cSit?: string;
+  indCredNFe?: string;
+  cStat?: string;
+  xMotivo?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  cnaePrincipal?: string;
+  regimeTributario?: string;
+  capitalSocial?: number;
+}
+
+/**
+ * Camada 1: Consulta Cadastro SEFAZ SOAP (CadConsultaCadastro4)
+ */
+export async function consultarCadastroSefaz(
+  uf: string,
+  cnpj: string,
+  empresaId?: string,
+  cnpjAutor?: string
+): Promise<ConsultaCadastroResultado | null> {
+  const cleanUf = (uf || 'SP').toUpperCase().trim();
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const url = CAD_CONSULTA_CADASTRO_URLS[cleanUf] || CAD_CONSULTA_CADASTRO_URLS['SP'];
+
+  try {
+    const certData = await descriptografarCertificado(empresaId, cnpjAutor);
+    if (!certData) {
+      return null;
+    }
+
+    const consCadXml = `<ConsCad xmlns="http://www.portalfiscal.inf.br/nfe" versao="2.00"><infCons><xServ>CONS-CAD</xServ><UF>${cleanUf}</UF><CNPJ>${cleanCnpj}</CNPJ></infCons></ConsCad>`;
+    const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/CadConsultaCadastro4">${consCadXml}</nfeDadosMsg></soap12:Body></soap12:Envelope>`;
+
+    const { statusCode, body } = await enviarParaSefaz(
+      url,
+      soapEnvelope,
+      certData.pfxBuffer,
+      certData.senha,
+      'http://www.portalfiscal.inf.br/nfe/wsdl/CadConsultaCadastro4/consultaCadastro'
+    );
+
+    if (statusCode !== 200 || !body) {
+      return null;
+    }
+
+    const cStatMatch = body.match(/<cStat>(\d+)<\/cStat>/i);
+    const xMotivoMatch = body.match(/<xMotivo>([^<]+)<\/xMotivo>/i);
+    const cStat = cStatMatch ? cStatMatch[1] : '';
+    const xMotivo = xMotivoMatch ? xMotivoMatch[1] : '';
+
+    if (cStat === '111' || cStat === '112') {
+      const ieMatch = body.match(/<IE>([^<]+)<\/IE>/i);
+      const cSitMatch = body.match(/<cSit>([^<]+)<\/cSit>/i);
+      const xRegApurMatch = body.match(/<xRegApur>([^<]+)<\/xRegApur>/i);
+      const indCredNFeMatch = body.match(/<indCredNFe>([^<]+)<\/indCredNFe>/i);
+      const xNomeMatch = body.match(/<xNome>([^<]+)<\/xNome>/i);
+      const xFantMatch = body.match(/<xFant>([^<]+)<\/xFant>/i);
+      const cnaeMatch = body.match(/<CNAE>([^<]+)<\/CNAE>/i);
+
+      const ie = ieMatch ? ieMatch[1].trim() : '';
+      const cSit = cSitMatch ? cSitMatch[1].trim() : '1';
+      const xRegApur = xRegApurMatch ? xRegApurMatch[1].trim() : 'NORMAL';
+      const indCredNFe = indCredNFeMatch ? indCredNFeMatch[1].trim() : '';
+
+      const isHabilitado = cSit === '1';
+      const situaçaoIE = isHabilitado ? 'Habilitado' : 'Não Habilitado';
+      let tipoIE = 'CONTRIBUINTE ICMS';
+      if (!isHabilitado) {
+        tipoIE = 'NÃO HABILITADO / INATIVO';
+      } else if (xRegApur.toUpperCase().includes('SIMPLES')) {
+        tipoIE = 'CONTRIBUINTE ICMS (SIMPLES NACIONAL)';
+      }
+
+      return {
+        sucesso: true,
+        camadaUtilizada: 'SEFAZ',
+        cnpj: cleanCnpj,
+        uf: cleanUf,
+        ie: ie || 'Não Consta no CCC',
+        tipoIE,
+        situaçaoIE,
+        xRegApur,
+        cSit,
+        indCredNFe,
+        cStat,
+        xMotivo,
+        razaoSocial: xNomeMatch ? xNomeMatch[1].trim() : undefined,
+        nomeFantasia: xFantMatch ? xFantMatch[1].trim() : undefined,
+        cnaePrincipal: cnaeMatch ? cnaeMatch[1].trim() : undefined,
+      };
+    } else if (cStat === '259') {
+      // Não cadastrado como contribuinte na UF
+      return {
+        sucesso: true,
+        camadaUtilizada: 'SEFAZ',
+        cnpj: cleanCnpj,
+        uf: cleanUf,
+        ie: 'Não Consta no CCC',
+        tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
+        situaçaoIE: 'Não Contribuinte',
+        cStat,
+        xMotivo,
+      };
+    }
+
+    return null;
+  } catch (err: any) {
+    console.warn(`[SEFAZ SOAP CadConsultaCadastro4] Falha na consulta de ${cleanCnpj}/${cleanUf}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Helper para detecção de CNAE de serviços puros
+ */
+export function isPureServiceCnae(cnae?: string): boolean {
+  if (!cnae) return false;
+  const clean = cnae.replace(/\D/g, '');
+  const prefix2 = clean.slice(0, 2);
+  const servicePrefixes = [
+    '62', '63', '64', '65', '66', '68', '69', '70', '71', '72',
+    '73', '74', '75', '78', '80', '81', '82', '85', '86', '87',
+    '88', '90', '91', '92', '93', '94', '95', '96'
+  ];
+  return servicePrefixes.includes(prefix2);
+}
+
+/**
+ * Determina estritamente o Regime Tributário oficial (Lucro Real, Lucro Presumido ou Simples Nacional)
+ */
+export function calcularRegimeTributarioEstrito(data: any): 'Lucro Real' | 'Lucro Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento' {
+  // 1. MEI
+  const isMei = data.opcao_pelo_mei === true ||
+    data.simples?.optante_mei === 'Sim' ||
+    data.simples?.mei === 'Sim' ||
+    data.company?.simei?.optant === true ||
+    data.simei?.optant === true;
+  if (isMei) return 'MEI';
+
+  // 2. Simples Nacional
+  const isSimples = data.opcao_pelo_simples === true ||
+    data.simples?.optante_simples === 'Sim' ||
+    data.simples?.simples === 'Sim' ||
+    data.company?.simples?.optant === true;
+  if (isSimples) return 'Simples Nacional';
+
+  // 3. Imune / Isento
+  const natJurStr = String(
+    data.natureza_juridica?.descricao ||
+    data.natureza_juridica ||
+    data.natureza_juridica_descricao ||
+    data.company?.nature?.text ||
+    ''
+  ).toLowerCase();
+
+  const natJurCode = String(
+    data.codigo_natureza_juridica ||
+    data.natureza_juridica?.id ||
+    data.natureza_juridica ||
+    data.company?.nature?.id ||
+    ''
+  ).replace(/\D/g, '');
+
+  if (
+    natJurCode.startsWith('1') || // Órgãos Públicos
+    natJurCode.startsWith('3') || // Entidades sem fins lucrativos
+    natJurStr.includes('condomínio') ||
+    natJurStr.includes('associação') ||
+    natJurStr.includes('fundação') ||
+    natJurStr.includes('religiosa')
+  ) {
+    return 'Imune / Isento';
+  }
+
+  // 4. Lucro Real Compulsório (Lei 9.718/98 art. 14, Lei 12.814/2013)
+  const capSocial = Number(data.capital_social || data.company?.equity || data.capitalSocial || 0);
+  if (capSocial >= 78000000) {
+    return 'Lucro Real';
+  }
+
+  if (natJurCode === '2046' || natJurStr.includes('capital aberto')) {
+    return 'Lucro Real';
+  }
+
+  const cnaeClean = String(
+    data.cnae_fiscal ||
+    data.mainActivity?.id ||
+    data.atividade_principal?.id ||
+    data.cnaePrincipal ||
+    ''
+  ).replace(/\D/g, '');
+
+  const cnaePrefix2 = cnaeClean.slice(0, 2);
+  if (['64', '65', '66'].includes(cnaePrefix2)) {
+    return 'Lucro Real';
+  }
+
+  const cnaePrefix4 = cnaeClean.slice(0, 4);
+  if (['4681', '4682', '1921', '1922'].includes(cnaePrefix4)) {
+    return 'Lucro Real';
+  }
+
+  const porteStr = String(data.porte || data.codigo_porte || data.company?.size?.text || data.company?.size?.acronym || '').toUpperCase();
+  if ((porteStr === 'DEMAIS' || porteStr === 'GRANDE') && capSocial > 10000000) {
+    return 'Lucro Real';
+  }
+
+  return 'Lucro Presumido';
+}
+
+const cadastroTriplaCamadaCache = new Map<string, { data: ConsultaCadastroResultado; timestamp: number }>();
+const CADASTRO_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+
+/**
+ * Consulta de Fidelidade Cadastral com Arquitetura de 3 Camadas de Fallback:
+ * 1. SEFAZ SOAP (NFeConsultaCadastro 4.00)
+ * 2. CNPJá Open API
+ * 3. CNPJ.ws Pública
+ */
+export async function consultarCadastroTriplaCamada(params: {
+  cnpj: string;
+  uf: string;
+  empresaId?: string;
+  cnpjAutor?: string;
+}): Promise<ConsultaCadastroResultado> {
+  const cleanCnpj = params.cnpj.replace(/\D/g, '');
+  const cleanUf = (params.uf || 'SP').toUpperCase().trim();
+
+  // Verificar cache em memória
+  const cacheKey = `${cleanCnpj}_${cleanUf}`;
+  const cached = cadastroTriplaCamadaCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CADASTRO_CACHE_TTL_MS)) {
+    return { ...cached.data };
+  }
+
+  const cacheAndReturn = (res: ConsultaCadastroResultado) => {
+    if (res.sucesso && res.ie && res.ie !== 'Não Consta no CCC') {
+      cadastroTriplaCamadaCache.set(cacheKey, { data: res, timestamp: Date.now() });
+    }
+    return res;
+  };
+
+  // 1. Camada 1: SEFAZ SOAP Oficial
+  try {
+    const resSefaz = await consultarCadastroSefaz(cleanUf, cleanCnpj, params.empresaId, params.cnpjAutor);
+    if (resSefaz && resSefaz.sucesso) {
+      return cacheAndReturn(resSefaz);
+    }
+  } catch (err: any) {
+    console.warn(`[Tripla Camada] Fallback acionado após erro SEFAZ SOAP: ${err.message}`);
+  }
+
+  // 2. Camada 2: CNPJá Open API (Primeiro Fallback)
+  try {
+    const resCnpja = await fetch(`https://open.cnpja.com/office/${cleanCnpj}`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (resCnpja.ok) {
+      const dataCnpja: any = await resCnpja.json();
+      const registrations = Array.isArray(dataCnpja.registrations) ? dataCnpja.registrations : [];
+      const regForUf = registrations.find((r: any) => (r.state || '').toUpperCase() === cleanUf && r.enabled);
+      const anyActiveReg = registrations.find((r: any) => r.enabled);
+      const chosenReg = regForUf || anyActiveReg;
+
+      if (chosenReg && chosenReg.number) {
+        const isTaxpayer = chosenReg.taxpayer !== false;
+        const tipoContribuinte = isTaxpayer ? 'CONTRIBUINTE ICMS' : 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)';
+        return cacheAndReturn({
+          sucesso: true,
+          camadaUtilizada: 'CNPJA',
+          cnpj: cleanCnpj,
+          uf: cleanUf,
+          ie: chosenReg.number,
+          tipoIE: tipoContribuinte,
+          situaçaoIE: 'Habilitado',
+          razaoSocial: dataCnpja.company?.name,
+          nomeFantasia: dataCnpja.alias || dataCnpja.company?.name,
+          cnaePrincipal: String(dataCnpja.mainActivity?.id || ''),
+          regimeTributario: calcularRegimeTributarioEstrito(dataCnpja),
+          capitalSocial: Number(dataCnpja.company?.equity || 0),
+        });
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Tripla Camada] Fallback acionado após erro CNPJá Open API: ${err.message}`);
+  }
+
+  // 3. Camada 3: CNPJ.ws Pública (Segundo Fallback)
+  try {
+    const resWs = await fetch(`https://publica.cnpj.ws/cnpj/${cleanCnpj}`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (resWs.ok) {
+      const dataWs: any = await resWs.json();
+      const est = dataWs.estabelecimento || {};
+      const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
+      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && i.ativo);
+      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && !i.ativo);
+      const anyActive = ieList.find((i: any) => i.ativo);
+
+      const targetEntry = activeForUf || inactiveForUf || anyActive;
+      const cnaePrinc = String(est.atividade_principal?.id || '');
+
+      if (targetEntry && targetEntry.inscricao_estadual) {
+        const isAtivo = Boolean(targetEntry.ativo);
+        return cacheAndReturn({
+          sucesso: true,
+          camadaUtilizada: 'CNPJ_WS',
+          cnpj: cleanCnpj,
+          uf: cleanUf,
+          ie: targetEntry.inscricao_estadual,
+          tipoIE: isAtivo ? 'CONTRIBUINTE ICMS' : 'NÃO HABILITADO / INATIVO',
+          situaçaoIE: isAtivo ? 'Habilitado' : 'Não Habilitado',
+          razaoSocial: dataWs.razao_social,
+          nomeFantasia: est.nome_fantasia || dataWs.razao_social,
+          cnaePrincipal: cnaePrinc,
+          regimeTributario: calcularRegimeTributarioEstrito(dataWs),
+          capitalSocial: Number(dataWs.capital_social || 0),
+        });
+      }
+
+      // Caso não tenha IE no array
+      if (isPureServiceCnae(cnaePrinc)) {
+        return cacheAndReturn({
+          sucesso: true,
+          camadaUtilizada: 'CNPJ_WS',
+          cnpj: cleanCnpj,
+          uf: cleanUf,
+          ie: 'Isento',
+          tipoIE: 'NÃO CONTRIBUINTE',
+          situaçaoIE: 'Não Contribuinte',
+          razaoSocial: dataWs.razao_social,
+          cnaePrincipal: cnaePrinc,
+          regimeTributario: calcularRegimeTributarioEstrito(dataWs),
+          capitalSocial: Number(dataWs.capital_social || 0),
+        });
+      }
+
+      return cacheAndReturn({
+        sucesso: true,
+        camadaUtilizada: 'CNPJ_WS',
+        cnpj: cleanCnpj,
+        uf: cleanUf,
+        ie: 'Não Consta no CCC',
+        tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
+        situaçaoIE: 'Não Contribuinte',
+        razaoSocial: dataWs.razao_social,
+        cnaePrincipal: cnaePrinc,
+        regimeTributario: calcularRegimeTributarioEstrito(dataWs),
+        capitalSocial: Number(dataWs.capital_social || 0),
+      });
+    }
+  } catch (err: any) {
+    console.warn(`[Tripla Camada] Erro na consulta CNPJ.ws: ${err.message}`);
+  }
+
+  return {
+    sucesso: false,
+    camadaUtilizada: 'NONE',
+    cnpj: cleanCnpj,
+    uf: cleanUf,
+    ie: 'Não Consta no CCC',
+    tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
+    situaçaoIE: 'Não Contribuinte',
+    xMotivo: 'Não foi possível consultar os dados nas 3 camadas SEFAZ / CNPJá / CNPJ.ws',
+  };
+}
+
 export default {
   UF_TO_CUF,
   transmitirEventoSefaz,
   consultarDistribuicaoDFe,
+  consultarDistribuicaoCTe,
+  consultarCadastroSefaz,
+  consultarCadastroTriplaCamada,
   testarConexaoSefaz,
   converterPfxParaPem,
 };
+

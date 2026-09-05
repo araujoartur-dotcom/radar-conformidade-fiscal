@@ -68,6 +68,12 @@ export const SEFAZ = {
     CONSULTA_PROTOCOLO: process.env.SEFAZ_SVRS_PROD_CONSULTA || 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
     DISTRIBUICAO_DFE: process.env.SEFAZ_SVRS_PROD_DIST || 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx',
   },
+  CTE_SVRS_HOMOLOGACAO: {
+    DISTRIBUICAO_DFE: process.env.CTE_SVRS_HOM_DIST || 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx',
+  },
+  CTE_SVRS_PRODUCAO: {
+    DISTRIBUICAO_DFE: process.env.CTE_SVRS_PROD_DIST || 'https://cte.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx',
+  },
   NFSE_NACIONAL: process.env.SEFAZ_NFSE_URL || 'https://www.nfse.gov.br/SINDNFe/api/v1',
 } as const;
 

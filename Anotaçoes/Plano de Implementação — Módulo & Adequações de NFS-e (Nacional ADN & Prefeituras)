@@ -1,0 +1,91 @@
+# Plano de Implementação — Módulo & Adequações de NFS-e (Nacional ADN & Prefeituras)
+
+Este documento detalha o plano arquitetural e técnico para implementar a busca, captura automatizada, processamento e gestão das **Notas Fiscais de Serviços Eletrônicas (NFS-e)** no Radar de Conformidade Fiscal.
+
+---
+
+## 1. Visão Geral e Contexto
+
+Atualmente o sistema já possui:
+- **Parser Fiscal (`xmlParser.ts`)**: Reconhece layouts municipais (ABRASF, PMSP, Nota Carioca) e NFS-e Nacional (DPS / ADN), extraindo tomador, prestador, alíquotas e todas as retenções na fonte (IRRF, INSS, ISS, PIS, COFINS, CSLL).
+- **Armazenamento e Relatórios**: Tabela `dfe_documentos` aceita `tipo_doc = 'NFSe'`, alimentando a Aba 9 de Retenções e o pacote de download oficial `Baixar XMLs (.ZIP)`.
+
+**O que falta construir**:
+- O robô atual comunica-se apenas com a **SEFAZ Nacional** (que distribui apenas NF-e modelo 55).
+- É necessário um módulo especializado para **NFS-e**, conectando-se ao **Ambiente de Dados Nacional (ADN - Receita Federal / Serpro)** e aos padrões municipais de interesse.
+
+---
+
+## 2. Decisões Arquiteturais
+
+### 2.1 Dupla Camada de Captura de Serviços
+```mermaid
+graph TD
+    A["Robô de Captura NFS-e"] --> B["Camada 1: NFS-e Nacional (ADN / RFB)"]
+    A --> C["Camada 2: Conectores Municipais (ABRASF / PMSP)"]
+    
+    B -->|"mTLS com Certificado A1"| D["API Distribuição ADN (Serpro)"]
+    C -->|"SOAP / XML Assinado"| E["Webservices Prefeituras (Tomador)"]
+    
+    D --> F["Parser Fiscal Unificado (xmlParser.ts)"]
+    E --> F
+    
+    F --> G["Banco Supabase (dfe_documentos - tipo_doc='NFSe')"]
+    G --> H["Relatórios Fiscais (#9 Retenções)"]
+    G --> I["Pacote Oficial .ZIP"]
+```
+
+1. **Camada 1 — NFS-e Nacional (Ambiente de Dados Nacional - ADN)**:
+   - Utiliza o Certificado Digital A1 da empresa (já cadastrado e descriptografado no backend).
+   - Consulta a API de Distribuição de DF-e da NFS-e Nacional (`https://adn.receita.fazenda.gov.br/`), permitindo baixar todas as notas emitidas contra o CNPJ da empresa nos municípios conveniados e prestadores MEI via NSU.
+2. **Camada 2 — Conectores Municipais Diretos**:
+   - Estrutura modular (`NfseConnectorInterface`) para suportar prefeituras que ainda não operam 100% no ADN (ex: São Paulo - Nota do Milhão, Rio de Janeiro - Nota Carioca / ABRASF).
+3. **Frontend Integrado na Central DF-e**:
+   - Na aba **Captura XML (NF-e, NFS-e e CT-e)** ([DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)), inclusão de seletor/filtro e card dedicado para visualização e acionamento da busca de NFS-e (Nacional e Municipal).
+
+---
+
+## 3. Mudanças Propostas
+
+### Backend
+
+#### [NEW] [nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)
+- Serviço responsável pela comunicação com o Ambiente de Dados Nacional (ADN) e orquestração de conectores municipais.
+- Reutilização do conversor de Certificado A1 (`converterPfxParaPem`) para mTLS seguro.
+- Métodos:
+  - `consultarDistribuicaoNfseNacional({ cnpj, ultNSU, tpAmb, empresaId })`
+  - `consultarNfseTomadorMunicipal({ cnpj, municipioIbge, dataInicio, dataFim, empresaId })`
+
+#### [NEW] [nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts)
+- Rotas REST para o frontend:
+  - `POST /api/nfse/sincronizar`: Dispara a varredura de NFS-e para a empresa ativa.
+  - `GET /api/nfse/status`: Retorna o status da conexão, último NSU do ADN e data da última sincronização.
+  - `GET /api/nfse/conectores`: Lista os municípios e provedores ativos configurados.
+
+#### [MODIFY] [server/app.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/app.ts)
+- Registro da rota `/api/nfse`.
+
+---
+
+### Frontend
+
+#### [MODIFY] [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+- Adicionar abas/filtros de visualização e controle:
+  - Aba **"NF-e / Mercadorias (SEFAZ Nacional)"**
+  - Aba **"NFS-e / Serviços (ADN Nacional & Prefeituras)"**
+- Card de status de sincronização de serviços com indicador do Certificado A1 e botão "Buscar NFS-e no Webservice".
+
+#### [MODIFY] [types/index.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types/index.ts)
+- Tipagens para respostas e estados de sincronização de NFS-e.
+
+---
+
+## 4. Plano de Verificação
+
+### Testes Automatizados e Build
+1. `npx tsc --noEmit`: Checagem rigorosa de tipos TypeScript sem erros.
+2. `npm run build`: Validação do bundle de produção do Vite.
+
+### Testes de Integração
+1. Simulação de requisição com Certificado A1 mockado / endpoint de homologação da NFS-e Nacional.
+2. Validação da persistência de uma NFS-e capturada no banco e sua correta exibição nos relatórios e download .ZIP.

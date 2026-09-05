@@ -27,6 +27,7 @@ import certificatesRoutes from './routes/certificates';
 import auditRoutes from './routes/audit';
 import partnersRoutes from './routes/partners';
 import exportRoutes from './routes/export';
+import nfseRoutes from './routes/nfse';
 
 export const app = express();
 
@@ -64,6 +65,7 @@ app.use('/api/tenants', tenantsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/partners', partnersRoutes);
+app.use('/api/nfse', nfseRoutes);
 
 // =========================================================
 // HEALTH CHECK

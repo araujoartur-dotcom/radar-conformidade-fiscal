@@ -15,7 +15,14 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from '../middleware/auth';
-import { transmitirEventoSefaz, testarConexaoSefaz, consultarDistribuicaoDFe, EventoSefazRequest } from '../services/sefazService';
+import {
+  transmitirEventoSefaz,
+  testarConexaoSefaz,
+  consultarDistribuicaoDFe,
+  consultarDistribuicaoCTe,
+  consultarCadastroTriplaCamada,
+  EventoSefazRequest,
+} from '../services/sefazService';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 
 const router = Router();
@@ -116,11 +123,11 @@ function ensureUsuarioExists(db: any, userId?: string, emailFallback?: string): 
 }
 
 // =========================================================
-// POST /api/sefaz/distribui-dfe — Consulta NFeDistribuicaoDFe
+// POST /api/sefaz/distribui-dfe — Consulta NFeDistribuicaoDFe / CTeDistribuicaoDFe
 // =========================================================
 router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { cnpj, ultNSU, chNFe, nsuEspecifico, tpAmb, fluxo } = req.body;
+    const { cnpj, ultNSU, chNFe, chCTe, nsuEspecifico, tpAmb, fluxo, tipoDoc, tipoDocumento } = req.body;
 
     if (!cnpj) {
       res.status(400).json({ success: false, message: 'CNPJ é obrigatório para consulta no WebService SEFAZ.' });
@@ -141,28 +148,43 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
       ? Boolean(empDetails.manifestar_ciencia_automatica) 
       : true;
 
-    // 2. Chamar o serviço de comunicação SOAP com mTLS
-    const resultado = await consultarDistribuicaoDFe({
-      cnpj: cleanCnpj,
-      ultNSU: ultNSU !== undefined ? ultNSU : (empDetails?.ultimo_nsu || '000000000000000'),
-      chNFe,
-      nsuEspecifico,
-      tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',
-      empresaId,
-      ufAutor,
-      fluxo: fluxo || 'entrada',
-      manifestarCienciaAutomatica,
-      userId: req.user?.userId,
-    });
+    const isCte = tipoDoc === 'CTe' || tipoDocumento === 'CTe' || Boolean(chCTe);
+
+    // 2. Chamar o serviço de comunicação SOAP com mTLS (CT-e ou NF-e)
+    const resultado = isCte
+      ? await consultarDistribuicaoCTe({
+          cnpj: cleanCnpj,
+          ultNSU: ultNSU !== undefined ? ultNSU : '000000000000000',
+          chNFe: chCTe || chNFe,
+          nsuEspecifico,
+          tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',
+          empresaId,
+          ufAutor,
+          fluxo: fluxo || 'entrada',
+          userId: req.user?.userId,
+        })
+      : await consultarDistribuicaoDFe({
+          cnpj: cleanCnpj,
+          ultNSU: ultNSU !== undefined ? ultNSU : (empDetails?.ultimo_nsu || '000000000000000'),
+          chNFe,
+          nsuEspecifico,
+          tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',
+          empresaId,
+          ufAutor,
+          fluxo: fluxo || 'entrada',
+          manifestarCienciaAutomatica,
+          userId: req.user?.userId,
+        });
 
     logAuditAction(
       req, 
-      'SEFAZ_DISTRIBUICAO_DFE', 
-      `Consulta NFeDistribuicaoDFe para CNPJ ${cleanCnpj} (ultNSU=${resultado.ultNSU}, docs=${resultado.docs.length}): cStat=${resultado.cStat} - ${resultado.xMotivo}`
+      isCte ? 'SEFAZ_DISTRIBUICAO_CTE' : 'SEFAZ_DISTRIBUICAO_DFE', 
+      `Consulta ${isCte ? 'CTeDistribuicaoDFe' : 'NFeDistribuicaoDFe'} para CNPJ ${cleanCnpj} (ultNSU=${resultado.ultNSU}, docs=${resultado.docs.length}): cStat=${resultado.cStat} - ${resultado.xMotivo}`
     );
 
     res.json({
       success: resultado.success,
+      tipoDocumento: isCte ? 'CTe' : 'NFe',
       cStat: resultado.cStat,
       xMotivo: resultado.xMotivo,
       ultNSU: resultado.ultNSU,
@@ -174,6 +196,62 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
   } catch (err: any) {
     console.error('❌ Erro na rota /api/sefaz/distribui-dfe:', err.message);
     res.status(500).json({ success: false, message: 'Erro interno ao consultar SEFAZ: ' + err.message });
+  }
+});
+
+// =========================================================
+// POST /api/sefaz/distribui-cte — Consulta CTeDistribuicaoDFe
+// =========================================================
+router.post('/distribui-cte', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cnpj, ultNSU, chCTe, nsuEspecifico, tpAmb, fluxo } = req.body;
+
+    if (!cnpj) {
+      res.status(400).json({ success: false, message: 'CNPJ é obrigatório para consulta no WebService SEFAZ.' });
+      return;
+    }
+
+    const cleanCnpj = cnpj.replace(/\D/g, '');
+    const db = getDatabase();
+
+    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, cnpj);
+    const empresaId = empresa.id;
+
+    const empDetails = db.prepare('SELECT uf FROM empresas WHERE id = ?').get(empresaId) as any;
+    const ufAutor = req.body.ufAutor || empDetails?.uf || 'SP';
+
+    const resultado = await consultarDistribuicaoCTe({
+      cnpj: cleanCnpj,
+      ultNSU: ultNSU !== undefined ? ultNSU : '000000000000000',
+      chNFe: chCTe,
+      nsuEspecifico,
+      tpAmb: (tpAmb === '1' || tpAmb === 'producao') ? '1' : '2',
+      empresaId,
+      ufAutor,
+      fluxo: fluxo || 'entrada',
+      userId: req.user?.userId,
+    });
+
+    logAuditAction(
+      req, 
+      'SEFAZ_DISTRIBUICAO_CTE', 
+      `Consulta CTeDistribuicaoDFe para CNPJ ${cleanCnpj} (ultNSU=${resultado.ultNSU}, docs=${resultado.docs.length}): cStat=${resultado.cStat} - ${resultado.xMotivo}`
+    );
+
+    res.json({
+      success: resultado.success,
+      tipoDocumento: 'CTe',
+      cStat: resultado.cStat,
+      xMotivo: resultado.xMotivo,
+      ultNSU: resultado.ultNSU,
+      maxNSU: resultado.maxNSU,
+      tpAmb: resultado.tpAmb,
+      docs: resultado.docs,
+      eventosTerceiros: resultado.eventosTerceiros || [],
+    });
+  } catch (err: any) {
+    console.error('❌ Erro na rota /api/sefaz/distribui-cte:', err.message);
+    res.status(500).json({ success: false, message: 'Erro interno ao consultar CT-e: ' + err.message });
   }
 });
 
@@ -441,6 +519,30 @@ router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) =
 
   const rows = db.prepare(query).all(...params);
   res.json({ success: true, eventos: rows });
+});
+
+// =========================================================
+// POST /api/sefaz/consulta-cadastro — Tripla Camada (SEFAZ SOAP / CNPJá / CNPJ.ws)
+// =========================================================
+router.post('/consulta-cadastro', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cnpj, uf, empresaId } = req.body;
+    if (!cnpj) {
+      return res.status(400).json({ success: false, error: 'CNPJ é obrigatório para consulta.' });
+    }
+
+    const resultado = await consultarCadastroTriplaCamada({
+      cnpj,
+      uf: uf || 'SP',
+      empresaId: empresaId || req.user?.empresaAtivaId,
+      cnpjAutor: req.user?.empresaCnpj,
+    });
+
+    res.json({ success: true, data: resultado });
+  } catch (err: any) {
+    console.error('❌ Erro na consulta cadastro:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // =========================================================

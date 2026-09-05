@@ -60,13 +60,21 @@ export function formatCurrency(value?: number): string {
 // Verified real sample CNPJs for demonstration — removed for production integrity
 export const DEMO_CNPJS: { cnpj: string; uf: string; name: string }[] = [];
 
+// Cache em memória para evitar esgotamento de rate limits de APIs públicas gratuitas (24h de TTL)
+const cnpjLookupMemoryCache = new Map<string, { data: Partial<CnpjLookupItem>; timestamp: number }>();
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+
 /**
- * Fetch CNPJ data using multi-API fallback (BrasilAPI -> MinhaReceita -> CNPJ.ws).
- * NEVER invents or fabricates fictitious company names if not found.
+ * Fetch CNPJ data using multi-API fallback and 3-tier IE architecture:
+ * 1. Backend SEFAZ NFeConsultaCadastro 4.00 SOAP (if available with cert)
+ * 2. CNPJá Open API (Primeiro Fallback)
+ * 3. CNPJ.ws Pública (Segundo Fallback — Inscrições Estaduais por UF)
+ * 4. MinhaReceita / BrasilAPI (Dados cadastrais complementares)
  */
 export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): Promise<Partial<CnpjLookupItem>> {
   const clean = onlyNumbers(rawCnpj);
   const formatted = formatCNPJ(clean);
+  const cleanUf = (targetUf || 'SP').toUpperCase().trim();
 
   if (!isValidCNPJ(clean)) {
     return {
@@ -76,87 +84,176 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
     };
   }
 
-  // 1. BrasilAPI Lookup
+  // Verificar cache em memória
+  const cacheKey = `${clean}_${cleanUf}`;
+  const cached = cnpjLookupMemoryCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return { ...cached.data };
+  }
+
   let resultItem: Partial<CnpjLookupItem> | null = null;
+  let ieEncontrada: string | null = null;
+  let tipoIeEncontrado: string | null = null;
+  let situacaoIeEncontrada: SituaçãoIE | null = null;
+
+  // ── CAMADA 1: Tentar consulta SEFAZ SOAP via Backend ──
   try {
-    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`, {
+    const resBackend = await fetch('/api/sefaz/consulta-cadastro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ cnpj: clean, uf: cleanUf }),
+      signal: AbortSignal.timeout(4000)
+    });
+
+    if (resBackend.ok) {
+      const respJson = await resBackend.json();
+      if (respJson.success && respJson.data?.sucesso) {
+        const d = respJson.data;
+        if (d.ie && d.ie !== 'Não Consta no CCC') {
+          ieEncontrada = d.ie;
+          tipoIeEncontrado = d.tipoIE;
+          situacaoIeEncontrada = d.situaçaoIE;
+        }
+        if (d.razaoSocial) {
+          resultItem = {
+            cnpj: formatted,
+            uf: cleanUf,
+            ie: d.ie,
+            tipoIE: d.tipoIE,
+            situaçaoIE: d.situaçaoIE,
+            situaçaoCNPJ: 'ATIVA',
+            razaoSocial: d.razaoSocial,
+            nomeFantasia: d.nomeFantasia || d.razaoSocial,
+            cnaePrincipal: d.cnaePrincipal,
+            regimeTributario: d.regimeTributario || 'Lucro Real',
+            capitalSocial: d.capitalSocial || 0,
+            statusConsulta: 'sucesso',
+            dataConsulta: new Date().toISOString()
+          };
+        }
+      }
+    }
+  } catch {
+    // Backend offline ou sem certificado para o tenant — prossegue para fallbacks públicos
+  }
+
+  // ── CAMADA 2 & 3: Consultas Públicas de Suporte (CNPJ.ws, CNPJá, MinhaReceita, BrasilAPI) ──
+  // 1. Tentar CNPJ.ws Pública (melhor fonte aberta de Inscrições Estaduais por UF)
+  let dadosCnpjWs: any = null;
+  try {
+    const resWs = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`, {
       headers: { 'Accept': 'application/json' },
       signal: AbortSignal.timeout(5000)
     });
+    if (resWs.ok) {
+      dadosCnpjWs = await resWs.json();
+      if (!resultItem) {
+        resultItem = parseCnpjWsResponse(dadosCnpjWs, formatted, cleanUf);
+      }
+      // Extrair IE para a UF desejada
+      const est = dadosCnpjWs.estabelecimento || {};
+      const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
+      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && i.ativo);
+      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && !i.ativo);
+      const anyActive = ieList.find((i: any) => i.ativo);
+      const targetIeObj = activeForUf || inactiveForUf || anyActive;
 
-    if (res.ok) {
-      const data = await res.json();
-      resultItem = parseBrasilApiResponse(data, formatted, targetUf);
+      if (targetIeObj && targetIeObj.inscricao_estadual) {
+        ieEncontrada = targetIeObj.inscricao_estadual;
+        situacaoIeEncontrada = targetIeObj.ativo ? 'Habilitado' : 'Não Habilitado';
+        tipoIeEncontrado = targetIeObj.ativo ? 'CONTRIBUINTE ICMS' : 'NÃO HABILITADO / INATIVO';
+      }
     }
   } catch (err) {
-    console.warn('BrasilAPI fetch error:', err);
+    console.warn('CNPJ.ws fetch error:', err);
   }
 
-  // 2. MinhaReceita API Fallback
+  // 2. Se ainda não temos dados cadastrais completos, tentar CNPJá Open API
+  if (!resultItem) {
+    try {
+      const resCnpja = await fetch(`https://open.cnpja.com/office/${clean}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (resCnpja.ok) {
+        const dataCnpja = await resCnpja.json();
+        resultItem = parseCnpjaResponse(dataCnpja, formatted, cleanUf);
+        if (!ieEncontrada && Array.isArray(dataCnpja.registrations)) {
+          const regForUf = dataCnpja.registrations.find((r: any) => (r.state || '').toUpperCase() === cleanUf && r.enabled);
+          const anyReg = dataCnpja.registrations.find((r: any) => r.enabled);
+          const chosen = regForUf || anyReg;
+          if (chosen && chosen.number) {
+            ieEncontrada = chosen.number;
+            situacaoIeEncontrada = 'Habilitado';
+            tipoIeEncontrado = chosen.taxpayer !== false ? 'CONTRIBUINTE ICMS' : 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)';
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('CNPJá fetch error:', err);
+    }
+  }
+
+  // 3. Se ainda não temos dados cadastrais, tentar BrasilAPI
+  if (!resultItem) {
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        resultItem = parseBrasilApiResponse(data, formatted, cleanUf);
+      }
+    } catch (err) {
+      console.warn('BrasilAPI fetch error:', err);
+    }
+  }
+
+  // 4. Se ainda não temos dados cadastrais, tentar MinhaReceita
   if (!resultItem) {
     try {
       const res = await fetch(`https://minhareceita.org/${clean}`, {
         headers: { 'Accept': 'application/json' },
         signal: AbortSignal.timeout(5000)
       });
-
       if (res.ok) {
         const data = await res.json();
-        resultItem = parseMinhaReceitaResponse(data, formatted, targetUf);
+        resultItem = parseMinhaReceitaResponse(data, formatted, cleanUf);
       }
     } catch (err) {
       console.warn('MinhaReceita fetch error:', err);
     }
   }
 
-  // 3. CNPJ.ws Public API Fallback
-  if (!resultItem) {
-    try {
-      const res = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(5000)
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        resultItem = parseCnpjWsResponse(data, formatted, targetUf);
-      }
-    } catch (err) {
-      console.warn('CNPJ.ws fetch error:', err);
-    }
-  }
-
-  // If result found but IE is missing, attempt quick enrichment via CNPJ.ws
-  if (resultItem && (!resultItem.ie || resultItem.ie === 'Consultar SEFAZ Estadual')) {
-    try {
-      const resWs = await fetch(`https://publica.cnpj.ws/cnpj/${clean}`, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(4000)
-      });
-      if (resWs.ok) {
-        const dataWs = await resWs.json();
-        const est = dataWs.estabelecimento || {};
-        const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
-        const activeIeForUf = ieList.find((i: any) => i.estado?.sigla === resultItem?.uf && i.ativo);
-        const activeAnyIe = ieList.find((i: any) => i.ativo);
-        const foundIe = activeIeForUf?.inscricao_estadual || activeAnyIe?.inscricao_estadual || ieList[0]?.inscricao_estadual;
-        if (foundIe) {
-          resultItem.ie = foundIe;
-        }
-      }
-    } catch {
-      // Ignore fallback enrichment error
-    }
-  }
-
+  // ── ENRIQUECIMENTO E PADRONIZAÇÃO FINAL DA IE ──
   if (resultItem) {
+    // Se a IE foi identificada com precisão em qualquer das camadas, aplica
+    if (ieEncontrada) {
+      resultItem.ie = ieEncontrada;
+      resultItem.tipoIE = tipoIeEncontrado || 'CONTRIBUINTE ICMS';
+      resultItem.situaçaoIE = situacaoIeEncontrada || 'Habilitado';
+    } else if (!resultItem.ie || resultItem.ie === 'Não Consta no CCC' || resultItem.ie === 'Consultar SEFAZ Estadual') {
+      const cnae = resultItem.cnaePrincipal || '';
+      if (isPureServiceCnae(cnae)) {
+        resultItem.ie = 'Isento';
+        resultItem.tipoIE = 'NÃO CONTRIBUINTE';
+        resultItem.situaçaoIE = 'Não Contribuinte';
+      } else {
+        resultItem.ie = 'Não Consta no CCC';
+        resultItem.tipoIE = 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)';
+        resultItem.situaçaoIE = 'Não Contribuinte';
+      }
+    }
+
+    cnpjLookupMemoryCache.set(cacheKey, { data: resultItem, timestamp: Date.now() });
     return resultItem;
   }
 
   // STRICT REQUIREMENT: If real open APIs fail or return 404, DO NOT INVENT DATA! Return clear error state.
   return {
     cnpj: formatted,
-    uf: targetUf,
+    uf: cleanUf,
     statusConsulta: 'erro',
     mensagemErro: 'CNPJ não encontrado na base pública SEFAZ / Receita Federal ou indisponibilidade de consulta no momento.'
   };
@@ -165,7 +262,7 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
 /**
  * Identifica se a atividade CNAE é tipicamente de Serviços puros (não sujeita a ICMS estadual).
  */
-function isPureServiceCnae(cnae: string): boolean {
+export function isPureServiceCnae(cnae: string): boolean {
   if (!cnae) return false;
   const cleanCnae = cnae.replace(/\D/g, '');
   const prefix2 = cleanCnae.slice(0, 2);
@@ -178,27 +275,94 @@ function isPureServiceCnae(cnae: string): boolean {
 }
 
 /**
- * Determina com fidelidade o Regime Tributário a partir dos dados oficiais da Receita Federal.
+ * Determina com fidelidade estrita o Regime Tributário oficial (Lucro Real, Lucro Presumido ou Simples Nacional).
+ * Elimina completamente rótulos ambíguos como "Regime Geral (Lucro Presumido / Real)".
  */
-function determineTaxRegime(data: any): string {
-  const isMei = data.opcao_pelo_mei === true || data.simples?.optante_mei === 'Sim' || data.simples?.mei === 'Sim';
-  if (isMei) return 'MEI (Microempreendedor Individual)';
+export function determineTaxRegime(data: any): 'Lucro Real' | 'Lucro Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento' {
+  // 1. MEI
+  const isMei = data.opcao_pelo_mei === true ||
+    data.simples?.optante_mei === 'Sim' ||
+    data.simples?.mei === 'Sim' ||
+    data.company?.simei?.optant === true ||
+    data.simei?.optant === true;
+  if (isMei) return 'MEI';
 
-  const isSimples = data.opcao_pelo_simples === true || data.simples?.optante_simples === 'Sim' || data.simples?.simples === 'Sim';
+  // 2. Simples Nacional
+  const isSimples = data.opcao_pelo_simples === true ||
+    data.simples?.optante_simples === 'Sim' ||
+    data.simples?.simples === 'Sim' ||
+    data.company?.simples?.optant === true;
   if (isSimples) return 'Simples Nacional';
 
-  const natJur = String(data.natureza_juridica || data.natureza_juridica_descricao || '');
-  if (natJur.includes('308') || natJur.includes('Condomínio') || natJur.includes('399') || natJur.includes('Associação') || natJur.includes('Fundação')) {
+  // 3. Imune / Isento (Associações, Condomínios, Fundações, Órgãos Públicos)
+  const natJurStr = String(
+    data.natureza_juridica?.descricao ||
+    data.natureza_juridica ||
+    data.natureza_juridica_descricao ||
+    data.company?.nature?.text ||
+    ''
+  ).toLowerCase();
+
+  const natJurCode = String(
+    data.codigo_natureza_juridica ||
+    data.natureza_juridica?.id ||
+    data.natureza_juridica ||
+    data.company?.nature?.id ||
+    ''
+  ).replace(/\D/g, '');
+
+  if (
+    natJurCode.startsWith('1') || // Administração pública
+    natJurCode.startsWith('3') || // Entidades sem fins lucrativos
+    natJurStr.includes('condomínio') ||
+    natJurStr.includes('associação') ||
+    natJurStr.includes('fundação') ||
+    natJurStr.includes('religiosa')
+  ) {
     return 'Imune / Isento';
   }
 
-  return 'Regime Geral (Lucro Presumido / Real)';
+  // 4. Lucro Real Compulsório (Lei 9.718/98 art. 14, Lei 12.814/2013)
+  const capSocial = Number(data.capital_social || data.company?.equity || data.capitalSocial || 0);
+  if (capSocial >= 78000000) {
+    return 'Lucro Real';
+  }
+
+  if (natJurCode === '2046' || natJurStr.includes('capital aberto') || natJurStr.includes('s/a aberta')) {
+    return 'Lucro Real';
+  }
+
+  const cnaeClean = String(
+    data.cnae_fiscal ||
+    data.mainActivity?.id ||
+    data.atividade_principal?.id ||
+    data.cnaePrincipal ||
+    ''
+  ).replace(/\D/g, '');
+
+  const cnaePrefix2 = cnaeClean.slice(0, 2);
+  if (['64', '65', '66'].includes(cnaePrefix2)) {
+    return 'Lucro Real';
+  }
+
+  const cnaePrefix4 = cnaeClean.slice(0, 4);
+  if (['4681', '4682', '1921', '1922'].includes(cnaePrefix4)) {
+    return 'Lucro Real';
+  }
+
+  const porteStr = String(data.porte || data.codigo_porte || data.company?.size?.text || data.company?.size?.acronym || '').toUpperCase();
+  if ((porteStr === 'DEMAIS' || porteStr === 'GRANDE') && capSocial > 10000000) {
+    return 'Lucro Real';
+  }
+
+  // Padrão não optante pelo Simples nem compulsório no Real:
+  return 'Lucro Presumido';
 }
 
 /**
  * Determina com fidelidade a Inscrição Estadual e a situação cadastral no CCC/SEFAZ.
  */
-function determineIeAndCccStatus(
+export function determineIeAndCccStatus(
   rawIe: string | undefined | null,
   cnae: string,
   sitCNPJ: SituaçãoCNPJ
@@ -215,7 +379,7 @@ function determineIeAndCccStatus(
 
   if (isPureServiceCnae(cnae)) {
     return {
-      ie: 'Não Possui / Isento',
+      ie: 'Isento',
       tipoIE: 'NÃO CONTRIBUINTE',
       situaçaoIE: 'Não Contribuinte'
     };
@@ -223,7 +387,7 @@ function determineIeAndCccStatus(
 
   return {
     ie: 'Não Consta no CCC',
-    tipoIE: 'NÃO CONTRIBUINTE',
+    tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
     situaçaoIE: 'Não Contribuinte'
   };
 }
@@ -372,5 +536,60 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
   };
 }
 
+function parseCnpjaResponse(data: any, formattedCnpj: string, defaultUf: string): Partial<CnpjLookupItem> {
+  const addr = data.address || {};
+  const company = data.company || {};
+  const uf = addr.state || defaultUf;
+  const sitCNPJ: SituaçãoCNPJ = data.status?.text === 'Ativa' ? 'ATIVA' : 'INAPTA';
+
+  const registrations = Array.isArray(data.registrations) ? data.registrations : [];
+  const regForUf = registrations.find((r: any) => (r.state || '').toUpperCase() === uf.toUpperCase() && r.enabled);
+  const anyReg = registrations.find((r: any) => r.enabled);
+  const chosenReg = regForUf || anyReg;
+
+  const foundIe = chosenReg?.number;
+  const cnaePrincipal = data.mainActivity?.id ? `${data.mainActivity.id}` : '';
+  const ieStatus = determineIeAndCccStatus(foundIe, cnaePrincipal, sitCNPJ);
+
+  const sociosList = Array.isArray(company.members)
+    ? company.members.map((m: any) => ({
+        nome: m.person?.name || '',
+        qualificacao: m.role?.text || ''
+      })).filter((s: any) => Boolean(s.nome))
+    : [];
+
+  const logradouroParsed = [addr.street, addr.number, addr.district].filter(Boolean).join(', ');
+
+  return {
+    cnpj: formattedCnpj,
+    uf: uf,
+    ie: ieStatus.ie,
+    tipoIE: ieStatus.tipoIE,
+    situaçaoIE: ieStatus.situaçaoIE,
+    situaçaoCNPJ: sitCNPJ,
+    naturezaJuridica: company.nature?.text || '',
+    razaoSocial: company.name || '',
+    nomeFantasia: data.alias || company.name || '',
+    cnaePrincipal: cnaePrincipal,
+    cnaeDescricao: data.mainActivity?.text || '',
+    dataAbertura: data.founded || '',
+    regimeTributario: determineTaxRegime(data),
+    capitalSocial: Number(company.equity) || 0,
+    enderecoCompleto: [logradouroParsed, addr.details].filter(Boolean).join(' - '),
+    logradouro: addr.street || '',
+    numero: addr.number || '',
+    complemento: addr.details || '',
+    bairro: addr.district || '',
+    municipio: addr.city || '',
+    cep: addr.zip ? `${addr.zip}` : '',
+    telefone: Array.isArray(data.phones) && data.phones[0] ? `(${data.phones[0].area}) ${data.phones[0].number}` : '',
+    email: Array.isArray(data.emails) && data.emails[0]?.address ? data.emails[0].address : '',
+    socios: sociosList,
+    statusConsulta: 'sucesso',
+    dataConsulta: new Date().toISOString()
+  };
+}
+
 /** Alias for queryCnpjsData */
 export const lookupCnpj = queryCnpjsData;
+

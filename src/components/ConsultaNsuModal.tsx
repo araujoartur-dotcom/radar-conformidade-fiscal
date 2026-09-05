@@ -28,7 +28,8 @@ import {
   FileArchive,
   Clock,
   Check,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Layers
 } from 'lucide-react';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
@@ -67,6 +68,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   const [modalMode, setModalMode] = useState<'nsu' | 'chave' | 'upload'>('chave');
   const [subModeChave, setSubModeChave] = useState<'individual' | 'massivo'>('massivo');
   const [fluxo, setFluxo] = useState<'entrada' | 'saida'>(defaultFluxo);
+  const [modeloDfe, setModeloDfe] = useState<'NFe' | 'CTe'>('NFe');
   
   // Tab 1: NSU State
   const [ultNSU, setUltNSU] = useState<string>('000000000000000');
@@ -193,6 +195,9 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           ultNSU: (isByChave || targetNsuEspecifico) ? undefined : ultNSU,
           nsuEspecifico: targetNsuEspecifico,
           chNFe: isByChave ? cleanChave : undefined,
+          chCTe: isByChave && modeloDfe === 'CTe' ? cleanChave : undefined,
+          tipoDoc: modeloDfe,
+          tipoDocumento: modeloDfe,
           tpAmb: ambCode,
           fluxo,
         }),
@@ -311,6 +316,9 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           body: JSON.stringify({
             cnpj: currentCnpj,
             chNFe: item.chave,
+            chCTe: modeloDfe === 'CTe' ? item.chave : undefined,
+            tipoDoc: modeloDfe,
+            tipoDocumento: modeloDfe,
             tpAmb: ambCode,
             fluxo,
           }),
@@ -660,6 +668,41 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         {/* Content Body */}
         <div className="p-6 space-y-5 flex-1 overflow-y-auto">
           
+          {/* Document Model Selector: NF-e vs CT-e */}
+          <div className="flex flex-wrap items-center justify-between p-2 rounded-2xl bg-slate-900 border border-slate-800 gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 pl-2">
+              <Layers className="w-4 h-4 text-cyan-400" />
+              Modelo Fiscal SEFAZ:
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setModeloDfe('NFe'); setResults(null); }}
+                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                  modeloDfe === 'NFe'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileCode className="w-3.5 h-3.5" />
+                <span>NF-e (Mercadorias - Mod. 55)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setModeloDfe('CTe'); setResults(null); }}
+                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                  modeloDfe === 'CTe'
+                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileArchive className="w-3.5 h-3.5" />
+                <span>CT-e (Transporte / Fretes - Mod. 57)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Main Mode Selector: NSU vs Chave vs Upload */}
           <div className="grid grid-cols-3 gap-2 p-1 bg-slate-900 rounded-2xl border border-slate-800">
             <button

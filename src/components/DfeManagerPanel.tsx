@@ -6,6 +6,7 @@ import { XmlViewerModal } from './XmlViewerModal';
 import { ConsultaNsuModal } from './ConsultaNsuModal';
 import { SplitPaymentModal } from './SplitPaymentModal';
 import { TurboIngestModal } from './TurboIngestModal';
+import { NfseManagerModal } from './NfseManagerModal';
 import { formatBrasiliaDate, formatBrasiliaDateTime } from '../utils/timezone';
 import { useApi } from '../hooks/useApi';
 import { useKpis } from '../contexts/KpiContext';
@@ -33,6 +34,8 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [splitModalDoc, setSplitModalDoc] = useState<DfeXmlItem | null>(null);
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
   const [isTurboModalOpen, setIsTurboModalOpen] = useState<boolean>(false);
+  const [isNfseModalOpen, setIsNfseModalOpen] = useState<boolean>(false);
+  const [tipoDocFiltro, setTipoDocFiltro] = useState<'TODOS' | 'NFE' | 'CTE' | 'NFSE'>('TODOS');
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [listSearch, setListSearch] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(50);
@@ -142,6 +145,15 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
               <FolderOutput className="w-4 h-4 text-emerald-200" />
               <span>XML Saídas</span>
             </button>
+
+            <button
+              onClick={() => setIsNfseModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-teal-600/25 transition-all cursor-pointer border border-teal-400/30"
+              title="Buscar e sincronizar NFS-e no Ambiente de Dados Nacional (ADN / Receita Federal) e Prefeituras"
+            >
+              <Receipt className="w-4 h-4 text-teal-200" />
+              <span>NFS-e (Nacional & Prefeituras)</span>
+            </button>
           </div>
         </div>
 
@@ -187,6 +199,53 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             )}
           </div>
 
+          {/* Document Type Filter Pills */}
+          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px]">
+            <button
+              onClick={() => setTipoDocFiltro('TODOS')}
+              className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
+                tipoDocFiltro === 'TODOS'
+                  ? 'bg-slate-800 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Todos ({dfeList.length})
+            </button>
+
+            <button
+              onClick={() => setTipoDocFiltro('NFE')}
+              className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
+                tipoDocFiltro === 'NFE'
+                  ? 'bg-blue-900/60 text-blue-300 border border-blue-700/60 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              NF-e ({dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length})
+            </button>
+
+            <button
+              onClick={() => setTipoDocFiltro('CTE')}
+              className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
+                tipoDocFiltro === 'CTE'
+                  ? 'bg-amber-900/60 text-amber-300 border border-amber-700/60 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              CT-e ({dfeList.filter(d => d.tipo === 'CTe').length})
+            </button>
+
+            <button
+              onClick={() => setTipoDocFiltro('NFSE')}
+              className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
+                tipoDocFiltro === 'NFSE'
+                  ? 'bg-teal-900/60 text-teal-300 border border-teal-700/60 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              NFS-e ({dfeList.filter(d => d.tipo === 'NFSe').length})
+            </button>
+          </div>
+
           {/* Quick Filter */}
           {dfeList.length > 5 && (
             <div className="relative">
@@ -207,6 +266,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           >
             {dfeList
               .filter(item => {
+                if (tipoDocFiltro === 'NFE' && item.tipo !== 'NFe' && item.tipo !== 'NFCe') return false;
+                if (tipoDocFiltro === 'CTE' && item.tipo !== 'CTe') return false;
+                if (tipoDocFiltro === 'NFSE' && item.tipo !== 'NFSe') return false;
                 if (!listSearch) return true;
                 const q = listSearch.toLowerCase();
                 return (
@@ -609,6 +671,16 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
         isOpen={isTurboModalOpen}
         onClose={() => setIsTurboModalOpen(false)}
         onSuccess={() => {
+          loadDocumentos();
+        }}
+      />
+
+      {/* NFS-e Manager Modal (ADN Nacional & Prefeituras) */}
+      <NfseManagerModal
+        isOpen={isNfseModalOpen}
+        onClose={() => setIsNfseModalOpen(false)}
+        ambienteSefaz={ambienteSefaz}
+        onSuccessSync={() => {
           loadDocumentos();
         }}
       />

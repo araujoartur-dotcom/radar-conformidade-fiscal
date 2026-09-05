@@ -38,11 +38,13 @@ export const DetalhesModal: React.FC<DetalhesModalProps> = ({ item, onClose }) =
                   <>
                     <span>•</span>
                     <span className={`font-sans font-bold text-[11px] px-2 py-0.5 rounded border ${
-                      item.tipoIE.includes('NÃO CONTRIBUINTE')
+                      item.tipoIE.toUpperCase().includes('NÃO CONTRIBUINTE')
                         ? 'bg-purple-950/60 text-purple-300 border-purple-800'
-                        : item.tipoIE.includes('SIMPLES')
+                        : item.tipoIE.toUpperCase().includes('NÃO HABILITADO') || item.tipoIE.toUpperCase().includes('INATIVO')
+                        ? 'bg-rose-950/60 text-rose-300 border-rose-800'
+                        : item.tipoIE.toUpperCase().includes('SIMPLES')
                         ? 'bg-amber-950/60 text-amber-300 border-amber-800'
-                        : item.tipoIE.includes('ISENTO')
+                        : item.tipoIE.toUpperCase().includes('ISENTO')
                         ? 'bg-blue-950/60 text-blue-300 border-blue-800'
                         : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
                     }`}>
@@ -87,7 +89,7 @@ export const DetalhesModal: React.FC<DetalhesModalProps> = ({ item, onClose }) =
           <div>
             <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Regime Tributário</span>
             <div className="text-xs font-bold text-amber-300 mt-0.5">
-              {item.regimeTributario || 'Regime Geral'}
+              {item.regimeTributario || 'Lucro Real'}
             </div>
           </div>
 

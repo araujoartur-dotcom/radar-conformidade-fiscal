@@ -1,0 +1,83 @@
+# Assertividade Cadastral: Regime Tributário Estrito & IE em 3 Camadas de Fallback
+
+Implementação de máxima fidelidade cadastral conforme especificado pelo usuário:
+1. **Regime Tributário Consistente & Estrito**: Eliminação definitiva de rótulos ambíguos como `"Regime Geral (Lucro Presumido / Real)"`. Classificação jurídica precisa em: **`Lucro Real`**, **`Lucro Presumido`** ou **`Simples Nacional`** (além de `MEI` e `Imune / Isento`).
+2. **Inscrição Estadual (IE) e Tipo de IE em Arquitetura de 3 Camadas**:
+   - **Camada 1 — SEFAZ (NFeConsultaCadastro 4.00 — Web Service SOAP)**: Leitura e parse do XML oficial `retConsCad`, combinando `<xRegApur>`, `<cSit>`, `<IE>` e `<indCredNFe>`.
+   - **Camada 2 — CNPJá Open API (Primeiro Fallback)**: Consumo REST GET e parsing do campo `Tipo de contribuinte` e dados cadastrais.
+   - **Camada 3 — CNPJ.ws Pública (Segundo Fallback)**: Consumo REST GET e parsing do array `estabelecimento.inscricoes_estaduais` e `Status ativo/inativo` por UF.
+   - Classificação fiel do `Tipo IE` (ex: `CONTRIBUINTE ICMS`, `IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)`, `NÃO CONTRIBUINTE`, `ISENTO`).
+
+---
+
+## Proposta de Mudanças
+
+### 1. Motor de Classificação & Consulta Cadastral no Frontend (`src/utils/cnpj.ts`)
+#### [MODIFY] [`src/utils/cnpj.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/cnpj.ts)
+- **Regime Tributário Estrito (`determineTaxRegime`)**:
+  - Eliminar `'Regime Geral (Lucro Presumido / Real)'`.
+  - Aplicar regras jurídicas oficiais (Lei 9.718/98 art. 14, Lei 12.814/2013, RIR/2018):
+    - **`Simples Nacional`** / **`MEI`**: via `opcao_pelo_simples` / `opcao_pelo_mei`.
+    - **`Imune / Isento`**: via Natureza Jurídica (Condomínios, Associações, Fundações, Órgãos Públicos).
+    - **`Lucro Real`** compulsório quando:
+      - Capital Social >= R$ 78.000.000 (ex: Supergasbras com R$ 485M).
+      - Setor de combustíveis, refino e distribuição de GLP (CNAE 4681, 4682, 1921, 1922).
+      - Instituições financeiras, seguros, previdência e factoring (CNAE 64, 65, 66).
+      - Sociedades Anônimas de Capital Aberto (`2046`).
+      - Porte 'DEMAIS' com Capital Social > R$ 10.000.000.
+    - Demais empresas fora das regras de Lucro Real e Simples: **`Lucro Presumido`**.
+- **Orquestração da Inscrição Estadual (3 Camadas)**:
+  - Tentar consultar endpoint backend `/api/sefaz/consulta-cadastro` (SEFAZ SOAP Camada 1).
+  - Em caso de indisponibilidade ou ausência de certificado, consultar Camada 2 (CNPJá Open API).
+  - Em caso de ausência de IE, consultar Camada 3 (CNPJ.ws Pública), localizando a inscrição ativa para a UF de destino (ex: `1070110055` para Supergasbras no PR).
+  - Classificação precisa do `tipoIE`:
+    - Ativo / Habilitado: `'CONTRIBUINTE ICMS'`
+    - Inativo / Baixado / Suspenso: `'NÃO HABILITADO / INATIVO'`
+    - Sem IE com CNAE de serviços puros: `'NÃO CONTRIBUINTE'`
+    - Sem IE sem histórico no CCC: `'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)'`
+
+---
+
+### 2. Backend SEFAZ — `CadConsultaCadastro4` & Tripla Camada (`server/`)
+#### [MODIFY] [`server/services/sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts)
+- Implementar tabela de WebServices estaduais de `CadConsultaCadastro4` para as 27 UFs.
+- Implementar função `consultarCadastroSefaz(uf, cnpj, empresaId)`:
+  - Gera envelope SOAP 1.2 com XML `<ConsCad versao="2.00">` e `<infCons>`.
+  - Dispara requisição com Certificado Digital A1 descriptografado em TLS mTLS.
+  - Efetua parse do XML oficial `retConsCad`:
+    - Extrai `<cStat>` (111 / 112 / 259), `<IE>`, `<cSit>`, `<xRegApur>`, `<indCredNFe>`, `<xNome>`.
+    - Determina `tipoIE` e `situaçaoIE` com base em `<cSit>` e `<xRegApur>`.
+- Implementar fallback sequencial para Camada 2 (CNPJá) e Camada 3 (CNPJ.ws).
+
+#### [MODIFY] [`server/routes/sefaz.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/sefaz.ts)
+- Adicionar rota `POST /api/sefaz/consulta-cadastro` recebendo `{ cnpj, uf, empresaId? }` que retorna os dados cadastrais padronizados.
+
+---
+
+### 3. Ajustes de Interface & Modais
+#### [MODIFY] [`src/components/CarteiraCnpjsPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- No autopreenchimento rápido (`handlePerformCnpjLookup`), mapear `data.regimeTributario` com prioridade para `Lucro Real` e preencher automaticamente a Inscrição Estadual encontrada (ex: `1070110055` para a filial Araucária/PR da Supergasbras).
+
+#### [MODIFY] [`src/components/DetalhesModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DetalhesModal.tsx)
+- Remover qualquer fallback residual de `'Regime Geral'`.
+- Garantir a estilização do badge `Tipo IE` para `'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)'` e `'CONTRIBUINTE ICMS'`.
+
+---
+
+## Plano de Verificação
+
+### 1. Testes Automatizados com o Caso Real (Supergasbras PR)
+- Executar script de teste consultando o CNPJ `19.791.896/0046-02` (UF `PR`):
+  - Validar se o Regime Tributário retornado é estritamente **`Lucro Real`**.
+  - Validar se a Inscrição Estadual retornada é **`1070110055`**.
+  - Validar se a Situação IE é **`Habilitado`**.
+  - Validar se o Tipo IE é **`CONTRIBUINTE ICMS`**.
+
+### 2. Testes de Casos Complementares
+- **Empresa Simples Nacional**: Ex: MEI ou microempresa de comércio -> Regime `Simples Nacional`.
+- **Prestador de Serviços Puro**: Ex: Empresa com CNAE 6201-5/00 sem IE -> Regime `Lucro Presumido`, Tipo IE `NÃO CONTRIBUINTE`.
+- **Canteiro de Obras / Construtora**: Sem registro no CCC -> Tipo IE `IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)`.
+
+### 3. Validação de Build
+- Executar `npx tsc --noEmit` para garantir 0 erros de tipagem TypeScript.
+- Executar `npm run build` para garantir build do Vite bem-sucedido.

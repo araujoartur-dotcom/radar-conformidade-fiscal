@@ -1,0 +1,59 @@
+# Walkthrough — Implementação do Módulo de NFS-e (Nacional ADN & Prefeituras)
+
+Este documento resume a conclusão do deploy anterior e a implementação completa do **Módulo de Captura & Gestão de NFS-e (Nacional e Municipal)** no Radar de Conformidade Fiscal.
+
+---
+
+## 1. Deploy Realizado
+* **Commit**: `0e60b66`
+* **Branch**: `main`
+* **Alterações Enviadas**:
+  - Unificação do botão oficial de download para `[ Baixar XMLs (.ZIP) ]` no topo ([Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)).
+  - Remoção do botão duplicado de dentro do painel de relatórios.
+  - Atualização do badge informativo para o formato explícito: `1.000 itens exibidos (de 21.250 no banco)` ([RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)).
+  - Correção da navegação na Árvore Estruturada Fiscal ([XmlViewerModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/XmlViewerModal.tsx)).
+  - Exclusão em cascata definitiva de empresas e filiais no Supabase ([tenants.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts)).
+  - Descomissionamento do sistema legado de pastas locais `C:\SEFAZ`.
+
+---
+
+## 2. Implementação do Módulo de NFS-e
+
+### Backend
+1. **[nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)**:
+   - **Ambiente de Dados Nacional (ADN / Receita Federal)**:
+     - Comunicação com a API de Distribuição de DF-e da NFS-e Nacional utilizando autenticação mTLS via Certificado Digital A1 da empresa.
+     - Suporte a ambientes de **Produção** (`https://adn.receita.fazenda.gov.br`) e **Homologação** (`https://hom-adn.receita.fazenda.gov.br`).
+     - Varredura por NSU para captura incremental de notas.
+   - **Conectores Municipais**:
+     - PMSP (Prefeitura de São Paulo / Nota do Milhão - IBGE 3550308).
+     - Rede ABRASF (Nota Carioca - RJ, BH, Curitiba, Ginfes, Betha, etc.).
+   - **Persistência Unificada**:
+     - Grava os documentos capturados na tabela `dfe_documentos` do Supabase e SQLite local com `tipo_doc: 'NFSe'`, alimentando automaticamente os KPIs, a Aba 9 de Retenções na Fonte e o download .ZIP oficial.
+2. **[nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts)**:
+   - `POST /api/nfse/sincronizar`: Dispara a busca no ADN e prefeituras.
+   - `GET /api/nfse/status`: Retorna as estatísticas de NFS-e e o status dos conectores.
+3. **[app.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/app.ts)**:
+   - Registro da rota `/api/nfse`.
+
+---
+
+### Frontend
+1. **[NfseManagerModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/NfseManagerModal.tsx)**:
+   - Modal dedicado para acionamento e monitoramento da captura de NFS-e.
+   - Status visual dos conectores (ADN Nacional, PMSP e Rede ABRASF).
+   - Seletor de Ambiente (`Produção` vs `Homologação`) e controle de NSU inicial.
+   - Log de execução em tempo real e painel com resumo das notas capturadas e total de retenções na fonte (IRRF, INSS, ISS, PIS/COFINS/CSLL).
+2. **[DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)**:
+   - Novo botão **`[ NFS-e (Nacional & Prefeituras) ]`** na barra superior de ações de captura.
+   - Filtros rápidos por tipo de documento na listagem importada:
+     - `Todos`
+     - `NF-e & CT-e`
+     - `NFS-e / Serviços`
+   - Atualização automática dos documentos e KPIs ao término da sincronização.
+
+---
+
+## 3. Validação Realizada
+- **TypeScript**: `npx tsc --noEmit` executou com **0 erros**.
+- **Build**: `npm run build` gerou o bundle de produção com **sucesso em 8.83s**.

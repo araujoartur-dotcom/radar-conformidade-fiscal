@@ -1,0 +1,55 @@
+# Walkthrough — Implementação dos Módulos de NFS-e e CT-e
+
+Este documento resume a implementação das buscas especializadas por webservice para **NFS-e (Serviços)** e **CT-e (Transporte e Fretes)** no Radar de Conformidade Fiscal.
+
+---
+
+## 1. Módulo de NFS-e (Nacional ADN & Prefeituras)
+
+### Backend
+1. **[nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)**:
+   - Conexão mTLS com o **Ambiente de Dados Nacional (ADN da Receita Federal / Serpro)** utilizando o Certificado A1.
+   - Suporte a conectores municipais (PMSP - São Paulo, Nota Carioca / ABRASF).
+   - Extração completa de tomador, prestador, valores de serviços e todas as retenções na fonte (IRRF, INSS, ISS, PIS/COFINS/CSLL).
+   - Persistência unificada no Supabase e SQLite com `tipo_doc: 'NFSe'`.
+2. **[nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts)**:
+   - Rotas `POST /api/nfse/sincronizar` e `GET /api/nfse/status`.
+
+### Frontend
+1. **[NfseManagerModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/NfseManagerModal.tsx)**:
+   - Modal com status de conectores, log em tempo real e painel com resumo das notas e retenções capturadas.
+2. **[DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)**:
+   - Botão dedicado `[ NFS-e (Nacional & Prefeituras) ]`.
+
+---
+
+## 2. Módulo de CT-e (Conhecimento de Transporte Eletrônico — Modelo 57)
+
+### Backend
+1. **Configuração dos Endpoints ([config.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/config.ts))**:
+   - `CTE_SVRS_HOMOLOGACAO.DISTRIBUICAO_DFE`: `https://cte-homologacao.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx`
+   - `CTE_SVRS_PRODUCAO.DISTRIBUICAO_DFE`: `https://cte.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx`
+2. **Serviço SEFAZ ([sefazService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts))**:
+   - `buildCteDistDFeSoapEnvelope`: Monta o envelope SOAP específico para o schema `http://www.portalfiscal.inf.br/cte` (`<cteDistDFeInteresse>`).
+   - `consultarDistribuicaoCTe`: Conecta ao `CTeDistribuicaoDFe` via mTLS com o Certificado A1, descompacta os `docZip` (procCTe, resCTe), processa o XML e persiste no banco com `tipo_doc: 'CTe'`.
+3. **Rotas ([sefaz.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/sefaz.ts))**:
+   - `POST /api/sefaz/distribui-cte` e suporte automático a `tipoDoc: 'CTe'` em `/api/sefaz/distribui-dfe`.
+
+### Frontend
+1. **[ConsultaNsuModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx)**:
+   - Seletor de Modelo Fiscal SEFAZ:
+     - `NF-e (Mercadorias - Mod. 55)`
+     - `CT-e (Transporte / Fretes - Mod. 57)`
+   - Permite consultar fretes por chave de 44 dígitos (CT-e) ou por NSU do CTeDistribuicaoDFe.
+2. **[DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)**:
+   - Pílulas de filtro de documentos importados separadas em 4 categorias:
+     - `Todos`
+     - `NF-e`
+     - `CT-e (Fretes)`
+     - `NFS-e (Serviços)`
+
+---
+
+## 3. Validação Realizada
+- **TypeScript (`npx tsc --noEmit`)**: 0 erros.
+- **Build Vite (`npm run build`)**: Compilado com sucesso em 18.6s.
