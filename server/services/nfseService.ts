@@ -81,15 +81,16 @@ export interface NfseStatusResumo {
 
 // =========================================================
 // 1. ENDPOINTS DO AMBIENTE DE DADOS NACIONAL (ADN)
+// Ref: https://adn.nfse.gov.br/contribuintes/docs/index.html
 // =========================================================
 const ADN_ENDPOINTS = {
   producao: {
     baseUrl: 'https://adn.nfse.gov.br',
-    distribuicaoPath: '/api/v1/distribuicao/nsu',
+    distribuicaoPath: '/contribuintes/DFe',
   },
   homologacao: {
-    baseUrl: 'https://hom-adn.nfse.gov.br',
-    distribuicaoPath: '/api/v1/distribuicao/nsu',
+    baseUrl: 'https://adn.producaorestrita.nfse.gov.br',
+    distribuicaoPath: '/contribuintes/DFe',
   }
 };
 
@@ -140,45 +141,67 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
   });
 
   try {
-    result.mensagens.push(`📡 Conectando ao ADN (${endpoint.baseUrl}) para consultar NSU > ${ultNSU}...`);
+    // Endpoint real: GET /contribuintes/DFe/{NSU}
+    // O CNPJ é identificado automaticamente pelo certificado mTLS
+    const fullUrl = `${endpoint.baseUrl}${endpoint.distribuicaoPath}/${ultNSU}`;
+    result.mensagens.push(`📡 Conectando ao ADN (${fullUrl}) com certificado do CNPJ ${cleanCnpj}...`);
 
     // Chamada à API REST do ADN da Receita Federal
     const responseData = await new Promise<any>((resolve, reject) => {
-      const url = new URL(`${endpoint.baseUrl}${endpoint.distribuicaoPath}/${cleanCnpj}/${ultNSU}`);
+      const url = new URL(fullUrl);
       const req = https.request(url, {
         method: 'GET',
         agent: httpsAgent,
         headers: {
-          'Accept': 'application/json, application/xml',
-          'User-Agent': 'RadarConformidadeFiscal/2.0 (mTLS)'
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
         },
-        timeout: 25000
+        timeout: 30000
       }, (res) => {
         let body = '';
         res.on('data', chunk => body += chunk);
         res.on('end', () => {
+          result.mensagens.push(`🔄 ADN respondeu com HTTP ${res.statusCode}.`);
+          
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
-              resolve(JSON.parse(body));
+              const parsed = JSON.parse(body);
+              resolve(parsed);
             } catch {
+              // Se não for JSON, pode ser XML bruto
               resolve({ xmlRaw: body });
             }
+          } else if (res.statusCode === 401 || res.statusCode === 403) {
+            result.mensagens.push(`🔒 Acesso negado (HTTP ${res.statusCode}). Possível problema com certificado digital ou CNPJ não credenciado no portal NFS-e Nacional.`);
+            resolve({ httpStatus: res.statusCode, errorBody: body, authError: true });
+          } else if (res.statusCode === 404) {
+            result.mensagens.push(`⚠️ Endpoint não encontrado (HTTP 404). Verifique se o CNPJ está cadastrado no Portal Nacional da NFS-e.`);
+            resolve({ httpStatus: 404, errorBody: body });
           } else {
-            resolve({
-              httpStatus: res.statusCode,
-              errorBody: body,
-              simulado: true
-            });
+            // Logar o corpo da resposta para diagnóstico
+            const bodyPreview = body.substring(0, 500);
+            result.mensagens.push(`⚠️ Resposta inesperada do ADN (HTTP ${res.statusCode}): ${bodyPreview}`);
+            resolve({ httpStatus: res.statusCode, errorBody: body });
           }
         });
       });
 
       req.on('error', (err) => {
-        // Fallback resiliente: Caso o endpoint do ADN esteja indisponível ou em testes
-        resolve({
-          connError: err.message,
-          simulado: true
-        });
+        result.mensagens.push(`❌ Erro de conexão com o ADN: ${err.message}`);
+        if (err.message.includes('ENOTFOUND')) {
+          result.mensagens.push(`🌐 DNS não resolvido. Verifique se o servidor ${endpoint.baseUrl} está acessível da sua rede.`);
+        } else if (err.message.includes('ECONNREFUSED') || err.message.includes('ECONNRESET')) {
+          result.mensagens.push(`🔌 Conexão recusada/resetada. O servidor do ADN pode estar em manutenção ou seu certificado pode não estar sendo aceito.`);
+        } else if (err.message.includes('unable to get local issuer') || err.message.includes('self signed')) {
+          result.mensagens.push(`🔐 Problema com a cadeia de certificados. Verifique se o certificado A1 é válido e está na cadeia ICP-Brasil.`);
+        }
+        resolve({ connError: err.message });
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        result.mensagens.push(`⏱️ Timeout de 30s excedido. O servidor do ADN não respondeu a tempo.`);
+        resolve({ connError: 'TIMEOUT', timeout: true });
       });
 
       req.end();
@@ -186,24 +209,37 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
 
     // Processamento do lote de retorno
     let xmlsParaProcessar: string[] = [];
+    
+    // Formato documentado: { chNFSe, tipoNFSe, ultNSU, maxNSU, docZip (base64 gzip) }
+    if (responseData.docZip) {
+      // Documento comprimido em gzip+base64
+      try {
+        const buffer = Buffer.from(responseData.docZip, 'base64');
+        const decompressed = zlib.gunzipSync(buffer).toString('utf-8');
+        xmlsParaProcessar.push(decompressed);
+        result.mensagens.push(`📄 Documento NFS-e recebido e descompactado com sucesso.`);
+      } catch (zipErr: any) {
+        result.mensagens.push(`⚠️ Erro ao descomprimir docZip: ${zipErr.message}`);
+      }
+    }
+    
     if (responseData.loteDoc && Array.isArray(responseData.loteDoc)) {
       for (const doc of responseData.loteDoc) {
-        if (doc.xmlGzip) {
-          const buffer = Buffer.from(doc.xmlGzip, 'base64');
+        if (doc.xmlGzip || doc.docZip) {
+          const buffer = Buffer.from(doc.xmlGzip || doc.docZip, 'base64');
           const decompressed = zlib.gunzipSync(buffer).toString('utf-8');
           xmlsParaProcessar.push(decompressed);
         } else if (doc.xml) {
           xmlsParaProcessar.push(doc.xml);
         }
       }
-      if (responseData.ultNSU) result.ultNSU = String(responseData.ultNSU);
-      if (responseData.maxNSU) result.maxNSU = String(responseData.maxNSU);
-    } else if (responseData.simulado || responseData.connError) {
-      result.mensagens.push(
-        responseData.connError
-          ? `ℹ️ ADN Nacional: ${responseData.connError}. Módulo operando em contingência local e pronto para processamento de NFS-e.`
-          : `ℹ️ ADN Nacional respondeu com status ${responseData.httpStatus || 200}. Nenhuma nova NFS-e pendente para o NSU informado.`
-      );
+    }
+    
+    if (responseData.ultNSU) result.ultNSU = String(responseData.ultNSU);
+    if (responseData.maxNSU) result.maxNSU = String(responseData.maxNSU);
+    
+    if (xmlsParaProcessar.length === 0 && !responseData.connError && !responseData.authError) {
+      result.mensagens.push(`ℹ️ Nenhuma NFS-e nova disponível a partir do NSU ${ultNSU}. ultNSU=${result.ultNSU}, maxNSU=${result.maxNSU}.`);
     }
 
     // Persistir os XMLs capturados
