@@ -10,7 +10,6 @@ import { EventosDfePanel } from './components/EventosDfePanel';
 import { ErpIntegrationPanel } from './components/ErpIntegrationPanel';
 import { AuditoriaFiscalPanel } from './components/AuditoriaFiscalPanel';
 import { RelatoriosXmlPanel } from './components/RelatoriosXmlPanel';
-import { ConfigDiretorioModal } from './components/ConfigDiretorioModal';
 import { AcessoCorporativoModal } from './components/AcessoCorporativoModal';
 import { CarteiraCnpjsPanel, INITIAL_TENANTS } from './components/CarteiraCnpjsPanel';
 import { ParceirosNegocioPanel } from './components/ParceirosNegocioPanel';
@@ -19,7 +18,7 @@ import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
 import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
-import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, CnpjRaizDirectoryConfig, AmbienteSefaz, UsuarioCorporativo } from './types';
+import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
 import { Search, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
@@ -79,10 +78,8 @@ export default function App() {
   const [dfeList, setDfeList] = useState<DfeXmlItem[]>([]);
   const [selectedDfeForEvents, setSelectedDfeForEvents] = useState<DfeXmlItem | null>(null);
 
-  // Modal State for Directory Storage Configuration
-  const [isDirConfigOpen, setIsDirConfigOpen] = useState(false);
+  // Modal State for Turbo Fiscal .ZIP Export
   const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
-  const [directoryConfigs, setDirectoryConfigs] = useState<CnpjRaizDirectoryConfig[]>([]);
 
   // Settings
   const [rateLimit, setRateLimit] = useState<number>(8); // 8 req/s default
@@ -403,7 +400,6 @@ export default function App() {
         setActiveMode={setActiveMode}
         certificado={certificado}
         totalItems={items.length}
-        onOpenDirConfig={() => setIsDirConfigOpen(true)}
         onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
@@ -472,8 +468,6 @@ export default function App() {
                 onSyncErp={(item) => {
                   setActiveMode('integracao_erp');
                 }}
-                directoryConfigs={directoryConfigs}
-                onOpenDirConfig={() => setIsDirConfigOpen(true)}
                 certificado={certificado}
                 ambienteSefaz={ambienteSefaz}
               />
@@ -627,16 +621,6 @@ export default function App() {
       <DetalhesModal
         item={selectedItem}
         onClose={() => setSelectedItem(null)}
-      />
-
-      {/* Directory Storage Configuration Modal by Root CNPJ */}
-      <ConfigDiretorioModal
-        isOpen={isDirConfigOpen}
-        onClose={() => setIsDirConfigOpen(false)}
-        configs={directoryConfigs}
-        onSaveConfigs={(updated) => {
-          setDirectoryConfigs(updated);
-        }}
       />
 
       {/* Turbo Fiscal .ZIP Exporter Modal */}

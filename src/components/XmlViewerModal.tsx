@@ -109,6 +109,7 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'formatted' | 'tree'>('formatted');
   const [collapseBase64, setCollapseBase64] = useState<boolean>(true);
+  const [activeHighlightTag, setActiveHighlightTag] = useState<string | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     ide: true,
     emit: true,
@@ -161,7 +162,36 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
 
   const scrollToTag = (tagName: string) => {
     setSearchTerm(tagName);
-    setViewMode('formatted');
+
+    if (viewMode === 'tree') {
+      const secMap: Record<string, string> = {
+        ide: 'ide',
+        emit: 'emit',
+        dest: 'dest',
+        det: 'det',
+        total: 'total',
+        IBSCBS: 'IBSCBS',
+        Signature: 'Signature'
+      };
+      const secKey = secMap[tagName] || tagName;
+      setExpandedSections(prev => ({ ...prev, [secKey]: true }));
+      setActiveHighlightTag(secKey);
+      setTimeout(() => setActiveHighlightTag(null), 2500);
+
+      setTimeout(() => {
+        const el = document.getElementById(`tree-section-${secKey}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 60);
+    } else {
+      setTimeout(() => {
+        const el = codeContainerRef.current?.querySelector('.bg-amber-500\\/25');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 60);
+    }
   };
 
   // Syntax Highlighting com cores temáticas de IDE moderna
@@ -427,7 +457,12 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
             <div className="space-y-3 text-xs font-sans">
               
               {/* 1. Identificação (<ide>) */}
-              <div className="rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden">
+              <div
+                id="tree-section-ide"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'ide' ? 'ring-2 ring-cyan-400 shadow-xl shadow-cyan-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('ide')}
@@ -465,7 +500,12 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
               </div>
 
               {/* 2. Emitente (<emit>) */}
-              <div className="rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden">
+              <div
+                id="tree-section-emit"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'emit' ? 'ring-2 ring-purple-400 shadow-xl shadow-purple-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('emit')}
@@ -495,7 +535,12 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
               </div>
 
               {/* 3. Destinatário (<dest>) */}
-              <div className="rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden">
+              <div
+                id="tree-section-dest"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'dest' ? 'ring-2 ring-blue-400 shadow-xl shadow-blue-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('dest')}
@@ -525,7 +570,12 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
               </div>
 
               {/* 4. Produtos e Serviços (<det>) */}
-              <div className="rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden">
+              <div
+                id="tree-section-det"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'det' ? 'ring-2 ring-amber-400 shadow-xl shadow-amber-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('det')}
@@ -578,8 +628,64 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
                 )}
               </div>
 
-              {/* 5. Reforma Tributária: CBS / IBS (<IBSCBSTot>) */}
-              <div className="rounded-2xl bg-gradient-to-br from-cyan-950/40 to-blue-950/40 border border-cyan-800/60 overflow-hidden">
+              {/* 5. Totais Globais (<total> / <ICMSTot>) */}
+              <div
+                id="tree-section-total"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'total' ? 'ring-2 ring-emerald-400 shadow-xl shadow-emerald-500/20' : ''
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleSection('total')}
+                  className="w-full p-3.5 flex items-center justify-between bg-slate-900 hover:bg-slate-800/80 transition-colors text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 font-bold text-white">
+                    {expandedSections.total ? <ChevronDown className="w-4 h-4 text-emerald-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                    <Receipt className="w-4 h-4 text-emerald-400" />
+                    <span>&lt;total&gt; Totais do Documento & Tributos Convencionais</span>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-emerald-400">
+                    Total DF-e: {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                </button>
+                {expandedSections.total && (
+                  <div className="p-4 bg-slate-950/60 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">&lt;vNF&gt; Valor Total do DF-e:</span>
+                      <strong className="text-emerald-400 text-sm font-bold">
+                        {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                    </div>
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">&lt;vICMS&gt; Valor ICMS:</span>
+                      <strong className="text-white">
+                        {item.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                    </div>
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">&lt;vPIS&gt; Valor PIS:</span>
+                      <strong className="text-white">
+                        {item.valorPis.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                    </div>
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[10px]">&lt;vCOFINS&gt; Valor COFINS:</span>
+                      <strong className="text-white">
+                        {item.valorCofins.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 6. Reforma Tributária: CBS / IBS (<IBSCBSTot>) */}
+              <div
+                id="tree-section-IBSCBS"
+                className={`rounded-2xl bg-gradient-to-br from-cyan-950/40 to-blue-950/40 border border-cyan-800/60 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'IBSCBS' ? 'ring-2 ring-cyan-400 shadow-xl shadow-cyan-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('IBSCBS')}
@@ -620,8 +726,13 @@ export const XmlViewerModal: React.FC<XmlViewerModalProps> = ({ item, onClose })
                 )}
               </div>
 
-              {/* 6. Assinatura Digital X.509 (<Signature>) */}
-              <div className="rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden">
+              {/* 7. Assinatura Digital X.509 (<Signature>) */}
+              <div
+                id="tree-section-Signature"
+                className={`rounded-2xl bg-slate-900/80 border border-slate-800 overflow-hidden transition-all duration-500 ${
+                  activeHighlightTag === 'Signature' ? 'ring-2 ring-emerald-400 shadow-xl shadow-emerald-500/20' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection('Signature')}

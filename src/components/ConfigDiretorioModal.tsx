@@ -16,9 +16,13 @@ import {
   ShieldCheck,
   Check,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  Building2
 } from 'lucide-react';
 import { CnpjRaizDirectoryConfig } from '../types';
+import { useApi } from '../hooks/useApi';
+import { useAuth } from '../contexts/AuthContext';
+import { formatCNPJ } from '../utils/cnpj';
 
 interface ConfigDiretorioModalProps {
   isOpen: boolean;
@@ -27,8 +31,6 @@ interface ConfigDiretorioModalProps {
   onSaveConfigs: (updated: CnpjRaizDirectoryConfig[]) => void;
 }
 
-import { useApi } from '../hooks/useApi';
-
 export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
   isOpen,
   onClose,
@@ -36,6 +38,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
   onSaveConfigs,
 }) => {
   const { get, post, del } = useApi();
+  const { empresaAtiva, empresasDisponiveis } = useAuth();
   const [selectedId, setSelectedId] = useState<string>(configs[0]?.id || '');
   const [localConfigs, setLocalConfigs] = useState<CnpjRaizDirectoryConfig[]>(configs);
   const [testResult, setTestResult] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; msg: string }>({
@@ -46,21 +49,72 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
   const [showNewCnpjModal, setShowNewCnpjModal] = useState<boolean>(false);
   const [newCnpjRaizInput, setNewCnpjRaizInput] = useState<string>('');
   const [newRazaoSocialInput, setNewRazaoSocialInput] = useState<string>('');
+  const [selectedEmpresaPreset, setSelectedEmpresaPreset] = useState<string>('');
 
-  // Carregar diretórios salvos no banco de dados
+  // Contagem de filiais cadastradas por CNPJ Raiz
+  const getBranchCount = (cnpjRaiz: string) => {
+    const clean = (cnpjRaiz || '').replace(/\D/g, '').substring(0, 8);
+    if (!clean) return 0;
+    return (empresasDisponiveis || []).filter(e => {
+      const empClean = (e.cnpjRaiz || e.cnpjCompleto || '').replace(/\D/g, '');
+      return empClean.startsWith(clean);
+    }).length;
+  };
+
+  // Carregar diretórios salvos no banco de dados e sincronizar com empresas da carteira
   React.useEffect(() => {
     if (!isOpen) return;
+
     const fetchDirs = async () => {
       const res = await get<{ success: boolean; data: CnpjRaizDirectoryConfig[] }>('/directories');
-      if (res.ok && res.data?.data && res.data.data.length > 0) {
-        setLocalConfigs(res.data.data);
-        if (!selectedId || !res.data.data.some(d => d.id === selectedId)) {
-          setSelectedId(res.data.data[0].id);
+      const configsFromDb = (res.ok && res.data?.data) ? res.data.data : [];
+
+      const existingRaizSet = new Set(configsFromDb.map(d => (d.cnpjRaiz || '').replace(/\D/g, '').substring(0, 8)));
+      const mergedConfigs = [...configsFromDb];
+
+      // Se houver empresas cadastradas no sistema que ainda não estejam nos diretórios, gerar padrão
+      if (empresasDisponiveis && empresasDisponiveis.length > 0) {
+        for (const emp of empresasDisponiveis) {
+          const clean = (emp.cnpjRaiz || emp.cnpjCompleto || '').replace(/\D/g, '').substring(0, 8);
+          if (clean.length === 8 && !existingRaizSet.has(clean)) {
+            existingRaizSet.add(clean);
+            const formatted = `${clean.substring(0, 2)}.${clean.substring(2, 5)}.${clean.substring(5, 8)}`;
+            mergedConfigs.push({
+              id: `cfg-${clean}`,
+              cnpjRaiz: formatted,
+              razaoSocial: emp.razaoSocial || emp.nomeFantasia || `EMPRESA CNPJ RAIZ ${formatted}`,
+              diretorioEntrada: `C:\\SEFAZ\\XMLs\\${clean}\\Entrada`,
+              subpastaDataEntrada: true,
+              estruturaNomeEntrada: 'chave',
+              diretorioSaida: `C:\\SEFAZ\\XMLs\\${clean}\\Saida`,
+              subpastaDataSaida: true,
+              estruturaNomeSaida: 'chave',
+              diretorioEventos: `C:\\SEFAZ\\XMLs\\${clean}\\Eventos`,
+              autoOrganizarAoCapturar: true,
+              statusMonitoramento: 'ativo',
+              ultimaSincronizacao: 'Cadastrada na Carteira'
+            });
+          }
+        }
+      }
+
+      if (mergedConfigs.length > 0) {
+        setLocalConfigs(mergedConfigs);
+
+        // Priorizar seleção da Empresa Ativa do usuário
+        const activeClean = (empresaAtiva?.cnpjRaiz || empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '').substring(0, 8);
+        const matchActive = mergedConfigs.find(c => (c.cnpjRaiz || '').replace(/\D/g, '').substring(0, 8) === activeClean);
+
+        if (matchActive) {
+          setSelectedId(matchActive.id);
+        } else if (!selectedId || !mergedConfigs.some(d => d.id === selectedId)) {
+          setSelectedId(mergedConfigs[0].id);
         }
       }
     };
+
     fetchDirs();
-  }, [isOpen, get]);
+  }, [isOpen, get, empresasDisponiveis, empresaAtiva]);
 
   if (!isOpen) return null;
 
@@ -76,12 +130,23 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
   const handleAddCnpjRaiz = async () => {
     const cleanCnpj = newCnpjRaizInput.replace(/\D/g, '').substring(0, 8);
     if (!cleanCnpj || cleanCnpj.length < 8) {
-      alert('Por favor, informe os 8 primeiros dígitos do CNPJ Raiz (ex: 33.000.167).');
+      alert('Por favor, informe os 8 primeiros dígitos do CNPJ Raiz (ex: 19.791.896).');
       return;
     }
 
     const formattedCnpj = `${cleanCnpj.substring(0, 2)}.${cleanCnpj.substring(2, 5)}.${cleanCnpj.substring(5, 8)}`;
     const newId = `cfg-${cleanCnpj}`;
+
+    // Se já existir no estado, apenas seleciona
+    const existing = localConfigs.find(c => (c.cnpjRaiz || '').replace(/\D/g, '').substring(0, 8) === cleanCnpj || c.id === newId);
+    if (existing) {
+      setSelectedId(existing.id);
+      setShowNewCnpjModal(false);
+      setSelectedEmpresaPreset('');
+      setNewCnpjRaizInput('');
+      setNewRazaoSocialInput('');
+      return;
+    }
 
     const newConfig: CnpjRaizDirectoryConfig = {
       id: newId,
@@ -102,16 +167,17 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
     // Salvar no backend
     const res = await post('/directories', newConfig);
     if (!res.ok) {
-      alert('Erro ao salvar no banco: ' + res.error);
+      console.warn('Aviso ao salvar diretório no banco:', res.error);
     }
 
-    const updated = [...localConfigs, newConfig];
+    const updated = [newConfig, ...localConfigs];
     setLocalConfigs(updated);
     setSelectedId(newId);
     onSaveConfigs(updated);
     setShowNewCnpjModal(false);
     setNewCnpjRaizInput('');
     setNewRazaoSocialInput('');
+    setSelectedEmpresaPreset('');
   };
 
   const handleDeleteCnpjRaiz = async (idToDelete: string) => {
@@ -191,26 +257,44 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                 <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
                   Selecione o CNPJ Raiz para Configuração:
                 </label>
-                <select
-                  value={selectedId}
-                  onChange={(e) => {
-                    setSelectedId(e.target.value);
-                    setTestResult({ status: 'idle', msg: '' });
-                  }}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-cyan-500"
-                >
-                  {localConfigs.map(cfg => (
-                    <option key={cfg.id} value={cfg.id}>
-                      CNPJ Raiz: {cfg.cnpjRaiz} — {cfg.razaoSocial}
-                    </option>
-                  ))}
-                </select>
+                {localConfigs.length === 0 ? (
+                  <div className="text-xs text-amber-300 font-medium py-1.5 px-3 rounded-lg bg-amber-950/40 border border-amber-800/60 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>Nenhum CNPJ Raiz configurado. Clique em <strong>+ Novo CNPJ Raiz</strong> para selecionar uma empresa.</span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedId}
+                    onChange={(e) => {
+                      setSelectedId(e.target.value);
+                      setTestResult({ status: 'idle', msg: '' });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-bold focus:outline-none focus:border-cyan-500"
+                  >
+                    {localConfigs.map(cfg => {
+                      const activeClean = (empresaAtiva?.cnpjRaiz || empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '').substring(0, 8);
+                      const isCurrentActive = (cfg.cnpjRaiz || '').replace(/\D/g, '').substring(0, 8) === activeClean;
+                      const branchCount = getBranchCount(cfg.cnpjRaiz);
+                      const branchInfo = branchCount > 0 ? ` (${branchCount} ${branchCount === 1 ? 'unidade' : 'unidades'})` : '';
+                      return (
+                        <option key={cfg.id} value={cfg.id}>
+                          CNPJ Raiz: {cfg.cnpjRaiz} — {cfg.razaoSocial}{branchInfo}{isCurrentActive ? ' ⭐ [Empresa Ativa]' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => setShowNewCnpjModal(true)}
+                onClick={() => {
+                  setSelectedEmpresaPreset('');
+                  setNewCnpjRaizInput('');
+                  setNewRazaoSocialInput('');
+                  setShowNewCnpjModal(true);
+                }}
                 className="px-3.5 py-2 rounded-xl bg-cyan-950 hover:bg-cyan-900 text-cyan-300 border border-cyan-800/80 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
               >
                 <Plus className="w-4 h-4" />
@@ -534,11 +618,11 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
       {/* Sub-modal: New CNPJ Raiz */}
       {showNewCnpjModal && (
         <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h4 className="text-sm font-bold text-white flex items-center gap-2">
                 <Plus className="w-4 h-4 text-cyan-400" />
-                Cadastrar Novo CNPJ Raiz
+                Cadastrar / Vincular Novo CNPJ Raiz
               </h4>
               <button
                 onClick={() => setShowNewCnpjModal(false)}
@@ -548,7 +632,57 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Seletor rápido de Empresa Cadastrada na Carteira */}
+              {empresasDisponiveis && empresasDisponiveis.length > 0 && (
+                <div className="p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-800/60 space-y-2">
+                  <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                    Vincular a uma Empresa Cadastrada na Carteira:
+                  </label>
+                  <select
+                    value={selectedEmpresaPreset}
+                    onChange={(e) => {
+                      const empId = e.target.value;
+                      setSelectedEmpresaPreset(empId);
+                      const emp = empresasDisponiveis.find(item => item.id === empId);
+                      if (emp) {
+                        const clean = (emp.cnpjRaiz || emp.cnpjCompleto || '').replace(/\D/g, '').substring(0, 8);
+                        const formatted = `${clean.substring(0, 2)}.${clean.substring(2, 5)}.${clean.substring(5, 8)}`;
+                        setNewCnpjRaizInput(formatted);
+                        setNewRazaoSocialInput(emp.razaoSocial || emp.nomeFantasia || '');
+                      }
+                    }}
+                    className="w-full bg-slate-950 border border-cyan-800/80 rounded-lg px-3 py-2 text-xs text-white font-medium focus:outline-none focus:border-cyan-400"
+                  >
+                    <option value="">-- Selecione para preenchimento automático --</option>
+                    {empresasDisponiveis.map(emp => {
+                      const clean = (emp.cnpjRaiz || emp.cnpjCompleto || '').replace(/\D/g, '').substring(0, 8);
+                      const alreadyConfigured = localConfigs.some(c => (c.cnpjRaiz || '').replace(/\D/g, '').substring(0, 8) === clean);
+                      return (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.cnpjCompleto ? formatCNPJ(emp.cnpjCompleto) : emp.cnpjRaiz} — {emp.razaoSocial} ({emp.uf || 'BR'}) {alreadyConfigured ? '✓ Já configurado' : '⭐ Pronto para configurar'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {selectedEmpresaPreset && (
+                    <div className="text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium pt-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      Dados preenchidos automaticamente a partir da empresa selecionada!
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-800"></div>
+                <span className="flex-shrink mx-2 text-[10px] text-slate-500 uppercase tracking-widest font-bold">
+                  Ou preencha / ajuste os campos abaixo
+                </span>
+                <div className="flex-grow border-t border-slate-800"></div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
                   CNPJ Raiz (8 Primeiros dígitos):
@@ -557,7 +691,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                   type="text"
                   value={newCnpjRaizInput}
                   onChange={(e) => setNewCnpjRaizInput(e.target.value)}
-                  placeholder="Ex: 33.000.167"
+                  placeholder="Ex: 19.791.896"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -570,24 +704,25 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                   type="text"
                   value={newRazaoSocialInput}
                   onChange={(e) => setNewRazaoSocialInput(e.target.value)}
-                  placeholder="Ex: MINHA EMPRESA MATRIZ"
+                  placeholder="Ex: SUPERGASBRAS ENERGIA LTDA"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 onClick={() => setShowNewCnpjModal(false)}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+                className="px-3.5 py-2 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleAddCnpjRaiz}
-                className="px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-bold hover:bg-cyan-500 shadow-md shadow-cyan-600/30"
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 text-white text-xs font-bold hover:from-cyan-500 hover:to-blue-500 shadow-md shadow-cyan-600/30 flex items-center gap-1.5"
               >
-                Confirmar
+                <Check className="w-3.5 h-3.5" />
+                Confirmar Configuração
               </button>
             </div>
           </div>

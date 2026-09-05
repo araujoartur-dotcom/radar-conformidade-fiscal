@@ -1,0 +1,37 @@
+# Walkthrough • Deploy e Correção de Intermitência Sistêmica
+
+Deploy concluído com sucesso para a branch `main` (commit [`df915e6`](https://github.com/araujoartur-dotcom/radar-conformidade-fiscal/commit/df915e6)).
+
+---
+
+## 1. Alterações Entregues em Produção
+
+### Item 1: Limpeza do Cabeçalho Superior ([`Header.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx))
+- **Remoção de Duplicidade**: Removido o botão *"Diretórios XMLs CNPJ Raiz"* do topo do header. O acesso permanece centralizado dentro do módulo de DF-e.
+
+### Item 2: Exclusão do Dropzone e Botão Redundante ([`DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx))
+- **Remoção do Quadro**: Eliminada toda a caixa pontilhada *"Arraste ou clique para carregar arquivos XML de DF-e..."* e o botão redundante *"Abrir Motor Turbo V12"* que ficava dentro dela.
+- **Ganho de Layout**: Os documentos importados e o detalhamento do DF-e agora se posicionam imediatamente abaixo da barra de métricas, liberando mais de 250px de altura útil.
+
+### Item 3: Correção da Intermitência e Salto de Valores de KPIs
+- **Causa Raiz Corrigida**: Anteriormente, ao alternar entre abas, o componente desmontava e reiniciava seu estado local de KPIs como `null`. Nos primeiros milissegundos, recorria ao fallback de somar apenas as 1.000 notas carregadas em tela (gerando o salto de **R$ 73.696.876,82** para **R$ 788.694.097,63** quando a API de agregação respondia).
+- **Novo [`KpiContext.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/contexts/KpiContext.tsx)**:
+  - Acoplado no topo da aplicação ([`main.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/main.tsx)), garantindo que os KPIs consolidados permaneçam vivos na memória durante toda a sessão.
+  - Implementado cache persistente (*stale-while-revalidate*).
+- **Eliminação de Fallbacks Parciais**: Removidos os cálculos sobre listas parciais em [`DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx), [`CentralKpisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx) e [`RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx).
+- **Resultado**: Ao abrir qualquer tela com KPIs, os valores já nascem cravados em **R$ 788.694.097,63** instantaneamente (0ms), sem tela em branco e sem pulo de números.
+
+---
+
+## 2. Validações Realizadas
+
+| Teste | Resultado |
+| :--- | :--- |
+| **Lint & TypeScript** (`npm run lint`) | Passou sem erros (0 erros de tipo) |
+| **Build de Produção** (`npm run build`) | Gerado em 8.08s sem erros |
+| **Deploy Git** (`git push origin main`) | Enviado com sucesso para a branch `main` |
+
+---
+
+## 3. Próximos Passos
+O deploy está no ar e o pipeline já deve ter atualizado o ambiente de produção. Você pode testar diretamente na URL do sistema para conferir a estabilidade da interface e dos números.

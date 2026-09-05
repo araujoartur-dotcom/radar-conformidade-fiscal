@@ -1,0 +1,74 @@
+# Plano de Implementação de Deploy • Radar de Conformidade Fiscal
+
+Este documento apresenta o plano detalhado de deploy das melhorias e correções acumuladas no sistema, para sua revisão e aprovação formal antes de qualquer envio para produção.
+
+---
+
+## 1. Escopo das Alterações Prontas para Deploy
+
+Todas as alterações abaixo foram desenvolvidas, integradas e testadas **estritamente em ambiente local**:
+
+1. **[Header] Remoção de Botões Duplicados:**
+   - Removido o botão redundante *"Diretórios XMLs CNPJ Raiz"* do topo do cabeçalho ([`src/components/Header.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)). O acesso permanece centralizado no painel de DF-e.
+2. **[DfeManagerPanel] Eliminação da Caixa de Upload e Redundâncias:**
+   - Removido o quadro pontilhado *"Arraste ou clique para carregar arquivos XML..."* e o botão redundante *"Abrir Motor Turbo V12"* de dentro do dropzone ([`src/components/DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)).
+   - Ganho imediato de mais de 250px de altura útil para listagem e auditoria de notas.
+3. **[Sistêmico] Eliminação da Intermitência e Salto de Números:**
+   - **Novo Contexto Global de KPIs** ([`src/contexts/KpiContext.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/contexts/KpiContext.tsx)) acoplado à raiz da aplicação ([`src/main.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/main.tsx)).
+   - **Eliminação dos fallbacks parciais** (`dfeList.reduce` de 1.000 notas = R$ 73M) em todas as telas:
+     - [`DfeManagerPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+     - [`CentralKpisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+     - [`RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+   - Cache persistente *stale-while-revalidate* no cliente: ao entrar ou trocar de telas, os **R$ 788.694.097,63** são exibidos imediatamente (0ms), sem tela em branco e sem "salto" de valores.
+
+---
+
+## 2. Validações Locais Pré-Deploy (Já Realizadas)
+
+| Verificação | Comando / Ferramenta | Resultado | Status |
+| :--- | :--- | :--- | :--- |
+| **Tipagem TypeScript** | `npm run lint` (`tsc --noEmit`) | 0 erros, 0 warnings de tipo | ✅ Aprovado |
+| **Compilação de Produção** | `npm run build` (`vite build`) | Build concluído em 8.08s | ✅ Aprovado |
+| **Bundle & Assets** | Minificação e geração do `dist/` | Chunks gerados sem quebra | ✅ Aprovado |
+
+---
+
+## 3. Roteiro Passo a Passo do Deploy
+
+Quando você autorizar, o procedimento de deploy seguirá o fluxo abaixo:
+
+### Etapa 1: Git Staging & Commit
+```bash
+git add src/components/Header.tsx src/components/DfeManagerPanel.tsx src/components/CentralKpisPanel.tsx src/components/RelatoriosXmlPanel.tsx src/contexts/KpiContext.tsx src/main.tsx
+git commit -m "fix(ui): remove duplicate buttons, dropzone and eliminate KPI numbers flicker with global KpiContext"
+```
+
+### Etapa 2: Publicação (Git Push)
+```bash
+git push origin main
+```
+
+### Etapa 3: Build & Publicação no Servidor de Hospedagem
+* O webhook do repositório aciona automaticamente o pipeline de CI/CD (ex: Vercel / Railway / Render / VPS).
+* O servidor executa `npm run build` e substitui o bundle em produção sem tempo de inatividade (*zero-downtime deployment*).
+
+### Etapa 4: Validação Pós-Deploy (Smoke Tests)
+1. Acessar a URL de produção.
+2. Conferir se o Header está limpo (sem o botão duplicado de Diretórios).
+3. Entrar no módulo **XMLs & Ref. Tributária**:
+   - Verificar se o quadro de upload pontilhado foi removido e a tabela subiu.
+   - Verificar se os números já abrem cravados em **R$ 788.694.097,63** sem piscar 73M.
+4. Alternar entre as abas **Central de Eventos DF-e**, **Central de KPIs**, **Relatórios Fiscais** e retornar para **XMLs & Ref. Tributária**:
+   - Confirmar estabilidade imediata dos números em todas as transições.
+
+---
+
+## 4. Plano de Contingência e Rollback
+
+Caso seja observado qualquer comportamento indesejado em produção:
+* **Rollback Imediato via Git**:
+  ```bash
+  git revert HEAD --no-edit
+  git push origin main
+  ```
+  O pipeline restaura a versão anterior em menos de 2 minutos.

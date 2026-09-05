@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileCode, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Receipt, Zap, Search } from 'lucide-react';
-import { DfeXmlItem, CnpjRaizDirectoryConfig, CertificadoA1, AmbienteSefaz } from '../types';
+import { DfeXmlItem, CertificadoA1, AmbienteSefaz } from '../types';
 import { DanfeModal } from './DanfeModal';
 import { XmlViewerModal } from './XmlViewerModal';
 import { ConsultaNsuModal } from './ConsultaNsuModal';
@@ -15,8 +15,6 @@ interface DfeManagerPanelProps {
   setDfeList: React.Dispatch<React.SetStateAction<DfeXmlItem[]>>;
   onOpenEvents: (item: DfeXmlItem) => void;
   onSyncErp: (item: DfeXmlItem) => void;
-  directoryConfigs?: CnpjRaizDirectoryConfig[];
-  onOpenDirConfig?: () => void;
   certificado: CertificadoA1;
   ambienteSefaz: AmbienteSefaz;
 }
@@ -26,8 +24,6 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   setDfeList,
   onOpenEvents,
   onSyncErp,
-  directoryConfigs = [],
-  onOpenDirConfig,
   certificado,
   ambienteSefaz
 }) => {
@@ -146,17 +142,6 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
               <FolderOutput className="w-4 h-4 text-emerald-200" />
               <span>XML Saídas</span>
             </button>
-
-            {onOpenDirConfig && (
-              <button
-                onClick={onOpenDirConfig}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white border border-slate-700 hover:border-cyan-500/50 text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-                title="Configurar diretórios de armazenamento de XMLs por CNPJ Raiz"
-              >
-                <Settings className="w-4 h-4 text-cyan-400" />
-                <span>Configurar Diretórios (CNPJ Raiz)</span>
-              </button>
-            )}
           </div>
         </div>
 

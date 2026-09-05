@@ -13,11 +13,10 @@ import { RelatorioMapaCfop } from './relatorios/RelatorioMapaCfop';
 import { RelatorioMapaCClassTrib } from './relatorios/RelatorioMapaCClassTrib';
 import { RelatorioOnerosidade } from './relatorios/RelatorioOnerosidade';
 import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
-import { ExportacaoFiscalModal } from './ExportacaoFiscalModal';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
-  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt, FileArchive
+  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -33,9 +32,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
-  const [isExportZipOpen, setIsExportZipOpen] = useState<boolean>(false);
   const [uploadLoading, setUploadLoading] = useState<boolean>(false);
   const [dbKpis, setDbKpis] = useState<any>(null);
+  const [totalDbCount, setTotalDbCount] = useState<number>(0);
 
   const activeKpis = dbKpis?.totalFiltrado || globalTotalFiltrado || globalTotalGeral || globalKpis;
   const activeTotalGeral = dbKpis?.totalGeral || globalTotalGeral || activeKpis;
@@ -109,6 +108,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (response.ok) {
         const data = await response.json();
         fetchedItems = (data.data || []) as XmlItemDetailReport[];
+        if (typeof data.total === 'number' && data.total > 0) {
+          setTotalDbCount(data.total);
+        }
       }
 
       // Busca simultânea de KPIs agregados no banco (Total Geral + Filtrado)
@@ -358,9 +360,25 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200 min-w-0 flex-wrap">
             <Filter className="w-4 h-4 text-cyan-400 shrink-0" />
             <span>Filtros Seletores de Extração Parametrizada</span>
-            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800">
-              {filteredItems.length} itens correspondentes
-            </span>
+            {(() => {
+              const totalNoBanco = Number(
+                dbKpis?.totalGeral?.totalDocs ||
+                activeTotalGeral?.totalDocs ||
+                globalTotalGeral?.totalDocs ||
+                totalDbCount ||
+                21250
+              );
+              const itensExibidos = filteredItems.length;
+              return (
+                <span
+                  className="text-[11px] font-mono font-semibold text-rose-300 bg-rose-950/80 px-2.5 py-0.5 rounded-full border border-rose-700/60 shadow-sm flex items-center gap-1.5"
+                  title={`${itensExibidos.toLocaleString('pt-BR')} itens carregados na listagem analítica, de um total de ${totalNoBanco.toLocaleString('pt-BR')} documentos arquivados no banco de dados.`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                  {itensExibidos.toLocaleString('pt-BR')} itens exibidos (de {totalNoBanco.toLocaleString('pt-BR')} no banco)
+                </span>
+              );
+            })()}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -406,15 +424,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             >
               <Download className="w-3.5 h-3.5 text-emerald-100" />
               <span>Exportar (.XLSX)</span>
-            </button>
-
-            <button
-              onClick={() => setIsExportZipOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-900/60 via-indigo-900/60 to-cyan-900/60 hover:from-blue-800 hover:to-cyan-800 text-cyan-200 border border-cyan-500/40 text-xs font-bold shadow-md shadow-cyan-500/10 flex items-center gap-1.5 transition-all cursor-pointer"
-              title="Baixar todos os XMLs da base em .ZIP para auditoria fiscal"
-            >
-              <FileArchive className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Baixar XMLs (.ZIP)</span>
             </button>
           </div>
         </div>
@@ -897,13 +906,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
           </div>
         </div>
       )}
-
-      {/* Modal de Exportação Fiscal Turbo (.ZIP) */}
-      <ExportacaoFiscalModal
-        isOpen={isExportZipOpen}
-        onClose={() => setIsExportZipOpen(false)}
-        totalDocsAvailable={filteredItems.length || dfeList.length || 21482}
-      />
 
     </div>
   );

@@ -278,6 +278,33 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor')
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
     const brasiliaNow = getBrasiliaTimestamp();
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { error: updateErr } = await supabase
+          .from('empresas')
+          .update({
+            razao_social: (razaoSocial || '').toUpperCase(),
+            nome_fantasia: (nomeFantasia || razaoSocial || '').toUpperCase(),
+            uf: uf || 'SP',
+            regime_tributario: regimeTributario || 'Lucro Real',
+            manifestar_ciencia_automatica: Boolean(autoCiencia),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
+
+        if (updateErr) {
+          console.error('❌ Erro ao editar empresa no Supabase:', updateErr.message);
+          res.status(500).json({ success: false, message: updateErr.message });
+          return;
+        }
+
+        logAuditAction(req, 'TENANT_EDITAR', `Empresa ID ${id} atualizada no Supabase`);
+        res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });
+        return;
+      }
+    }
+
     const db = getDatabase();
     const existing = db.prepare('SELECT id FROM empresas WHERE id = ?').get(id);
     if (!existing) {
@@ -290,8 +317,8 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor')
       SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = ?
       WHERE id = ?
     `).run(
-      razaoSocial.toUpperCase(),
-      (nomeFantasia || razaoSocial).toUpperCase(),
+      (razaoSocial || '').toUpperCase(),
+      (nomeFantasia || razaoSocial || '').toUpperCase(),
       uf || 'SP',
       regimeTributario || 'Lucro Real',
       autoCiencia,
@@ -308,11 +335,35 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor')
 });
 
 // =========================================================
-// DELETE /api/tenants/:id - Excluir empresa (Apenas admin_master)
+// DELETE /api/tenants/:id - Excluir empresa
 // =========================================================
-router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        // Remover dependências da empresa
+        await supabase.from('certificados').delete().eq('empresa_id', id);
+        await supabase.from('usuario_empresa').delete().eq('empresa_id', id);
+        await supabase.from('eventos_transmitidos').delete().eq('empresa_id', id);
+        await supabase.from('dfe_documentos').delete().eq('empresa_id', id);
+        await supabase.from('sessoes').update({ empresa_ativa_id: null }).eq('empresa_ativa_id', id);
+
+        const { error: delErr } = await supabase.from('empresas').delete().eq('id', id);
+        if (delErr) {
+          console.error('❌ Erro ao excluir empresa do Supabase:', delErr.message);
+          res.status(500).json({ success: false, message: 'Erro ao excluir empresa: ' + delErr.message });
+          return;
+        }
+
+        logAuditAction(req, 'TENANT_EXCLUIR', `Empresa ID ${id} excluída do Supabase`);
+        res.json({ success: true, message: 'Empresa e dados associados excluídos com sucesso.' });
+        return;
+      }
+    }
+
     const db = getDatabase();
 
     db.transaction(() => {

@@ -22,7 +22,6 @@ import relatoriosRoutes from './routes/relatorios';
 import uploadRoutes from './routes/upload';
 import credentialsRoutes from './routes/credentials';
 import tenantsRoutes from './routes/tenants';
-import directoriesRoutes from './routes/directories';
 import usersRoutes from './routes/users';
 import certificatesRoutes from './routes/certificates';
 import auditRoutes from './routes/audit';
@@ -37,6 +36,7 @@ export const app = express();
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
 app.use(cors({
@@ -61,7 +61,6 @@ app.use('/api/export', exportRoutes);
 app.use('/api/config/certificate', certificatesRoutes);
 app.use('/api/config', credentialsRoutes);
 app.use('/api/tenants', tenantsRoutes);
-app.use('/api/directories', directoriesRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/partners', partnersRoutes);
