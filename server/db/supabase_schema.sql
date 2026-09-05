@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS public.empresas (
     nome_fantasia VARCHAR(255) DEFAULT '',
     uf VARCHAR(2) NOT NULL DEFAULT 'SP',
     regime_tributario VARCHAR(50) NOT NULL DEFAULT 'Lucro Real',
+    natureza_juridica_codigo VARCHAR(20) DEFAULT NULL,
+    natureza_juridica_desc VARCHAR(255) DEFAULT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo', 'suspenso', 'inativo')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -51,6 +51,8 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             grupoContabilCliente: 'Carteira Geral',
             uf: r.uf,
             regimeTributario: r.regime_tributario,
+            naturezaJuridica: r.natureza_juridica_desc,
+            codigoNaturezaJuridica: r.natureza_juridica_codigo,
             manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
             ultimoNsu: r.ultimo_nsu || '000000000000000',
             maxNsu: r.max_nsu || '000000000000000',
@@ -114,6 +116,8 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       grupoContabilCliente: 'Carteira Geral',
       uf: r.uf,
       regimeTributario: r.regime_tributario,
+      naturezaJuridica: r.natureza_juridica_desc,
+      codigoNaturezaJuridica: r.natureza_juridica_codigo,
       manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
       ultimoNsu: r.ultimo_nsu || '000000000000000',
       maxNsu: r.max_nsu || '000000000000000',
@@ -141,7 +145,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
 // =========================================================
 router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente, manifestarCienciaAutomatica } = req.body;
+    const { cnpjCompleto, razaoSocial, nomeFantasia, uf, regimeTributario, grupoContabilCliente, manifestarCienciaAutomatica, naturezaJuridica, codigoNaturezaJuridica } = req.body;
     if (!cnpjCompleto || !razaoSocial) {
       res.status(400).json({ success: false, message: 'CNPJ e Razão Social são obrigatórios.' });
       return;
@@ -163,6 +167,8 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
           nome_fantasia: (nomeFantasia || razaoSocial).toUpperCase(),
           uf: uf || 'SP',
           regime_tributario: regimeTributario || 'Lucro Real',
+          natureza_juridica_desc: naturezaJuridica || null,
+          natureza_juridica_codigo: codigoNaturezaJuridica || null,
           status: 'ativo',
           created_at: brasiliaNow,
           updated_at: brasiliaNow,
@@ -217,21 +223,43 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
     }
 
     db.transaction(() => {
-      db.prepare(`
-        INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, manifestar_ciencia_automatica, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ativo', ?, ?)
-      `).run(
-        id,
-        cnpjRaiz,
-        cnpjCompleto,
-        razaoSocial.toUpperCase(),
-        (nomeFantasia || razaoSocial).toUpperCase(),
-        uf || 'SP',
-        regimeTributario || 'Lucro Real',
-        autoCiencia,
-        brasiliaNow,
-        brasiliaNow
-      );
+      // Usamos try-catch interno para ignorar erro caso a coluna não exista no SQLite antigo
+      try {
+        db.prepare(`
+          INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, natureza_juridica_desc, natureza_juridica_codigo, manifestar_ciencia_automatica, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ativo', ?, ?)
+        `).run(
+          id,
+          cnpjRaiz,
+          cnpjCompleto,
+          razaoSocial.toUpperCase(),
+          (nomeFantasia || razaoSocial).toUpperCase(),
+          uf || 'SP',
+          regimeTributario || 'Lucro Real',
+          naturezaJuridica || null,
+          codigoNaturezaJuridica || null,
+          autoCiencia,
+          brasiliaNow,
+          brasiliaNow
+        );
+      } catch (err) {
+        // Fallback for older schema without natureza_juridica
+        db.prepare(`
+          INSERT INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, manifestar_ciencia_automatica, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ativo', ?, ?)
+        `).run(
+          id,
+          cnpjRaiz,
+          cnpjCompleto,
+          razaoSocial.toUpperCase(),
+          (nomeFantasia || razaoSocial).toUpperCase(),
+          uf || 'SP',
+          regimeTributario || 'Lucro Real',
+          autoCiencia,
+          brasiliaNow,
+          brasiliaNow
+        );
+      }
 
       if (req.user?.userId) {
         const vinculoId = uuidv4();
@@ -256,6 +284,8 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
         grupoContabilCliente: grupoContabilCliente || 'Carteira Geral',
         uf: uf || 'SP',
         regimeTributario: regimeTributario || 'Lucro Real',
+        naturezaJuridica: naturezaJuridica || '',
+        codigoNaturezaJuridica: codigoNaturezaJuridica || '',
         manifestarCienciaAutomatica: Boolean(autoCiencia),
         statusConexaoSefaz: 'sem_certificado',
         totalDocumentosCapturados: 0,
@@ -274,7 +304,7 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
 router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica } = req.body;
+    const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica, naturezaJuridica, codigoNaturezaJuridica } = req.body;
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
     const brasiliaNow = getBrasiliaTimestamp();
 
@@ -288,6 +318,8 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor')
             nome_fantasia: (nomeFantasia || razaoSocial || '').toUpperCase(),
             uf: uf || 'SP',
             regime_tributario: regimeTributario || 'Lucro Real',
+            natureza_juridica_desc: naturezaJuridica || null,
+            natureza_juridica_codigo: codigoNaturezaJuridica || null,
             manifestar_ciencia_automatica: Boolean(autoCiencia),
             updated_at: new Date().toISOString()
           })
@@ -312,19 +344,37 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor')
       return;
     }
 
-    db.prepare(`
-      UPDATE empresas 
-      SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = ?
-      WHERE id = ?
-    `).run(
-      (razaoSocial || '').toUpperCase(),
-      (nomeFantasia || razaoSocial || '').toUpperCase(),
-      uf || 'SP',
-      regimeTributario || 'Lucro Real',
-      autoCiencia,
-      brasiliaNow,
-      id
-    );
+    try {
+      db.prepare(`
+        UPDATE empresas 
+        SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, natureza_juridica_desc = ?, natureza_juridica_codigo = ?, manifestar_ciencia_automatica = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        (razaoSocial || '').toUpperCase(),
+        (nomeFantasia || razaoSocial || '').toUpperCase(),
+        uf || 'SP',
+        regimeTributario || 'Lucro Real',
+        naturezaJuridica || null,
+        codigoNaturezaJuridica || null,
+        autoCiencia,
+        brasiliaNow,
+        id
+      );
+    } catch (err) {
+      db.prepare(`
+        UPDATE empresas 
+        SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, manifestar_ciencia_automatica = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        (razaoSocial || '').toUpperCase(),
+        (nomeFantasia || razaoSocial || '').toUpperCase(),
+        uf || 'SP',
+        regimeTributario || 'Lucro Real',
+        autoCiencia,
+        brasiliaNow,
+        id
+      );
+    }
 
     logAuditAction(req, 'TENANT_EDITAR', `Empresa ID ${id} atualizada`);
     res.json({ success: true, message: 'Dados da empresa atualizados com sucesso.' });

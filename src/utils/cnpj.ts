@@ -127,6 +127,7 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = ''): Pr
               nomeFantasia: d.nomeFantasia || d.razaoSocial,
               cnaePrincipal: d.cnaePrincipal,
               regimeTributario: d.regimeTributario || 'Lucro Real',
+              indAtiv: d.indAtiv || '1',
               capitalSocial: d.capitalSocial || 0,
               statusConsulta: 'sucesso',
               dataConsulta: new Date().toISOString()
@@ -269,6 +270,40 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = ''): Pr
 }
 
 /**
+ * Normaliza a Natureza Jurídica, removendo acentos e caracteres especiais,
+ * transformando em maiúsculas e extraindo o código numérico isolado.
+ */
+export function normalizeNaturezaJuridica(text: string, idStr?: string): { codigo: string; descricao: string } {
+  let codigo = (idStr || '').replace(/\D/g, '');
+  let rawDescricao = text || '';
+
+  // Se o texto vier no formato "206-2 - SOCIEDADE EMPRESARIA LIMITADA"
+  const match = rawDescricao.match(/^(\d{3,4}[-\s]*\d?)\s*-\s*(.*)/);
+  if (match) {
+    if (!codigo) codigo = match[1].replace(/\D/g, '');
+    rawDescricao = match[2];
+  }
+
+  // Se o código tiver 4 dígitos, ex "2062", formatar para "206-2"
+  let formattedCode = codigo;
+  if (codigo.length === 4) {
+    formattedCode = `${codigo.slice(0, 3)}-${codigo.slice(3)}`;
+  }
+
+  // Remove acentos e converte para maiúsculo
+  let descricaoNormalizada = rawDescricao
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9\s]/g, '') // remove pontuações, mantendo apenas letras e números
+    .trim()
+    .toUpperCase();
+
+  return {
+    codigo: formattedCode,
+    descricao: descricaoNormalizada || formattedCode // se vier sem nome, devolve o código
+  };
+}
+
+/**
  * Identifica se a atividade CNAE é tipicamente de Serviços puros (não sujeita a ICMS estadual).
  */
 export function isPureServiceCnae(cnae: string): boolean {
@@ -281,6 +316,45 @@ export function isPureServiceCnae(cnae: string): boolean {
     '88', '90', '91', '92', '93', '94', '95', '96'
   ];
   return servicePrefixes.includes(prefix2);
+}
+
+/**
+ * Determina o tipo de atividade (IND_ATIV) para SPED com base no CNAE e Natureza Jurídica
+ */
+export function determineTipoAtividade(cnae: string, natJuridicaCode?: string, natJuridicaStr?: string): string {
+  const natJurStrLower = String(natJuridicaStr || '').toLowerCase();
+  const natCode = String(natJuridicaCode || '').replace(/\D/g, '');
+  const cnaeClean = String(cnae || '').replace(/\D/g, '');
+  const cnaePrefix2 = cnaeClean.slice(0, 2);
+
+  // 1. Condomínios, Associações e Órgãos Públicos
+  if (natCode.startsWith('1') || natCode.startsWith('3') || natJurStrLower.includes('condomínio') || natJurStrLower.includes('associação') || natJurStrLower.includes('fundação')) {
+    return '5'; // Entidades Sem Fins Lucrativos / Condomínios / Adm Pública
+  }
+  
+  // 2. Instituições Financeiras
+  if (['64', '65', '66'].includes(cnaePrefix2)) {
+    return '3'; // Instituições Financeiras
+  }
+  
+  // 3. Atividade Imobiliária
+  if (cnaePrefix2 === '68') {
+    return '4'; // Atividade Imobiliária
+  }
+  
+  // 4. Comércio
+  if (['45', '46', '47'].includes(cnaePrefix2)) {
+    return '2'; // Comércio
+  }
+  
+  // 5. Indústria
+  const indPrefixes = ['05', '06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33'];
+  if (indPrefixes.includes(cnaePrefix2)) {
+    return '0'; // Industrial ou Equiparado
+  }
+  
+  // 6. Serviços e Outros (Padrão)
+  return '1'; // Prestador de Serviços
 }
 
 /**
@@ -417,6 +491,8 @@ function parseBrasilApiResponse(data: any, formattedCnpj: string, defaultUf: str
       })).filter((s: any) => Boolean(s.nome))
     : [];
 
+  const natJurNormalized = normalizeNaturezaJuridica(data.natureza_juridica, data.codigo_natureza_juridica);
+
   return {
     cnpj: formattedCnpj,
     uf: uf,
@@ -424,13 +500,15 @@ function parseBrasilApiResponse(data: any, formattedCnpj: string, defaultUf: str
     tipoIE: ieStatus.tipoIE,
     situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
-    naturezaJuridica: data.natureza_juridica || '',
+    naturezaJuridica: natJurNormalized.descricao,
+    codigoNaturezaJuridica: natJurNormalized.codigo,
     razaoSocial: data.razao_social || '',
     nomeFantasia: data.nome_fantasia || data.razao_social || '',
     cnaePrincipal: cnaePrincipal,
     cnaeDescricao: data.cnae_fiscal_descricao || '',
     dataAbertura: data.data_inicio_atividade || '',
     regimeTributario: determineTaxRegime(data),
+    indAtiv: determineTipoAtividade(cnaePrincipal, data.codigo_natureza_juridica, data.natureza_juridica),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
     logradouro: data.logradouro || '',
@@ -463,6 +541,8 @@ function parseMinhaReceitaResponse(data: any, formattedCnpj: string, defaultUf: 
       })).filter((s: any) => Boolean(s.nome))
     : [];
 
+  const natJurNormalized = normalizeNaturezaJuridica(data.natureza_juridica, data.codigo_natureza_juridica);
+
   return {
     cnpj: formattedCnpj,
     uf: uf,
@@ -470,13 +550,15 @@ function parseMinhaReceitaResponse(data: any, formattedCnpj: string, defaultUf: 
     tipoIE: ieStatus.tipoIE,
     situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
-    naturezaJuridica: data.natureza_juridica || '',
+    naturezaJuridica: natJurNormalized.descricao,
+    codigoNaturezaJuridica: natJurNormalized.codigo,
     razaoSocial: data.razao_social || '',
     nomeFantasia: data.nome_fantasia || data.razao_social || '',
     cnaePrincipal: cnaePrincipal,
     cnaeDescricao: data.cnae_fiscal_descricao || '',
     dataAbertura: data.data_inicio_atividade || '',
     regimeTributario: determineTaxRegime(data),
+    indAtiv: determineTipoAtividade(cnaePrincipal, data.codigo_natureza_juridica, data.natureza_juridica),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [data.logradouro, data.numero, data.complemento, data.bairro].filter(Boolean).join(', '),
     logradouro: data.logradouro || '',
@@ -515,6 +597,8 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
 
   const logradouroParsed = [est.tipo_logradouro, est.logradouro].filter(Boolean).join(' ');
 
+  const natJurNormalized = normalizeNaturezaJuridica(data.natureza_juridica?.descricao, data.natureza_juridica?.id);
+
   return {
     cnpj: formattedCnpj,
     uf: uf,
@@ -522,13 +606,15 @@ function parseCnpjWsResponse(data: any, formattedCnpj: string, defaultUf: string
     tipoIE: ieStatus.tipoIE,
     situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
-    naturezaJuridica: data.natureza_juridica?.descricao || '',
+    naturezaJuridica: natJurNormalized.descricao,
+    codigoNaturezaJuridica: natJurNormalized.codigo,
     razaoSocial: data.razao_social || '',
     nomeFantasia: est.nome_fantasia || data.razao_social || '',
     cnaePrincipal: cnaePrincipal,
     cnaeDescricao: est.atividade_principal?.descricao || '',
     dataAbertura: est.data_inicio_atividade || '',
     regimeTributario: determineTaxRegime(data),
+    indAtiv: determineTipoAtividade(cnaePrincipal, data.natureza_juridica?.id, data.natureza_juridica?.descricao),
     capitalSocial: Number(data.capital_social) || 0,
     enderecoCompleto: [logradouroParsed, est.numero, est.complemento, est.bairro].filter(Boolean).join(' '),
     logradouro: logradouroParsed || '',
@@ -569,6 +655,8 @@ function parseCnpjaResponse(data: any, formattedCnpj: string, defaultUf: string)
 
   const logradouroParsed = [addr.street, addr.number, addr.district].filter(Boolean).join(', ');
 
+  const natJurNormalized = normalizeNaturezaJuridica(company.nature?.text, company.nature?.id);
+
   return {
     cnpj: formattedCnpj,
     uf: uf,
@@ -576,13 +664,15 @@ function parseCnpjaResponse(data: any, formattedCnpj: string, defaultUf: string)
     tipoIE: ieStatus.tipoIE,
     situaçaoIE: ieStatus.situaçaoIE,
     situaçaoCNPJ: sitCNPJ,
-    naturezaJuridica: company.nature?.text || '',
+    naturezaJuridica: natJurNormalized.descricao,
+    codigoNaturezaJuridica: natJurNormalized.codigo,
     razaoSocial: company.name || '',
     nomeFantasia: data.alias || company.name || '',
     cnaePrincipal: cnaePrincipal,
     cnaeDescricao: data.mainActivity?.text || '',
     dataAbertura: data.founded || '',
     regimeTributario: determineTaxRegime(data),
+    indAtiv: determineTipoAtividade(cnaePrincipal, company.nature?.id, company.nature?.text),
     capitalSocial: Number(company.equity) || 0,
     enderecoCompleto: [logradouroParsed, addr.details].filter(Boolean).join(' - '),
     logradouro: addr.street || '',

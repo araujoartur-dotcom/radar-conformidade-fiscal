@@ -83,11 +83,11 @@ export interface NfseStatusResumo {
 // =========================================================
 const ADN_ENDPOINTS = {
   producao: {
-    baseUrl: 'https://adn.receita.fazenda.gov.br',
+    baseUrl: 'https://adn.nfse.gov.br',
     distribuicaoPath: '/api/v1/distribuicao/nsu',
   },
   homologacao: {
-    baseUrl: 'https://hom-adn.receita.fazenda.gov.br',
+    baseUrl: 'https://hom-adn.nfse.gov.br',
     distribuicaoPath: '/api/v1/distribuicao/nsu',
   }
 };

@@ -66,13 +66,17 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [newNomeFantasia, setNewNomeFantasia] = useState('');
   const [newGrupo, setNewGrupo] = useState('Carteira Geral');
   const [newUf, setNewUf] = useState('SP');
-  const [newRegime, setNewRegime] = useState<'Real' | 'Presumido' | 'Simples Nacional' | 'MEI'>('Real');
+  const [newRegime, setNewRegime] = useState<'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento'>('Real');
   const [newIe, setNewIe] = useState('');
+  const [newTipoIe, setNewTipoIe] = useState('');
+  const [newSituacaoIe, setNewSituacaoIe] = useState('');
   const [newIm, setNewIm] = useState('');
   const [newCnae, setNewCnae] = useState('');
+  const [newNaturezaJuridica, setNewNaturezaJuridica] = useState('');
+  const [newCodNaturezaJuridica, setNewCodNaturezaJuridica] = useState('');
   const [newCodMunIbge, setNewCodMunIbge] = useState('3550308');
   const [newPerfilSped, setNewPerfilSped] = useState<'A' | 'B' | 'C'>('A');
-  const [newIndAtiv, setNewIndAtiv] = useState<'0' | '1'>('0');
+  const [newIndAtiv, setNewIndAtiv] = useState('1');
   const [newSuframa, setNewSuframa] = useState('');
   const [newManifestarCiencia, setNewManifestarCiencia] = useState(true);
 
@@ -181,8 +185,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         
         // Mapear Regime Tributário de forma consistente e estrita
         const regStr = (data.regimeTributario || '').toLowerCase();
-        let regimeMapped: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' = 'Real';
-        if (regStr.includes('mei')) {
+        let regimeMapped: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento' = 'Real';
+        if (regStr.includes('imune') || regStr.includes('isento')) {
+          regimeMapped = 'Imune / Isento';
+        } else if (regStr.includes('mei')) {
           regimeMapped = 'MEI';
         } else if (regStr.includes('simples')) {
           regimeMapped = 'Simples Nacional';
@@ -192,6 +198,17 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           regimeMapped = 'Presumido';
         }
         setNewRegime(regimeMapped);
+        
+        // Natureza Jurídica
+        setNewNaturezaJuridica(data.naturezaJuridica || '');
+        setNewCodNaturezaJuridica(data.codigoNaturezaJuridica || '');
+
+        setNewTipoIe(data.tipoIE || '');
+        setNewSituacaoIe(data.situaçaoIE || '');
+
+        if (data.indAtiv) {
+          setNewIndAtiv(data.indAtiv);
+        }
 
         // Endereço
         setNewCep(data.cep || '');
@@ -295,6 +312,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       ie: newIe,
       im: newIm,
       cnaePrincipal: newCnae,
+      naturezaJuridica: newNaturezaJuridica,
+      codigoNaturezaJuridica: newCodNaturezaJuridica,
       codMunicipioIbge: newCodMunIbge,
       suframa: newSuframa,
       perfilSped: newPerfilSped,
@@ -677,6 +696,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               setNewCnpj('');
               setNewRazaoSocial('');
               setNewNomeFantasia('');
+              setNewNaturezaJuridica('');
+              setNewCodNaturezaJuridica('');
+              setNewTipoIe('');
+              setNewSituacaoIe('');
               setModalTab('identificacao');
               setShowAddModal(true);
             }}
@@ -1171,7 +1194,24 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Inscrição Estadual (IE)</label>
+                      <label className="font-bold text-slate-300 flex items-center justify-between mb-1">
+                        <span>Inscrição Estadual (IE)</span>
+                        {newTipoIe && (
+                          <span className={`font-sans font-bold text-[9px] px-1.5 py-0.5 rounded border ${
+                            newTipoIe.toUpperCase().includes('NÃO CONTRIBUINTE')
+                              ? 'bg-purple-950/60 text-purple-300 border-purple-800'
+                              : newTipoIe.toUpperCase().includes('NÃO HABILITADO') || newTipoIe.toUpperCase().includes('INATIVO')
+                              ? 'bg-rose-950/60 text-rose-300 border-rose-800'
+                              : newTipoIe.toUpperCase().includes('SIMPLES')
+                              ? 'bg-amber-950/60 text-amber-300 border-amber-800'
+                              : newTipoIe.toUpperCase().includes('ISENTO')
+                              ? 'bg-blue-950/60 text-blue-300 border-blue-800'
+                              : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                          }`}>
+                            {newSituacaoIe && newSituacaoIe !== newTipoIe ? `${newSituacaoIe} - ${newTipoIe}` : newTipoIe}
+                          </span>
+                        )}
+                      </label>
                       <input
                         type="text"
                         placeholder="Ex: 81281882 ou ISENTO"
@@ -1218,6 +1258,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         <option value="Presumido">Lucro Presumido</option>
                         <option value="Simples Nacional">Simples Nacional</option>
                         <option value="MEI">MEI</option>
+                        <option value="Imune / Isento">Imune / Isento</option>
                       </select>
                     </div>
 
@@ -1238,16 +1279,34 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       <label className="font-bold text-slate-300 block mb-1">Tipo de Atividade</label>
                       <select
                         value={newIndAtiv}
-                        onChange={(e) => setNewIndAtiv(e.target.value as any)}
+                        onChange={(e) => setNewIndAtiv(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
                       >
                         <option value="0">0 - Industrial ou Equiparado</option>
-                        <option value="1">1 - Outros (Comércio / Serviços)</option>
+                        <option value="1">1 - Prestador de Serviços</option>
+                        <option value="2">2 - Comércio</option>
+                        <option value="3">3 - Instituições Financeiras</option>
+                        <option value="4">4 - Atividade Imobiliária</option>
+                        <option value="5">5 - Associações / Condomínios / Adm. Pública</option>
                       </select>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="mt-3">
+                    <label className="font-bold text-slate-300 block mb-1">Natureza Jurídica (Sincronizado da Receita)</label>
+                    <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-400 font-mono focus:outline-none flex items-center h-[38px] overflow-hidden">
+                      {newCodNaturezaJuridica ? (
+                        <div className="truncate">
+                          <span className="text-cyan-400 mr-2">{newCodNaturezaJuridica}</span>
+                          <span>- {newNaturezaJuridica || 'CÓDIGO SEM DESCRIÇÃO'}</span>
+                        </div>
+                      ) : (
+                        <span>Não preenchido / Automático</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
                     <div>
                       <label className="font-bold text-slate-300 block mb-1">CNAE Principal</label>
                       <input

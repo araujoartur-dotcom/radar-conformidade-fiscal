@@ -57,15 +57,17 @@ export interface ClienteEmpresaTenant {
   nomeFantasia: string;
   grupoContabilCliente?: string; // Nome da Carteira / Cliente da Contabilidade
   uf: string;
-  regimeTributario: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | string;
+  regimeTributario: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento' | string;
   ie?: string; // Inscrição Estadual (SPED 0000)
   im?: string; // Inscrição Municipal
   cnaePrincipal?: string;
   cnaeDescricao?: string;
+  naturezaJuridica?: string;
+  codigoNaturezaJuridica?: string;
   codMunicipioIbge?: string; // 7 dígitos IBGE
   suframa?: string;
   perfilSped?: 'A' | 'B' | 'C'; // Perfil EFD Fiscal
-  indAtiv?: '0' | '1'; // 0 = Industrial ou equiparado, 1 = Outros
+  indAtiv?: '0' | '1' | '2' | '3' | '4' | '5' | string; // 0=Ind, 1=Serv, 2=Com, 3=Fin, 4=Imob, 5=Outros
   endereco?: EnderecoEmpresa; // SPED 0005
   contador?: ContadorSped; // SPED 0100
   certificadoA1?: {
@@ -107,13 +109,15 @@ export interface CnpjLookupItem {
   situaçaoIE?: SituaçãoIE;
   situaçaoCNPJ?: SituaçãoCNPJ;
   naturezaJuridica?: string;
+  codigoNaturezaJuridica?: string;
   razaoSocial?: string;
   nomeFantasia?: string;
   cnaePrincipal?: string;
-  cnaeDescricao?: string;
-  dataAbertura?: string;
-  regimeTributario?: string;
-  capitalSocial?: number;
+  cnaeDescricao: string;
+  dataAbertura: string;
+  regimeTributario: string;
+  indAtiv?: string; // 0 a 5
+  capitalSocial: number;
   enderecoCompleto?: string;
   logradouro?: string;
   numero?: string;

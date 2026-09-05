@@ -124,7 +124,10 @@ export const DetalhesModal: React.FC<DetalhesModalProps> = ({ item, onClose }) =
 
             <div>
               <span className="text-slate-500">Natureza Jurídica:</span>
-              <p className="font-semibold text-slate-200">{item.naturezaJuridica || '-'}</p>
+              <p className="font-semibold text-slate-200">
+                {item.codigoNaturezaJuridica && <span className="text-cyan-400 font-mono mr-1">{item.codigoNaturezaJuridica} -</span>}
+                {item.naturezaJuridica || '-'}
+              </p>
             </div>
 
             <div>
