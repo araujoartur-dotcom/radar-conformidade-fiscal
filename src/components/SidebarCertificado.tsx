@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Shield, Lock, Upload, Play, Pause, Square, Trash2, Download, Sliders, CheckCircle2, KeyRound, RefreshCw,
   FileSpreadsheet, Layers, Search, FileCode, Send, Database, ShieldAlert, ChevronRight, FileBarChart,
-  Building2, Users, BarChart3, TrendingUp, Sparkles, FileCheck2, PanelLeftClose, PanelLeftOpen
+  Building2, Users, BarChart3, TrendingUp, Sparkles, FileCheck2, PanelLeftClose, PanelLeftOpen, Plug
 } from 'lucide-react';
 import { CertificadoA1, BatchStats, QueryMode } from '../types';
 
@@ -82,6 +82,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
     {
       title: 'Governança & Integrações',
       items: [
+        { id: 'conectores_municipais' as QueryMode, label: 'Conectores Municipais', icon: Plug, accent: 'emerald' },
         { id: 'cruzamento_sped' as QueryMode, label: 'Conciliação SPED Fiscal', icon: FileCheck2, accent: 'indigo', badge: 'SPED' },
         { id: 'integracao_erp' as QueryMode, label: 'Integração SAP / ERP', icon: Database, accent: 'emerald' },
         { id: 'auditoria_fiscal' as QueryMode, label: 'Auditoria & Conformidade', icon: ShieldAlert, accent: 'amber' },

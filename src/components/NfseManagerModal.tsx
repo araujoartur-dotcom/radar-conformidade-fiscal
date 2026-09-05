@@ -43,6 +43,7 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
   const [syncResult, setSyncResult] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedAmbiente, setSelectedAmbiente] = useState<'1' | '2'>(ambienteSefaz === 'producao' ? '1' : '2');
+  const [selectedConector, setSelectedConector] = useState<'adn' | 'pmsp'>('adn');
   const [ultNSUInput, setUltNSUInput] = useState<string>('0');
 
   const addLog = (msg: string) => {
@@ -79,13 +80,19 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
     setSyncResult(null);
     addLog(`Iniciando varredura de NFS-e para ${empresaAtiva.razaoSocial} (${empresaAtiva.cnpjCompleto})...`);
     addLog(`Ambiente selecionado: ${selectedAmbiente === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação/Testes (tpAmb=2)'}`);
-    addLog(`Consultando Ambiente de Dados Nacional (ADN) a partir do NSU ${ultNSUInput}...`);
+    
+    if (selectedConector === 'pmsp') {
+      addLog(`Consultando Prefeitura de São Paulo (Nota do Milhão) para os últimos 30 dias...`);
+    } else {
+      addLog(`Consultando Ambiente de Dados Nacional (ADN) a partir do NSU ${ultNSUInput}...`);
+    }
 
     try {
       const res = await post<any>('/nfse/sincronizar', {
         empresaId: empresaAtiva.id,
         tpAmb: selectedAmbiente,
-        ultNSU: ultNSUInput
+        ultNSU: ultNSUInput,
+        conector: selectedConector
       });
 
       if (res.ok && res.data) {
@@ -209,6 +216,19 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-4">
             <div className="flex flex-wrap items-center gap-3 text-xs">
               
+              {/* Conector */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400 font-medium">Conector:</span>
+                <select
+                  value={selectedConector}
+                  onChange={(e) => setSelectedConector(e.target.value as 'adn' | 'pmsp')}
+                  className="bg-slate-900 border border-slate-700 text-teal-400 font-bold rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-teal-500"
+                >
+                  <option value="adn">ADN Nacional (RFB)</option>
+                  <option value="pmsp">PMSP (São Paulo)</option>
+                </select>
+              </div>
+
               {/* Ambiente */}
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-400 font-medium">Ambiente:</span>
@@ -222,17 +242,19 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
                 </select>
               </div>
 
-              {/* UltNSU */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400 font-medium">A partir do NSU:</span>
-                <input
-                  type="text"
-                  value={ultNSUInput}
-                  onChange={(e) => setUltNSUInput(e.target.value)}
-                  className="w-24 bg-slate-900 border border-slate-700 text-white font-mono rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-teal-500 text-center"
-                  placeholder="0"
-                />
-              </div>
+              {/* UltNSU (Somente ADN) */}
+              {selectedConector === 'adn' && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-400 font-medium">A partir do NSU:</span>
+                  <input
+                    type="text"
+                    value={ultNSUInput}
+                    onChange={(e) => setUltNSUInput(e.target.value)}
+                    className="w-24 bg-slate-900 border border-slate-700 text-white font-mono rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-teal-500 text-center"
+                    placeholder="0"
+                  />
+                </div>
+              )}
 
               <div className="flex items-center gap-1 text-[11px] text-slate-400">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />

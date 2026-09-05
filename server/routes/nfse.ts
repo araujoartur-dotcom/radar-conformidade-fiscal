@@ -53,7 +53,7 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res: Respon
 router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const activeEmpresaId = req.user?.empresaAtivaId;
-    const { empresaId: bodyEmpresaId, tpAmb = '1', ultNSU = '0' } = req.body;
+    const { empresaId: bodyEmpresaId, tpAmb = '1', ultNSU = '0', conector = 'adn' } = req.body;
     const empresaId = bodyEmpresaId || activeEmpresaId;
     const db = getDatabase();
 
@@ -71,12 +71,22 @@ router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: 
       return;
     }
 
-    const syncResult = await sincronizarNfseNacional({
-      empresaId,
-      cnpj: cleanCnpj,
-      tpAmb,
-      ultNSU
-    });
+    let syncResult;
+    if (conector === 'pmsp') {
+      const { sincronizarNfsePMSP } = await import('../services/nfseService');
+      syncResult = await sincronizarNfsePMSP({
+        empresaId,
+        cnpj: cleanCnpj,
+        tpAmb
+      });
+    } else {
+      syncResult = await sincronizarNfseNacional({
+        empresaId,
+        cnpj: cleanCnpj,
+        tpAmb,
+        ultNSU
+      });
+    }
 
     res.json(syncResult);
   } catch (err: any) {

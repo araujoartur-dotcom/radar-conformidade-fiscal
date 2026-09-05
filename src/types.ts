@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio' | 'conectores_municipais';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -763,3 +763,20 @@ export interface NcmRegraAnexoItem {
   ativo?: boolean;
 }
 
+// =========================================================
+// CONECTORES MUNICIPAIS (NFS-e PREFEITURAS)
+// =========================================================
+
+export type TipoAutenticacaoConector = 'certificado_a1' | 'token_api' | 'usuario_senha' | 'certificado_token';
+
+export interface MunicipioConector {
+  ibge: string;
+  municipio: string;
+  uf: string;
+  provedor: string; // Ex: 'ABRASF 2.04', 'PMSP', 'Nota Carioca', 'Ginfes'
+  tipoAutenticacao: TipoAutenticacaoConector;
+  status: 'ativo' | 'inativo' | 'configuracao_pendente' | 'erro_autenticacao';
+  urlProducao?: string;
+  urlHomologacao?: string;
+  credenciaisConfiguradas?: boolean;
+}

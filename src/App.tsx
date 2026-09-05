@@ -18,6 +18,7 @@ import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
 import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
+import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
@@ -487,6 +488,11 @@ export default function App() {
             {/* Mode 6: Integração ERP (SAP, Webhooks) */}
             {activeMode === 'integracao_erp' && (
               <ErpIntegrationPanel dfeList={dfeList} />
+            )}
+
+            {/* Mode: Conectores Municipais (Prefeituras) */}
+            {activeMode === 'conectores_municipais' && (
+              <ConectoresMunicipaisPanel />
             )}
 
             {/* Mode: Conciliação e Cruzamento SPED Fiscal x SEFAZ */}
