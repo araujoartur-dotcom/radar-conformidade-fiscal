@@ -71,10 +71,10 @@ const CACHE_TTL_MS = 1000 * 60 * 60 * 24;
  * 3. CNPJ.ws Pública (Segundo Fallback — Inscrições Estaduais por UF)
  * 4. MinhaReceita / BrasilAPI (Dados cadastrais complementares)
  */
-export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): Promise<Partial<CnpjLookupItem>> {
+export async function queryCnpjsData(rawCnpj: string, targetUf: string = ''): Promise<Partial<CnpjLookupItem>> {
   const clean = onlyNumbers(rawCnpj);
   const formatted = formatCNPJ(clean);
-  const cleanUf = (targetUf || 'SP').toUpperCase().trim();
+  const cleanUf = (targetUf || '').toUpperCase().trim();
 
   if (!isValidCNPJ(clean)) {
     return {
@@ -85,7 +85,7 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   }
 
   // Verificar cache em memória
-  const cacheKey = `${clean}_${cleanUf}`;
+  const cacheKey = cleanUf ? `${clean}_${cleanUf}` : clean;
   const cached = cnpjLookupMemoryCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
     return { ...cached.data };
@@ -96,45 +96,47 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
   let tipoIeEncontrado: string | null = null;
   let situacaoIeEncontrada: SituaçãoIE | null = null;
 
-  // ── CAMADA 1: Tentar consulta SEFAZ SOAP via Backend ──
-  try {
-    const resBackend = await fetch('/api/sefaz/consulta-cadastro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ cnpj: clean, uf: cleanUf }),
-      signal: AbortSignal.timeout(4000)
-    });
+  // ── CAMADA 1: Tentar consulta SEFAZ SOAP via Backend (quando a UF foi especificada) ──
+  if (cleanUf) {
+    try {
+      const resBackend = await fetch('/api/sefaz/consulta-cadastro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ cnpj: clean, uf: cleanUf }),
+        signal: AbortSignal.timeout(4000)
+      });
 
-    if (resBackend.ok) {
-      const respJson = await resBackend.json();
-      if (respJson.success && respJson.data?.sucesso) {
-        const d = respJson.data;
-        if (d.ie && d.ie !== 'Não Consta no CCC') {
-          ieEncontrada = d.ie;
-          tipoIeEncontrado = d.tipoIE;
-          situacaoIeEncontrada = d.situaçaoIE;
-        }
-        if (d.razaoSocial) {
-          resultItem = {
-            cnpj: formatted,
-            uf: cleanUf,
-            ie: d.ie,
-            tipoIE: d.tipoIE,
-            situaçaoIE: d.situaçaoIE,
-            situaçaoCNPJ: 'ATIVA',
-            razaoSocial: d.razaoSocial,
-            nomeFantasia: d.nomeFantasia || d.razaoSocial,
-            cnaePrincipal: d.cnaePrincipal,
-            regimeTributario: d.regimeTributario || 'Lucro Real',
-            capitalSocial: d.capitalSocial || 0,
-            statusConsulta: 'sucesso',
-            dataConsulta: new Date().toISOString()
-          };
+      if (resBackend.ok) {
+        const respJson = await resBackend.json();
+        if (respJson.success && respJson.data?.sucesso) {
+          const d = respJson.data;
+          if (d.ie && d.ie !== 'Não Consta no CCC') {
+            ieEncontrada = d.ie;
+            tipoIeEncontrado = d.tipoIE;
+            situacaoIeEncontrada = d.situaçaoIE;
+          }
+          if (d.razaoSocial) {
+            resultItem = {
+              cnpj: formatted,
+              uf: cleanUf,
+              ie: d.ie,
+              tipoIE: d.tipoIE,
+              situaçaoIE: d.situaçaoIE,
+              situaçaoCNPJ: 'ATIVA',
+              razaoSocial: d.razaoSocial,
+              nomeFantasia: d.nomeFantasia || d.razaoSocial,
+              cnaePrincipal: d.cnaePrincipal,
+              regimeTributario: d.regimeTributario || 'Lucro Real',
+              capitalSocial: d.capitalSocial || 0,
+              statusConsulta: 'sucesso',
+              dataConsulta: new Date().toISOString()
+            };
+          }
         }
       }
+    } catch {
+      // Backend offline ou sem certificado para o tenant — prossegue para fallbacks públicos
     }
-  } catch {
-    // Backend offline ou sem certificado para o tenant — prossegue para fallbacks públicos
   }
 
   // ── CAMADA 2 & 3: Consultas Públicas de Suporte (CNPJ.ws, CNPJá, MinhaReceita, BrasilAPI) ──
@@ -147,14 +149,17 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
     });
     if (resWs.ok) {
       dadosCnpjWs = await resWs.json();
-      if (!resultItem) {
-        resultItem = parseCnpjWsResponse(dadosCnpjWs, formatted, cleanUf);
-      }
-      // Extrair IE para a UF desejada
       const est = dadosCnpjWs.estabelecimento || {};
+      const actualUf = (est.estado?.sigla || '').toUpperCase().trim();
+      const effectiveUf = cleanUf || actualUf;
+
+      if (!resultItem) {
+        resultItem = parseCnpjWsResponse(dadosCnpjWs, formatted, effectiveUf);
+      }
+      // Extrair IE para a UF desejada ou UF real do estabelecimento
       const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
-      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && i.ativo);
-      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && !i.ativo);
+      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === effectiveUf && i.ativo);
+      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === effectiveUf && !i.ativo);
       const anyActive = ieList.find((i: any) => i.ativo);
       const targetIeObj = activeForUf || inactiveForUf || anyActive;
 
@@ -177,9 +182,13 @@ export async function queryCnpjsData(rawCnpj: string, targetUf: string = 'SP'): 
       });
       if (resCnpja.ok) {
         const dataCnpja = await resCnpja.json();
-        resultItem = parseCnpjaResponse(dataCnpja, formatted, cleanUf);
+        const addr = dataCnpja.address || {};
+        const actualUf = (addr.state || '').toUpperCase().trim();
+        const effectiveUf = cleanUf || actualUf;
+
+        resultItem = parseCnpjaResponse(dataCnpja, formatted, effectiveUf);
         if (!ieEncontrada && Array.isArray(dataCnpja.registrations)) {
-          const regForUf = dataCnpja.registrations.find((r: any) => (r.state || '').toUpperCase() === cleanUf && r.enabled);
+          const regForUf = dataCnpja.registrations.find((r: any) => (r.state || '').toUpperCase() === effectiveUf && r.enabled);
           const anyReg = dataCnpja.registrations.find((r: any) => r.enabled);
           const chosen = regForUf || anyReg;
           if (chosen && chosen.number) {

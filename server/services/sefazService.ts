@@ -1675,15 +1675,15 @@ const CADASTRO_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
  */
 export async function consultarCadastroTriplaCamada(params: {
   cnpj: string;
-  uf: string;
+  uf?: string;
   empresaId?: string;
   cnpjAutor?: string;
 }): Promise<ConsultaCadastroResultado> {
   const cleanCnpj = params.cnpj.replace(/\D/g, '');
-  const cleanUf = (params.uf || 'SP').toUpperCase().trim();
+  let cleanUf = (params.uf || '').toUpperCase().trim();
 
   // Verificar cache em memória
-  const cacheKey = `${cleanCnpj}_${cleanUf}`;
+  const cacheKey = cleanUf ? `${cleanCnpj}_${cleanUf}` : cleanCnpj;
   const cached = cadastroTriplaCamadaCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < CADASTRO_CACHE_TTL_MS)) {
     return { ...cached.data };
@@ -1696,14 +1696,16 @@ export async function consultarCadastroTriplaCamada(params: {
     return res;
   };
 
-  // 1. Camada 1: SEFAZ SOAP Oficial
-  try {
-    const resSefaz = await consultarCadastroSefaz(cleanUf, cleanCnpj, params.empresaId, params.cnpjAutor);
-    if (resSefaz && resSefaz.sucesso) {
-      return cacheAndReturn(resSefaz);
+  // 1. Camada 1: SEFAZ SOAP Oficial (quando a UF foi informada)
+  if (cleanUf) {
+    try {
+      const resSefaz = await consultarCadastroSefaz(cleanUf, cleanCnpj, params.empresaId, params.cnpjAutor);
+      if (resSefaz && resSefaz.sucesso) {
+        return cacheAndReturn(resSefaz);
+      }
+    } catch (err: any) {
+      console.warn(`[Tripla Camada] Fallback acionado após erro SEFAZ SOAP: ${err.message}`);
     }
-  } catch (err: any) {
-    console.warn(`[Tripla Camada] Fallback acionado após erro SEFAZ SOAP: ${err.message}`);
   }
 
   // 2. Camada 2: CNPJá Open API (Primeiro Fallback)
@@ -1715,8 +1717,12 @@ export async function consultarCadastroTriplaCamada(params: {
 
     if (resCnpja.ok) {
       const dataCnpja: any = await resCnpja.json();
+      const addr = dataCnpja.address || {};
+      const actualUf = (addr.state || '').toUpperCase().trim();
+      const effectiveUf = cleanUf || actualUf;
+
       const registrations = Array.isArray(dataCnpja.registrations) ? dataCnpja.registrations : [];
-      const regForUf = registrations.find((r: any) => (r.state || '').toUpperCase() === cleanUf && r.enabled);
+      const regForUf = registrations.find((r: any) => (r.state || '').toUpperCase() === effectiveUf && r.enabled);
       const anyActiveReg = registrations.find((r: any) => r.enabled);
       const chosenReg = regForUf || anyActiveReg;
 
@@ -1727,7 +1733,7 @@ export async function consultarCadastroTriplaCamada(params: {
           sucesso: true,
           camadaUtilizada: 'CNPJA',
           cnpj: cleanCnpj,
-          uf: cleanUf,
+          uf: effectiveUf,
           ie: chosenReg.number,
           tipoIE: tipoContribuinte,
           situaçaoIE: 'Habilitado',
@@ -1753,9 +1759,12 @@ export async function consultarCadastroTriplaCamada(params: {
     if (resWs.ok) {
       const dataWs: any = await resWs.json();
       const est = dataWs.estabelecimento || {};
+      const actualUf = (est.estado?.sigla || '').toUpperCase().trim();
+      const effectiveUf = cleanUf || actualUf;
+
       const ieList = Array.isArray(est.inscricoes_estaduais) ? est.inscricoes_estaduais : [];
-      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && i.ativo);
-      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === cleanUf && !i.ativo);
+      const activeForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === effectiveUf && i.ativo);
+      const inactiveForUf = ieList.find((i: any) => (i.estado?.sigla || '').toUpperCase() === effectiveUf && !i.ativo);
       const anyActive = ieList.find((i: any) => i.ativo);
 
       const targetEntry = activeForUf || inactiveForUf || anyActive;
@@ -1767,7 +1776,7 @@ export async function consultarCadastroTriplaCamada(params: {
           sucesso: true,
           camadaUtilizada: 'CNPJ_WS',
           cnpj: cleanCnpj,
-          uf: cleanUf,
+          uf: effectiveUf,
           ie: targetEntry.inscricao_estadual,
           tipoIE: isAtivo ? 'CONTRIBUINTE ICMS' : 'NÃO HABILITADO / INATIVO',
           situaçaoIE: isAtivo ? 'Habilitado' : 'Não Habilitado',
@@ -1785,7 +1794,7 @@ export async function consultarCadastroTriplaCamada(params: {
           sucesso: true,
           camadaUtilizada: 'CNPJ_WS',
           cnpj: cleanCnpj,
-          uf: cleanUf,
+          uf: effectiveUf,
           ie: 'Isento',
           tipoIE: 'NÃO CONTRIBUINTE',
           situaçaoIE: 'Não Contribuinte',
@@ -1800,7 +1809,7 @@ export async function consultarCadastroTriplaCamada(params: {
         sucesso: true,
         camadaUtilizada: 'CNPJ_WS',
         cnpj: cleanCnpj,
-        uf: cleanUf,
+        uf: effectiveUf,
         ie: 'Não Consta no CCC',
         tipoIE: 'IE Não Contribuinte (Canteiro de Obras, IE Virtual, outros)',
         situaçaoIE: 'Não Contribuinte',

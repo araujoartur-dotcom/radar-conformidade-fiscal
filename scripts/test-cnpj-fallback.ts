@@ -7,22 +7,22 @@ async function runTests() {
   console.log('CNPJ: 19.791.896/0046-02 | UF: PR');
   console.log('═══════════════════════════════════════════════════════════════');
 
-  // Teste Frontend queryCnpjsData
-  console.log('\n[Frontend queryCnpjsData]');
-  const resultFe = await queryCnpjsData('19.791.896/0046-02', 'PR');
+  // Teste Frontend queryCnpjsData (UF VAZIA POR PADRÃO)
+  console.log('\n[Frontend queryCnpjsData com UF VAZIA por padrão]');
+  const resultFe = await queryCnpjsData('19.791.896/0046-02', '');
   console.log('Razão Social:', resultFe.razaoSocial);
-  console.log('UF:', resultFe.uf);
+  console.log('UF Detectada Automaticamente:', resultFe.uf);
   console.log('Inscrição Estadual (IE):', resultFe.ie);
   console.log('Tipo IE:', resultFe.tipoIE);
   console.log('Situação IE:', resultFe.situaçaoIE);
   console.log('Regime Tributário:', resultFe.regimeTributario);
   console.log('Capital Social:', resultFe.capitalSocial);
 
-  // Teste Backend consultarCadastroTriplaCamada
-  console.log('\n[Backend consultarCadastroTriplaCamada]');
+  // Teste Backend consultarCadastroTriplaCamada (UF VAZIA POR PADRÃO)
+  console.log('\n[Backend consultarCadastroTriplaCamada com UF VAZIA]');
   const resultBe = await consultarCadastroTriplaCamada({
     cnpj: '19791896004602',
-    uf: 'PR',
+    uf: '',
   });
   console.log('Camada Utilizada:', resultBe.camadaUtilizada);
   console.log('Inscrição Estadual (IE):', resultBe.ie);

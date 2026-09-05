@@ -51,7 +51,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
   // Quick Fast-Lookup Bar
   const [quickLookupCnpj, setQuickLookupCnpj] = useState('');
-  const [quickLookupUf, setQuickLookupUf] = useState('SP');
+  const [quickLookupUf, setQuickLookupUf] = useState('');
   const [isQuickSearching, setIsQuickSearching] = useState(false);
   const [quickSearchError, setQuickSearchError] = useState<string | null>(null);
 
@@ -568,6 +568,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               onChange={(e) => setQuickLookupUf(e.target.value)}
               className="bg-slate-950 border border-cyan-800/60 rounded-xl px-3 py-2.5 text-xs text-slate-200 font-mono font-bold focus:outline-none cursor-pointer"
             >
+              <option value="">UF</option>
               {UF_LIST.map(u => (
                 <option key={u} value={u}>{u}</option>
               ))}

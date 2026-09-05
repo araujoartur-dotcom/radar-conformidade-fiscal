@@ -102,7 +102,7 @@ export default function App() {
 
   // Quick Instant Search Input for Tab 3
   const [quickInput, setQuickInput] = useState<string>('');
-  const [quickUf, setQuickUf] = useState<string>('SP');
+  const [quickUf, setQuickUf] = useState<string>('');
   const [isQuickLoading, setIsQuickLoading] = useState<boolean>(false);
 
   // Ref for timer
@@ -575,6 +575,7 @@ export default function App() {
                     onChange={(e) => setQuickUf(e.target.value)}
                     className="bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
                   >
+                    <option value="">UF</option>
                     {['SP', 'RJ', 'MG', 'RS', 'PR', 'DF', 'BA', 'SC', 'GO', 'PE', 'CE', 'ES', 'MT', 'MS', 'PA', 'AM', 'MA', 'PB', 'RN', 'AL', 'SE', 'PI', 'RO', 'TO', 'AC', 'AP', 'RR'].map(uf => (
                       <option key={uf} value={uf}>{uf}</option>
                     ))}
