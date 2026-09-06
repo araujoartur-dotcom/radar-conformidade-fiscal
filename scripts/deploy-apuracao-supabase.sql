@@ -81,11 +81,11 @@ DROP POLICY IF EXISTS "Permitir acesso completo as operacoes" ON public.apuracao
 CREATE POLICY "Permitir acesso completo as operacoes" ON public.apuracao_operacoes FOR ALL USING (true);
 
 ALTER TABLE public.apuracao_extrato_cc ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Permitir acesso completo aos extratos cc" ON public.apuracao_extrato_cc FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir acesso completo aos extratos cc" ON public.apuracao_extrato_cc;
 CREATE POLICY "Permitir acesso completo aos extratos cc" ON public.apuracao_extrato_cc FOR ALL USING (true);
 
 ALTER TABLE public.apuracao_competencias ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Permitir acesso completo as competencias" ON public.apuracao_competencias FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir acesso completo as competencias" ON public.apuracao_competencias;
 CREATE POLICY "Permitir acesso completo as competencias" ON public.apuracao_competencias FOR ALL USING (true);
 
 ALTER TABLE public.apuracao_credenciais_cgibs ENABLE ROW LEVEL SECURITY;
