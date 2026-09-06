@@ -144,10 +144,11 @@ export function sanitizeXmlAntiXXE(xmlContent: string): string {
 }
 
 /**
- * Utilitário de extração de tag via Regex tolerante a namespaces
+ * Utilitário de extração de tag via Regex tolerante a namespaces e fechamento seguro
  */
 export function extractTagRegex(xml: string, tag: string): string {
-  const match = xml.match(new RegExp(`<(?:[a-zA-Z0-9_-]+:)?${tag}[^>]*>([\\s\\S]*?)<\\/(?:[a-zA-Z0-9_-]+:)?${tag}>`, 'i'));
+  if (!xml) return '';
+  const match = xml.match(new RegExp(`<(?:[a-zA-Z0-9_-]+:)?${tag}(?=[\\s>])[^>]*>([\\s\\S]*?)<\\/(?:[a-zA-Z0-9_-]+:)?${tag}>`, 'i'));
   return match ? match[1].trim() : '';
 }
 
@@ -155,6 +156,31 @@ export function extractSubTagRegex(xml: string, parentTag: string, childTag: str
   const parent = extractTagRegex(xml, parentTag);
   if (!parent) return '';
   return extractTagRegex(parent, childTag);
+}
+
+/**
+ * Converte strings monetárias e numéricas (com vírgulas ou pontos, ou tags aninhadas) para float seguro
+ */
+export function parseValor(val: any): number {
+  if (typeof val === 'number') return isNaN(val) ? 0 : val;
+  if (!val || typeof val !== 'string') return 0;
+  // Remove tags XML acidentais que possam ter vindo juntas
+  const clean = val.replace(/<[^>]+>/g, '').trim();
+  if (!clean) return 0;
+  if (clean.includes(',') && clean.includes('.')) {
+    if (clean.lastIndexOf(',') > clean.lastIndexOf('.')) {
+      // Padrão brasileiro: 1.234,56
+      const normalized = clean.replace(/\./g, '').replace(',', '.');
+      const num = parseFloat(normalized);
+      return isNaN(num) ? 0 : num;
+    }
+  } else if (clean.includes(',')) {
+    // Padrão com vírgula: 1234,56
+    const num = parseFloat(clean.replace(',', '.'));
+    return isNaN(num) ? 0 : num;
+  }
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
 }
 
 /**
@@ -307,44 +333,51 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   }
 
   // 8. Totais e Impostos
-  const valorTotal = parseFloat(
+  const valorTotal = parseValor(
     extractSubTagRegex(sanitized, 'ICMSTot', 'vNF')
-    || extractTagRegex(sanitized, 'vNF')
+    || extractSubTagRegex(sanitized, 'vServPrest', 'vServ')
+    || extractSubTagRegex(sanitized, 'valores', 'vServ')
+    || extractSubTagRegex(sanitized, 'valores', 'vLiq')
+    || extractSubTagRegex(sanitized, 'valoresServico', 'vServ')
     || extractTagRegex(sanitized, 'vServ')
-    || extractTagRegex(sanitized, 'vServPrest')
+    || extractTagRegex(sanitized, 'vNF')
     || extractTagRegex(sanitized, 'ValorServicos')
     || extractTagRegex(sanitized, 'vTPrest')
     || extractTagRegex(sanitized, 'ValorTotal')
     || extractTagRegex(sanitized, 'vLiquido')
+    || extractTagRegex(sanitized, 'vLiq')
+    || extractTagRegex(sanitized, 'vTotTrib')
     || '0'
-  ) || 0;
+  );
 
-  const valorIcms = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vICMS') || extractTagRegex(sanitized, 'vICMS') || '0') || 0;
-  const valorIpi = parseFloat(extractSubTagRegex(sanitized, 'ICMSTot', 'vIPI') || extractTagRegex(sanitized, 'vIPI') || '0') || 0;
-  const valorPis = parseFloat(
+  const valorIcms = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vICMS') || extractTagRegex(sanitized, 'vICMS') || '0');
+  const valorIpi = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vIPI') || extractTagRegex(sanitized, 'vIPI') || '0');
+  const valorPis = parseValor(
     extractSubTagRegex(sanitized, 'ICMSTot', 'vPIS') 
+    || extractSubTagRegex(sanitized, 'piscofins', 'vPIS')
     || extractTagRegex(sanitized, 'vPIS') 
     || extractTagRegex(sanitized, 'ValorPis') 
     || extractTagRegex(sanitized, 'vPis') 
     || extractTagRegex(sanitized, 'vRetPIS')
     || '0'
-  ) || 0;
+  );
 
-  const valorCofins = parseFloat(
+  const valorCofins = parseValor(
     extractSubTagRegex(sanitized, 'ICMSTot', 'vCOFINS') 
+    || extractSubTagRegex(sanitized, 'piscofins', 'vCOFINS')
     || extractTagRegex(sanitized, 'vCOFINS') 
     || extractTagRegex(sanitized, 'ValorCofins') 
     || extractTagRegex(sanitized, 'vCofins') 
     || extractTagRegex(sanitized, 'vRetCOFINS')
     || '0'
-  ) || 0;
+  );
 
-  let valorCbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vCBS') || extractSubTagRegex(sanitized, 'gCBS', 'vCBS') || extractTagRegex(sanitized, 'vCBS') || '0') || 0;
-  let valorIbs = parseFloat(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vIBS') || extractSubTagRegex(sanitized, 'gIBS', 'vIBS') || extractTagRegex(sanitized, 'vIBSUF') || extractTagRegex(sanitized, 'vIBS') || '0') || 0;
-  const valorIs = parseFloat(extractSubTagRegex(sanitized, 'ISTot', 'vIS') || extractTagRegex(sanitized, 'vIS') || '0') || 0;
+  let valorCbs = parseValor(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vCBS') || extractSubTagRegex(sanitized, 'gCBS', 'vCBS') || extractTagRegex(sanitized, 'vCBS') || '0');
+  let valorIbs = parseValor(extractSubTagRegex(sanitized, 'IBSCBSTot', 'vIBS') || extractSubTagRegex(sanitized, 'gIBS', 'vIBS') || extractTagRegex(sanitized, 'vIBSUF') || extractTagRegex(sanitized, 'vIBS') || '0');
+  const valorIs = parseValor(extractSubTagRegex(sanitized, 'ISTot', 'vIS') || extractTagRegex(sanitized, 'vIS') || '0');
 
   // Base de Cálculo IBS e CBS (<vBC> estritamente constante nos grupos de IBS/CBS do XML)
-  let baseCbs = parseFloat(
+  let baseCbs = parseValor(
     extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCCBS')
     || extractSubTagRegex(sanitized, 'gIBSCBS', 'vBC')
     || extractSubTagRegex(sanitized, 'IBSCBS', 'vBC')
@@ -352,9 +385,9 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractSubTagRegex(sanitized, 'CBS', 'vBC')
     || extractTagRegex(sanitized, 'vBCCBS')
     || '0'
-  ) || 0;
+  );
 
-  let baseIbs = parseFloat(
+  let baseIbs = parseValor(
     extractSubTagRegex(sanitized, 'IBSCBSTot', 'vBCIBS')
     || extractSubTagRegex(sanitized, 'gIBSCBS', 'vBC')
     || extractSubTagRegex(sanitized, 'IBSCBS', 'vBC')
@@ -362,43 +395,51 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractSubTagRegex(sanitized, 'IBS', 'vBC')
     || extractTagRegex(sanitized, 'vBCIBS')
     || '0'
-  ) || 0;
+  );
 
   // Retenções na Fonte (NFS-e & Padrões Municipais / ABRASF / Nacional)
-  const valorIrrf = parseFloat(
-    extractTagRegex(sanitized, 'vRetIRRF') 
+  const valorIrrf = parseValor(
+    extractSubTagRegex(sanitized, 'tribFed', 'vRetIRRF')
+    || extractSubTagRegex(sanitized, 'tribFed', 'vIR')
+    || extractTagRegex(sanitized, 'vRetIRRF') 
     || extractTagRegex(sanitized, 'vIR') 
     || extractTagRegex(sanitized, 'ValorIr') 
     || extractTagRegex(sanitized, 'ValorIRRF')
     || extractTagRegex(sanitized, 'ValorIR')
     || '0'
-  ) || 0;
+  );
 
-  const valorInss = parseFloat(
-    extractTagRegex(sanitized, 'vRetCP') 
+  const valorInss = parseValor(
+    extractSubTagRegex(sanitized, 'tribFed', 'vRetCP')
+    || extractSubTagRegex(sanitized, 'tribFed', 'vINSS')
+    || extractTagRegex(sanitized, 'vRetCP') 
     || extractTagRegex(sanitized, 'vINSS') 
     || extractTagRegex(sanitized, 'ValorInss') 
     || extractTagRegex(sanitized, 'ValorINSS')
     || extractTagRegex(sanitized, 'vCP')
     || '0'
-  ) || 0;
+  );
 
-  const valorIss = parseFloat(
-    extractTagRegex(sanitized, 'vISSQN') 
+  const valorIss = parseValor(
+    extractSubTagRegex(sanitized, 'tribMun', 'vISSQN')
+    || extractSubTagRegex(sanitized, 'trib', 'vISSQN')
+    || extractTagRegex(sanitized, 'vISSQN') 
     || extractTagRegex(sanitized, 'ValorIssRetido') 
     || extractTagRegex(sanitized, 'vISS') 
     || extractTagRegex(sanitized, 'ValorIss') 
     || extractTagRegex(sanitized, 'ValorISS')
     || '0'
-  ) || 0;
+  );
 
-  const valorCsll = parseFloat(
-    extractTagRegex(sanitized, 'vRetCSLL') 
+  const valorCsll = parseValor(
+    extractSubTagRegex(sanitized, 'tribFed', 'vRetCSLL')
+    || extractSubTagRegex(sanitized, 'tribFed', 'vCSLL')
+    || extractTagRegex(sanitized, 'vRetCSLL') 
     || extractTagRegex(sanitized, 'vCSLL') 
     || extractTagRegex(sanitized, 'ValorCsll') 
     || extractTagRegex(sanitized, 'ValorCSLL')
     || '0'
-  ) || 0;
+  );
 
   // Dados Específicos de Serviço
   const itemListaServico = extractTagRegex(sanitized, 'ItemListaServico') 

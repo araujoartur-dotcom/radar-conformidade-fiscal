@@ -91,3 +91,8 @@ ON CONFLICT (ibge) DO UPDATE SET
     endpoint_producao = EXCLUDED.endpoint_producao,
     endpoint_homologacao = EXCLUDED.endpoint_homologacao,
     status = EXCLUDED.status;
+
+-- 5. Expandir tamanho da chave de acesso para comportar a NFS-e Nacional (50 dígitos)
+ALTER TABLE public.dfe_documentos ALTER COLUMN chave_acesso TYPE VARCHAR(60);
+ALTER TABLE public.dfe_documentos ALTER COLUMN numero_serie TYPE VARCHAR(50);
+

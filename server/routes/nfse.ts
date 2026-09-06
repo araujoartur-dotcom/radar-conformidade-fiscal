@@ -30,8 +30,10 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res: Respon
     if (empresaId) {
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseAdmin();
-        const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
-        if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        if (supabase) {
+          const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
+          if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        }
       } else {
         try {
           const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
@@ -73,8 +75,10 @@ router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: 
     if (empresaId) {
       if (isSupabaseConfigured()) {
         const supabase = getSupabaseAdmin();
-        const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
-        if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        if (supabase) {
+          const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
+          if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        }
       } else {
         try {
           const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;

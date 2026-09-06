@@ -480,20 +480,20 @@ async function persistirNfseNoBanco(
         const { data: existing } = await supabase
           .from('dfe_documentos')
           .select('id')
-          .eq('chave_acesso', parsed.chaveAcesso)
+          .or(`chave_acesso.eq.${parsed.chaveAcesso},chave_acesso.eq.${parsed.chaveAcesso.substring(0, 44)}`)
           .maybeSingle();
 
         if (!existing) {
           isNovo = true;
-          const docId = `doc-nfse-${parsed.chaveAcesso}`;
+          let activeDocId = `doc-nfse-${parsed.chaveAcesso}`;
 
-          const { error: insertErr } = await supabase.from('dfe_documentos').insert({
-            id: docId,
+          const docPayload = {
+            id: activeDocId,
             empresa_id: supaEmpresaId,
             tipo_doc: 'NFSe',
             chave_acesso: parsed.chaveAcesso,
             tipo_operacao: parsed.tipoOperacao,
-            numero_serie: `${parsed.numero || '1'} / ${parsed.serie || '1'}`,
+            numero_serie: `${parsed.numero || '1'} / ${parsed.serie || '1'}`.substring(0, 40),
             data_emissao: parsed.dataEmissao,
             data_entrada: parsed.dataEntrada || brasiliaNow,
             competencia: parsed.competencia,
@@ -520,12 +520,38 @@ async function persistirNfseNoBanco(
             xml_raw: sanitized,
             created_at: brasiliaNow,
             updated_at: brasiliaNow
-          });
+          };
 
-          if (!insertErr && parsed.itens && parsed.itens.length > 0) {
+          const { error: insertErr } = await supabase.from('dfe_documentos').insert(docPayload);
+
+          if (insertErr) {
+            console.error('❌ Falha ao salvar NFS-e no Supabase:', insertErr.message || insertErr);
+            // Fallback imediato se o banco Supabase ainda tiver chave_acesso limitada a VARCHAR(44)
+            if (insertErr.code === '22001' || insertErr.message?.includes('varying(44)')) {
+              console.warn(`⚠️ Aplicando fallback de chave 44 caracteres para NFS-e ${parsed.chaveAcesso}...`);
+              const fallbackChave = parsed.chaveAcesso.substring(0, 44);
+              activeDocId = `doc-nfse-${fallbackChave}`;
+              const fallbackPayload = {
+                ...docPayload,
+                id: activeDocId,
+                chave_acesso: fallbackChave
+              };
+              const { error: retryErr } = await supabase.from('dfe_documentos').insert(fallbackPayload);
+              if (retryErr) {
+                console.error('❌ Falha também no retry do fallback de 44 chars:', retryErr);
+                isNovo = false;
+              } else {
+                console.log(`✅ NFS-e ${fallbackChave} persistida no Supabase via fallback.`);
+              }
+            } else {
+              isNovo = false;
+            }
+          }
+
+          if (isNovo && parsed.itens && parsed.itens.length > 0) {
             const supaItens = parsed.itens.map((it, idx) => ({
               id: uuidv4(),
-              documento_id: docId,
+              documento_id: activeDocId,
               item_nro: it.numeroItem || idx + 1,
               descricao_item: it.descricao || 'Prestação de Serviços Profissionais / Técnicos',
               ncm: it.ncm || '17.01',
@@ -1082,12 +1108,14 @@ export async function sincronizarNfseUnificada(params: {
 
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
-    const { data: emp } = await supabase.from('empresas').select('*').eq('id', empresaId).maybeSingle();
-    empresaPrincipal = emp;
-    if (empresaPrincipal) {
-      const raiz = (empresaPrincipal.cnpj_raiz || (empresaPrincipal.cnpj_completo || '').replace(/\D/g, '').substring(0, 8));
-      const { data: filiais } = await supabase.from('empresas').select('*').eq('cnpj_raiz', raiz);
-      filiaisVinculadas = filiais || [];
+    if (supabase) {
+      const { data: emp } = await supabase.from('empresas').select('*').eq('id', empresaId).maybeSingle();
+      empresaPrincipal = emp;
+      if (empresaPrincipal) {
+        const raiz = (empresaPrincipal.cnpj_raiz || (empresaPrincipal.cnpj_completo || '').replace(/\D/g, '').substring(0, 8));
+        const { data: filiais } = await supabase.from('empresas').select('*').eq('cnpj_raiz', raiz);
+        filiaisVinculadas = filiais || [];
+      }
     }
   } else {
     try {

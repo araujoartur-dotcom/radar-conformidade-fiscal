@@ -1,0 +1,50 @@
+
+
+🚀 **Deploy realizado com sucesso!**
+O commit [`89ba541`](https://github.com/araujoartur-dotcom/radar-conformidade-fiscal/commit/89ba541) foi enviado para a branch `main`, disparando automaticamente a esteira de CI/CD de produção no Netlify/Render.
+
+---
+
+### Resumo Completo de Tudo que Foi Atualizado
+
+#### 1. Persistência de NSU no Supabase e SQLite (NF-e, CT-e e NFS-e)
+* **Sincronização Cloud Dupla:**
+  * No [`sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L1127-L1150) (NF-e e CT-e), o avanço do `ultimo_nsu` e `max_nsu` agora é gravado **obrigatoriamente tanto no SQLite quanto no Supabase**.
+  * No [`nfseService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts#L100-L125), o robô de NFS-e agora grava `ultimo_nsu_nfse` e `max_nsu_nfse` no banco (SQLite e Supabase) logo após o retorno do ADN, eliminando o comportamento anterior em que o NSU ficava volátil na memória e reiniciava em zero a cada consulta.
+* **Scripts e DDL:**
+  * Atualizado o arquivo mestre [`server/db/supabase_schema.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql#L20-L40).
+  * Criado o script pronto para execução no Supabase: [`scripts/add-nsu-and-conectores-to-supabase.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/add-nsu-and-conectores-to-supabase.sql).
+
+---
+
+#### 2. Correção do Escopo Fiscal de Serviços Tomados (NFS-e)
+* **Fim da restrição de UF:**
+  * No [`nfseService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts#L780-L820), foi removida a condição que exigia que a empresa tivesse filial/matriz em SP (`uf === 'SP'`) para consultar a Prefeitura de São Paulo (PMSP).
+  * A varredura unificada agora consulta **todos os conectores municipais ativos no sistema** buscando as notas em que o CNPJ da empresa figura como **tomador de serviços**, independentemente de onde sua sede (RJ, MG, etc.) está registrada.
+
+---
+
+#### 3. Catálogo de Conectores Municipais Funcional (Fim da "Tela Fria")
+* **Banco de Dados Real:**
+  * Tabela `conectores_municipais` criada no SQLite e no Supabase com suporte a IBGE (7 dígitos), Nome, UF, Provedor Fiscal, Tecnologia (`SOAP` / `REST`), Endpoints (Produção e Homologação), Autenticação (`Certificado A1`, `Token API`, `Usuário/Senha`) e Status (`ativo` / `inativo`).
+  * Carga inicial (*seed*) com os 9 maiores municípios pré-configurados (SP, RJ, BH, Curitiba, POA, Campinas, Recife, Salvador, Brasília).
+* **Rotas Backend ([`server/routes/nfse.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts#L125-L250)):**
+  * Criados os endpoints REST completos: `GET`, `POST`, `PUT` e `DELETE` em `/api/nfse/conectores`.
+* **Painel Frontend ([`ConectoresMunicipaisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConectoresMunicipaisPanel.tsx)):**
+  * Botão destacado **"+ Adicionar Prefeitura"**;
+  * Modal completo de cadastro e edição de prefeituras com suporte a URLs de WebService SOAP (WSDL) ou REST e método de autenticação flexível;
+  * Ações rápidas nos cards: alternar Ativo/Inativo com 1 clique, editar credenciais e excluir.
+
+---
+
+#### 4. Renomeação do Módulo para "Captura de XMLs"
+* **Menu Lateral ([`SidebarCertificado.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SidebarCertificado.tsx#L71)):**
+  * Atualizado de `XMLs & Ref. Tributária` para **`Captura de XMLs`**.
+* **Cabeçalho Principal ([`Header.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx#L81-L82)):**
+  * Título unificado e padronizado como **`Captura de XMLs`**.
+
+---
+
+> [!TIP]
+> **Lembrete do Supabase:**
+> Caso ainda não tenha executado o script no SQL Editor do Supabase, execute o arquivo [`scripts/add-nsu-and-conectores-to-supabase.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/add-nsu-and-conectores-to-supabase.sql) para que o banco na nuvem fique com as novas colunas e tabela 100% ativas!
