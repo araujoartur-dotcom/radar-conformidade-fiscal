@@ -141,9 +141,12 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
   });
 
   try {
-    // Endpoint real: GET /contribuintes/DFe/{NSU}
-    // O CNPJ é identificado automaticamente pelo certificado mTLS
-    const fullUrl = `${endpoint.baseUrl}${endpoint.distribuicaoPath}/${ultNSU}`;
+    // Endpoint real: GET /contribuintes/DFe/{NSU}?cnpjConsulta={cleanCnpj}
+    const urlObj = new URL(`${endpoint.baseUrl}${endpoint.distribuicaoPath}/${ultNSU}`);
+    if (cleanCnpj) {
+      urlObj.searchParams.set('cnpjConsulta', cleanCnpj);
+    }
+    const fullUrl = urlObj.toString();
     result.mensagens.push(`📡 Conectando ao ADN (${fullUrl}) com certificado do CNPJ ${cleanCnpj}...`);
 
     // Chamada à API REST do ADN da Receita Federal
@@ -166,9 +169,13 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             try {
               const parsed = JSON.parse(body);
+              const preview = typeof parsed === 'object' ? JSON.stringify(parsed).substring(0, 250) : String(parsed).substring(0, 250);
+              result.mensagens.push(`📦 Retorno ADN (${res.statusCode}): ${preview}`);
               resolve(parsed);
             } catch {
               // Se não for JSON, pode ser XML bruto
+              const xmlPreview = body.substring(0, 250);
+              result.mensagens.push(`📦 Retorno ADN em XML (${res.statusCode}, ${body.length}b): ${xmlPreview}`);
               resolve({ xmlRaw: body });
             }
           } else if (res.statusCode === 401 || res.statusCode === 403) {
@@ -207,39 +214,100 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
       req.end();
     });
 
-    // Processamento do lote de retorno
+    // Processamento do lote de retorno com suporte a todas as variações de schema da API REST ADN
     let xmlsParaProcessar: string[] = [];
-    
-    // Formato documentado: { chNFSe, tipoNFSe, ultNSU, maxNSU, docZip (base64 gzip) }
-    if (responseData.docZip) {
-      // Documento comprimido em gzip+base64
-      try {
-        const buffer = Buffer.from(responseData.docZip, 'base64');
-        const decompressed = zlib.gunzipSync(buffer).toString('utf-8');
-        xmlsParaProcessar.push(decompressed);
-        result.mensagens.push(`📄 Documento NFS-e recebido e descompactado com sucesso.`);
-      } catch (zipErr: any) {
-        result.mensagens.push(`⚠️ Erro ao descomprimir docZip: ${zipErr.message}`);
-      }
-    }
-    
-    if (responseData.loteDoc && Array.isArray(responseData.loteDoc)) {
-      for (const doc of responseData.loteDoc) {
-        if (doc.xmlGzip || doc.docZip) {
-          const buffer = Buffer.from(doc.xmlGzip || doc.docZip, 'base64');
-          const decompressed = zlib.gunzipSync(buffer).toString('utf-8');
-          xmlsParaProcessar.push(decompressed);
-        } else if (doc.xml) {
-          xmlsParaProcessar.push(doc.xml);
+
+    const extrairXmlDeItem = (item: any): string | null => {
+      if (!item) return null;
+      if (typeof item === 'string') {
+        if (item.trim().startsWith('<')) return item;
+        try {
+          const buf = Buffer.from(item, 'base64');
+          try {
+            return zlib.gunzipSync(buf).toString('utf-8');
+          } catch {
+            return buf.toString('utf-8');
+          }
+        } catch {
+          return null;
         }
       }
+
+      const b64 = item.docZip || item.DocZip || item.xmlGzip || item.xmlGZip || item.xmlGZipB64 || 
+                  item.XmlGZipB64 || item.dpsXmlGZipB64 || item.arquivoXml || item.conteudo;
+      if (b64 && typeof b64 === 'string') {
+        try {
+          const buffer = Buffer.from(b64, 'base64');
+          try {
+            return zlib.gunzipSync(buffer).toString('utf-8');
+          } catch {
+            return buffer.toString('utf-8');
+          }
+        } catch (e: any) {
+          result.mensagens.push(`⚠️ Falha ao decodificar Base64/GZIP de documento: ${e.message}`);
+        }
+      }
+
+      if (item.xml || item.xmlRaw || item.conteudoXml) {
+        return item.xml || item.xmlRaw || item.conteudoXml;
+      }
+      return null;
+    };
+
+    // 1. Verificar se a resposta é diretamente um array
+    if (Array.isArray(responseData)) {
+      for (const item of responseData) {
+        const xml = extrairXmlDeItem(item);
+        if (xml) xmlsParaProcessar.push(xml);
+      }
+    } else if (typeof responseData === 'object' && responseData !== null) {
+      // 2. Verificar se a própria raiz contém um documento
+      const xmlRaiz = extrairXmlDeItem(responseData);
+      if (xmlRaiz) {
+        xmlsParaProcessar.push(xmlRaiz);
+        result.mensagens.push(`📄 Documento NFS-e recebido na raiz e decodificado com sucesso.`);
+      }
+
+      // 3. Verificar listas sob propriedades conhecidas
+      const possiveisListas = [
+        responseData.loteDoc,
+        responseData.LoteDoc,
+        responseData.documentos,
+        responseData.Documentos,
+        responseData.listaDFe,
+        responseData.ListaDFe,
+        responseData.dfe,
+        responseData.DFes,
+        responseData.itens,
+        responseData.Itens
+      ];
+
+      for (const lista of possiveisListas) {
+        if (Array.isArray(lista)) {
+          for (const item of lista) {
+            const xml = extrairXmlDeItem(item);
+            if (xml) xmlsParaProcessar.push(xml);
+          }
+        }
+      }
+
+      // Extrair NSU retornado
+      const returnedUlt = responseData.ultNSU ?? responseData.UltNSU ?? responseData.nsu ?? responseData.NSU;
+      const returnedMax = responseData.maxNSU ?? responseData.MaxNSU ?? responseData.maiorNSU ?? responseData.MaiorNSU;
+      if (returnedUlt !== undefined && returnedUlt !== null) result.ultNSU = String(returnedUlt);
+      if (returnedMax !== undefined && returnedMax !== null) result.maxNSU = String(returnedMax);
     }
-    
-    if (responseData.ultNSU) result.ultNSU = String(responseData.ultNSU);
-    if (responseData.maxNSU) result.maxNSU = String(responseData.maxNSU);
-    
+
     if (xmlsParaProcessar.length === 0 && !responseData.connError && !responseData.authError) {
-      result.mensagens.push(`ℹ️ Nenhuma NFS-e nova disponível a partir do NSU ${ultNSU}. ultNSU=${result.ultNSU}, maxNSU=${result.maxNSU}.`);
+      if (String(result.maxNSU) === '0') {
+        result.mensagens.push(
+          `ℹ️ O ADN informou maxNSU=0 para o CNPJ ${cleanCnpj}. Isso confirma que não há eventos ou notas disponíveis na fila nacional do ADN para este estabelecimento.`
+        );
+      } else {
+        result.mensagens.push(
+          `ℹ️ Nenhuma nova NFS-e retornada a partir do NSU ${ultNSU}. ultNSU=${result.ultNSU}, maxNSU=${result.maxNSU}.`
+        );
+      }
     }
 
     // Persistir os XMLs capturados
@@ -566,14 +634,14 @@ export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseS
     try {
       // 3. Montar Cliente SOAP Assinado mTLS
       const client = await soap.createClientAsync(wsdlUrl, {
-        httpClient: new soap.HttpClient({
+        wsdl_options: {
           agent: new https.Agent({
             cert: pem.cert,
             key: pem.key,
             rejectUnauthorized: false
           })
-        })
-      });
+        }
+      } as any);
 
       result.mensagens.push(`🔄 Conexão SOAP estabelecida com sucesso. WSDL carregado.`);
       result.mensagens.push(`🔍 Enviando PedidoConsultaNFe assinado para o CNPJ ${cleanCnpj}...`);

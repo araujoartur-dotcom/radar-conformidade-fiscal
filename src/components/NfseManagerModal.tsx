@@ -46,10 +46,16 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
   const [selectedConector, setSelectedConector] = useState<'adn' | 'pmsp'>('adn');
   const [ultNSUInput, setUltNSUInput] = useState<string>('0');
 
+  const logsEndRef = React.useRef<HTMLDivElement>(null);
+
   const addLog = (msg: string) => {
     const time = new Date().toLocaleTimeString('pt-BR');
-    setLogs(prev => [`[${time}] ${msg}`, ...prev]);
+    setLogs(prev => [...prev, `[${time}] ${msg}`]);
   };
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [logs]);
 
   const loadStatus = async () => {
     if (!empresaAtiva?.id) return;
@@ -97,10 +103,16 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
 
       if (res.ok && res.data) {
         setSyncResult(res.data);
+        const time = new Date().toLocaleTimeString('pt-BR');
         if (res.data.mensagens && Array.isArray(res.data.mensagens)) {
-          res.data.mensagens.forEach((m: string) => addLog(m));
+          setLogs(prev => [
+            ...prev,
+            ...res.data.mensagens.map((m: string) => `[${time}] ${m}`),
+            `[${time}] Sincronização concluída: ${res.data.documentosNovos || 0} novas NFS-e capturadas.`
+          ]);
+        } else {
+          addLog(`Sincronização concluída: ${res.data.documentosNovos || 0} novas NFS-e capturadas.`);
         }
-        addLog(`Sincronização concluída: ${res.data.documentosNovos || 0} novas NFS-e capturadas.`);
         loadStatus();
         if (onSuccessSync) {
           onSuccessSync();
@@ -340,17 +352,20 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
               )}
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 max-h-40 overflow-y-auto space-y-1">
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 max-h-48 overflow-y-auto space-y-1">
               {logs.length === 0 ? (
                 <p className="text-slate-600 italic">
                   Aguardando acionamento da sincronização... Clique em "Sincronizar NFS-e Agora" para buscar notas no ADN e prefeituras.
                 </p>
               ) : (
-                logs.map((log, index) => (
-                  <p key={index} className="leading-tight">
-                    {log}
-                  </p>
-                ))
+                <>
+                  {logs.map((log, index) => (
+                    <p key={index} className="leading-tight">
+                      {log}
+                    </p>
+                  ))}
+                  <div ref={logsEndRef} />
+                </>
               )}
             </div>
           </div>

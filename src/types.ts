@@ -113,11 +113,11 @@ export interface CnpjLookupItem {
   razaoSocial?: string;
   nomeFantasia?: string;
   cnaePrincipal?: string;
-  cnaeDescricao: string;
-  dataAbertura: string;
-  regimeTributario: string;
+  cnaeDescricao?: string;
+  dataAbertura?: string;
+  regimeTributario?: string;
   indAtiv?: string; // 0 a 5
-  capitalSocial: number;
+  capitalSocial?: number;
   enderecoCompleto?: string;
   logradouro?: string;
   numero?: string;
