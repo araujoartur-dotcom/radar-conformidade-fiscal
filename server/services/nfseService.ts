@@ -666,3 +666,146 @@ export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseS
 
   return result;
 }
+
+// =========================================================
+// 5. MOTOR DE VARREDURA UNIFICADA (TOP-OF-THE-LINE ENGINE)
+// Varredura automática em todos os ambientes e filiais com 1 clique
+// =========================================================
+export async function sincronizarNfseUnificada(params: {
+  empresaId: string;
+  tpAmb?: '1' | '2';
+  incluirPrefeituras?: boolean;
+}): Promise<NfseSyncResult> {
+  const { empresaId, tpAmb = '1', incluirPrefeituras = true } = params;
+
+  const result: NfseSyncResult = {
+    success: true,
+    provedor: 'Motor Fiscal Unificado (ADN Nacional + Prefeituras Integradas)',
+    tpAmb: tpAmb === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação (tpAmb=2)',
+    ultNSU: '0',
+    maxNSU: '0',
+    documentosNovos: 0,
+    documentosExistentes: 0,
+    totalValorServicos: 0,
+    totalRetencoes: { iss: 0, irrf: 0, inss: 0, pis: 0, cofins: 0, csll: 0 },
+    mensagens: []
+  };
+
+  // 1. Identificar dados da empresa ativa e de suas filiais vinculadas
+  let empresaPrincipal: any = null;
+  let filiaisVinculadas: any[] = [];
+  const db = getDatabase();
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    const { data: emp } = await supabase.from('empresas').select('*').eq('id', empresaId).maybeSingle();
+    empresaPrincipal = emp;
+    if (empresaPrincipal) {
+      const raiz = (empresaPrincipal.cnpj_raiz || (empresaPrincipal.cnpj_completo || '').replace(/\D/g, '').substring(0, 8));
+      const { data: filiais } = await supabase.from('empresas').select('*').eq('cnpj_raiz', raiz);
+      filiaisVinculadas = filiais || [];
+    }
+  } else {
+    try {
+      empresaPrincipal = db.prepare('SELECT * FROM empresas WHERE id = ?').get(empresaId);
+      if (empresaPrincipal) {
+        const raiz = (empresaPrincipal.cnpj_raiz || (empresaPrincipal.cnpj_completo || '').replace(/\D/g, '').substring(0, 8));
+        filiaisVinculadas = db.prepare('SELECT * FROM empresas WHERE cnpj_raiz = ?').all(raiz) || [];
+      }
+    } catch {
+      // Tabela sqlite pode não existir se usar supabase
+    }
+  }
+
+  if (!empresaPrincipal) {
+    result.success = false;
+    result.mensagens.push('❌ Empresa ativa não encontrada para executar a varredura.');
+    return result;
+  }
+
+  const cleanCnpj = (empresaPrincipal.cnpj_completo || '').replace(/\D/g, '');
+  const cleanRaiz = (empresaPrincipal.cnpj_raiz || cleanCnpj.substring(0, 8) || '').replace(/\D/g, '');
+  const razaoSocial = empresaPrincipal.razao_social || empresaPrincipal.razaoSocial || 'Empresa';
+
+  result.mensagens.push(`🚀 Iniciando Varredura Fiscal Autônoma para ${razaoSocial}...`);
+  result.mensagens.push(`🏢 CNPJ Base detectado: ${cleanRaiz} (Matriz: ${cleanCnpj})`);
+
+  // Montar conjunto de CNPJs (Matriz + filiais registradas sob o mesmo CNPJ Raiz)
+  const cnpjsParaVarrer = new Set<string>();
+  if (cleanCnpj) cnpjsParaVarrer.add(cleanCnpj);
+
+  for (const f of filiaisVinculadas) {
+    const fCnpj = (f.cnpj_completo || '').replace(/\D/g, '');
+    if (fCnpj && fCnpj.length === 14) {
+      cnpjsParaVarrer.add(fCnpj);
+    }
+  }
+
+  result.mensagens.push(`⚡ Localizados ${cnpjsParaVarrer.size} estabelecimento(s) vinculados ao CNPJ Base.`);
+
+  // 2. Varredura no Ambiente de Dados Nacional (ADN) para todos os CNPJs com o e-CNPJ da matriz
+  result.mensagens.push(`🌐 [Ambiente Nacional] Executando varredura sequencial no ADN da Receita Federal...`);
+
+  for (const cnpjItem of Array.from(cnpjsParaVarrer)) {
+    const isMatriz = cnpjItem === cleanCnpj;
+    const label = isMatriz ? `Matriz (${cnpjItem})` : `Filial (${cnpjItem})`;
+    result.mensagens.push(`   ▶ Consultando ADN para ${label}...`);
+
+    try {
+      const adnRes = await sincronizarNfseNacional({
+        empresaId,
+        cnpj: cnpjItem,
+        tpAmb,
+        ultNSU: '0'
+      });
+
+      result.documentosNovos += adnRes.documentosNovos;
+      result.documentosExistentes += adnRes.documentosExistentes;
+      result.totalValorServicos += adnRes.totalValorServicos;
+      result.totalRetencoes.iss += adnRes.totalRetencoes.iss;
+      result.totalRetencoes.irrf += adnRes.totalRetencoes.irrf;
+      result.totalRetencoes.inss += adnRes.totalRetencoes.inss;
+      result.totalRetencoes.pis += adnRes.totalRetencoes.pis;
+      result.totalRetencoes.cofins += adnRes.totalRetencoes.cofins;
+      result.totalRetencoes.csll += adnRes.totalRetencoes.csll;
+
+      for (const m of adnRes.mensagens) {
+        if (m.includes('📦') || m.includes('📄') || m.includes('ℹ️') || m.includes('🔒') || m.includes('❌') || m.includes('✅')) {
+          result.mensagens.push(`      └ ${m}`);
+        }
+      }
+    } catch (err: any) {
+      result.mensagens.push(`      └ ⚠️ Erro na consulta de ${label}: ${err.message}`);
+    }
+  }
+
+  // 3. Varredura Automática em Prefeituras Homologadas (ex: PMSP se aplicável)
+  if (incluirPrefeituras) {
+    const temSp = Array.from(cnpjsParaVarrer).some(c => {
+      const f = filiaisVinculadas.find(item => (item.cnpj_completo || '').replace(/\D/g, '') === c);
+      return f?.uf === 'SP' || empresaPrincipal.uf === 'SP';
+    });
+
+    if (temSp || empresaPrincipal.uf === 'SP') {
+      result.mensagens.push(`🏛️ [Prefeitura de São Paulo] Conector PMSP acionado automaticamente...`);
+      try {
+        const pmspRes = await sincronizarNfsePMSP({
+          empresaId,
+          cnpj: cleanCnpj,
+          tpAmb
+        });
+        result.documentosNovos += pmspRes.documentosNovos;
+        result.documentosExistentes += pmspRes.documentosExistentes;
+        result.totalValorServicos += pmspRes.totalValorServicos;
+        for (const m of pmspRes.mensagens) {
+          result.mensagens.push(`      └ ${m}`);
+        }
+      } catch (err: any) {
+        result.mensagens.push(`      └ ⚠️ WebService PMSP: ${err.message}`);
+      }
+    }
+  }
+
+  result.mensagens.push(`🏁 Varredura Fiscal Unificada finalizada com sucesso! Total consolidado: ${result.documentosNovos} novas NFS-e capturadas, ${result.documentosExistentes} já existentes.`);
+  return result;
+}

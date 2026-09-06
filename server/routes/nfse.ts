@@ -10,7 +10,8 @@
 import { Router, Response } from 'express';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { getDatabase } from '../db/database';
-import { sincronizarNfseNacional, obterStatusNfse } from '../services/nfseService';
+import { isSupabaseConfigured, getSupabaseAdmin } from '../db/supabase';
+import { sincronizarNfseNacional, sincronizarNfseUnificada, sincronizarNfsePMSP, obterStatusNfse } from '../services/nfseService';
 
 const router = Router();
 
@@ -26,8 +27,18 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res: Respon
 
     let cleanCnpj = '';
     if (empresaId) {
-      const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
-      if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
+        if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+      } else {
+        try {
+          const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
+          if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        } catch {
+          // fallback
+        }
+      }
     }
     if (!cleanCnpj && req.user?.empresaCnpj) {
       cleanCnpj = req.user.empresaCnpj.replace(/\D/g, '');
@@ -48,19 +59,29 @@ router.get('/status', requireAuth, async (req: AuthenticatedRequest, res: Respon
 
 /**
  * POST /api/nfse/sincronizar
- * Dispara varredura automática no Ambiente de Dados Nacional (ADN) e Prefeituras.
+ * Dispara varredura automática unificada no Ambiente de Dados Nacional (ADN) e Prefeituras.
  */
 router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const activeEmpresaId = req.user?.empresaAtivaId;
-    const { empresaId: bodyEmpresaId, tpAmb = '1', ultNSU = '0', conector = 'adn' } = req.body;
+    const { empresaId: bodyEmpresaId, tpAmb = '1', ultNSU = '0', conector = 'unificado' } = req.body;
     const empresaId = bodyEmpresaId || activeEmpresaId;
     const db = getDatabase();
 
     let cleanCnpj = '';
     if (empresaId) {
-      const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
-      if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
+        if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+      } else {
+        try {
+          const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
+          if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        } catch {
+          // fallback
+        }
+      }
     }
     if (!cleanCnpj && req.user?.empresaCnpj) {
       cleanCnpj = req.user.empresaCnpj.replace(/\D/g, '');
@@ -72,8 +93,14 @@ router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: 
     }
 
     let syncResult;
-    if (conector === 'pmsp') {
-      const { sincronizarNfsePMSP } = await import('../services/nfseService');
+    if (conector === 'unificado' || conector === 'todos' || !conector) {
+      // Modo Topo de Linha: Varredura Automática Completa (ADN Nacional Matriz + Filiais + Prefeituras)
+      syncResult = await sincronizarNfseUnificada({
+        empresaId,
+        tpAmb,
+        incluirPrefeituras: true
+      });
+    } else if (conector === 'pmsp') {
       syncResult = await sincronizarNfsePMSP({
         empresaId,
         cnpj: cleanCnpj,
