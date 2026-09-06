@@ -1,0 +1,685 @@
+Log de Execução em Tempo Real
+Limpar Logs
+[16:20:17] Iniciando varredura unificada de NFS-e para SUPERGASBRAS ENERGIA LTDA (19.791.896/0001-00)...
+
+[16:20:17] Ambiente: Produção Oficial (tpAmb=1)
+
+[16:20:17] Executando varredura unificada (ADN Nacional + Filiais + Prefeituras)...
+
+[16:23:34] 🚀 Iniciando Varredura Fiscal Autônoma para SUPERGASBRAS ENERGIA LTDA...
+
+[16:23:34] 🏢 CNPJ Base detectado: 19791896 (Matriz: 19791896000100)
+
+[16:23:34] ⚡ Localizados 1 estabelecimento(s) vinculados ao CNPJ Base.
+
+[16:23:34] 🌐 [Ambiente Nacional] Executando varredura sequencial no ADN da Receita Federal...
+
+[16:23:34] ▶ Consultando ADN para Matriz (19791896000100)...
+
+[16:23:34] └ 📡 Conectando ao ADN (https://adn.nfse.gov.br/contribuintes/DFe/0?cnpjConsulta=19791896000100) com certificado do CNPJ 19791896000100...
+
+[16:23:34] └ 🔄 ADN respondeu com HTTP 200.
+
+[16:23:34] └ 📦 Retorno ADN (200): {"StatusProcessamento":"DOCUMENTOS_LOCALIZADOS","LoteDFe":[{"NSU":1,"ChaveAcesso":"31062001206201342000156220000000015522123176911248","TipoDocumento":"NFSE","ArquivoXml":"H4sIAAAAAAAAA71Y2ZLiSpJ9n6/A8pr1S1alFhBC1RQ9oRUBEmhBIL1pQxJoIbUggdX7PM13jNn8xv
+
+[16:23:34] └ 📦 Lote de documentos detectado sob 'LoteDFe': 50 item(ns).
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001206201342000156220000000015522123176911248 (NSU 1) - R$ 5135.17
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001273798209000116220000000109422122250622825 (NSU 2) - R$ 53340.61
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001273798209000116220000000109522121710826157 (NSU 3) - R$ 18722.02
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001273798209000116220000000109622129371317564 (NSU 4) - R$ 14351.01
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001273798209000116220000000109722126858516441 (NSU 5) - R$ 7824.35
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001273798209000116220000000109822124039962540 (NSU 6) - R$ 8416.20
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001202221859000156220000000059222127383234378 (NSU 7) - R$ 16644.21
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001203164328000131220000000295722129410226330 (NSU 8) - R$ 1993.50
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000212122126203776657 (NSU 9) - R$ 1600.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001203301747000178220000000718022122237629401 (NSU 10) - R$ 1045.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000213122126674101237 (NSU 11) - R$ 1900.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000213222120203028054 (NSU 12) - R$ 890.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000213322122777726536 (NSU 13) - R$ 569.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000213422125542011233 (NSU 14) - R$ 2352.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001212795627000165220000000213522123475770783 (NSU 15) - R$ 3960.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030122122930646862 (NSU 16) - R$ 17888.63
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030222128621175426 (NSU 17) - R$ 4151.27
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030322124424465872 (NSU 18) - R$ 2519.67
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030422127003214464 (NSU 19) - R$ 2519.67
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030522125009367324 (NSU 20) - R$ 1802.34
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030622129355991274 (NSU 21) - R$ 2156.52
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030722122486521049 (NSU 22) - R$ 14067.68
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030822127383664259 (NSU 23) - R$ 2600.22
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000030922124294533298 (NSU 24) - R$ 1082.18
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031022126499513252 (NSU 25) - R$ 391.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031122122256107500 (NSU 26) - R$ 1382.56
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031222125142332600 (NSU 27) - R$ 1571.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031322121409284194 (NSU 28) - R$ 1540.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031422129590967251 (NSU 29) - R$ 451.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031522128120506342 (NSU 30) - R$ 751.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031622121548161068 (NSU 31) - R$ 1583.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031722126073801690 (NSU 32) - R$ 1435.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031822127100898280 (NSU 33) - R$ 685.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000031922124987028082 (NSU 34) - R$ 685.28
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001234391627000132220000000006822126170916736 (NSU 35) - R$ 2700.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001207855025000116220000000110222127728477989 (NSU 36) - R$ 3012.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001217186685000105220000000206322121561234010 (NSU 37) - R$ 8399.51
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001231545443000191220000000005722127323486240 (NSU 38) - R$ 23509.41
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001231545443000191220000000005822125134050476 (NSU 39) - R$ 32200.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001231545443000191220000000005922123230881054 (NSU 40) - R$ 56300.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001213176036000172220000000032022129676708457 (NSU 41) - R$ 8145.29
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001214713517000132220000000001422128437059205 (NSU 42) - R$ 3806.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001214713517000132220000000001522127618875999 (NSU 43) - R$ 3806.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001214713517000132220000000001622129119263394 (NSU 44) - R$ 3440.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001225457342000166220000000010522120260347480 (NSU 45) - R$ 1407.59
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001232435391000163220000000013922129690458244 (NSU 46) - R$ 7240.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001232435391000163220000000014022127149778145 (NSU 47) - R$ 7240.00
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001220736196000194220000000033522125312446773 (NSU 48) - R$ 163.50
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001220736196000194220000000033622122875709230 (NSU 49) - R$ 163.50
+
+[16:23:34] └ 📄 NFS-e processada: Chave 31062001220736196000194220000000033722127429819735 (NSU 50) - R$ 163.50
+
+[16:23:34] └ ✅ Varredura ADN finalizada. 50 NFS-e novas gravadas, 0 já existentes.
+
+[16:23:34] └ 💾 Checkpoint salvo no banco: ultimo_nsu_nfse=50, max_nsu_nfse=50
+
+[16:23:34] 🏛️ [Conectores Municipais] Carregando prefeituras ativas do banco de dados...
+
+[16:23:34] ⚡ 74 prefeitura(s) ativa(s) configurada(s) para varredura de serviços tomados.
+
+[16:23:34] ▶ [Rio Branco - AC (Ábaco (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nota.riobranco.ac.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 302.
+
+[16:23:34] └ ⚠️ Resposta HTTP 302 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Maceió - AL (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Manaus - AM (Ábaco (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse-prd.manaus.am.gov.br/nfse)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 301.
+
+[16:23:34] └ ⚠️ Resposta HTTP 301 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Itacaré - BA (WebISS)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://itacareba.webiss.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ Retorno da Prefeitura (Itacaré): Requisição de serviço inválida. O sistema não conseguiu capturar o parâmetro nfseCabecMsg e/ou nfseDadosMsg.
+
+[16:23:34] ▶ [Brasília - DF (ISSNET (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://df.issnetonline.com.br/webservicenfse204/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Cachoeiro de Itapemirim - ES (E&L (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (http://notafse.cachoeiro.es.gov.br:8189/paginas/sistema/autenticacao.jsf)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Cachoeiro de Itapemirim): Timeout de 25s excedido na comunicação com a prefeitura
+
+[16:23:34] ▶ [Fundão - ES (E&L (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://es-fundao-pm-nfs.cloud.el.com.br/)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 405.
+
+[16:23:34] └ ⚠️ Resposta HTTP 405 recebida - Operando em contingência.
+
+[16:23:34] ▶ [São Luís - MA (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.saoluis.ma.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (São Luís): getaddrinfo ENOTFOUND iss.saoluis.ma.gov.br
+
+[16:23:34] ▶ [Aiuruoca - MG (Futurize (ABRASF 2.02))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://aiuruocamg.nfse-futurize.com.br/webservice/prod)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Aiuruoca): getaddrinfo ENOTFOUND aiuruocamg.nfse-futurize.com.br
+
+[16:23:34] ▶ [Belo Horizonte - MG (BHISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://bhissdigitalws.pbh.gov.br/bhiss-ws/nfse)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 502.
+
+[16:23:34] └ ⚠️ Resposta HTTP 502 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Betim - MG (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Conceição de Ipanema - MG (Futurize (ABRASF 2.02))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://conceicaodeipanemamg.nfse-futurize.com.br/webservice/prod)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Conceição de Ipanema): getaddrinfo ENOTFOUND conceicaodeipanemamg.nfse-futurize.com.br
+
+[16:23:34] ▶ [Contagem - MG (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Ipatinga - MG (SigISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://abrasfipatinga.meumunicipio.online/ws/servico.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Juiz de Fora - MG (ISS-e JF (ABRASF 2.02))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse.pjf.mg.gov.br:4431/WebService.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Machado - MG (eReceita (ABRASF 2.03))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://machado.ereceita.net.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Machado): getaddrinfo ENOTFOUND machado.ereceita.net.br
+
+[16:23:34] ▶ [Matias Barbosa - MG (Futurize (ABRASF 2.02))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://matiasbarbosamg.nfse-futurize.com.br/webservice/prod)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Matias Barbosa): getaddrinfo ENOTFOUND matiasbarbosamg.nfse-futurize.com.br
+
+[16:23:34] ▶ [Muriaé - MG (GINFES (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://muriae.giss.com.br/portal/home#/login-portal)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 503.
+
+[16:23:34] └ ⚠️ Resposta HTTP 503 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Paula Cândido - MG (Futurize (ABRASF 2.02))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://paulacandidomg.nfse-futurize.com.br/webservice/prod)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Paula Cândido): getaddrinfo ENOTFOUND paulacandidomg.nfse-futurize.com.br
+
+[16:23:34] ▶ [Pouso Alegre - MG (SigISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://abrasfpousoalegre.meumunicipio.online/ws/nfs?wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [São Miguel do Anta - MG (eReceita (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://webservice.ereceita.net.br/ws/saomigueldoantamg/wsProducao.php)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 403.
+
+[16:23:34] └ ⚠️ Resposta HTTP 403 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Uberaba - MG (WebISS)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://uberabamg.webiss.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ Retorno da Prefeitura (Uberaba): Requisição de serviço inválida. O sistema não conseguiu capturar o parâmetro nfseCabecMsg e/ou nfseDadosMsg.
+
+[16:23:34] ▶ [Uberlândia - MG (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://udf.uberlandia.mg.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Uberlândia): getaddrinfo ENOTFOUND udf.uberlandia.mg.gov.br
+
+[16:23:34] ▶ [Varginha - MG (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Campo Grande - MS (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://issonline.pmcg.ms.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Campo Grande): getaddrinfo ENOTFOUND issonline.pmcg.ms.gov.br
+
+[16:23:34] ▶ [Cuiabá - MT (IssNet (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://wscuiaba.issnetonline.com.br/webservicenfse204/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Ananindeua - PA (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Belém - PA (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.belem.pa.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Belém): getaddrinfo ENOTFOUND iss.belem.pa.gov.br
+
+[16:23:34] ▶ [Cabedelo - PB (Tinus (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://www.tinus.com.br/csp/cabedelo/portal/index.csp)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Cabo de Santo Agostinho - PE (Tinus (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://www.tinus.com.br/csp/cabo/portal/index.csp)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Camaragibe - PE (Tinus (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://www.tinus.com.br/csp/CAMARAGIBE/portal/index.csp)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Caruaru - PE (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Goiana - PE (Tinus (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://www.tinus.com.br/csp/GOIANA/portal/index.csp)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Jaboatão dos Guararapes - PE (Tinus (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://www.tinus.com.br/csp/JABOATAO/portal/index.csp)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Petrolina - PE (E&L (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://pe-petrolina-pm-nfs-backend.cloud.el.com.br/nfse/NfseWSService?wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Recife - PE (Recife (ABRASF 1.1 / 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse.recife.pe.gov.br/WS/nfse_v03.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Teresina - PI (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.teresina.pi.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Teresina): getaddrinfo ENOTFOUND iss.teresina.pi.gov.br
+
+[16:23:34] ▶ [Araucária - PR (IPM Saúde e Gestão)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://araucaria.atende.net/ws)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 404.
+
+[16:23:34] └ ⚠️ Resposta HTTP 404 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Cascavel - PR (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://ws-cascavel.atende.net:7443/?pg=rest&service=WNERestServiceNFSe)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService REST Indisponível / Erro de Rede (Cascavel): Timeout de 25s excedido na conexão REST com a prefeitura
+
+[16:23:34] ▶ [Colombo - PR (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://ws-colombo.atende.net:7443/?pg=rest&service=WNERestServiceNFSe)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService REST Indisponível / Erro de Rede (Colombo): Timeout de 25s excedido na conexão REST com a prefeitura
+
+[16:23:34] ▶ [Paranaguá - PR (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://ws-paranagua.atende.net:7443/?pg=rest&service=WNERestServiceNFSe)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService REST Indisponível / Erro de Rede (Paranaguá): Timeout de 25s excedido na conexão REST com a prefeitura
+
+[16:23:34] ▶ [Duque de Caxias - RJ (SMARAPD / IPM)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse.duquedecaxias.rj.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 301.
+
+[16:23:34] └ ⚠️ Resposta HTTP 301 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Nova Friburgo - RJ (E&L (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://rj-novafriburgo-pm-nfs.cloud.el.com.br/paginas/sistema/login.jsf)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 405.
+
+[16:23:34] └ ⚠️ Resposta HTTP 405 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Nova Iguaçu - RJ (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.novaiguacu.rj.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Nova Iguaçu): getaddrinfo ENOTFOUND iss.novaiguacu.rj.gov.br
+
+[16:23:34] ▶ [Rio de Janeiro - RJ (Nota Carioca (ABRASF 1.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://notacarioca.rio.gov.br/WSNacional/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Cachoeirinha - RS (IPM (AtendeNet 2.0))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://cachoeirinha.atende.net/atende.php?pg=rest&service=WNERestServiceNFSe&cidade=padrao)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura REST respondeu com HTTP 401.
+
+[16:23:34] └ ℹ️ Retorno REST (Cachoeirinha): HTTP 401
+
+[16:23:34] ▶ [Canoas - RS (IPM Saúde e Gestão)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://canoas.atende.net/ws)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Canoas): getaddrinfo ENOTFOUND canoas.atende.net
+
+[16:23:34] ▶ [Porto Alegre - RS (NFSE POA (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse.portoalegre.rs.gov.br/bhiss-ws/nfse)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Porto Alegre): getaddrinfo ENOTFOUND nfse.portoalegre.rs.gov.br
+
+[16:23:34] ▶ [Biguaçu - SC (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://bigua.atende.net/?pg=services&service=WNENotaFiscalEletronicaNfe&wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 401.
+
+[16:23:34] └ ⚠️ Resposta HTTP 401 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Blumenau - SC (Simpliss (NFS-e Nacional/DPS))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://blumenau.simplissweb.com.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura REST respondeu com HTTP 406.
+
+[16:23:34] └ ℹ️ Retorno REST (Blumenau): HTTP 406
+
+[16:23:34] ▶ [Chapecó - SC (SigISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://chapeco.meumunicipio.online/abrasf/ws/nfs?wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Palhoça - SC (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://palhoca.atende.net/?pg=rest&service=WNERestServiceNFSe)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura REST respondeu com HTTP 401.
+
+[16:23:34] └ ℹ️ Retorno REST (Palhoça): HTTP 401
+
+[16:23:34] ▶ [Porto Belo - SC (IPM (AtendeNet))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService REST (https://portobelo.atende.net/?pg=rest&service=WNERestServiceNFSe)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura REST respondeu com HTTP 401.
+
+[16:23:34] └ ℹ️ Retorno REST (Porto Belo): HTTP 401
+
+[16:23:34] ▶ [Aracaju - SE (WebISS)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://aracaju.webiss.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Aracaju): getaddrinfo ENOTFOUND aracaju.webiss.com.br
+
+[16:23:34] ▶ [Americana - SP (Tiplan (ABRASF 2.03))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfse.americana.sp.gov.br/nfse/wsnacional2/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ Retorno da Prefeitura (Americana): Requisição de serviço inválida. O sistema não conseguiu capturar o parâmetro nfseCabecMsg e/ou nfseDadosMsg.
+
+[16:23:34] ▶ [Diadema - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Guarulhos - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Jundiaí - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Mauá - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Mogi Mirim - SP (SigISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://mogimirim.meumunicipio.online/abrasf/ws/nfs?wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Paulínia - SP (SIGCORP (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://paulinia.sigcorp.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Paulínia): getaddrinfo ENOTFOUND paulinia.sigcorp.com.br
+
+[16:23:34] ▶ [Piracicaba - SP (Simpliss)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://piracicaba.simplissweb.com.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 405.
+
+[16:23:34] └ ⚠️ Resposta HTTP 405 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Ribeirão Preto - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Santana de Parnaíba - SP (Simpliss)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://santanadeparnaiba.simplissweb.com.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 405.
+
+[16:23:34] └ ⚠️ Resposta HTTP 405 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Santo André - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Santos - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [São Bernardo do Campo - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [São José do Rio Preto - SP (GINFES (ABRASF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://producao.ginfes.com.br/ServiceGinfesImpl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [São José dos Campos - SP (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.sjc.sp.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (São José dos Campos): getaddrinfo ENOTFOUND iss.sjc.sp.gov.br
+
+[16:23:34] ▶ [São Paulo - SP (PMSP (Nota do Milhão))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 500.
+
+[16:23:34] └ ⚠️ Resposta HTTP 500 recebida - Operando em contingência.
+
+[16:23:34] ▶ [Sorocaba - SP (ISSONLINE (DSF))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://iss.sorocaba.sp.gov.br)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Sorocaba): getaddrinfo ENOTFOUND iss.sorocaba.sp.gov.br
+
+[16:23:34] ▶ [Taubaté - SP (SigISS (ABRASF 2.04))]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://taubate.meumunicipio.online/abrasf/ws?wsdl)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).
+
+[16:23:34] ▶ [Araguatins - TO (WebISS)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://araguatinsto.webiss.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ 🔄 Prefeitura respondeu com HTTP 200.
+
+[16:23:34] └ ℹ️ Retorno da Prefeitura (Araguatins): Requisição de serviço inválida. O sistema não conseguiu capturar o parâmetro nfseCabecMsg e/ou nfseDadosMsg.
+
+[16:23:34] ▶ [Palmas - TO (WebISS)]: Consultando notas tomadas para CNPJ 19791896000100...
+
+[16:23:34] └ 📡 Conectando ao WebService SOAP (https://palmas.webiss.com.br/ws/nfse.asmx)... Período: 2026-08-07 a 2026-09-06
+
+[16:23:34] └ ⚠️ WebService Indisponível / Erro de Rede (Palmas): getaddrinfo ENOTFOUND palmas.webiss.com.br
+
+[16:23:34] 🏁 Varredura Fiscal Unificada finalizada com sucesso! Total consolidado: 50 novas NFS-e capturadas, 0 já existentes.
+
+[16:23:34] Sincronização concluída: 50 novas NFS-e capturadas.

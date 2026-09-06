@@ -779,7 +779,8 @@ async function enviarSoapMunicipal(params: {
         timeout: params.timeoutMs || 25000,
       };
 
-      const req = https.request(reqOptions, (res) => {
+      const client = isHttps ? https : http;
+      const req = client.request(reqOptions, (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
@@ -1020,6 +1021,19 @@ export async function sincronizarConectorMunicipalSoap(params: {
     </gin:ConsultarNfseServicoTomadoEnvio>
   </soapenv:Body>
 </soapenv:Envelope>`;
+  } else if (provUpper.includes('WEBISS') || provUpper.includes('TIPLAN') || provUpper.includes('ISSNET')) {
+    // Padrão WebISS / Tiplan / ISSNet (Exige parâmetros formais nfseCabecMsg e nfseDadosMsg)
+    soapAction = 'http://tempuri.org/ConsultarNfseServicoTomado';
+    soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ws="http://tempuri.org/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ws:ConsultarNfseServicoTomado>
+      <ws:nfseCabecMsg><![CDATA[<cabecalho versao="2.02" xmlns="http://www.abrasf.org.br/nfse.xsd"><versaoDados>2.02</versaoDados></cabecalho>]]></ws:nfseCabecMsg>
+      <ws:nfseDadosMsg><![CDATA[<ConsultarNfseServicoTomadoEnvio xmlns="http://www.abrasf.org.br/nfse.xsd"><Consulente><CpfCnpj><Cnpj>${cleanCnpj}</Cnpj></CpfCnpj></Consulente><PeriodoEmissao><DataInicial>${dtInicioStr}</DataInicial><DataFinal>${dtFimStr}</DataFinal></PeriodoEmissao><Tomador><CpfCnpj><Cnpj>${cleanCnpj}</Cnpj></CpfCnpj></Tomador></ConsultarNfseServicoTomadoEnvio>]]></ws:nfseDadosMsg>
+    </ws:ConsultarNfseServicoTomado>
+  </soapenv:Body>
+</soapenv:Envelope>`;
   } else {
     // Padrão Geral ABRASF 2.04 (Belo Horizonte - BHISS, Recife, Porto Alegre, Curitiba, etc.)
     soapAction = 'http://nfse.abrasf.org.br/ConsultarNfseServicoTomado';
@@ -1094,8 +1108,8 @@ export async function sincronizarConectorMunicipalSoap(params: {
         }
       }
     } else {
-      // Extrair mensagens informativas retornadas pela prefeitura
-      const msgMatch = decodedXml.match(/<(?:[a-zA-Z0-9_-]+:)?(Mensagem|Descricao|xMotivo|Motivo|Correcao)[^>]*>([^<]+)<\//i);
+      // Extrair mensagens informativas retornadas pela prefeitura (inclusive faultstring de erros 500)
+      const msgMatch = decodedXml.match(/<(?:[a-zA-Z0-9_-]+:)?(Mensagem|Descricao|xMotivo|Motivo|Correcao|faultstring|detail)[^>]*>([^<]+)<\//i);
       if (msgMatch && msgMatch[2]) {
         result.mensagens.push(`ℹ️ Retorno da Prefeitura (${conector.municipio}): ${msgMatch[2].trim()}`);
       } else if (resp.statusCode === 200) {

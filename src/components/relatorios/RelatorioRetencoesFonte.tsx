@@ -16,9 +16,11 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
   const [searchTerm, setSearchTerm] = useState('');
   const [modalItem, setModalItem] = useState<XmlItemDetailReport | null>(null);
 
-  // Considerar todos os itens que sejam NFS-e ou que possuam retenções
+  // Considerar estritamente itens que sejam NFS-e ou serviços
   const servicoItems = items.filter(it => 
     it.tipoDoc === 'NFS-e' || 
+    it.tipoDoc === 'NFSe' || 
+    (it.tipoDoc as string)?.toUpperCase().includes('NFS') ||
     (it.totalRetencoes && it.totalRetencoes > 0) || 
     it.cfop === '1933' || 
     it.cfop === '2933' ||
@@ -26,8 +28,8 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
     (it.descricaoItem && it.descricaoItem.toLowerCase().includes('serviço'))
   );
 
-  // Fallback: se não houver registros categorizados como serviço mas houver registros em geral, mostrar todos para auditoria
-  const dataset = servicoItems.length > 0 ? servicoItems : items;
+  // Relatório estritamente de serviços: NUNCA exibe CT-e ou NF-e mercantis
+  const dataset = servicoItems;
 
   // Filtragem
   const filteredDataset = dataset.filter(it => {

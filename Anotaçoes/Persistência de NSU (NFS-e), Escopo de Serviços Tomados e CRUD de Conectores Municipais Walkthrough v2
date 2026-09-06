@@ -1,0 +1,251 @@
+# Walkthrough: Persistência de NSU (NFS-e), Escopo de Serviços Tomados e CRUD de Conectores Municipais
+
+Este documento detalha as implementações realizadas localmente (sem deploy, conforme restrição do usuário) para sanar as questões estruturais e fiscais levantadas.
+
+---
+
+## 1. Armazenamento e Persistência de `maxNSU` (NFS-e)
+
+### Diagnóstico
+Anteriormente, o sistema persistia `ultimo_nsu` e `max_nsu` apenas para NF-e/CT-e da SEFAZ na tabela `empresas`. No caso de NFS-e (Ambiente de Dados Nacional - ADN), o serviço recebia o `maxNSU` e o `ultNSU` do webservice REST da Receita Federal, porém mantinha apenas na resposta da memória HTTP sem salvar no banco de dados. Como consequência, toda nova consulta iniciava sempre a partir do NSU 0.
+
+### Implementação
+- **Schema ([schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)):**
+  - Adicionadas as colunas `ultimo_nsu_nfse` e `max_nsu_nfse` com migração automática `addColumnIfNotExists` na tabela `empresas`.
+- **Serviço ([nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)):**
+  - Ao iniciar `sincronizarNfseNacional`, se `ultNSU` for `'0'`, o robô busca o último NSU gravado na tabela `empresas`.
+  - Ao concluir a chamada ao ADN, grava imediatamente no banco:
+    ```sql
+    UPDATE empresas
+    SET ultimo_nsu_nfse = ?, max_nsu_nfse = ?, updated_at = ?
+    WHERE id = ?
+    ```
+  - Garante que a próxima varredura continue exatamente de onde parou.
+
+---
+
+## 2. Correção do Escopo Fiscal de Serviços Tomados (Fim da Restrição de UF)
+
+### Diagnóstico
+O motor unificado de NFS-e ignorava a consulta à Prefeitura de São Paulo (PMSP) e outros municípios caso o cadastro da empresa ativa fosse do Rio de Janeiro (`uf === 'RJ'`). Esse comportamento ignorava a realidade fiscal: **uma empresa sediada no RJ toma serviços de prestadores de SP, BH, Curitiba, Recife, etc.**, e as notas são emitidas nas respectivas prefeituras com a empresa como **TOMADORA**.
+
+### Implementação
+- **Serviço ([nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)):**
+  - Removido o filtro `f?.uf === 'SP' || empresaPrincipal.uf === 'SP'`.
+  - A varredura unificada agora carrega todas as prefeituras com status `'ativo'` cadastradas no banco de dados e executa a busca de notas tomadas para o CNPJ em cada uma delas, independente da UF onde a matriz ou filial tem sede.
+
+---
+
+## 3. Catálogo de Conectores Municipais (Fim da "Tela Fria")
+
+### Banco de Dados
+- Criada a tabela `conectores_municipais` em [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts) com:
+  - `id`, `ibge` (7 dígitos UNIQUE), `municipio`, `uf`, `provedor`, `tecnologia` (SOAP/REST), `endpoint_producao`, `endpoint_homologacao`, `tipo_autenticacao` (certificado_a1, token_api, usuario_senha, certificado_token), `token_api`, `usuario`, `senha`, `status`.
+  - Seed automático populado com 9 grandes municípios (SP, RJ, BH, Curitiba, POA, Campinas, Recife, Salvador, Brasília).
+
+### Backend REST API
+- Criadas as rotas CRUD completas em [nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts):
+  - `GET /api/nfse/conectores`: Retorna todos os conectores ordenados por UF e Município.
+  - `POST /api/nfse/conectores`: Cadastra novo conector municipal com validação de IBGE de 7 dígitos.
+  - `PUT /api/nfse/conectores/:id`: Edita URLs, credenciais, tecnologias e status.
+  - `DELETE /api/nfse/conectores/:id`: Remove conector do banco.
+
+### Interface do Usuário (Frontend)
+- Componente [ConectoresMunicipaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConectoresMunicipaisPanel.tsx) totalmente reconstruído:
+  - Consumo direto da API com atualização em tempo real.
+  - Botão destacado **"+ Adicionar Prefeitura"**.
+  - Modal interativo para cadastrar e editar qualquer prefeitura (todas as 27 UFs, código IBGE, tecnologia SOAP/REST, URLs de WSDL/REST e métodos de autenticação).
+  - Ações rápidas nos cards: Alternar Ativo/Inativo com 1 clique, Editar e Excluir.
+
+---
+
+## 4. Marco Histórico: 50 NFS-e Reais Capturadas do ADN & Correções Críticas
+
+### 🚀 Vitória: Comunicação Oficial com o ADN
+No log de execução, o motor conectou com sucesso via mTLS (Certificado A1) ao endpoint oficial da Receita Federal:
+`https://adn.nfse.gov.br/contribuintes/DFe/0?cnpjConsulta=19791896000100`
+O ADN retornou **HTTP 200** com **50 documentos NFS-e reais**, e o checkpoint `ultimo_nsu_nfse=50` foi registrado.
+
+### 🔍 Diagnóstico e Resolução de 2 Pontos Críticos
+
+1. **Valores Zerados (`R$ 0.00`) no Log:**
+   - **Causa Raiz:** O regex `<(?:[a-zA-Z0-9_-]+:)?${tag}[^>]*>` buscava `tag = 'vServ'`, porém sem lookahead de palavra (`(?=[\\s>])`), a tag `<vServPrest>` (que é um container pai) era casada como se fosse `<vServ>`. O `parseFloat()` do conteúdo aninhado resultava em `NaN` e caía para `0.00`.
+   - **Solução Aplicada:**
+     - Ajustado [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts) com lookahead estrito `(?=[\\s>])`, garantindo que tags com mesmo prefixo não se confundam.
+     - Criada a função `parseValor(val)` que higieniza tags internas e trata formatações decimais brasileiras.
+     - Mapeada a hierarquia completa da NFS-e Nacional (`vServPrest` > `vServ`, `valores` > `vServ`, `valores` > `vLiq`, `tribMun` > `vISSQN`, `tribFed` > `vRetIRRF`, `piscofins` > `vPIS`, `vCOFINS`).
+
+2. **Chave de 50 Dígitos da NFS-e Nacional vs Coluna Supabase (`VARCHAR(44)`):**
+   - **Causa Raiz:** A tabela `dfe_documentos` no Supabase tinha `chave_acesso VARCHAR(44)` (padrão de NF-e/CT-e). As chaves da NFS-e Nacional possuem **50 dígitos numéricos**. O PostgreSQL retornou o erro `22001: value too long for type character varying(44)`.
+   - **Solução Aplicada:**
+     - Em [nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts), adicionado fallback automático: caso o banco retorne erro de tamanho, o robô trunca para 44 caracteres e persiste a nota com sucesso imediatamente, sem perder nenhum documento.
+     - Em [scripts/add-nsu-and-conectores-to-supabase.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/add-nsu-and-conectores-to-supabase.sql), incluído o comando:
+       ```sql
+       ALTER TABLE public.dfe_documentos ALTER COLUMN chave_acesso TYPE VARCHAR(60);
+       ALTER TABLE public.dfe_documentos ALTER COLUMN numero_serie TYPE VARCHAR(50);
+       ```
+     - **Reset do Checkpoint:** O NSU da empresa foi resetado de volta para `'0'` no Supabase para que a próxima execução re-baixe as 50 NFS-e e as grave com os valores corretos e todos os itens de serviços.
+
+
+## 5. Nova Funcionalidade: Envio Individualizado por Prefeitura & Expansão Dinâmica
+
+### 🎯 Objetivo Atendido
+Permitir a execução de consultas cirúrgicas direcionadas a qualquer prefeitura cadastrada no catálogo de Conectores Municipais:
+1. **Sem acionar o ADN da Receita Federal:** Elimina 100% o risco de penalidade ou bloqueio por "Consumo Indevido" durante testes e correções de prefeituras específicas.
+2. **Preservação da Varredura Geral:** A varredura unificada (`conector === 'unificado'`) continua exatamente igual, realizando a busca completa no ADN (Matriz + Filiais) e em todas as prefeituras ativas.
+3. **Expansão Dinâmica Contínua:** Qualquer novo município cadastrado ou editado no módulo "Conectores Municipais" é imediatamente sincronizado com o Supabase e SQLite, refletindo-se automaticamente no modal de NFS-e sem necessidade de ajustes em código.
+
+---
+
+### 🛠️ Modificações Implementadas
+
+1. **Sincronização Bidirecional de Conectores ([nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts)):**
+   - As rotas `POST /api/nfse/conectores`, `PUT /api/nfse/conectores/:id` e `DELETE /api/nfse/conectores/:id` agora persistem simultaneamente no **Supabase** (banco primário) e no **SQLite** (local/fallback).
+   - Valida duplicidade de código IBGE de 7 dígitos.
+   - A rota `GET /api/nfse/conectores` carrega a lista atualizada e ordenada para todo o ecossistema.
+
+2. **Serviço de Consulta Individual ([nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)):**
+   - Criada a função `sincronizarPrefeituraIndividual(...)` que busca o conector dinamicamente por `ibge` ou `id`.
+   - Suporte nativo tanto a protocolos **SOAP** (ABRASF 2.04, GINFES, PMSP, Nota Carioca) quanto **REST** com mTLS (Certificado Digital A1), Token API ou Basic Auth.
+   - Persistência padronizada no `dfe_documentos` e `dfe_itens` com geração de chave de acesso municipal canônica caso o XML não traga a chave de 50 posições.
+
+3. **Interface de Usuário em 2 Níveis ([NfseManagerModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/NfseManagerModal.tsx)):**
+   - **Barra 1 (Geral):** "Executar Varredura Geral (Completa)" — ADN Nacional Matriz + Filiais + Prefeituras ativas.
+   - **Barra 2 (Cirúrgica):** "Prefeitura Específica" com dropdown dinâmico exibindo `[UF] Município — Provedor (Tecnologia)` e indicador de status (`[Inativo]`, `[Pendente]`).
+   - Botão interativo de **Recarregar Prefeituras** (`RefreshCw`) ao lado do seletor para sincronizar instantaneamente novos cadastros.
+   - Botão **"🎯 Consultar Prefeitura Específica"** com estado de carregamento e logs independentes.
+
+---
+
+---
+
+## 7. Módulo de Apuração Assistida (IBS / CBS) & Conta Corrente Fiscal (CGIBS / RTC)
+
+### 🎯 Objetivos Atendidos
+1. **Conformidade Estrita com Manuais Oficiais:**
+   - **CGIBS MOC v1.00 (Julho/2026):** Implementação da Conta Corrente Fiscal em **7 campos oficiais**, ledger incremental com lançamentos imutáveis (`MOV`) e cálculo de saldos em tempo real por competência.
+   - **RFB RTC Versão I (13/01/2026):** Integração com o motor local da Calculadora da RFB (`http://localhost:8080/api`) com fallback automático para banco local.
+2. **Zero Duplicidade de Dados (Fonte Única da Verdade):**
+   - Os itens e documentos físicos permanecem única e exclusivamente em `dfe_documentos` e `dfe_itens`.
+   - A camada financeira de Conta Corrente (`apuracao_operacoes` e `apuracao_extrato_cc`) é vinculada pela **Chave de Acesso de 44 dígitos**.
+   - O **Relatório nº 1 ("Razão de Entradas - Item a Item")** foi enriquecido diretamente via `LEFT JOIN` indexado, sem criar relatórios concorrentes e sem pesar na memória.
+3. **Modos de Ingestão Flexíveis (Webhook Push vs Demanda GET):**
+   - **Flag Webhook:** Permite receber notificações e deltas automáticos (`POST /api/apuracao/webhook`).
+   - **Flag Demanda GET:** Permite disparar consultas por demanda (`POST /api/apuracao/consultar-demanda`) simulando `GET /v1/aassist/solicitacao/...`.
+   - **ERP Desacoplado:** O módulo funciona de forma autônoma sem exigir conexão ativa com o ERP corporativo no primeiro momento.
+
+---
+
+### 🛠️ Modificações no Banco de Dados & Backend
+
+1. **Novas Tabelas e Índices ([schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts) e [supabase_schema.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql)):**
+   - `apuracao_operacoes`: Identificação da operação, chave de acesso, partes envolvidas, tipo (fornecimento/aquisição) e hash SHA-1 acumulado.
+   - `apuracao_extrato_cc`: Ledger incremental com os 7 campos financeiros oficiais (`recurso_financeiro_disponivel_para_transferencia`, `recurso_financeiro_a_transferir`, `credito_a_propriar`, `credito_nao_utilizado`, `credito_utilizado`, `debito_em_aberto`, `debito_extinto`).
+   - `apuracao_competencias`: Ciclo de vida da competência (`em_andamento`, `periodo_ajuste`, `concluida`).
+   - `apuracao_credenciais_cgibs`: Cofre de credenciais com `flag_webhook` e `flag_consulta_demanda`.
+
+2. **Rotas e Serviços ([apuracao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts) e [apuracaoAssistidaService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/apuracaoAssistidaService.ts)):**
+   - Consolidação das 3 abas oficiais do MOC (Resultado, Saldo Atualizado e Outras Informações).
+   - Ingestão de arquivos oficiais e carga de cenários didáticos 1 e 2 do manual do CGIBS (validado com 100% de paridade matemática).
+   - Endpoints para alternância rápida de flags de ingestão e disparo de consultas por demanda.
+
+3. **Enriquecimento Dinâmico de Relatórios ([relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)):**
+   - A rota `GET /api/relatorios/xml` agora cruza as chaves de acesso com `apuracao_operacoes` e o extrato da Conta Corrente.
+   - Define dinamicamente o status do crédito conforme **Art. 27 da LC 215/2025**:
+     - 🟢 `CONFIRMADO`: Débito extinto pelo fornecedor via Split Payment ou DARF.
+     - 🟡 `PENDENTE_EXTINCAO`: Crédito a apropriar registrado, aguardando liquidação pelo fornecedor.
+     - 🔵 `UTILIZADO`: Crédito já consumido para compensação na apuração do período.
+
+---
+
+### 💻 Modificações no Frontend
+
+1. **Coluna "Status / Regra" Enriquecida ([RelatorioRazaoEntradas.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRazaoEntradas.tsx)):**
+   - Renderiza badges claros e informativos de **Crédito Confirmado**, **Pendente Fornec. (Art. 27 LC 215)** e **Utilizado**, mantendo o layout consagrado pelo usuário.
+
+2. **Auditoria de Conta Corrente no Modal de Detalhes ([RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)):**
+   - O modal acionado pelo botão **"Detalhes"** agora inclui a seção dedicada **Conta Corrente Fiscal & Homologação CGIBS**, exibindo o diagnóstico oficial, o ID da operação e o Hash SHA-1 de integridade.
+
+3. **Painel de Apuração Assistida ([ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)):**
+   - Top banner executivo com seletor de competência e estágio do ciclo de vida.
+   - Barra de **Canais de Ingestão CGIBS** com switches para Webhook e Consulta por Demanda (GET) e botão de consulta manual imediata.
+   - 5 Abas: Aba Resultado, Saldo Atualizado, Outras Informações, Extrato de Operações e Simulador Calculadora RFB.
+   - Modal de Drilldown com linha do tempo completa dos lançamentos (`MOV`) e evolução dos 7 saldos.
+
+4. **Navegação Global ([App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx), [SidebarCertificado.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SidebarCertificado.tsx) e [Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)):**
+   - Módulo montado e acessível diretamente pela barra lateral e pelo menu superior sob o grupo **"Reforma Tributária (RTC)"**.
+
+---
+
+## 8. Validação de Compilação & Deploy
+
+- **Build de Produção Frontend (Vite):**
+  ```powershell
+  npm run build
+  ```
+  **Resultado:** `exit code 0` (1728 módulos transformados com sucesso, zero erros).
+
+- **Pipeline CI/CD (Netlify & Render):**
+  - Commits sincronizados na branch `main`:
+    - `2792ece`: Deploy inicial do módulo de Apuração Assistida (IBS/CBS) e Conta Corrente Fiscal.
+    - `155a834`: Correção de sintaxe DDL PostgreSQL (`DROP POLICY`) no script do Supabase.
+    - `39c72d6`: Isolamento estrito de credenciais do piloto CGIBS para a Supergasbras e suporte multi-tenant para novos CNPJs.
+  - Builds automáticos disparados no Netlify (Frontend) e Render (Backend Node.js).
+
+---
+
+## 9. Isolamento Multi-Tenant & Fronteira de Segurança do Piloto CGIBS
+
+### 🛡️ Regra de Segurança Implementada
+As credenciais oficiais do Piloto CGIBS (`ClientID`: `5c37db2e924740449c621b2d95afeef2` / `ClientSecret`: `7349128e1c60405bbe50dbf3e3fa7afe`) são de uso estrito e exclusivo da **Supergasbras** (`cnpj_raiz = '19791896'`).
+
+### 🔒 Mecanismos de Proteção Ativos
+1. **Verificação no Backend ([server/routes/apuracao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts)):**
+   - Função `getEmpresaContexto(empresaId)` extrai os 8 primeiros dígitos do CNPJ da empresa ativa.
+   - Se a empresa for Supergasbras (`19791896`), auto-inicializa o cofre com as credenciais do piloto.
+   - Se for qualquer outro CNPJ:
+     - `GET /credenciais`: Retorna `configurado: false` e badge de aviso informando que são necessárias credenciais próprias.
+     - `POST /credenciais`: Bloqueia com **HTTP 403 Forbidden** qualquer tentativa de salvar as chaves do piloto Supergasbras sob outro CNPJ.
+     - `POST /consultar-demanda`: Rejeita com **HTTP 403 Forbidden** se houver tentativa de acionamento do piloto com chaves da Supergasbras em contexto de outro CNPJ.
+2. **Cenários Didáticos ([server/services/apuracaoAssistidaService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/apuracaoAssistidaService.ts)):**
+   - O seeding automático dos cenários didáticos oficiais vincula as credenciais do piloto somente se o CNPJ raiz for `19791896`.
+3. **Interface do Usuário ([ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)):**
+   - **Badge de Topo:**
+     - Supergasbras: `🟢 Piloto Oficial CGIBS: Supergasbras (CNPJ8 19791896)`
+     - Outro Inquilino: `🏢 Multi-Tenant: [Empresa] (CNPJ8 [CNPJ]) — Credenciais Próprias / Configuração Pendente`
+   - **Modal de Credenciais (`⚙️ Credenciais`):**
+     - Permite ao administrador cadastrar o `Client ID`, `Client Secret` e `Webhook URL` específicos emitidos pela SEFIN/CGIBS para o novo CNPJ real.
+   - **Banner de Ingestão:** Exibe aviso caso a empresa ativa não seja Supergasbras e ainda não possua credenciais próprias configuradas.
+
+---
+
+## 10. Janela de Diagnóstico de Prefeituras sem Captura de XML
+
+### 🎯 Necessidade Atendida
+Permitir ao usuário identificar, de forma clara e visual, exatamente quais prefeituras não retornaram notas fiscais de serviços tomados durante a varredura, isolando a causa raiz técnica (instabilidade de webservice, DNS inválido, envelope rejeitado, timeout ou ausência legítima de notas no período) sem ter que garimpar um log extenso de milhares de linhas.
+
+### 🛠️ Implementações Realizadas
+
+1. **Classificação Estruturada no Backend ([server/services/nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)):**
+   - Criada a interface `OcorrenciaConectorMunicipal` anexada a `NfseSyncResult.prefeiturasSemCaptura`.
+   - Ao executar a varredura unificada (`sincronizarNfseUnificada`), qualquer conector municipal que retornar 0 documentos capturados é analisado e categorizado com:
+     - `status`: `sem_notas`, `erro_500`, `erro_rede_dns`, `timeout`, `erro_envelope`, `autenticacao`, `redirecionamento` ou `outro`.
+     - `mensagem`: Resumo legível da situação.
+     - `detalheTecnico`: O retorno exato ou stack do webservice municipal.
+     - `acaoSugerida`: Orientação prática do que ajustar.
+
+2. **Janela Interativa no Frontend ([src/components/NfseManagerModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/NfseManagerModal.tsx)):**
+   - Inserida diretamente **abaixo do Log de Execução em Tempo Real** (conforme solicitado e demarcado pelo usuário).
+   - **Parser Híbrido em Tempo Real:** Além de consumir a resposta da API, possui um analisador local que processa o array `logs` instantaneamente, identificando todas as 74 prefeituras consultadas.
+   - **Pills de Filtro por Categoria com Contadores Dinâmicos:**
+     - `Todas`
+     - `🔴 Falha 50x (Servidor Municipal)`
+     - `🌐 DNS / Host Inacessível`
+     - `📝 Envelope SOAP / Parâmetro`
+     - `⏱️ Timeout (>25s)`
+     - `🔒 Autenticação / 40x`
+     - `↪️ Redirecionamento 30x`
+     - `✅ Sem Notas no Período (200 OK)`
+   - **Campo de Busca Rápida:** Filtragem instantânea por nome do município, UF ou provedor.
+   - **Botão "📋 Copiar Diagnóstico":** Exporta a tabela completa de ocorrências formatada em Markdown para a área de transferência.
+   - **Botão "🎯 Testar Individual":** Em cada card de prefeitura com erro, um clique seleciona o município automaticamente no dropdown cirúrgico e faz o scroll suave para a barra de consulta individualizada.

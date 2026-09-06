@@ -180,10 +180,10 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
 
   // Modelos de Documento
   const tipo = (doc.tipo_doc || '').toString().toUpperCase();
-  if (tipo === 'NFE' || tipo === '55') totals.nfeCount += 1;
-  else if (tipo === 'NFCE' || tipo === '65') totals.nfceCount += 1;
-  else if (tipo === 'CTE' || tipo === '57') totals.cteCount += 1;
-  else if (tipo === 'NFSE') totals.nfseCount += 1;
+  if (tipo === 'NFE' || tipo === 'NF-E' || tipo === '55') totals.nfeCount += 1;
+  else if (tipo === 'NFCE' || tipo === 'NFC-E' || tipo === '65') totals.nfceCount += 1;
+  else if (tipo === 'CTE' || tipo === 'CT-E' || tipo === '57') totals.cteCount += 1;
+  else if (tipo === 'NFSE' || tipo === 'NFS-E' || tipo === 'NFS') totals.nfseCount += 1;
 
   // Tributos do Regime Atual Destacados no XML
   const icmsReal = Number(doc.valor_icms) || 0;
@@ -333,7 +333,11 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
                 if (dataFim && docDate && docDate > dataFim) pass = false;
                 if (tipoDoc) {
                   const dTipo = (doc.tipo_doc || '').toString().toUpperCase();
-                  if (dTipo !== tipoDoc && !(tipoDoc === 'NFE' && dTipo === '55') && !(tipoDoc === 'NFCE' && dTipo === '65') && !(tipoDoc === 'CTE' && dTipo === '57')) {
+                  const isNfeMatch = (tipoDoc === 'NFE' || tipoDoc === 'NF-E') && (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55');
+                  const isNfceMatch = (tipoDoc === 'NFCE' || tipoDoc === 'NFC-E') && (dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
+                  const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57');
+                  const isNfseMatch = (tipoDoc === 'NFSE' || tipoDoc === 'NFS-E' || tipoDoc === 'NFS') && (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
+                  if (!isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
                     pass = false;
                   }
                 }
@@ -402,7 +406,11 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
       if (dataFim && docDate && docDate > dataFim) pass = false;
       if (tipoDoc) {
         const dTipo = (doc.tipo_doc || '').toString().toUpperCase();
-        if (dTipo !== tipoDoc && !(tipoDoc === 'NFE' && dTipo === '55') && !(tipoDoc === 'NFCE' && dTipo === '65') && !(tipoDoc === 'CTE' && dTipo === '57')) {
+        const isNfeMatch = (tipoDoc === 'NFE' || tipoDoc === 'NF-E') && (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55');
+        const isNfceMatch = (tipoDoc === 'NFCE' || tipoDoc === 'NFC-E') && (dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
+        const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57');
+        const isNfseMatch = (tipoDoc === 'NFSE' || tipoDoc === 'NFS-E' || tipoDoc === 'NFS') && (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
+        if (!isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
           pass = false;
         }
       }

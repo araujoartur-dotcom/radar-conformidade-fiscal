@@ -1,0 +1,117 @@
+# Plano de Implementação — Correção Definitiva de Indicadores e Relatório de NFS-e / Serviços
+
+Correção permanente e estrutural da exibição das **50 NFS-e** capturadas do Ambiente Nacional (ADN/Receita Federal) nos indicadores do sistema (Captura de XMLs) e no **Relatório #9 (Retenções na Fonte em Serviços)**, eliminando o vazamento dos 1.000 CT-e para o relatório de serviços.
+
+> [!IMPORTANT]
+> **DIRETRIZ CRÍTICA DO USUÁRIO:** Execução local com validação ponta a ponta **SEM DEPLOY** (sem commit/push para repositório remoto ou deploy externo).
+
+---
+
+## 1. Causa Raiz Identificada
+
+Realizamos diagnóstico detalhado no banco de dados (Supabase) e na esteira de código backend/frontend:
+
+1. **As 50 NFS-e estão salvas no Supabase:**
+   - Foram persistidas com sucesso sob a empresa ativa da **SUPERGASBRAS ENERGIA LTDA** (`empresa_id: 7c0aa7e3-fc96-4df4-9837-4c20d7b87376`), com `tipo_doc: 'NFSe'`, contendo todos os tributos retidos reais (IRRF, INSS, ISS, CSLL, PIS, COFINS) e descrição de serviços.
+2. **Incompatibilidade de Nomenclatura e Case-Sensitivity (`NFSe` vs `NFS-e`):**
+   - No Supabase, a coluna `tipo_doc` está preenchida como `'NFSe'`.
+   - No frontend (dropdowns e filtros), o valor utilizado é `'NFS-e'`.
+   - Nas rotas de backend (`/api/upload/documentos`, `/api/relatorios/xml`), as queries executavam `.eq('tipo_doc', req.query.tipoDoc)`. Como o PostgreSQL do Supabase é estritamente case-sensitive, queries com `tipoDoc=NFS-e` ou `tipoDoc=NFSE` retornavam **0 registros**.
+3. **Corte de Paginação PostgREST (Max-Rows 1000) e Ordenação Temporal:**
+   - O Supabase PostgREST limita requisições sem filtro específico a 1.000 linhas.
+   - Como a listagem padrão ordena por `data_emissao DESC`, os 1.000 primeiros documentos retornados eram todos CT-e e NF-e emitidos em 2026.
+   - As 50 NFS-e (emitidas em 2022) ficavam fora dessa primeira janela de 1.000 documentos.
+4. **Pills de Contagem em `DfeManagerPanel.tsx`:**
+   - O botão `NFS-e (0)` calculava a contagem fazendo `dfeList.filter(d => d.tipo === 'NFSe').length` sobre a lista local em memória (que só tinha os 1.000 CT-e/NF-e de 2026), em vez de ler o contador real vindo do serviço de KPIs (`currentKpis.nfseCount = 50`).
+   - Ao clicar no botão de filtro `NFS-e`, o painel apenas filtrava o array local em memória, sem disparar busca ao backend com `tipoDoc=NFSe`.
+5. **Vazamento de CT-e no Relatório #9 (`RelatorioRetencoesFonte.tsx`):**
+   - Ao acessar a aba do Relatório #9, o painel `RelatoriosXmlPanel.tsx` requisitava `/api/relatorios/xml` com `tipoDoc=TODOS`, recebendo os 1.000 CT-e.
+   - Em `RelatorioRetencoesFonte.tsx`, o filtro verificava `it.tipoDoc === 'NFS-e'` (que falhava para `'NFSe'`) e caía no seguinte fallback:
+     ```typescript
+     // Fallback incorreto
+     const dataset = servicoItems.length > 0 ? servicoItems : items;
+     ```
+   - Como `servicoItems` resultava vazio, o relatório utilizava `items` (os 1.000 CT-e), exibindo CT-e como se fossem serviços prestados.
+
+---
+
+## 2. Mudanças Propostas
+
+### Backend (Node.js / Express / Supabase / SQLite)
+
+#### [server/routes/relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)
+- Inverter prioridade: **Supabase primeiro** (fonte primária persistente) e **SQLite como fallback**.
+- Normalizar o parâmetro `tipoDoc` para aceitar variações case-insensitive e com/sem hífen:
+  - Se `tipoDoc` for `NFSE` / `NFS-e` / `NFSe`: consultar `.or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%')` no Supabase e `(d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')` no SQLite.
+  - Se `tipoDoc` for `CTE` / `CT-e` / `CTe`: consultar `.or('tipo_doc.eq.CTe,tipo_doc.eq.CT-e,tipo_doc.ilike.%cte%')`.
+  - Se `tipoDoc` for `NFE` / `NF-e` / `NFe`: consultar `.or('tipo_doc.eq.NFe,tipo_doc.eq.NF-e,tipo_doc.ilike.%nfe%')`.
+- No mapeamento dos documentos para o relatório:
+  - Garantir que `tipoDoc` seja retornado canonicamente como `'NFS-e'`, `'CT-e'`, `'NF-e'` compatível com a interface `XmlItemDetailReport`.
+  - Extrair a discriminação real e código LC 116 do `xml_raw` das NFS-e (tags `<cTribNac>`, `<xDescServ>`, `<xTribNac>`) e os valores de retenção persistidos (`valor_irrf`, `valor_inss`, `valor_iss`, `valor_csll`, `valor_pis`, `valor_cofins`).
+
+#### [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+- No endpoint `GET /api/upload/documentos`:
+  - Normalizar `req.query.tipoDoc` para buscar tanto `'NFSe'` quanto `'NFS-e'` no Supabase e no SQLite.
+  - Ao requisitar `limit=25000` sem filtro de tipo de documento, garantir que as NFS-e existentes no banco sejam incluídas no conjunto retornado (seja buscando em paralelo as NFS-e se o lote principal for dominado por CT-e, ou unificando os resultados).
+
+#### [server/services/kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)
+- Na função `accumulateDoc`, ajustar a contagem de tipos para contemplar todas as variações:
+  - `if (tipo === 'NFSE' || tipo === 'NFS-E' || tipo === 'NFS') totals.nfseCount += 1;`
+  - Normalizar também o filtro `tipoDoc` na agregação filtrada para garantir que filtros por NFS-e não zerem os totais.
+
+---
+
+### Frontend (React / TypeScript / Tailwind)
+
+#### [src/components/DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+- Corrigir os indicadores nos botões de filtro (Pills):
+  - `Todos (${totalDocsCount.toLocaleString('pt-BR')})`
+  - `NF-e (${(currentKpis?.nfeCount ?? dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length).toLocaleString('pt-BR')})`
+  - `CT-e (${(currentKpis?.cteCount ?? dfeList.filter(d => d.tipo === 'CTe').length).toLocaleString('pt-BR')})`
+  - `NFS-e (${(currentKpis?.nfseCount ?? dfeList.filter(d => d.tipo === 'NFSe' || d.tipo === 'NFS-e').length).toLocaleString('pt-BR')})` -> **Exibirá `NFS-e (50)`**.
+- Ao clicar no botão `NFS-e`, disparar busca via backend `GET /upload/documentos?tipoDoc=NFSe` caso as notas de serviço ainda não estejam no array local, garantindo que o usuário veja imediatamente as 50 NFS-e na lista lateral e nos detalhes.
+- Ao carregar inicialmente o painel, caso haja `nfseCount > 0` no banco mas nenhuma NFS-e entre os 1.000 documentos mais recentes, carregar automaticamente as NFS-e para compor a lista completa.
+
+#### [src/components/RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+- Quando a aba ativa for `'retencoes_fonte'` (Relatório #9):
+  - Forçar a query para a API `/api/relatorios/xml?tipoDoc=NFSe` (caso o usuário não tenha definido outro filtro manual restritivo).
+  - Ao alternar para o Relatório #9, carregar e exibir as 50 NFS-e com seus indicadores consolidados de serviços e retenções federais, previdenciárias e municipais.
+
+#### [src/components/relatorios/RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx)
+- **ELIMINAR** o fallback `const dataset = servicoItems.length > 0 ? servicoItems : items;`. O relatório de serviços NUNCA deve exibir CT-e ou NF-e.
+- Ampliar o filtro de detecção para:
+  ```typescript
+  const servicoItems = items.filter(it => 
+    it.tipoDoc === 'NFS-e' || 
+    it.tipoDoc === 'NFSe' || 
+    (it.tipoDoc as string)?.toUpperCase().includes('NFS') ||
+    (it.totalRetencoes && it.totalRetencoes > 0) || 
+    it.cfop === '1933' || 
+    it.cfop === '2933' ||
+    it.tipoAquisicao === 'servico' ||
+    (it.descricaoItem && it.descricaoItem.toLowerCase().includes('serviço'))
+  );
+  ```
+- Exibir estado de vazio limpo caso não existam serviços no filtro aplicado, com botão de atalho para recarregar as NFS-e.
+
+---
+
+## 3. Plano de Verificação
+
+### Testes Automatizados & Verificação Backend
+- Executar script via Node.js testando os endpoints:
+  - `GET /api/upload/documentos?tipoDoc=NFSe` -> Validar se retorna exatamente as 50 NFS-e da SUPERGASBRAS.
+  - `GET /api/relatorios/xml?tipoDoc=NFSe` -> Validar se retorna as 50 NFS-e com `valorIrrf`, `valorInss`, `valorIss`, `valorCsll`, `valorPis`, `valorCofins`.
+  - `GET /api/upload/kpis` -> Validar se `nfseCount` é 50.
+- Executar `npm run build` para garantir que TypeScript e Vite compilam com zero erros.
+
+### Verificação Manual no Navegador
+- Acessar **Captura de XMLs**:
+  - Verificar se a aba `NFS-e` mostra **(50)** em vez de **(0)**.
+  - Clicar na aba `NFS-e` e constatar que as 50 notas fiscais de serviço aparecem listadas com dados do prestador e valores.
+- Acessar **Relatórios Fiscais** -> **Relatório #9 (Retenções na Fonte - NFS-e / Serviços)**:
+  - Constatar que o totalizador exibe as notas de serviço (sem CT-e).
+  - Validar que a tabela lista exclusivamente as NFS-e com seus respectivos códigos LC 116 e retenções destacadas.
+
+> [!CAUTION]
+> **REFORÇO: NENHUM DEPLOY OU COMMIT REMOTO SERÁ EXECUTADO.** Todas as alterações serão exclusivamente locais.

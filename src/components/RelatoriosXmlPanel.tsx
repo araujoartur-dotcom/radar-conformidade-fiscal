@@ -83,15 +83,25 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     });
   };
 
-  const handleSearch = async () => {
+  const handleSearch = async (tabOverride?: ReportTabType) => {
     setLoading(true);
     try {
+      const currentTab = tabOverride || activeTab;
       const query = new URLSearchParams();
       if (filters.cnpjEmitente) query.append('cnpjEmitente', filters.cnpjEmitente);
       if (filters.cnpjDestinatario) query.append('cnpjDestinatario', filters.cnpjDestinatario);
       if (filters.dataInicio) query.append('dataInicio', filters.dataInicio);
       if (filters.dataFim) query.append('dataFim', filters.dataFim);
-      if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') query.append('tipoDoc', filters.tipoDoc);
+
+      // No Relatório #9 (Retenções na Fonte / Serviços), se o usuário não escolheu outro tipo manual restritivo,
+      // filtra estritamente por NFS-e para nunca carregar ou exibir CT-e
+      if (currentTab === 'retencoes_fonte' && (!filters.tipoDoc || filters.tipoDoc === 'TODOS')) {
+        query.append('tipoDoc', 'NFSe');
+        query.append('relatorio', 'retencoes_fonte');
+      } else if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') {
+        query.append('tipoDoc', filters.tipoDoc);
+      }
+
       if (filters.situacaoDoc && filters.situacaoDoc !== 'TODAS') query.append('situacaoDoc', filters.situacaoDoc);
       if (filters.cfop) query.append('cfop', filters.cfop);
       if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
@@ -684,7 +694,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                if (tab.id === 'retencoes_fonte' || activeTab === 'retencoes_fonte') {
+                  handleSearch(tab.id);
+                }
+              }}
               className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 isActive
                   ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 text-white shadow-lg shadow-blue-600/25 border border-cyan-400/40'

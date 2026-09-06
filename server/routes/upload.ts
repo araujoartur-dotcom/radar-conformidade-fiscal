@@ -788,22 +788,65 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
 
           // Filtros opcionais
           if (req.query.tipoOperacao) supaQuery = supaQuery.eq('tipo_operacao', String(req.query.tipoOperacao));
-          if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') supaQuery = supaQuery.eq('tipo_doc', String(req.query.tipoDoc));
+          if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
+            const td = String(req.query.tipoDoc).toUpperCase();
+            if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+              supaQuery = supaQuery.or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%');
+            } else if (td === 'CTE' || td === 'CT-E') {
+              supaQuery = supaQuery.or('tipo_doc.eq.CTe,tipo_doc.eq.CT-e,tipo_doc.ilike.%cte%');
+            } else if (td === 'NFE' || td === 'NF-E') {
+              supaQuery = supaQuery.or('tipo_doc.eq.NFe,tipo_doc.eq.NF-e,tipo_doc.ilike.%nfe%');
+            } else {
+              supaQuery = supaQuery.eq('tipo_doc', String(req.query.tipoDoc));
+            }
+          }
           if (req.query.chaveAcesso) supaQuery = supaQuery.ilike('chave_acesso', `%${req.query.chaveAcesso}%`);
 
-          const { data: supaDocs, count: supaTotal, error: supaErr } = await supaQuery
+          let { data: supaDocs, count: supaTotal, error: supaErr } = await supaQuery
             .order('data_emissao', { ascending: false })
             .range(requestedOffset, requestedOffset + requestedLimit - 1);
 
-          if (!supaErr && supaDocs && supaDocs.length > 0) {
-            documentos = supaDocs.map(d => ({
-              ...d,
-              empresa_nome: d.fornecedor_razao || d.cliente_razao || 'EMPRESA',
-              empresa_cnpj: d.fornecedor_cnpj || d.cliente_cnpj || '',
-            }));
-            totalCount = supaTotal || documentos.length;
-            supabaseFetched = true;
-            console.log(`📡 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do Supabase.`);
+          if (!supaErr && supaDocs) {
+            // Garantia permanente: se a busca geral (TODOS) não trouxe nenhuma NFS-e porque os CT-e/NF-e mais recentes ocuparam o limite PostgREST,
+            // busca as NFS-e ativas da empresa para que fiquem imediatamente disponíveis no lote
+            if (requestedOffset === 0 && (!req.query.tipoDoc || req.query.tipoDoc === 'TODOS')) {
+              const hasNfse = supaDocs.some(d => (d.tipo_doc || '').toString().toUpperCase().includes('NFS'));
+              if (!hasNfse) {
+                try {
+                  let nfseQuery = supabase
+                    .from('dfe_documentos')
+                    .select('*')
+                    .or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%')
+                    .order('data_emissao', { ascending: false })
+                    .limit(200);
+
+                  if (!isSuperadmin && tenantCnpjClean) {
+                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
+                  } else if (empresaIdParam) {
+                    nfseQuery = nfseQuery.eq('empresa_id', empresaIdParam);
+                  }
+
+                  const { data: extraNfse } = await nfseQuery;
+                  if (extraNfse && extraNfse.length > 0) {
+                    supaDocs = [...extraNfse, ...supaDocs];
+                    console.log(`📡 Injetadas ${extraNfse.length} NFS-e no lote inicial de documentos para visibilidade imediata.`);
+                  }
+                } catch (eNfse) {
+                  console.warn('⚠️ Falha ao buscar NFS-e para lote inicial:', eNfse);
+                }
+              }
+            }
+
+            if (supaDocs.length > 0) {
+              documentos = supaDocs.map(d => ({
+                ...d,
+                empresa_nome: d.fornecedor_razao || d.cliente_razao || 'EMPRESA',
+                empresa_cnpj: d.fornecedor_cnpj || d.cliente_cnpj || '',
+              }));
+              totalCount = supaTotal || documentos.length;
+              supabaseFetched = true;
+              console.log(`📡 GET /documentos: ${documentos.length} de ${totalCount} documentos carregados do Supabase.`);
+            }
           } else if (supaErr) {
             console.warn('⚠️ Supabase query error:', supaErr.message);
           }
@@ -872,10 +915,22 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         countParams.push(req.query.tipoOperacao);
       }
       if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
-        query += ' AND d.tipo_doc = ?';
-        countQuery += ' AND d.tipo_doc = ?';
-        params.push(req.query.tipoDoc);
-        countParams.push(req.query.tipoDoc);
+        const td = String(req.query.tipoDoc).toUpperCase();
+        if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+          query += " AND (d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')";
+          countQuery += " AND (d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')";
+        } else if (td === 'CTE' || td === 'CT-E') {
+          query += " AND (d.tipo_doc IN ('CTe', 'CT-e') OR d.tipo_doc LIKE '%cte%')";
+          countQuery += " AND (d.tipo_doc IN ('CTe', 'CT-e') OR d.tipo_doc LIKE '%cte%')";
+        } else if (td === 'NFE' || td === 'NF-E') {
+          query += " AND (d.tipo_doc IN ('NFe', 'NF-e') OR d.tipo_doc LIKE '%nfe%')";
+          countQuery += " AND (d.tipo_doc IN ('NFe', 'NF-e') OR d.tipo_doc LIKE '%nfe%')";
+        } else {
+          query += ' AND d.tipo_doc = ?';
+          countQuery += ' AND d.tipo_doc = ?';
+          params.push(req.query.tipoDoc);
+          countParams.push(req.query.tipoDoc);
+        }
       }
       if (req.query.chaveAcesso) {
         query += ' AND d.chave_acesso LIKE ?';

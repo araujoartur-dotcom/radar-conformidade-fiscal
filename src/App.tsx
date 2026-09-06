@@ -131,10 +131,13 @@ export default function App() {
         const ibsVal = doc.valor_ibs !== null && doc.valor_ibs !== undefined ? Number(doc.valor_ibs) : 0;
         const numSerieParts = (doc.numero_serie || '').split(' / ');
         
+        const rawTipo = (doc.tipo_doc || '').toString();
+        const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS') ? 'NFSe' : (rawTipo === 'CTe' || rawTipo === 'CT-e' ? 'CTe' : (rawTipo === 'NFe' || rawTipo === 'NF-e' ? 'NFe' : rawTipo || 'NFe'));
+
         return {
           id: doc.id,
           chaveAcesso: doc.chave_acesso,
-          tipo: (doc.tipo_doc as any) || 'NFe',
+          tipo: tipoCanonico,
           numero: numSerieParts[0] || (doc.chave_acesso ? doc.chave_acesso.substring(25, 34) : '1'),
           serie: numSerieParts[1] || '1',
           dataEmissao: doc.data_emissao ? String(doc.data_emissao).split('T')[0] : new Date().toISOString().split('T')[0],
@@ -154,6 +157,12 @@ export default function App() {
           aliquotaIbs: docTotal > 0 && ibsVal > 0 ? Number(((ibsVal / docTotal) * 100).toFixed(2)) : 0,
           valorIbs: ibsVal,
           valorImpostoSeletivo: Number(doc.valor_is) || 0,
+          valorIrrf: Number(doc.valor_irrf) || 0,
+          valorInssRetido: Number(doc.valor_inss) || 0,
+          valorIssRetido: Number(doc.valor_iss) || 0,
+          valorCsllRetido: Number(doc.valor_csll) || 0,
+          valorPisRetido: Number(doc.valor_pis) || 0,
+          valorCofinsRetido: Number(doc.valor_cofins) || 0,
           eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
           situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
           alertaFraude: Boolean(doc.alerta_fraude),

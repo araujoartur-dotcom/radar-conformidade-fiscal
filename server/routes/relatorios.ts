@@ -44,231 +44,326 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       }
     }
 
-    let query = `
-      SELECT 
-        d.id as docId,
-        d.empresa_id as empresaId,
-        d.tipo_doc as tipoDoc,
-        d.chave_acesso as chaveAcesso,
-        d.numero_serie as numeroSerie,
-        d.data_emissao as dataEmissao,
-        d.data_entrada as dataEntrada,
-        d.competencia,
-        d.fornecedor_cnpj as fornecedorCnpj,
-        d.fornecedor_razao as fornecedorRazao,
-        d.fornecedor_uf as fornecedorUf,
-        d.fornecedor_municipio as fornecedorMunicipio,
-        d.cliente_cnpj as clienteCnpj,
-        d.cliente_razao as clienteRazao,
-        d.cliente_uf as clienteUf,
-        d.situacao_doc as situacaoDoc,
-        d.situacao_manifestacao as situacaoManifestacao,
-        d.evento_ultimo as eventoUltimo,
-        d.alerta_fraude as alertaFraude,
-        d.valor_total as docValorTotal,
-        d.valor_icms as docValorIcms,
-        d.valor_ipi as docValorIpi,
-        d.valor_pis as docValorPis,
-        d.valor_cofins as docValorCofins,
-        d.valor_cbs as docValorCbs,
-        d.valor_ibs as docValorIbs,
-        d.valor_is as docValorIs,
-        d.valor_irrf as docValorIrrf,
-        d.valor_inss as docValorInss,
-        d.valor_iss as docValorIss,
-        d.valor_csll as docValorCsll,
-        i.item_nro as itemNro,
-        i.descricao_item as descricaoItem,
-        i.ncm,
-        i.cest,
-        i.cfop,
-        i.cclasstrib as cClassTrib,
-        i.cst_csosn as cstCsosn,
-        i.natureza_operacao as naturezaOperacao,
-        i.quantidade,
-        i.unidade,
-        i.valor_unitario as valorUnitario,
-        i.valor_bruto_item as valorBrutoItem,
-        i.desconto_incondicional as descontoIncondicional,
-        i.frete_seguro_rateado as freteSeguroRateado,
-        i.valor_liquido_item as valorLiquidoItem,
-        i.base_icms as baseIcms,
-        i.aliquota_icms as aliquotaIcms,
-        i.valor_icms as valorIcms,
-        i.base_ipi as baseIpi,
-        i.aliquota_ipi as aliquotaIpi,
-        i.valor_ipi as valorIpi,
-        i.base_pis as basePis,
-        i.aliquota_pis as aliquotaPis,
-        i.valor_pis as valorPis,
-        i.base_cofins as baseCofins,
-        i.aliquota_cofins as aliquotaCofins,
-        i.valor_cofins as valorCofins,
-        i.base_ibs as baseIbs,
-        i.aliquota_ibs as aliquotaIbs,
-        i.valor_ibs as valorIbs,
-        i.base_cbs as baseCbs,
-        i.aliquota_cbs as aliquotaCbs,
-        i.valor_cbs as valorCbs,
-        i.valor_is as valorIs,
-        i.id as itemId
-      FROM dfe_documentos d
-      LEFT JOIN dfe_itens i ON d.id = i.documento_id
-      WHERE 1=1
-    `;
-    const params: any[] = [];
-
-    // Isolamento multi-tenant resiliente
-    if (!isSuperadmin) {
-      if (activeEmpresaId && tenantCnpjClean) {
-        query += `
-          AND (
-            d.empresa_id = ?
-            OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-            OR d.cliente_cnpj LIKE ?
-            OR d.fornecedor_cnpj LIKE ?
-          )
-        `;
-        params.push(activeEmpresaId, req.user!.userId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
-      } else if (activeEmpresaId) {
-        query += `
-          AND (
-            d.empresa_id = ?
-            OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-          )
-        `;
-        params.push(activeEmpresaId, req.user!.userId);
-      }
-    } else if (targetEmpresaId) {
-      query += ` AND (d.empresa_id = ? OR d.empresa_id IS NULL)`;
-      params.push(targetEmpresaId);
-    }
-
-    if (cnpjEmitente) {
-      query += ` AND d.fornecedor_cnpj LIKE ?`;
-      params.push(`%${cnpjEmitente}%`);
-    }
-    if (cnpjDestinatario) {
-      query += ` AND d.cliente_cnpj LIKE ?`;
-      params.push(`%${cnpjDestinatario}%`);
-    }
-    if (dataInicio) {
-      query += ` AND d.data_emissao >= ?`;
-      params.push(dataInicio);
-    }
-    if (dataFim) {
-      query += ` AND d.data_emissao <= ?`;
-      params.push(dataFim);
-    }
-    if (tipoDoc && tipoDoc !== 'TODOS') {
-      query += ` AND d.tipo_doc = ?`;
-      params.push(tipoDoc);
-    }
-    if (situacaoDoc && situacaoDoc !== 'TODAS') {
-      query += ` AND d.situacao_doc = ?`;
-      params.push(situacaoDoc);
-    }
-    if (cfop) {
-      query += ` AND (i.cfop LIKE ? OR ? = '')`;
-      params.push(`%${cfop}%`, cfop);
-    }
-    if (cClassTrib) {
-      query += ` AND (i.cclasstrib LIKE ? OR ? = '')`;
-      params.push(`%${cClassTrib}%`, cClassTrib);
-    }
-    if (searchTerm) {
-      query += ` AND (d.fornecedor_razao LIKE ? OR d.fornecedor_cnpj LIKE ? OR d.chave_acesso LIKE ? OR i.descricao_item LIKE ? OR i.ncm LIKE ?)`;
-      const searchPattern = `%${searchTerm}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+    if (!tenantCnpjClean && req.user?.empresaCnpj) {
+      tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
     }
 
     const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
     const requestedOffset = parseInt(req.query.offset as string) || 0;
 
-    query += ' ORDER BY d.data_emissao DESC, d.created_at DESC LIMIT ? OFFSET ?';
-    params.push(requestedLimit, requestedOffset);
+    // Normalização do tipoDoc / relatório
+    const relatorioParam = String(req.query.relatorio || req.query.tipoRelatorio || '');
+    const isRelatorioRetencoes = relatorioParam === 'retencoes_fonte';
+    const effectiveTipoDoc = isRelatorioRetencoes && (!tipoDoc || tipoDoc === 'TODOS') ? 'NFSE' : (tipoDoc ? String(tipoDoc) : null);
 
-    let rows = db.prepare(query).all(...params) as any[];
-    let totalCount = rows.length;
+    let rows: any[] = [];
+    let totalCount = 0;
+    let supabaseFetched = false;
 
-    // Fallback: Se não encontrou no SQLite e o Supabase está configurado, tenta carregar do Supabase
-    if (rows.length === 0 && isSupabaseConfigured()) {
+    // ── ESTRATÉGIA 1: SUPABASE PRIMEIRO (Fonte Primária Durável) ──
+    if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
           if (targetEmpresaId && !isSuperadmin) {
             supaQuery = supaQuery.eq('empresa_id', targetEmpresaId);
+          } else if (!isSuperadmin && tenantCnpjClean) {
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
           }
+
           if (cnpjEmitente) supaQuery = supaQuery.ilike('fornecedor_cnpj', `%${cnpjEmitente}%`);
           if (cnpjDestinatario) supaQuery = supaQuery.ilike('cliente_cnpj', `%${cnpjDestinatario}%`);
           if (dataInicio) supaQuery = supaQuery.gte('data_emissao', String(dataInicio));
           if (dataFim) supaQuery = supaQuery.lte('data_emissao', String(dataFim));
-          if (tipoDoc && tipoDoc !== 'TODOS') supaQuery = supaQuery.eq('tipo_doc', String(tipoDoc));
           if (situacaoDoc && situacaoDoc !== 'TODAS') supaQuery = supaQuery.eq('situacao_doc', String(situacaoDoc));
 
-          const { data: supaDocs, count: supaCount, error: supaErr } = await supaQuery
+          if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
+            const td = effectiveTipoDoc.toUpperCase();
+            if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+              supaQuery = supaQuery.or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%');
+            } else if (td === 'CTE' || td === 'CT-E') {
+              supaQuery = supaQuery.or('tipo_doc.eq.CTe,tipo_doc.eq.CT-e,tipo_doc.ilike.%cte%');
+            } else if (td === 'NFE' || td === 'NF-E') {
+              supaQuery = supaQuery.or('tipo_doc.eq.NFe,tipo_doc.eq.NF-e,tipo_doc.ilike.%nfe%');
+            } else {
+              supaQuery = supaQuery.eq('tipo_doc', effectiveTipoDoc);
+            }
+          }
+
+          if (searchTerm) {
+            supaQuery = supaQuery.or(`fornecedor_razao.ilike.%${searchTerm}%,fornecedor_cnpj.ilike.%${searchTerm}%,chave_acesso.ilike.%${searchTerm}%`);
+          }
+
+          let { data: supaDocs, count: supaTotal, error: supaErr } = await supaQuery
             .order('data_emissao', { ascending: false })
             .range(requestedOffset, requestedOffset + requestedLimit - 1);
 
-          if (!supaErr && supaDocs && supaDocs.length > 0) {
-            totalCount = supaCount || supaDocs.length;
-            rows = supaDocs.map(d => ({
-              docId: d.id,
-              empresaId: d.empresa_id,
-              tipoDoc: d.tipo_doc,
-              chaveAcesso: d.chave_acesso,
-              numeroSerie: d.numero_serie,
-              dataEmissao: d.data_emissao,
-              dataEntrada: d.data_entrada,
-              competencia: d.competencia,
-              fornecedorCnpj: d.fornecedor_cnpj,
-              fornecedorRazao: d.fornecedor_razao,
-              fornecedorUf: d.fornecedor_uf,
-              fornecedorMunicipio: d.fornecedor_municipio,
-              clienteCnpj: d.cliente_cnpj,
-              clienteRazao: d.cliente_razao,
-              clienteUf: d.cliente_uf,
-              situacaoDoc: d.situacao_doc,
-              situacaoManifestacao: d.situacao_manifestacao,
-              eventoUltimo: d.evento_ultimo,
-              alertaFraude: d.alerta_fraude,
-              docValorTotal: d.valor_total,
-              docValorIcms: d.valor_icms,
-              docValorIpi: d.valor_ipi,
-              docValorPis: d.valor_pis,
-              docValorCofins: d.valor_cofins,
-              docValorCbs: d.valor_cbs,
-              docValorIbs: d.valor_ibs,
-              docValorIs: d.valor_is,
-              docValorIrrf: d.valor_irrf,
-              docValorInss: d.valor_inss,
-              docValorIss: d.valor_iss,
-              docValorCsll: d.valor_csll,
-              itemNro: 1,
-              descricaoItem: d.tipo_doc === 'NFSe' ? 'Prestação de Serviços Profissionais' : 'Item Principal / Operação Global',
-              ncm: d.tipo_doc === 'NFSe' ? '17.01' : '2711.19.10',
-              cest: '',
-              cfop: d.tipo_doc === 'NFSe' ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102'),
-              cClassTrib: '000001',
-              cstCsosn: '000',
-              naturezaOperacao: d.tipo_doc === 'NFSe' ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal',
-              quantidade: 1,
-              unidade: 'UN',
-              valorUnitario: d.valor_total,
-              valorBrutoItem: d.valor_total,
-              valorLiquidoItem: d.valor_total,
-              valorIcms: d.valor_icms,
-              valorIbs: d.valor_ibs,
-              valorCbs: d.valor_cbs,
-              valorIs: d.valor_is,
-              itemId: `item-${d.chave_acesso}-1`
-            }));
+          if (!supaErr && supaDocs) {
+            // Se a consulta foi geral (TODOS) e os 1000 CT-e de 2026 preencheram o teto do PostgREST,
+            // injeta as 50 NFS-e da empresa para que estejam no lote consolidado de relatórios
+            if (requestedOffset === 0 && (!effectiveTipoDoc || effectiveTipoDoc === 'TODOS')) {
+              const hasNfse = supaDocs.some(d => (d.tipo_doc || '').toString().toUpperCase().includes('NFS'));
+              if (!hasNfse) {
+                try {
+                  let nfseQuery = supabase
+                    .from('dfe_documentos')
+                    .select('*')
+                    .or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%')
+                    .order('data_emissao', { ascending: false })
+                    .limit(200);
+
+                  if (!isSuperadmin && tenantCnpjClean) {
+                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
+                  } else if (targetEmpresaId) {
+                    nfseQuery = nfseQuery.eq('empresa_id', targetEmpresaId);
+                  }
+
+                  const { data: extraNfse } = await nfseQuery;
+                  if (extraNfse && extraNfse.length > 0) {
+                    supaDocs = [...extraNfse, ...supaDocs];
+                    console.log(`📡 Relatórios: Injetadas ${extraNfse.length} NFS-e no lote inicial para consolidação.`);
+                  }
+                } catch (eNfse) {
+                  console.warn('⚠️ Falha ao buscar NFS-e para relatórios:', eNfse);
+                }
+              }
+            }
+
+            if (supaDocs.length > 0) {
+              totalCount = supaTotal || supaDocs.length;
+              rows = supaDocs.map(d => {
+                const isDocNfse = (d.tipo_doc || '').toString().toUpperCase().includes('NFS');
+                let itemDesc = isDocNfse ? 'Prestação de Serviços Profissionais / Técnicos' : 'Item Principal / Operação Global';
+                let itemNcm = isDocNfse ? '17.01' : '2711.19.10';
+
+                if (isDocNfse && d.xml_raw) {
+                  const descMatch = d.xml_raw.match(/<xDescServ>(.*?)<\/xDescServ>/) || d.xml_raw.match(/<xTribNac>(.*?)<\/xTribNac>/);
+                  if (descMatch && descMatch[1]) {
+                    itemDesc = descMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+                  }
+                  const servMatch = d.xml_raw.match(/<cTribNac>(\d+)<\/cTribNac>/) || d.xml_raw.match(/<cServ>(\d+)<\/cServ>/);
+                  if (servMatch && servMatch[1]) {
+                    const rawCode = servMatch[1];
+                    itemNcm = rawCode.length >= 4 ? `${rawCode.substring(0, 2)}.${rawCode.substring(2, 4)}` : rawCode;
+                  }
+                }
+
+                return {
+                  docId: d.id,
+                  empresaId: d.empresa_id,
+                  tipoDoc: isDocNfse ? 'NFS-e' : (d.tipo_doc === 'CTe' ? 'CT-e' : (d.tipo_doc === 'NFe' ? 'NF-e' : d.tipo_doc)),
+                  chaveAcesso: d.chave_acesso,
+                  numeroSerie: d.numero_serie,
+                  dataEmissao: d.data_emissao,
+                  dataEntrada: d.data_entrada,
+                  competencia: d.competencia,
+                  fornecedorCnpj: d.fornecedor_cnpj,
+                  fornecedorRazao: d.fornecedor_razao,
+                  fornecedorUf: d.fornecedor_uf,
+                  fornecedorMunicipio: d.fornecedor_municipio,
+                  clienteCnpj: d.cliente_cnpj,
+                  clienteRazao: d.cliente_razao,
+                  clienteUf: d.cliente_uf,
+                  situacaoDoc: d.situacao_doc,
+                  situacaoManifestacao: d.situacao_manifestacao,
+                  eventoUltimo: d.evento_ultimo,
+                  alertaFraude: d.alerta_fraude,
+                  docValorTotal: d.valor_total,
+                  docValorIcms: d.valor_icms,
+                  docValorIpi: d.valor_ipi,
+                  docValorPis: d.valor_pis,
+                  docValorCofins: d.valor_cofins,
+                  docValorCbs: d.valor_cbs,
+                  docValorIbs: d.valor_ibs,
+                  docValorIs: d.valor_is,
+                  docValorIrrf: d.valor_irrf,
+                  docValorInss: d.valor_inss,
+                  docValorIss: d.valor_iss,
+                  docValorCsll: d.valor_csll,
+                  itemNro: 1,
+                  descricaoItem: itemDesc,
+                  ncm: itemNcm,
+                  cest: '',
+                  cfop: isDocNfse ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102'),
+                  cClassTrib: '000001',
+                  cstCsosn: '000',
+                  naturezaOperacao: isDocNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal',
+                  quantidade: 1,
+                  unidade: 'UN',
+                  valorUnitario: d.valor_total,
+                  valorBrutoItem: d.valor_total,
+                  valorLiquidoItem: d.valor_total,
+                  valorIcms: d.valor_icms,
+                  valorIbs: d.valor_ibs,
+                  valorCbs: d.valor_cbs,
+                  valorIs: d.valor_is,
+                  itemId: `item-${d.chave_acesso}-1`
+                };
+              });
+              supabaseFetched = true;
+              console.log(`📡 GET /relatorios/xml: ${rows.length} de ${totalCount} documentos carregados do Supabase.`);
+            }
           }
         } catch (e: any) {
-          console.warn('⚠️ Supabase relatórios query fallback warning:', e?.message || e);
+          console.warn('⚠️ Supabase relatórios query error:', e?.message || e);
         }
       }
+    }
+
+    // ── ESTRATÉGIA 2: SQLite (Fallback local) ──
+    if (!supabaseFetched) {
+      let query = `
+        SELECT 
+          d.id as docId,
+          d.empresa_id as empresaId,
+          d.tipo_doc as tipoDoc,
+          d.chave_acesso as chaveAcesso,
+          d.numero_serie as numeroSerie,
+          d.data_emissao as dataEmissao,
+          d.data_entrada as dataEntrada,
+          d.competencia,
+          d.fornecedor_cnpj as fornecedorCnpj,
+          d.fornecedor_razao as fornecedorRazao,
+          d.fornecedor_uf as fornecedorUf,
+          d.fornecedor_municipio as fornecedorMunicipio,
+          d.cliente_cnpj as clienteCnpj,
+          d.cliente_razao as clienteRazao,
+          d.cliente_uf as clienteUf,
+          d.situacao_doc as situacaoDoc,
+          d.situacao_manifestacao as situacaoManifestacao,
+          d.evento_ultimo as eventoUltimo,
+          d.alerta_fraude as alertaFraude,
+          d.valor_total as docValorTotal,
+          d.valor_icms as docValorIcms,
+          d.valor_ipi as docValorIpi,
+          d.valor_pis as docValorPis,
+          d.valor_cofins as docValorCofins,
+          d.valor_cbs as docValorCbs,
+          d.valor_ibs as docValorIbs,
+          d.valor_is as docValorIs,
+          d.valor_irrf as docValorIrrf,
+          d.valor_inss as docValorInss,
+          d.valor_iss as docValorIss,
+          d.valor_csll as docValorCsll,
+          i.item_nro as itemNro,
+          i.descricao_item as descricaoItem,
+          i.ncm,
+          i.cest,
+          i.cfop,
+          i.cclasstrib as cClassTrib,
+          i.cst_csosn as cstCsosn,
+          i.natureza_operacao as naturezaOperacao,
+          i.quantidade,
+          i.unidade,
+          i.valor_unitario as valorUnitario,
+          i.valor_bruto_item as valorBrutoItem,
+          i.desconto_incondicional as descontoIncondicional,
+          i.frete_seguro_rateado as freteSeguroRateado,
+          i.valor_liquido_item as valorLiquidoItem,
+          i.base_icms as baseIcms,
+          i.aliquota_icms as aliquotaIcms,
+          i.valor_icms as valorIcms,
+          i.base_ipi as baseIpi,
+          i.aliquota_ipi as aliquotaIpi,
+          i.valor_ipi as valorIpi,
+          i.base_pis as basePis,
+          i.aliquota_pis as aliquotaPis,
+          i.valor_pis as valorPis,
+          i.base_cofins as baseCofins,
+          i.aliquota_cofins as aliquotaCofins,
+          i.valor_cofins as valorCofins,
+          i.base_ibs as baseIbs,
+          i.aliquota_ibs as aliquotaIbs,
+          i.valor_ibs as valorIbs,
+          i.base_cbs as baseCbs,
+          i.aliquota_cbs as aliquotaCbs,
+          i.valor_cbs as valorCbs,
+          i.valor_is as valorIs,
+          i.id as itemId
+        FROM dfe_documentos d
+        LEFT JOIN dfe_itens i ON d.id = i.documento_id
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+
+      if (!isSuperadmin) {
+        if (activeEmpresaId && tenantCnpjClean) {
+          query += `
+            AND (
+              d.empresa_id = ?
+              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+              OR d.cliente_cnpj LIKE ?
+              OR d.fornecedor_cnpj LIKE ?
+            )
+          `;
+          params.push(activeEmpresaId, req.user!.userId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+        } else if (activeEmpresaId) {
+          query += `
+            AND (
+              d.empresa_id = ?
+              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+            )
+          `;
+          params.push(activeEmpresaId, req.user!.userId);
+        }
+      } else if (targetEmpresaId) {
+        query += ` AND (d.empresa_id = ? OR d.empresa_id IS NULL)`;
+        params.push(targetEmpresaId);
+      }
+
+      if (cnpjEmitente) {
+        query += ` AND d.fornecedor_cnpj LIKE ?`;
+        params.push(`%${cnpjEmitente}%`);
+      }
+      if (cnpjDestinatario) {
+        query += ` AND d.cliente_cnpj LIKE ?`;
+        params.push(`%${cnpjDestinatario}%`);
+      }
+      if (dataInicio) {
+        query += ` AND d.data_emissao >= ?`;
+        params.push(dataInicio);
+      }
+      if (dataFim) {
+        query += ` AND d.data_emissao <= ?`;
+        params.push(dataFim);
+      }
+      if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
+        const td = effectiveTipoDoc.toUpperCase();
+        if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+          query += ` AND (d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')`;
+        } else if (td === 'CTE' || td === 'CT-E') {
+          query += ` AND (d.tipo_doc IN ('CTe', 'CT-e') OR d.tipo_doc LIKE '%cte%')`;
+        } else if (td === 'NFE' || td === 'NF-E') {
+          query += ` AND (d.tipo_doc IN ('NFe', 'NF-e') OR d.tipo_doc LIKE '%nfe%')`;
+        } else {
+          query += ` AND d.tipo_doc = ?`;
+          params.push(effectiveTipoDoc);
+        }
+      }
+      if (situacaoDoc && situacaoDoc !== 'TODAS') {
+        query += ` AND d.situacao_doc = ?`;
+        params.push(situacaoDoc);
+      }
+      if (cfop) {
+        query += ` AND (i.cfop LIKE ? OR ? = '')`;
+        params.push(`%${cfop}%`, cfop);
+      }
+      if (cClassTrib) {
+        query += ` AND (i.cclasstrib LIKE ? OR ? = '')`;
+        params.push(`%${cClassTrib}%`, cClassTrib);
+      }
+      if (searchTerm) {
+        query += ` AND (d.fornecedor_razao LIKE ? OR d.fornecedor_cnpj LIKE ? OR d.chave_acesso LIKE ? OR i.descricao_item LIKE ? OR i.ncm LIKE ?)`;
+        const searchPattern = `%${searchTerm}%`;
+        params.push(searchPattern, searchPattern, searchPattern, searchPattern, searchPattern);
+      }
+
+      query += ' ORDER BY d.data_emissao DESC, d.created_at DESC LIMIT ? OFFSET ?';
+      params.push(requestedLimit, requestedOffset);
+
+      rows = db.prepare(query).all(...params) as any[];
+      totalCount = rows.length;
     }
 
     // Carregar configurações de regras CFOP
@@ -344,7 +439,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       // ==========================================
       // RETENÇÕES NA FONTE (NFS-E / SERVIÇOS)
       // ==========================================
-      const isNfse = r.tipoDoc === 'NFSe' || itemCfop === '1933' || itemCfop === '2933';
+      const isNfse = r.tipoDoc === 'NFSe' || r.tipoDoc === 'NFS-e' || (r.tipoDoc as string)?.toUpperCase().includes('NFS') || itemCfop === '1933' || itemCfop === '2933';
       const valorIrrf = Number(r.docValorIrrf) || 0;
       const valorInss = Number(r.docValorInss) || 0;
       const valorIssRetido = Number(r.docValorIss) || 0;
@@ -396,7 +491,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         empresaId: r.empresaId,
         empresaCnpj: r.clienteCnpj,
         empresaNome: r.clienteRazao,
-        tipoDoc: r.tipoDoc || 'NFe',
+        tipoDoc: isNfse ? 'NFS-e' : (r.tipoDoc === 'CTe' || r.tipoDoc === 'CT-e' ? 'CT-e' : (r.tipoDoc === 'NFe' || r.tipoDoc === 'NF-e' ? 'NF-e' : (r.tipoDoc || 'NF-e'))),
         chaveAcesso: r.chaveAcesso,
         numeroSerie: r.numeroSerie || '001',
         dataEmissao: r.dataEmissao,
@@ -486,8 +581,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         aliquotaIssRetido,
         totalRetencoes,
         valorLiquidoServico,
-        codigoServicoLc116: r.ncm && r.ncm !== '2711.19.10' ? r.ncm : (isNfse ? '17.01' : ''),
-        discriminacaoServico: r.descricaoItem || (isNfse ? 'Prestação de Serviços Profissionais / Técnicos' : ''),
+        codigoServicoLc116: isNfse ? (r.ncm && r.ncm !== '2711.19.10' ? r.ncm : '17.01') : '',
+        discriminacaoServico: isNfse ? (r.descricaoItem || 'Prestação de Serviços Profissionais / Técnicos') : (r.descricaoItem || 'Operação Fiscal'),
         diagnosticoRetencao,
         motivoDiagnosticoRetencao,
 

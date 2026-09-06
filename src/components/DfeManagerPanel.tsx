@@ -51,44 +51,66 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const { kpis, totalGeral } = useKpis();
   const currentKpis = totalGeral || kpis;
 
-  const loadDocumentos = async () => {
-    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
+  const loadDocumentos = async (tipo?: string) => {
+    const url = tipo ? `/upload/documentos?tipoDoc=${tipo}&limit=1000` : '/upload/documentos?limit=25000';
+    const res = await get<{ success: boolean; data: any[]; total?: number }>(url);
     if (res.ok && res.data?.data) {
-      const mappedList: DfeXmlItem[] = res.data.data.map(doc => ({
-        id: doc.id,
-        chaveAcesso: doc.chave_acesso,
-        tipo: (doc.tipo_doc as any) || 'NFe',
-        numero: (doc.numero_serie || '').split(' / ')[0] || '',
-        serie: (doc.numero_serie || '').split(' / ')[1] || '',
-        dataEmissao: doc.data_emissao,
-        emitenteCnpj: doc.fornecedor_cnpj,
-        emitenteNome: doc.fornecedor_razao,
-        emitenteUf: doc.fornecedor_uf,
-        destinatarioCnpj: doc.cliente_cnpj,
-        destinatarioNome: doc.cliente_razao,
-        destinatarioUf: doc.cliente_uf,
-        valorTotal: doc.valor_total || 0,
-        valorIcms: doc.valor_icms || 0,
-        valorIpi: doc.valor_ipi || 0,
-        valorPis: doc.valor_pis || 0,
-        valorCofins: doc.valor_cofins || 0,
-        aliquotaCbs: doc.valor_total > 0 && doc.valor_cbs ? Number(((doc.valor_cbs / doc.valor_total) * 100).toFixed(2)) : 0,
-        valorCbs: doc.valor_cbs || 0,
-        aliquotaIbs: doc.valor_total > 0 && doc.valor_ibs ? Number(((doc.valor_ibs / doc.valor_total) * 100).toFixed(2)) : 0,
-        valorIbs: doc.valor_ibs || 0,
-        valorImpostoSeletivo: doc.valor_is || 0,
-        eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
-        situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
-        alertaFraude: Boolean(doc.alerta_fraude),
-        statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
-        alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
-        statusSincronizacaoErp: 'pendente',
-        xmlRaw: doc.xml_raw || '',
-        downloadAt: doc.download_at || '',
-      }));
-      setDfeList(mappedList);
-      if (mappedList.length > 0 && !selectedDfe) {
-        setSelectedDfe(mappedList[0]);
+      const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
+        const rawTipo = (doc.tipo_doc || '').toString();
+        const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS') ? 'NFSe' : (rawTipo === 'CTe' || rawTipo === 'CT-e' ? 'CTe' : (rawTipo === 'NFe' || rawTipo === 'NF-e' ? 'NFe' : rawTipo || 'NFe'));
+
+        return {
+          id: doc.id,
+          chaveAcesso: doc.chave_acesso,
+          tipo: tipoCanonico,
+          numero: (doc.numero_serie || '').split(' / ')[0] || (doc.chave_acesso ? doc.chave_acesso.substring(25, 34) : '1'),
+          serie: (doc.numero_serie || '').split(' / ')[1] || '1',
+          dataEmissao: doc.data_emissao,
+          emitenteCnpj: doc.fornecedor_cnpj,
+          emitenteNome: doc.fornecedor_razao,
+          emitenteUf: doc.fornecedor_uf,
+          destinatarioCnpj: doc.cliente_cnpj,
+          destinatarioNome: doc.cliente_razao,
+          destinatarioUf: doc.cliente_uf,
+          valorTotal: doc.valor_total || 0,
+          valorIcms: doc.valor_icms || 0,
+          valorIpi: doc.valor_ipi || 0,
+          valorPis: doc.valor_pis || 0,
+          valorCofins: doc.valor_cofins || 0,
+          aliquotaCbs: doc.valor_total > 0 && doc.valor_cbs ? Number(((doc.valor_cbs / doc.valor_total) * 100).toFixed(2)) : 0,
+          valorCbs: doc.valor_cbs || 0,
+          aliquotaIbs: doc.valor_total > 0 && doc.valor_ibs ? Number(((doc.valor_ibs / doc.valor_total) * 100).toFixed(2)) : 0,
+          valorIbs: doc.valor_ibs || 0,
+          valorImpostoSeletivo: doc.valor_is || 0,
+          valorIrrf: Number(doc.valor_irrf) || 0,
+          valorInssRetido: Number(doc.valor_inss) || 0,
+          valorIssRetido: Number(doc.valor_iss) || 0,
+          valorCsllRetido: Number(doc.valor_csll) || 0,
+          valorPisRetido: Number(doc.valor_pis) || 0,
+          valorCofinsRetido: Number(doc.valor_cofins) || 0,
+          eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
+          situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
+          alertaFraude: Boolean(doc.alerta_fraude),
+          statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
+          alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
+          statusSincronizacaoErp: 'pendente',
+          xmlRaw: doc.xml_raw || '',
+          downloadAt: doc.download_at || '',
+        };
+      });
+
+      if (tipo) {
+        setDfeList(prev => {
+          const existingIds = new Set(prev.map(p => p.id));
+          const newItems = mappedList.filter(m => !existingIds.has(m.id));
+          return [...newItems, ...prev];
+        });
+      } else {
+        setDfeList(mappedList);
+      }
+
+      if (mappedList.length > 0) {
+        setSelectedDfe(prev => prev || mappedList[0]);
       }
     }
   };
@@ -202,47 +224,65 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           {/* Document Type Filter Pills */}
           <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px]">
             <button
-              onClick={() => setTipoDocFiltro('TODOS')}
+              onClick={() => {
+                setTipoDocFiltro('TODOS');
+                if (dfeList.length <= 100) loadDocumentos();
+              }}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'TODOS'
                   ? 'bg-slate-800 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Todos ({dfeList.length})
+              Todos ({totalDocsCount.toLocaleString('pt-BR')})
             </button>
 
             <button
-              onClick={() => setTipoDocFiltro('NFE')}
+              onClick={() => {
+                setTipoDocFiltro('NFE');
+                if (dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length === 0) {
+                  loadDocumentos('NFe');
+                }
+              }}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'NFE'
                   ? 'bg-blue-900/60 text-blue-300 border border-blue-700/60 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              NF-e ({dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length})
+              NF-e ({(currentKpis?.nfeCount ?? dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length).toLocaleString('pt-BR')})
             </button>
 
             <button
-              onClick={() => setTipoDocFiltro('CTE')}
+              onClick={() => {
+                setTipoDocFiltro('CTE');
+                if (dfeList.filter(d => d.tipo === 'CTe').length === 0) {
+                  loadDocumentos('CTe');
+                }
+              }}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'CTE'
                   ? 'bg-amber-900/60 text-amber-300 border border-amber-700/60 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              CT-e ({dfeList.filter(d => d.tipo === 'CTe').length})
+              CT-e ({(currentKpis?.cteCount ?? dfeList.filter(d => d.tipo === 'CTe').length).toLocaleString('pt-BR')})
             </button>
 
             <button
-              onClick={() => setTipoDocFiltro('NFSE')}
+              onClick={() => {
+                setTipoDocFiltro('NFSE');
+                if (dfeList.filter(d => d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e').length === 0) {
+                  loadDocumentos('NFSe');
+                }
+              }}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'NFSE'
                   ? 'bg-teal-900/60 text-teal-300 border border-teal-700/60 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              NFS-e ({dfeList.filter(d => d.tipo === 'NFSe').length})
+              NFS-e ({(currentKpis?.nfseCount ?? dfeList.filter(d => d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e').length).toLocaleString('pt-BR')})
             </button>
           </div>
 

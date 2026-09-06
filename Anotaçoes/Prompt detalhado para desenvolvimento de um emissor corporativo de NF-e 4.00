@@ -1,0 +1,1127 @@
+Prompt detalhado para desenvolvimento de um emissor corporativo de NF-e 4.00
+
+Você é um arquiteto de software, especialista fiscal brasileiro, integração com a SEFAZ e sistemas ERP corporativos. Desenvolva a especificação técnica e funcional de um sistema emissor de NF-e modelo 55, leiaute 4.00, integrado a um ERP existente.
+
+O sistema deve ser parametrizável, seguro, auditável, escalável e preparado para alterações futuras na legislação, nos leiautes e nas regras tributárias estaduais.
+
+Importante: não invente regras fiscais. Utilize sempre as versões vigentes das fontes oficiais no momento da implementação, incluindo Portal Nacional da NF-e, SEFAZ, CONFAZ, ENCAT e legislação estadual aplicável. Sempre que houver divergência entre fontes, registrar a divergência e solicitar validação fiscal.
+
+1. Objetivo do sistema
+
+Desenvolver um módulo corporativo capaz de:
+
+Cadastrar e reutilizar dados fiscais de emitentes, destinatários, transportadores, produtos e serviços relacionados à operação;
+Criar NF-e modelo 55 no leiaute 4.00;
+Calcular tributos de forma precisa e configurável;
+Gerar, validar e assinar digitalmente o XML;
+Transmitir NF-e para a SEFAZ autorizadora;
+Operar em homologação e produção;
+Tratar rejeições, denegações, duplicidades, falhas de comunicação e contingência;
+Gerar o DANFE;
+Emitir NF-e individualmente ou em lote;
+Registrar todos os eventos e interações com a SEFAZ;
+Armazenar XMLs, protocolos, retornos, DANFEs e evidências de auditoria;
+Permitir atualização das regras fiscais sem alteração estrutural do sistema;
+Integrar-se ao ERP, financeiro, estoque, logística, fiscal, contábil e SPED;
+Priorizar a experiência do usuário e reduzir digitação manual.
+
+O sistema deve ser desenvolvido sem alterar o padrão visual já existente no ERP. Não é necessário especificar cores, fontes ou identidade visual. O foco deve estar na usabilidade, nos fluxos, nas validações, na clareza das mensagens e na eficiência operacional.
+
+2. Base normativa e legal
+2.1 Fontes oficiais obrigatórias
+
+O sistema deve manter uma camada de referência normativa baseada, no mínimo, nas seguintes fontes:
+
+Manual de Orientação do Contribuinte — MOC da NF-e
+
+Utilizar a versão vigente na data de implantação;
+Identificar claramente a versão utilizada;
+Controlar alterações de versão;
+Associar cada regra técnica à fonte oficial correspondente.
+
+Notas Técnicas da NF-e
+
+Implementar as NTs vigentes aplicáveis ao leiaute 4.00;
+Controlar versão, data de publicação, início de homologação e início de produção;
+Permitir ativação de regras por UF, ambiente, data e versão;
+Evitar que regras futuras sejam aplicadas antes da data oficial.
+
+Ajustes SINIEF, Convênios e atos do CONFAZ
+
+Considerar o Convênio SINIEF s/nº de 1970 e alterações aplicáveis;
+Considerar o Convênio SINIEF 07/2005 e demais normas relacionadas à NF-e;
+Considerar atos normativos que tratem de cancelamento, CC-e, manifestação do destinatário, contingência, eventos e guarda de documentos fiscais.
+
+Legislação estadual
+
+Regras específicas de cada UF;
+Prazos estaduais para cancelamento;
+Regras de contingência;
+Diferimento, suspensão, benefícios fiscais, partilha, alíquotas internas e interestaduais;
+Regras de inscrição estadual, credenciamento e autorização;
+Particularidades dos ambientes autorizadores e Sefaz Virtuais.
+
+Tabelas fiscais oficiais
+
+NCM;
+CFOP;
+CST e CSOSN;
+CEST;
+Tabela de alíquotas interestaduais;
+Tabela de códigos de benefícios fiscais, quando aplicável;
+Tabela de meios de pagamento;
+Tabela de modalidades de frete;
+Tabelas de países, municípios, estados e códigos IBGE;
+Tabelas relacionadas ao IBS, CBS e demais grupos da Reforma Tributária do Consumo — RTC, conforme a vigência e aplicabilidade do leiaute.
+2.2 Controle da vigência das regras
+
+Criar um mecanismo de versionamento de regras fiscais contendo:
+
+Código da regra;
+Descrição;
+Fonte normativa;
+Número da NT, Convênio, Ajuste ou legislação;
+Data de início da vigência;
+Data de fim da vigência, quando aplicável;
+UF;
+Ambiente;
+Regime tributário;
+Tipo de operação;
+Aplicabilidade por produto;
+Mensagem de validação;
+Severidade: erro, alerta ou informativa;
+Histórico de alterações;
+Usuário ou processo responsável pela publicação.
+
+O sistema deve permitir atualizar regras fiscais sem necessidade de alterar o código da aplicação sempre que possível.
+
+2.3 Guarda documental
+
+Implementar guarda segura e auditável de:
+
+XML autorizado;
+XML rejeitado, quando tecnicamente necessário para auditoria;
+XML cancelado;
+XML de carta de correção;
+XML de inutilização;
+XML de manifestação;
+XML de eventos;
+Protocolos de autorização;
+Recibos de lote;
+Retornos da SEFAZ;
+DANFE;
+Evidências de envio ao destinatário;
+Logs de comunicação;
+Histórico de alterações.
+
+A política de retenção deve ser parametrizável, respeitando o prazo legal aplicável, obrigações acessórias, legislação federal, legislação estadual e política corporativa. Não assumir um prazo único sem validação jurídica e fiscal.
+
+Os documentos devem possuir:
+
+Integridade criptográfica;
+Controle de acesso;
+Versionamento;
+Identificação do ambiente;
+Identificação da empresa;
+Chave de acesso;
+Número e série;
+Data de emissão;
+Status;
+Protocolo;
+Registro de exclusão lógica, quando permitido;
+Backup e recuperação.
+3. Requisitos técnicos de integração com a SEFAZ
+3.1 Certificado digital
+
+O sistema deve suportar:
+
+Certificado ICP-Brasil A1;
+Certificado ICP-Brasil A3;
+Certificados armazenados em arquivo, dispositivo criptográfico, token ou smart card;
+Integração com HSM ou serviço de assinatura, quando aplicável;
+Controle de validade;
+Alertas de expiração;
+Associação do certificado ao estabelecimento emitente;
+Armazenamento seguro da senha do certificado;
+Nunca registrar a senha em logs;
+Controle de permissões para uso do certificado.
+
+Para certificados A3, considerar a necessidade de middleware, driver, PKCS#11, CSP ou outro mecanismo compatível com o ambiente operacional.
+
+3.2 Assinatura digital
+
+Implementar:
+
+Assinatura digital do XML da NF-e;
+Padrão XML Digital Signature;
+Algoritmos e canonicalização conforme os schemas e especificações oficiais vigentes;
+Assinatura do elemento correto da NF-e;
+Inclusão da referência e do certificado conforme exigido;
+Validação da assinatura antes da transmissão;
+Verificação da validade do certificado;
+Verificação da cadeia de certificação;
+Controle de integridade após a assinatura.
+
+O XML assinado não deve ser alterado após a assinatura. Qualquer modificação deve gerar novo XML e nova assinatura.
+
+3.3 XML e Schema XSD
+
+O sistema deve:
+
+Gerar XML conforme o leiaute NF-e 4.00;
+Validar contra os schemas XSD oficiais correspondentes;
+Utilizar schemas versionados;
+Registrar qual versão do schema foi utilizada;
+Validar namespaces;
+Validar tipos, tamanhos, obrigatoriedade e cardinalidade;
+Validar regras estruturais;
+Validar regras de negócio antes da assinatura;
+Rejeitar XML inconsistente antes do envio;
+Exibir mensagens de erro compreensíveis ao usuário.
+
+A validação deve ocorrer em camadas:
+
+Validação cadastral;
+Validação fiscal;
+Validação matemática;
+Validação estrutural;
+Validação XSD;
+Assinatura digital;
+Validação final do XML assinado;
+Transmissão.
+3.4 Web Services SOAP
+
+Implementar integração SOAP com:
+
+Serviços de autorização;
+Consulta de cadastro;
+Consulta de status do serviço;
+Consulta de protocolo;
+Consulta de NF-e;
+Recepção de eventos;
+Inutilização;
+Serviços específicos disponibilizados pela UF;
+Sefaz Virtual de contingência, quando aplicável.
+
+A integração deve suportar:
+
+SOAP 1.1 ou padrão exigido pelo autorizador;
+HTTPS;
+TLS compatível com os requisitos atuais;
+Certificado cliente quando exigido;
+Timeout configurável;
+Retry com backoff;
+Idempotência;
+Controle de conexão;
+Tratamento de indisponibilidade;
+Registro do request e response de forma segura;
+Mascaramento de dados sensíveis nos logs.
+
+Não registrar senha de certificado, chaves privadas ou dados sensíveis sem necessidade.
+
+3.5 Ambientes
+
+O sistema deve diferenciar claramente:
+
+Homologação;
+Produção;
+Sefaz autorizadora;
+Sefaz Virtual;
+URL e serviço utilizado;
+Certificado correspondente;
+Numeração e séries;
+Parâmetros fiscais;
+Armazenamento;
+Usuários autorizados.
+
+Deve ser impossível transmitir acidentalmente um documento de produção para homologação ou vice-versa sem uma confirmação explícita e controles de segurança.
+
+O XML deve indicar corretamente o ambiente de emissão conforme as regras oficiais.
+
+3.6 Sefaz Virtuais
+
+Implementar suporte configurável para:
+
+Sefaz Virtual RS;
+Sefaz Virtual AN;
+Outros autorizadores ou Sefaz Virtuais que sejam aplicáveis;
+Roteamento por UF;
+Seleção automática do autorizador;
+Fallback configurável;
+Consulta de disponibilidade;
+Controle de indisponibilidade por autorizador.
+4. Requisitos funcionais
+4.1 Cadastro do emitente
+
+Permitir o cadastro completo de:
+
+CNPJ;
+Razão social;
+Nome fantasia;
+Inscrição estadual;
+Inscrição municipal, quando aplicável;
+CNAE;
+Regime tributário;
+Endereço completo;
+Município e código IBGE;
+UF;
+CEP;
+Telefone;
+E-mail;
+Série da NF-e;
+Próximo número;
+Ambiente;
+Credenciamento;
+Certificado digital;
+CSC ou parâmetros específicos, se aplicáveis a outros documentos;
+Regras fiscais por estabelecimento;
+Parâmetros de contingência;
+Autorizador SEFAZ.
+
+O sistema deve permitir múltiplos estabelecimentos, filiais, séries e sequências independentes.
+
+4.2 Busca inteligente de dados cadastrais
+
+Utilizar a inteligência já existente no ERP para evitar redigitação.
+
+Ao informar um CNPJ:
+
+Buscar automaticamente o cadastro já existente;
+Preencher os dados do cliente ou destinatário;
+Identificar endereço, município, UF, inscrição estadual e demais dados disponíveis;
+Informar se o cadastro está ativo, incompleto ou desatualizado;
+Permitir correção ou complementação;
+Registrar a origem dos dados;
+Evitar sobrescrever dados sem confirmação;
+Alertar quando houver divergência entre cadastro interno e dados retornados;
+Permitir atualização controlada do cadastro.
+
+Aplicar o mesmo comportamento para:
+
+Emitente;
+Destinatário;
+Transportador;
+Local de entrega;
+Local de retirada;
+Participantes adicionais da operação.
+
+A busca pode utilizar inteligência interna, base própria, serviços integrados e fontes autorizadas, sempre observando privacidade, segurança e legislação aplicável.
+
+4.3 Listas de seleção amigáveis
+
+Utilizar o conceito de campo com lista de seleção.
+
+Não apresentar ao usuário somente códigos fiscais isolados.
+
+Exemplos:
+
+CFOP: 5.102 — Venda de mercadoria adquirida ou recebida de terceiros;
+NCM: XXXX.XX.XX — Descrição do produto;
+CST: 00 — Tributada integralmente;
+CSOSN: 102 — Tributada pelo Simples Nacional sem permissão de crédito;
+CEST: código e descrição;
+Modalidade de frete;
+Forma de pagamento;
+Município;
+UF;
+País;
+Tipo de operação;
+Benefício fiscal;
+Enquadramento tributário.
+
+Requisitos da lista:
+
+Exibir código e descrição;
+Permitir pesquisa por código ou descrição;
+Permitir filtros;
+Mostrar somente opções válidas para o contexto;
+Manter o código e a descrição na tela após a seleção;
+Enviar apenas o código correspondente no XML;
+Exibir a descrição apenas para facilitar a operação;
+Impedir seleção de códigos inativos ou fora da vigência;
+Permitir configuração de favoritos e opções mais utilizadas;
+Permitir seleção por teclado;
+Informar claramente quando uma opção exige configuração adicional.
+4.4 Cadastro de destinatário
+
+Permitir:
+
+Pessoa jurídica;
+Pessoa física;
+Estrangeiro, quando aplicável;
+Contribuinte e não contribuinte;
+Consumidor final;
+Indicador de IE;
+Inscrição estadual;
+CNPJ ou CPF conforme o caso;
+Endereço completo;
+E-mail;
+Telefone;
+Endereço de entrega diferente;
+Indicador de presença;
+Finalidade da emissão;
+Operação interna, interestadual ou exterior.
+
+Validar consistência entre:
+
+CNPJ/CPF;
+UF;
+inscrição estadual;
+indicador de contribuinte;
+consumidor final;
+CFOP;
+tributação;
+finalidade da emissão.
+4.5 Cadastro de produtos
+
+Permitir cadastro completo de:
+
+Código interno;
+Descrição;
+NCM;
+CEST;
+Unidade comercial;
+Unidade tributável;
+Fator de conversão;
+Origem da mercadoria;
+GTIN/EAN;
+GTIN tributável;
+CFOP por tipo de operação;
+CST ou CSOSN;
+Alíquotas;
+Benefícios fiscais;
+Regras de ICMS;
+IPI;
+PIS;
+COFINS;
+FCP;
+IBS/CBS e demais grupos da RTC, quando aplicáveis;
+Peso bruto e líquido;
+Grupo de combustíveis, medicamentos, veículos ou outros grupos específicos, quando necessário;
+Exceção de NCM;
+Código ANP;
+Número de registro de produto;
+Informações adicionais.
+
+O sistema deve impedir a emissão quando dados obrigatórios estiverem ausentes ou incompatíveis.
+
+4.6 Emissão da NF-e
+
+O fluxo deve incluir:
+
+Seleção do estabelecimento;
+Seleção do ambiente;
+Seleção do tipo de operação;
+Busca do destinatário;
+Seleção de produtos;
+Informações de transporte;
+Pagamento;
+Informações adicionais;
+Cálculo tributário;
+Validação de consistência;
+Geração da chave de acesso;
+Geração do XML;
+Validação XSD;
+Assinatura digital;
+Transmissão;
+Recepção do resultado;
+Armazenamento;
+Geração do DANFE;
+Disponibilização ao usuário e ao destinatário.
+4.7 Numeração sequencial
+
+Implementar:
+
+Numeração automática;
+Controle por CNPJ, estabelecimento, série e ambiente;
+Controle transacional para evitar duplicidade;
+Reserva de número;
+Identificação de números não utilizados;
+Processo de inutilização;
+Controle de concorrência;
+Recuperação em caso de falha;
+Bloqueio contra reutilização indevida;
+Auditoria das alterações.
+
+A chave de acesso deve ser calculada conforme os componentes oficiais da NF-e e dígito verificador.
+
+4.8 Motor tributário
+
+Desenvolver um motor tributário configurável e versionado.
+
+O motor deve considerar:
+
+UF de origem e destino;
+Município;
+Regime tributário;
+Perfil do emitente;
+Perfil do destinatário;
+Consumidor final;
+Contribuinte ou não contribuinte;
+Tipo de operação;
+CFOP;
+NCM;
+CEST;
+CST ou CSOSN;
+Origem da mercadoria;
+Benefício fiscal;
+Redução de base;
+Diferimento;
+Suspensão;
+Isenção;
+Substituição tributária;
+FCP;
+IPI;
+PIS;
+COFINS;
+IBS;
+CBS;
+Demais tributos e grupos da RTC conforme a vigência;
+Frete;
+Seguro;
+Desconto;
+Outras despesas;
+Rateios;
+Importação;
+Exportação;
+Devolução;
+Transferência;
+Bonificação;
+Remessa;
+Venda para entrega futura;
+Operações especiais.
+
+O motor deve:
+
+Ser determinístico;
+Registrar a memória de cálculo;
+Armazenar a versão da regra aplicada;
+Permitir simulação;
+Permitir explicação do cálculo;
+Separar base, alíquota, redução, valor e arredondamento;
+Utilizar precisão decimal adequada;
+Evitar erros de ponto flutuante;
+Aplicar regras de arredondamento oficiais;
+Validar totalização por item e documento;
+Permitir revisão por usuário autorizado;
+Impedir alterações fiscais manuais sem justificativa e permissão.
+4.9 Consistência entre itens e totais
+
+Validar:
+
+Soma dos valores dos produtos;
+Descontos;
+Frete;
+Seguro;
+Outras despesas;
+IPI;
+ICMS;
+FCP;
+PIS;
+COFINS;
+IBS/CBS, quando aplicáveis;
+Total da NF-e;
+Bases de cálculo;
+Quantidade e valor unitário;
+Conversão de unidades;
+Rateio de despesas;
+Arredondamentos;
+Diferenças de centavos;
+Campos obrigatórios por grupo tributário.
+
+Qualquer divergência deve ser apresentada ao usuário antes da transmissão.
+
+4.10 DANFE
+
+Gerar DANFE conforme as regras oficiais aplicáveis, contendo:
+
+Chave de acesso;
+Protocolo, quando autorizado;
+Dados do emitente;
+Dados do destinatário;
+Itens;
+Valores;
+Tributos;
+Transporte;
+Volumes;
+Informações adicionais;
+Informações de contingência;
+Código de barras ou representação exigida;
+Identificação de homologação, quando aplicável.
+
+O DANFE somente deve ser considerado autorizado quando associado a uma NF-e autorizada ou ao procedimento de contingência válido.
+
+4.11 Emissão em lote
+
+Suportar:
+
+Emissão individual;
+Emissão em lote;
+Processamento assíncrono;
+Agrupamento por estabelecimento;
+Agrupamento por série;
+Agrupamento por ambiente;
+Controle de quantidade máxima conforme serviço;
+Acompanhamento individual por documento;
+Reprocessamento apenas dos documentos pendentes ou falhados;
+Não duplicar NF-e já autorizada;
+Relatório final do lote.
+5. Eventos fiscais
+
+Implementar uma estrutura genérica de eventos, permitindo inclusão de novos eventos sem reescrever o núcleo do sistema.
+
+5.1 Cancelamento
+
+Implementar cancelamento por evento, observando:
+
+Prazo legal vigente;
+Prazo específico da UF;
+Motivo obrigatório;
+Limite de caracteres conforme regra vigente;
+Existência de autorização prévia;
+Proibição de cancelamento quando houver impedimento legal;
+Controle do protocolo;
+Atualização do status da NF-e;
+Armazenamento do XML do evento e retorno;
+Registro do usuário, data, hora e justificativa;
+Atualização do DANFE ou documento relacionado, quando necessário.
+
+O prazo padrão frequentemente utilizado é de até 24 horas, mas o sistema deve parametrizar regras estaduais e alterações normativas.
+
+5.2 Carta de Correção Eletrônica — CC-e
+
+Implementar:
+
+Emissão de CC-e vinculada à NF-e autorizada;
+Texto da correção;
+Controle de sequência do evento;
+Limites de tamanho;
+Validação de campos que não podem ser alterados;
+Impedimento de alteração de valores, impostos, destinatário, data de emissão, chave, quantidade ou outros campos proibidos;
+Possibilidade de múltiplas CC-e conforme as regras oficiais;
+Consulta do histórico;
+Armazenamento dos XMLs e protocolos;
+Exibição da última correção consolidada;
+Controle de prazo conforme legislação vigente.
+5.3 Inutilização de numeração
+
+Implementar:
+
+Seleção de série;
+Número inicial e final;
+Justificativa;
+Validação de sequência;
+Impedimento de inutilização de números já autorizados;
+Verificação de faixa já inutilizada;
+Transmissão do evento;
+Armazenamento do XML e protocolo;
+Relatórios por série e período;
+Auditoria.
+5.4 Manifestação do destinatário
+
+Implementar os eventos aplicáveis:
+
+Ciência da emissão;
+Confirmação da operação;
+Desconhecimento da operação;
+Operação não realizada.
+
+O sistema deve:
+
+Consultar documentos destinados ao CNPJ;
+Permitir manifestação manual ou automática conforme política da empresa;
+Controlar prazo de cada evento;
+Validar sequência e regras de manifestação;
+Registrar justificativa quando exigida;
+Armazenar XML e protocolo;
+Alertar documentos próximos do vencimento;
+Permitir workflow de aprovação;
+Controlar eventos conflitantes.
+
+Os prazos de manifestação devem ser mantidos em tabela parametrizável conforme legislação vigente e regras da UF, não devendo ser codificados de forma fixa sem fonte normativa.
+
+5.5 Outros eventos
+
+Preparar o sistema para:
+
+EPEC;
+Eventos de contingência;
+Cancelamento por substituição, quando aplicável;
+Comprovante de entrega;
+Insucesso na entrega;
+Eventos vinculados a transporte;
+Eventos relacionados à RTC;
+Eventos futuros definidos por Notas Técnicas.
+6. Contingência e alta disponibilidade
+6.1 Modos de contingência
+
+Avaliar e implementar os modos oficialmente aplicáveis à NF-e, incluindo:
+
+SVC-AN;
+SVC-RS;
+EPEC;
+FS-DA, quando aplicável;
+Outros modos definidos pelas normas vigentes.
+
+O sistema deve:
+
+Detectar indisponibilidade da SEFAZ;
+Consultar status do serviço;
+Evitar acionamento indevido de contingência;
+Permitir acionamento manual autorizado;
+Registrar motivo;
+Controlar data e hora;
+Identificar no XML o modo de emissão correto;
+Gerar DANFE de contingência quando permitido;
+Reprocessar a autorização posteriormente;
+Controlar eventos de contingência;
+Alertar documentos pendentes de regularização;
+Impedir duplicidade entre emissão normal e contingência.
+6.2 Monitoramento da SEFAZ
+
+Criar processo automático para:
+
+Consultar status dos serviços;
+Monitorar latência;
+Identificar indisponibilidade;
+Controlar status por UF e ambiente;
+Registrar histórico;
+Notificar administradores;
+Exibir situação no sistema;
+Diferenciar erro de rede, timeout, rejeição fiscal e indisponibilidade do autorizador.
+6.3 Fila de reenvio
+
+Implementar fila assíncrona para:
+
+Lotes pendentes;
+Eventos não transmitidos;
+Consultas de protocolo;
+Documentos em processamento;
+Reenvios após timeout;
+Recuperação de respostas desconhecidas.
+
+A fila deve possuir:
+
+Retry automático;
+Backoff exponencial;
+Número máximo de tentativas;
+Dead-letter queue;
+Idempotência;
+Priorização;
+Rastreamento por correlation ID;
+Reprocessamento manual;
+Bloqueio de duplicidade;
+Estado detalhado da operação.
+7. Arquitetura e infraestrutura
+7.1 Arquitetura recomendada
+
+Propor arquitetura modular ou orientada a serviços, com separação entre:
+
+Cadastro;
+Emissão;
+Motor tributário;
+Geração XML;
+Validação XSD;
+Assinatura digital;
+Integração SEFAZ;
+Eventos fiscais;
+Contingência;
+DANFE;
+Armazenamento;
+Auditoria;
+Integração ERP;
+Integração SPED;
+Observabilidade;
+Administração de regras.
+
+A solução deve permitir evolução independente dos componentes sem acoplamento excessivo.
+
+7.2 Processamento assíncrono
+
+Utilizar filas para operações demoradas ou sujeitas a indisponibilidade externa:
+
+Autorização;
+Consulta de recibo;
+Eventos;
+Manifestação;
+Geração do DANFE;
+Envio de e-mail;
+Armazenamento;
+Integração com SPED;
+Atualização de status.
+
+A interface deve mostrar claramente:
+
+Aguardando processamento;
+Em validação;
+Assinando;
+Transmitindo;
+Aguardando retorno;
+Autorizada;
+Rejeitada;
+Denegada;
+Em contingência;
+Pendente de consulta;
+Erro técnico;
+Necessita intervenção.
+7.3 Escalabilidade
+
+A arquitetura deve suportar:
+
+Múltiplos estabelecimentos;
+Alto volume de documentos;
+Emissão concorrente;
+Processamento horizontal;
+Balanceamento;
+Particionamento de filas;
+Isolamento por empresa;
+Limitação de taxa por autorizador;
+Retentativas controladas;
+Escalonamento independente do motor tributário e da integração SEFAZ.
+7.4 Auditoria
+
+Registrar:
+
+Usuário;
+Perfil;
+Data e hora;
+IP ou origem;
+Operação;
+Documento;
+Campo alterado;
+Valor anterior;
+Valor novo;
+Justificativa;
+Regra aplicada;
+XML gerado;
+XML assinado;
+Request;
+Response;
+Protocolo;
+Erro;
+Tentativas;
+Resultado final.
+
+A auditoria não deve permitir alteração silenciosa ou exclusão física de registros críticos.
+
+7.5 Armazenamento dos XMLs
+
+Utilizar armazenamento seguro, com:
+
+Criptografia em repouso;
+Criptografia em trânsito;
+Controle de acesso;
+Hash do arquivo;
+Versionamento;
+Backup;
+Replicação;
+Política de retenção;
+Busca por chave, CNPJ, número, série, período e protocolo;
+Imutabilidade para documentos fiscais autorizados, quando aplicável;
+Recuperação de desastre.
+7.6 Integração com SPED e demais módulos
+
+Preparar integração com:
+
+SPED Fiscal;
+SPED Contribuições;
+Contabilidade;
+Financeiro;
+Estoque;
+Compras;
+Vendas;
+Logística;
+Transportes;
+Recebimento fiscal;
+Gestão de documentos;
+BI e relatórios.
+
+Garantir consistência entre:
+
+NF-e autorizada;
+Escrita fiscal;
+Estoque;
+Contas a receber;
+Livros fiscais;
+SPED;
+Eventos fiscais.
+8. Requisitos não funcionais
+8.1 Segurança
+
+Implementar:
+
+RBAC por perfil;
+MFA para usuários administrativos;
+Segregação de funções;
+Criptografia;
+Proteção de certificados;
+Gestão segura de segredos;
+Controle de acesso por empresa e estabelecimento;
+Proteção contra SQL Injection;
+Proteção contra XSS e CSRF;
+Validação de entrada;
+Rate limiting;
+Logs sem dados sensíveis;
+Mascaramento de CNPJ/CPF quando necessário;
+Rotação de credenciais;
+Backup criptografado;
+Política de menor privilégio;
+Conformidade com LGPD.
+8.2 Testes automatizados
+
+Criar testes:
+
+Unitários;
+Integração;
+Contrato com Web Services;
+Validação XSD;
+Assinatura digital;
+Motor tributário;
+Cálculos de arredondamento;
+Regras por UF;
+Numeração concorrente;
+Idempotência;
+Fila e retry;
+Contingência;
+Eventos fiscais;
+Geração do DANFE;
+Segurança;
+Performance;
+Recuperação de falhas.
+8.3 Simulações de rejeições
+
+Criar ambiente de simulação para testar, no mínimo:
+
+CNPJ inválido;
+Inscrição estadual inválida;
+NCM inválido ou incompatível;
+CFOP incompatível;
+CST ou CSOSN inválido;
+Total divergente;
+Base de cálculo inconsistente;
+Alíquota incompatível;
+Falta de informação obrigatória;
+Certificado expirado;
+XML inválido;
+Falha de assinatura;
+Duplicidade;
+Número já utilizado;
+Número inutilizado;
+NF-e inexistente;
+Cancelamento fora do prazo;
+CC-e inválida;
+Serviço indisponível;
+Timeout;
+Recibo sem retorno;
+Falha em Sefaz Virtual;
+Erro de contingência;
+Evento enviado fora da sequência.
+
+As mensagens devem apresentar:
+
+Código da rejeição;
+Descrição oficial;
+Documento afetado;
+Campo relacionado;
+Causa provável;
+Ação recomendada;
+Link ou referência normativa, quando disponível.
+8.4 Observabilidade
+
+Implementar:
+
+Logs estruturados;
+Métricas;
+Traces distribuídos;
+Correlation ID;
+Monitoramento de filas;
+Tempo de resposta da SEFAZ;
+Taxa de autorização;
+Taxa de rejeição;
+Taxa de timeout;
+Quantidade de documentos em contingência;
+Certificados próximos do vencimento;
+Erros por UF;
+Erros por código de rejeição;
+Alertas;
+Dashboards operacionais;
+Retenção de logs conforme política de segurança.
+9. Experiência do usuário
+
+Priorizar uma operação simples e segura.
+
+9.1 Diretrizes
+Reduzir digitação manual;
+Reutilizar dados do ERP;
+Sugerir informações com base no histórico;
+Mostrar código e descrição;
+Evitar telas excessivamente técnicas;
+Exibir validações no contexto do campo;
+Permitir correção antes da transmissão;
+Separar erros bloqueantes de alertas;
+Exibir progresso do processamento;
+Não esconder o status real do documento;
+Permitir filtros e pesquisa;
+Permitir repetição de uma NF-e anterior com segurança;
+Facilitar emissão por pedido ou venda;
+Permitir edição somente dos campos autorizados;
+Destacar dados fiscais obrigatórios;
+Exibir memória de cálculo;
+Permitir consulta completa do histórico.
+9.2 Mensagens
+
+As mensagens devem ser:
+
+Claras;
+Objetivas;
+Em português;
+Orientadas à solução;
+Sem expor detalhes técnicos desnecessários;
+Com código oficial quando houver;
+Com indicação do campo ou item afetado;
+Com opção de correção ou direcionamento para o responsável fiscal.
+
+Exemplo:
+
+Rejeição 610 — Total da NF-e não confere com a soma dos itens.
+Verifique descontos, frete, outras despesas e arredondamentos dos itens 2 e 4. O total calculado pelo sistema é R$ X, enquanto o XML informa R$ Y.
+
+10. Modelo de estados da NF-e
+
+Definir uma máquina de estados, por exemplo:
+
+Rascunho;
+Aguardando validação;
+Com erro de cadastro;
+Com erro fiscal;
+XML gerado;
+XML assinado;
+Aguardando transmissão;
+Lote enviado;
+Aguardando recibo;
+Aguardando processamento;
+Autorizada;
+Rejeitada;
+Denegada;
+Em contingência;
+Pendente de regularização;
+Cancelamento solicitado;
+Cancelada;
+CC-e registrada;
+Numeração inutilizada;
+Falha técnica;
+Necessita intervenção;
+Arquivada.
+
+Definir transições permitidas e impedir alterações incompatíveis com o estado atual.
+
+11. Modelo mínimo de dados
+
+Propor entidades para:
+
+Empresa;
+Estabelecimento;
+Usuário;
+Perfil;
+Certificado digital;
+Ambiente;
+Série;
+Numeração;
+Cliente;
+Fornecedor;
+Transportador;
+Produto;
+NCM;
+CFOP;
+CST;
+CSOSN;
+CEST;
+Regra fiscal;
+Operação fiscal;
+NF-e;
+Item da NF-e;
+Tributo do item;
+Total da NF-e;
+Transporte;
+Volume;
+Pagamento;
+Evento fiscal;
+Lote;
+Protocolo;
+Rejeição;
+XML;
+DANFE;
+Log de integração;
+Auditoria;
+Fila;
+Tentativa de transmissão;
+Configuração de contingência;
+Versão de schema;
+Nota Técnica;
+Regra de vigência.
+12. Critérios de aceite
+
+A solução somente deve ser considerada concluída quando:
+
+Gerar NF-e 4.00 válida conforme os schemas vigentes;
+Assinar digitalmente o XML;
+Transmitir em homologação e produção;
+Diferenciar corretamente os ambientes;
+Suportar certificados A1 e A3, conforme infraestrutura adotada;
+Consultar status da SEFAZ;
+Processar lotes e recibos;
+Tratar timeouts e respostas desconhecidas sem gerar duplicidade;
+Armazenar XML, protocolo, retorno e auditoria;
+Gerar DANFE;
+Executar cancelamento;
+Executar CC-e;
+Executar inutilização;
+Suportar manifestação do destinatário;
+Suportar contingência aplicável;
+Possuir fila de reenvio;
+Possuir controle de numeração;
+Possuir motor tributário parametrizável;
+Validar itens e totais;
+Integrar os dados cadastrais já existentes no ERP;
+Utilizar listas de seleção com código e descrição;
+Enviar somente os códigos fiscais no XML;
+Integrar com SPED e demais módulos necessários;
+Possuir logs e auditoria completos;
+Possuir testes automatizados;
+Possuir simulação de rejeições;
+Possuir monitoramento e alertas;
+Permitir atualização das regras fiscais;
+Proteger certificados, XMLs e dados pessoais;
+Documentar limitações, premissas e fontes normativas utilizadas.
+13. Entregáveis esperados
+
+Produza os seguintes entregáveis:
+
+Documento de requisitos funcionais;
+Documento de requisitos não funcionais;
+Arquitetura da solução;
+Diagrama de componentes;
+Diagrama de sequência da emissão;
+Diagrama de sequência de eventos;
+Modelo de dados;
+Máquina de estados da NF-e;
+Especificação do motor tributário;
+Especificação da integração SOAP;
+Estratégia de certificados digitais;
+Estratégia de contingência;
+Estratégia de filas e reprocessamento;
+Estratégia de armazenamento e auditoria;
+Plano de segurança;
+Plano de testes;
+Catálogo de rejeições;
+Plano de observabilidade;
+Plano de implantação;
+Plano de atualização de schemas e Notas Técnicas;
+Backlog priorizado;
+Critérios de aceite;
+Exemplos de payloads e XMLs fictícios;
+Documentação das decisões técnicas;
+Relação das fontes oficiais consultadas, com versão e data de validação.
+Orientação final
+
+A implementação deve tratar a NF-e como um processo fiscal crítico, e não apenas como uma tela de emissão. O sistema deve preservar a integridade do documento, garantir rastreabilidade ponta a ponta, impedir inconsistências entre dados comerciais e fiscais, permitir atualização normativa e oferecer ao usuário uma experiência simples, orientada e segura.
