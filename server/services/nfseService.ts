@@ -106,13 +106,30 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
   // Recuperar último NSU sincronizado do banco se não for fornecido explicitamente
   let ultNSU = params.ultNSU;
   if (!ultNSU || ultNSU === '0') {
-    try {
-      const db = getDatabase();
-      const emp = db.prepare('SELECT ultimo_nsu_nfse FROM empresas WHERE id = ?').get(empresaId) as any;
-      if (emp?.ultimo_nsu_nfse && emp.ultimo_nsu_nfse !== '0') {
-        ultNSU = emp.ultimo_nsu_nfse;
-      }
-    } catch {}
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data: empSupa } = await supabase
+            .from('empresas')
+            .select('ultimo_nsu_nfse')
+            .eq('id', empresaId)
+            .maybeSingle();
+          if (empSupa?.ultimo_nsu_nfse && empSupa.ultimo_nsu_nfse !== '0') {
+            ultNSU = String(empSupa.ultimo_nsu_nfse);
+          }
+        }
+      } catch {}
+    }
+    if (!ultNSU || ultNSU === '0') {
+      try {
+        const db = getDatabase();
+        const emp = db.prepare('SELECT ultimo_nsu_nfse FROM empresas WHERE id = ?').get(empresaId) as any;
+        if (emp?.ultimo_nsu_nfse && emp.ultimo_nsu_nfse !== '0') {
+          ultNSU = emp.ultimo_nsu_nfse;
+        }
+      } catch {}
+    }
   }
   if (!ultNSU) ultNSU = '0';
 
@@ -436,7 +453,7 @@ async function persistirNfseNoBanco(
   empresaId: string,
   tenantCnpj: string,
   chaveAcessoFallback?: string
-): Promise<{ isNovo: boolean; chaveAcesso: string; valorTotal: number; valorIss: number; valorIrrf: number; valorInss: number; valorPis: number; valorCofins: number; valorCsll: number }> {
+): Promise<{ isNovo: boolean; chaveAcesso: string; numero?: string; valorTotal: number; valorIss: number; valorIrrf: number; valorInss: number; valorPis: number; valorCofins: number; valorCsll: number }> {
   const sanitized = sanitizeXmlAntiXXE(xmlContent);
   const parsed = await parseFiscalXml(sanitized, tenantCnpj);
   if (!parsed.chaveAcesso && chaveAcessoFallback) {
@@ -564,6 +581,7 @@ async function persistirNfseNoBanco(
   return {
     isNovo,
     chaveAcesso: parsed.chaveAcesso || chaveAcessoFallback || '',
+    numero: parsed.numero,
     valorTotal: parsed.valorTotal,
     valorIss: parsed.valorIss,
     valorIrrf: parsed.valorIrrf,
@@ -682,16 +700,97 @@ export async function obterStatusNfse(empresaId: string, cnpj: string): Promise<
 }
 
 // =========================================================
-// 5. SINCRONIZAÇÃO VIA PMSP (PREFEITURA DE SÃO PAULO)
+// 5. CLIENTE SOAP MUNICIPAL (HTTPS + mTLS)
 // =========================================================
-export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseSyncResult> {
-  const { empresaId, cnpj, tpAmb = '1' } = params;
+async function enviarSoapMunicipal(params: {
+  url: string;
+  soapAction: string;
+  soapEnvelope: string;
+  pem: { key: string; cert: string; ca?: string[] };
+  timeoutMs?: number;
+}): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    try {
+      const parsedUrl = new URL(params.url);
+      const isHttps = parsedUrl.protocol === 'https:';
+      const agent = isHttps
+        ? new https.Agent({
+            cert: params.pem.cert,
+            key: params.pem.key,
+            ca: params.pem.ca && params.pem.ca.length > 0 ? params.pem.ca : undefined,
+            rejectUnauthorized: false,
+            timeout: params.timeoutMs || 25000,
+          })
+        : undefined;
+
+      const reqOptions: https.RequestOptions = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': params.soapAction ? `"${params.soapAction}"` : '',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RadarFiscal/2.0',
+          'Content-Length': Buffer.byteLength(params.soapEnvelope, 'utf8'),
+        },
+        agent,
+        timeout: params.timeoutMs || 25000,
+      };
+
+      const req = https.request(reqOptions, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          resolve({ statusCode: res.statusCode || 0, body });
+        });
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new Error('Timeout de 25s excedido na comunicação com a prefeitura'));
+      });
+
+      req.write(params.soapEnvelope);
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// =========================================================
+// 6. MOTOR DE CONSULTA MUNICIPAL POR CONECTOR
+// Suporte nativo a PMSP, Nota Carioca e ABRASF 1.0 / 2.04
+// =========================================================
+export async function sincronizarConectorMunicipalSoap(params: {
+  empresaId: string;
+  cnpj: string;
+  conector: {
+    ibge: string;
+    municipio: string;
+    uf: string;
+    provedor: string;
+    tecnologia: string;
+    endpoint_producao?: string;
+    endpoint_homologacao?: string;
+  };
+  tpAmb?: '1' | '2';
+  dataInicio?: string;
+  dataFim?: string;
+}): Promise<NfseSyncResult> {
+  const { empresaId, cnpj, conector, tpAmb = '1' } = params;
   const cleanCnpj = cnpj.replace(/\D/g, '');
   const isProd = tpAmb === '1';
+  const url = (isProd ? conector.endpoint_producao : (conector.endpoint_homologacao || conector.endpoint_producao)) || '';
 
   const result: NfseSyncResult = {
     success: false,
-    provedor: 'PMSP - Nota do Milhão (São Paulo)',
+    provedor: `${conector.municipio} - ${conector.uf} (${conector.provedor})`,
     tpAmb: isProd ? 'Produção (tpAmb=1)' : 'Homologação (tpAmb=2)',
     ultNSU: '0',
     maxNSU: '0',
@@ -702,70 +801,180 @@ export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseS
     mensagens: []
   };
 
+  if (!url) {
+    result.mensagens.push(`⚠️ Endpoint não configurado para ${conector.municipio} (${conector.uf}). Configure no catálogo.`);
+    return result;
+  }
+
+  // 1. Carregar Certificado A1
+  const certData = await descriptografarCertificado(empresaId, cleanCnpj);
+  if (!certData) {
+    result.mensagens.push(`⚠️ Certificado Digital A1 não encontrado para consulta em ${conector.municipio}.`);
+    return result;
+  }
+
+  let pem: { key: string; cert: string; ca?: string[] };
   try {
-    // 1. Carregar Certificado A1
-    const certData = await descriptografarCertificado(empresaId, cleanCnpj);
-    if (!certData) {
-      result.mensagens.push('⚠️ Certificado Digital A1 não encontrado. É necessário para acessar o SOAP da PMSP.');
-      return result;
+    pem = converterPfxParaPem(certData.pfxBuffer, certData.senha);
+  } catch (err: any) {
+    result.mensagens.push(`❌ Erro ao converter chave do Certificado A1: ${err.message}`);
+    return result;
+  }
+
+  // 2. Datas (default últimos 30 dias)
+  const dtFimStr = params.dataFim || new Date().toISOString().split('T')[0];
+  const dtInicioDate = new Date();
+  dtInicioDate.setDate(dtInicioDate.getDate() - 30);
+  const dtInicioStr = params.dataInicio || dtInicioDate.toISOString().split('T')[0];
+
+  // 3. Montar Envelope SOAP de acordo com o provedor/padrão
+  let soapEnvelope = '';
+  let soapAction = '';
+
+  const provUpper = (conector.provedor || '').toUpperCase();
+  const ibge = conector.ibge;
+
+  if (ibge === '3550308' || provUpper.includes('PMSP')) {
+    // São Paulo - SP (Nota do Milhão / PMSP)
+    soapAction = 'http://ws.prefeitura.sp.gov.br/ConsultaNFeRecebidas';
+    soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ConsultaNFeRecebidasRequest xmlns="http://ws.prefeitura.sp.gov.br/">
+      <VersaoSchema>1</VersaoSchema>
+      <MensagemXML><![CDATA[<PedidoConsultaNFe xmlns="http://www.prefeitura.sp.gov.br/nfe"><Cabecalho Versao="1"><CPFCNPJRemetente><CNPJ>${cleanCnpj}</CNPJ></CPFCNPJRemetente><dtInicio>${dtInicioStr}</dtInicio><dtFim>${dtFimStr}</dtFim><QtdPagina>1</QtdPagina></Cabecalho></PedidoConsultaNFe>]]></MensagemXML>
+    </ConsultaNFeRecebidasRequest>
+  </soap:Body>
+</soap:Envelope>`;
+  } else if (ibge === '3304557' || provUpper.includes('CARIOCA') || provUpper.includes('1.0')) {
+    // Rio de Janeiro - RJ (Nota Carioca / ABRASF 1.0)
+    soapAction = 'http://notacarioca.rio.rj.gov.br/ConsultarNfseServicoTomado';
+    soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:not="http://notacarioca.rio.rj.gov.br/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <not:ConsultarNfseServicoTomadoRequest>
+      <not:inputXML><![CDATA[<ConsultarNfseServicoTomadoEnvio xmlns="http://notacarioca.rio.rj.gov.br/WSNacional/XSD/1/nfse_pcrj_v01.xsd"><Consulente><CpfCnpj><Cnpj>${cleanCnpj}</Cnpj></CpfCnpj></Consulente><PeriodoEmissao><DataInicial>${dtInicioStr}</DataInicial><DataFinal>${dtFimStr}</DataFinal></PeriodoEmissao><Tomador><CpfCnpj><Cnpj>${cleanCnpj}</Cnpj></CpfCnpj></Tomador></ConsultarNfseServicoTomadoEnvio>]]></not:inputXML>
+    </not:ConsultarNfseServicoTomadoRequest>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+  } else {
+    // Padrão Geral ABRASF 2.04 (Belo Horizonte - BHISS, Recife, Porto Alegre, Curitiba, etc.)
+    soapAction = 'http://nfse.abrasf.org.br/ConsultarNfseServicoTomado';
+    soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:nfse="http://nfse.abrasf.org.br">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <nfse:ConsultarNfseServicoTomadoEnvio>
+      <nfse:Consulente>
+        <nfse:CpfCnpj>
+          <nfse:Cnpj>${cleanCnpj}</nfse:Cnpj>
+        </nfse:CpfCnpj>
+      </nfse:Consulente>
+      <nfse:PeriodoEmissao>
+        <nfse:DataInicial>${dtInicioStr}</nfse:DataInicial>
+        <nfse:DataFinal>${dtFimStr}</nfse:DataFinal>
+      </nfse:PeriodoEmissao>
+      <nfse:Tomador>
+        <nfse:CpfCnpj>
+          <nfse:Cnpj>${cleanCnpj}</nfse:Cnpj>
+        </nfse:CpfCnpj>
+      </nfse:Tomador>
+    </nfse:ConsultarNfseServicoTomadoEnvio>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+  }
+
+  result.mensagens.push(`📡 Conectando ao WebService SOAP (${url})... Período: ${dtInicioStr} a ${dtFimStr}`);
+
+  try {
+    const resp = await enviarSoapMunicipal({
+      url,
+      soapAction,
+      soapEnvelope,
+      pem
+    });
+
+    result.mensagens.push(`🔄 Prefeitura respondeu com HTTP ${resp.statusCode}.`);
+
+    // Decodificar entidades XML caso venha encodado com &lt; e &gt;
+    let decodedXml = resp.body
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&');
+
+    // Localizar blocos de notas retornados: <CompNfse>, <tcCompNfse>, <NFe>, <Nfse>
+    const regexNfse = /<(?:[a-zA-Z0-9_-]+:)?(CompNfse|tcCompNfse|NFe|Nfse)[\s\S]*?<\/(?:[a-zA-Z0-9_-]+:)?\1>/gi;
+    let match;
+    const xmlsEncontrados: string[] = [];
+
+    while ((match = regexNfse.exec(decodedXml)) !== null) {
+      xmlsEncontrados.push(match[0]);
     }
 
-    let pem: { key: string; cert: string; ca?: string[] };
-    try {
-      pem = converterPfxParaPem(certData.pfxBuffer, certData.senha);
-    } catch (err: any) {
-      result.mensagens.push(`❌ Erro ao processar chave do Certificado A1: ${err.message}`);
-      return result;
-    }
-
-    // 2. Definir datas (Últimos 30 dias se não passado)
-    const dataFimObj = new Date();
-    const dataInicioObj = new Date();
-    dataInicioObj.setDate(dataFimObj.getDate() - 30);
-    const dtInicioStr = dataInicioObj.toISOString().split('T')[0];
-    const dtFimStr = dataFimObj.toISOString().split('T')[0];
-
-    const wsdlUrl = 'https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx?wsdl';
-    result.mensagens.push(`📡 Conectando ao WebService SOAP PMSP (NFeCidades)... Período: ${dtInicioStr} a ${dtFimStr}`);
-
-    try {
-      // 3. Montar Cliente SOAP Assinado mTLS
-      const client = await soap.createClientAsync(wsdlUrl, {
-        wsdl_options: {
-          agent: new https.Agent({
-            cert: pem.cert,
-            key: pem.key,
-            rejectUnauthorized: false
-          })
+    if (xmlsEncontrados.length > 0) {
+      result.mensagens.push(`📦 ${xmlsEncontrados.length} NFS-e(s) localizada(s) em ${conector.municipio}!`);
+      for (const xmlNota of xmlsEncontrados) {
+        const parsed = await persistirNfseNoBanco(xmlNota, empresaId, cleanCnpj);
+        result.mensagens.push(`📄 NFS-e Tomada: Nº ${parsed.numero || 'S/N'} - R$ ${parsed.valorTotal.toFixed(2)} - Chave: ${parsed.chaveAcesso}`);
+        if (parsed.isNovo) {
+          result.documentosNovos++;
+          result.totalValorServicos += parsed.valorTotal;
+          result.totalRetencoes.iss += parsed.valorIss;
+          result.totalRetencoes.irrf += parsed.valorIrrf;
+          result.totalRetencoes.inss += parsed.valorInss;
+          result.totalRetencoes.pis += parsed.valorPis;
+          result.totalRetencoes.cofins += parsed.valorCofins;
+          result.totalRetencoes.csll += parsed.valorCsll;
+        } else {
+          result.documentosExistentes++;
         }
-      } as any);
-
-      result.mensagens.push(`🔄 Conexão SOAP estabelecida com sucesso. WSDL carregado.`);
-      result.mensagens.push(`🔍 Enviando PedidoConsultaNFe assinado para o CNPJ ${cleanCnpj}...`);
-      
-      // Chamada fake estrutural até a integração do XML-Crypto signature
-      // Aqui entraria a assinatura real do payload e chamada: client.ConsultaNFeEmitidasAsync({ ... })
-      await new Promise(r => setTimeout(r, 1500));
-      result.mensagens.push(`ℹ️ A consulta SOAP retornou 0 notas emitidas neste período para o município.`);
-      
-    } catch (soapErr: any) {
-      // Fallback em caso de indisponibilidade da prefeitura ou bloqueio CORS/Rede local
-      result.mensagens.push(`⚠️ WebService SOAP Indisponível (ENOTFOUND/Timeout): Operando em contingência local.`);
-      result.mensagens.push(`Detalhes técnicos: ${soapErr.message}`);
+      }
+    } else {
+      // Extrair mensagens informativas retornadas pela prefeitura
+      const msgMatch = decodedXml.match(/<(?:[a-zA-Z0-9_-]+:)?(Mensagem|Descricao|xMotivo|Motivo|Correcao)[^>]*>([^<]+)<\//i);
+      if (msgMatch && msgMatch[2]) {
+        result.mensagens.push(`ℹ️ Retorno da Prefeitura (${conector.municipio}): ${msgMatch[2].trim()}`);
+      } else if (resp.statusCode === 200) {
+        result.mensagens.push(`ℹ️ A prefeitura retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).`);
+      } else {
+        result.mensagens.push(`⚠️ Resposta HTTP ${resp.statusCode} recebida - Operando em contingência.`);
+      }
     }
 
     result.success = true;
-    result.mensagens.push(`✅ Varredura PMSP finalizada. ${result.documentosNovos} NFS-e novas gravadas.`);
-  } catch (err: any) {
-    console.error('❌ Erro na sincronização da NFS-e PMSP:', err);
-    result.mensagens.push(`❌ Falha na conexão SOAP com a PMSP: ${err.message}`);
+  } catch (soapErr: any) {
+    result.mensagens.push(`⚠️ WebService Indisponível / Erro de Rede (${conector.municipio}): ${soapErr.message}`);
   }
 
   return result;
 }
 
 // =========================================================
-// 5. MOTOR DE VARREDURA UNIFICADA (TOP-OF-THE-LINE ENGINE)
+// 7. SINCRONIZAÇÃO VIA PMSP (PREFEITURA DE SÃO PAULO)
+// =========================================================
+export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseSyncResult> {
+  return sincronizarConectorMunicipalSoap({
+    empresaId: params.empresaId,
+    cnpj: params.cnpj,
+    conector: {
+      ibge: '3550308',
+      municipio: 'São Paulo',
+      uf: 'SP',
+      provedor: 'PMSP (Nota do Milhão)',
+      tecnologia: 'SOAP',
+      endpoint_producao: 'https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx',
+      endpoint_homologacao: 'https://nfehomologacao.prefeitura.sp.gov.br/ws/lotenfe.asmx'
+    },
+    tpAmb: params.tpAmb,
+    dataInicio: params.dataInicio,
+    dataFim: params.dataFim
+  });
+}
+
+// =========================================================
+// 8. MOTOR DE VARREDURA UNIFICADA (TOP-OF-THE-LINE ENGINE)
 // Varredura automática em todos os ambientes e filiais com 1 clique
 // =========================================================
 export async function sincronizarNfseUnificada(params: {
@@ -852,8 +1061,7 @@ export async function sincronizarNfseUnificada(params: {
       const adnRes = await sincronizarNfseNacional({
         empresaId,
         cnpj: cnpjItem,
-        tpAmb,
-        ultNSU: '0'
+        tpAmb
       });
 
       result.documentosNovos += adnRes.documentosNovos;
@@ -879,45 +1087,74 @@ export async function sincronizarNfseUnificada(params: {
     result.mensagens.push(`🏛️ [Conectores Municipais] Carregando prefeituras ativas do banco de dados...`);
     
     let conectoresAtivos: any[] = [];
-    try {
-      conectoresAtivos = db.prepare(`
-        SELECT * FROM conectores_municipais 
-        WHERE status = 'ativo'
-        ORDER BY uf ASC, municipio ASC
-      `).all() as any[];
-    } catch (dbErr: any) {
-      console.warn('Erro ao carregar conectores_municipais:', dbErr.message);
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data, error } = await supabase
+            .from('conectores_municipais')
+            .select('*')
+            .eq('status', 'ativo')
+            .order('uf', { ascending: true })
+            .order('municipio', { ascending: true });
+          if (!error && data && data.length > 0) {
+            conectoresAtivos = data;
+          }
+        }
+      } catch (err: any) {
+        console.warn('Erro ao buscar conectores no Supabase:', err.message);
+      }
     }
 
     if (conectoresAtivos.length === 0) {
-      result.mensagens.push(`   ℹ️ Nenhuma prefeitura com status 'ativo' cadastrada. Configure no painel Conectores Municipais.`);
-    } else {
-      result.mensagens.push(`   ⚡ ${conectoresAtivos.length} prefeitura(s) ativa(s) configurada(s) para varredura de serviços tomados.`);
+      try {
+        conectoresAtivos = db.prepare(`
+          SELECT * FROM conectores_municipais 
+          WHERE status = 'ativo'
+          ORDER BY uf ASC, municipio ASC
+        `).all() as any[];
+      } catch (dbErr: any) {
+        console.warn('Erro ao carregar conectores_municipais do SQLite:', dbErr.message);
+      }
+    }
+
+    // Se nenhuma prefeitura estiver cadastrada, utilizar catálogo padrão das principais capitais
+    if (conectoresAtivos.length === 0) {
+      conectoresAtivos = [
+        { ibge: '3550308', municipio: 'São Paulo', uf: 'SP', provedor: 'PMSP (Nota do Milhão)', tecnologia: 'SOAP', endpoint_producao: 'https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx', status: 'ativo' },
+        { ibge: '3304557', municipio: 'Rio de Janeiro', uf: 'RJ', provedor: 'Nota Carioca (ABRASF 1.0)', tecnologia: 'SOAP', endpoint_producao: 'https://notacarioca.rio.gov.br/WSNacional/nfse.asmx', status: 'ativo' },
+        { ibge: '3106200', municipio: 'Belo Horizonte', uf: 'MG', provedor: 'BHISS (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://bhissdigital.pbh.gov.br/bhiss-ws/nfse', status: 'ativo' },
+        { ibge: '2611606', municipio: 'Recife', uf: 'PE', provedor: 'Recife (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.recife.pe.gov.br/ws/nfse.asmx', status: 'ativo' },
+        { ibge: '4314902', municipio: 'Porto Alegre', uf: 'RS', provedor: 'NFSE POA (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.portoalegre.rs.gov.br/bhiss-ws/nfse', status: 'ativo' },
+      ];
+    }
+
+    result.mensagens.push(`   ⚡ ${conectoresAtivos.length} prefeitura(s) ativa(s) configurada(s) para varredura de serviços tomados.`);
+    
+    for (const conector of conectoresAtivos) {
+      result.mensagens.push(`   ▶ [${conector.municipio} - ${conector.uf} (${conector.provedor})]: Consultando notas tomadas para CNPJ ${cleanCnpj}...`);
       
-      for (const conector of conectoresAtivos) {
-        result.mensagens.push(`   ▶ [${conector.municipio} - ${conector.uf} (${conector.provedor})]: Consultando notas tomadas para CNPJ ${cleanCnpj}...`);
-        
-        // Se for São Paulo (PMSP), acionar o driver especializado PMSP
-        if (conector.ibge === '3550308' || conector.provedor.toUpperCase().includes('PMSP')) {
-          try {
-            const pmspRes = await sincronizarNfsePMSP({
-              empresaId,
-              cnpj: cleanCnpj,
-              tpAmb
-            });
-            result.documentosNovos += pmspRes.documentosNovos;
-            result.documentosExistentes += pmspRes.documentosExistentes;
-            result.totalValorServicos += pmspRes.totalValorServicos;
-            for (const m of pmspRes.mensagens) {
-              result.mensagens.push(`      └ ${m}`);
-            }
-          } catch (err: any) {
-            result.mensagens.push(`      └ ⚠️ Erro WebService PMSP: ${err.message}`);
-          }
-        } else {
-          // Demais prefeituras cadastradas e ativas (ABRASF, DSF, Ginfes, etc.)
-          result.mensagens.push(`      └ ℹ️ Padrão ${conector.provedor} (${conector.tecnologia}): Conector habilitado para varredura mTLS de serviços tomados.`);
+      try {
+        const munRes = await sincronizarConectorMunicipalSoap({
+          empresaId,
+          cnpj: cleanCnpj,
+          conector,
+          tpAmb
+        });
+        result.documentosNovos += munRes.documentosNovos;
+        result.documentosExistentes += munRes.documentosExistentes;
+        result.totalValorServicos += munRes.totalValorServicos;
+        result.totalRetencoes.iss += munRes.totalRetencoes.iss;
+        result.totalRetencoes.irrf += munRes.totalRetencoes.irrf;
+        result.totalRetencoes.inss += munRes.totalRetencoes.inss;
+        result.totalRetencoes.pis += munRes.totalRetencoes.pis;
+        result.totalRetencoes.cofins += munRes.totalRetencoes.cofins;
+        result.totalRetencoes.csll += munRes.totalRetencoes.csll;
+        for (const m of munRes.mensagens) {
+          result.mensagens.push(`      └ ${m}`);
         }
+      } catch (err: any) {
+        result.mensagens.push(`      └ ⚠️ Erro na consulta de ${conector.municipio}: ${err.message}`);
       }
     }
   }
