@@ -227,42 +227,82 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
       req.end();
     });
 
-    // Processamento do lote de retorno com suporte a todas as variações de schema da API REST ADN
-    let xmlsParaProcessar: string[] = [];
+    // Processamento do lote de retorno com suporte a todas as variações de schema da API REST ADN (Receita Federal / Serpro)
+    let xmlsParaProcessar: Array<{ xml: string; chave?: string; nsu?: string }> = [];
 
-    const extrairXmlDeItem = (item: any): string | null => {
+    const extrairXmlDeItem = (item: any): { xml: string; chave?: string; nsu?: string } | null => {
       if (!item) return null;
+      const chave = item.ChaveAcesso || item.chaveAcesso || item.chave || item.Chave || '';
+      const nsu = item.NSU ?? item.nsu ?? item.Nsu;
+
       if (typeof item === 'string') {
-        if (item.trim().startsWith('<')) return item;
+        if (item.trim().startsWith('<')) return { xml: item, chave, nsu: nsu ? String(nsu) : undefined };
         try {
           const buf = Buffer.from(item, 'base64');
           try {
-            return zlib.gunzipSync(buf).toString('utf-8');
+            return { xml: zlib.gunzipSync(buf).toString('utf-8'), chave, nsu: nsu ? String(nsu) : undefined };
           } catch {
-            return buf.toString('utf-8');
+            return { xml: buf.toString('utf-8'), chave, nsu: nsu ? String(nsu) : undefined };
           }
         } catch {
           return null;
         }
       }
 
-      const b64 = item.docZip || item.DocZip || item.xmlGzip || item.xmlGZip || item.xmlGZipB64 || 
-                  item.XmlGZipB64 || item.dpsXmlGZipB64 || item.arquivoXml || item.conteudo;
+      // 1. Priorizar chaves conhecidas do ADN Serpro e outros padrões
+      let b64: any =
+        item.ArquivoXml ||
+        item.arquivoXml ||
+        item.ArquivoXML ||
+        item.arquivo_xml ||
+        item.conteudoXml ||
+        item.ConteudoXml ||
+        item.xml ||
+        item.XML ||
+        item.xmlRaw ||
+        item.docZip ||
+        item.docXML ||
+        item.xmlGzip;
+
+      // 2. Se não encontrou nas chaves padrão, varrer heurística
+      if (!b64) {
+        for (const k of Object.keys(item)) {
+          const kLower = k.toLowerCase();
+          if (
+            kLower.includes('xml') ||
+            kLower.includes('zip') ||
+            kLower.includes('conteudo') ||
+            kLower.includes('arquivo') ||
+            kLower.includes('dps')
+          ) {
+            if (typeof item[k] === 'string' && item[k].trim().length > 20) {
+              b64 = item[k];
+              break;
+            }
+          }
+        }
+      }
+
       if (b64 && typeof b64 === 'string') {
+        if (b64.trim().startsWith('<')) {
+          return { xml: b64, chave, nsu: nsu ? String(nsu) : undefined };
+        }
         try {
           const buffer = Buffer.from(b64, 'base64');
           try {
-            return zlib.gunzipSync(buffer).toString('utf-8');
+            const decompressed = zlib.gunzipSync(buffer).toString('utf-8');
+            return { xml: decompressed, chave, nsu: nsu ? String(nsu) : undefined };
           } catch {
-            return buffer.toString('utf-8');
+            return { xml: buffer.toString('utf-8'), chave, nsu: nsu ? String(nsu) : undefined };
           }
         } catch (e: any) {
           result.mensagens.push(`⚠️ Falha ao decodificar Base64/GZIP de documento: ${e.message}`);
         }
       }
 
-      if (item.xml || item.xmlRaw || item.conteudoXml) {
-        return item.xml || item.xmlRaw || item.conteudoXml;
+      if (item.xml || item.xmlRaw || item.conteudoXml || item.Xml || item.XML) {
+        const directXml = item.xml || item.xmlRaw || item.conteudoXml || item.Xml || item.XML;
+        return { xml: directXml, chave, nsu: nsu ? String(nsu) : undefined };
       }
       return null;
     };
@@ -270,45 +310,49 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
     // 1. Verificar se a resposta é diretamente um array
     if (Array.isArray(responseData)) {
       for (const item of responseData) {
-        const xml = extrairXmlDeItem(item);
-        if (xml) xmlsParaProcessar.push(xml);
+        const docInfo = extrairXmlDeItem(item);
+        if (docInfo) xmlsParaProcessar.push(docInfo);
       }
     } else if (typeof responseData === 'object' && responseData !== null) {
-      // 2. Verificar se a própria raiz contém um documento
-      const xmlRaiz = extrairXmlDeItem(responseData);
-      if (xmlRaiz) {
-        xmlsParaProcessar.push(xmlRaiz);
-        result.mensagens.push(`📄 Documento NFS-e recebido na raiz e decodificado com sucesso.`);
-      }
-
-      // 3. Verificar listas sob propriedades conhecidas
-      const possiveisListas = [
-        responseData.loteDoc,
-        responseData.LoteDoc,
-        responseData.documentos,
-        responseData.Documentos,
-        responseData.listaDFe,
-        responseData.ListaDFe,
-        responseData.dfe,
-        responseData.DFes,
-        responseData.itens,
-        responseData.Itens
-      ];
-
-      for (const lista of possiveisListas) {
-        if (Array.isArray(lista)) {
-          for (const item of lista) {
-            const xml = extrairXmlDeItem(item);
-            if (xml) xmlsParaProcessar.push(xml);
+      // 2. Extrair listas em QUALQUER propriedade do objeto (LoteDFe, loteDFe, documentos, itens, etc.)
+      for (const key of Object.keys(responseData)) {
+        const val = responseData[key];
+        if (Array.isArray(val) && val.length > 0) {
+          result.mensagens.push(`📦 Lote de documentos detectado sob '${key}': ${val.length} item(ns).`);
+          for (const item of val) {
+            const docInfo = extrairXmlDeItem(item);
+            if (docInfo) {
+              xmlsParaProcessar.push(docInfo);
+              if (docInfo.nsu) {
+                const num = Number(docInfo.nsu);
+                if (!isNaN(num)) {
+                  if (num > Number(result.ultNSU || 0)) result.ultNSU = String(num);
+                  if (num > Number(result.maxNSU || 0)) result.maxNSU = String(num);
+                }
+              }
+            }
           }
         }
       }
 
-      // Extrair NSU retornado
-      const returnedUlt = responseData.ultNSU ?? responseData.UltNSU ?? responseData.nsu ?? responseData.NSU;
+      // 3. Se não havia lista mas a raiz é um documento
+      if (xmlsParaProcessar.length === 0) {
+        const docRaiz = extrairXmlDeItem(responseData);
+        if (docRaiz) {
+          xmlsParaProcessar.push(docRaiz);
+          result.mensagens.push(`📄 Documento NFS-e recebido na raiz e decodificado com sucesso.`);
+        }
+      }
+
+      // 4. Extrair NSUs gerais retornados na raiz
+      const returnedUlt = responseData.ultNSU ?? responseData.UltNSU ?? responseData.ultimoNSU ?? responseData.UltimoNSU ?? responseData.nsu ?? responseData.NSU;
       const returnedMax = responseData.maxNSU ?? responseData.MaxNSU ?? responseData.maiorNSU ?? responseData.MaiorNSU;
-      if (returnedUlt !== undefined && returnedUlt !== null) result.ultNSU = String(returnedUlt);
-      if (returnedMax !== undefined && returnedMax !== null) result.maxNSU = String(returnedMax);
+      if (returnedUlt !== undefined && returnedUlt !== null && Number(returnedUlt) > Number(result.ultNSU || 0)) {
+        result.ultNSU = String(returnedUlt);
+      }
+      if (returnedMax !== undefined && returnedMax !== null && Number(returnedMax) > Number(result.maxNSU || 0)) {
+        result.maxNSU = String(returnedMax);
+      }
     }
 
     if (xmlsParaProcessar.length === 0 && !responseData.connError && !responseData.authError) {
@@ -324,8 +368,9 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
     }
 
     // Persistir os XMLs capturados
-    for (const xml of xmlsParaProcessar) {
-      const parsed = await persistirNfseNoBanco(xml, empresaId, cleanCnpj);
+    for (const doc of xmlsParaProcessar) {
+      const parsed = await persistirNfseNoBanco(doc.xml, empresaId, cleanCnpj, doc.chave);
+      result.mensagens.push(`📄 NFS-e processada: Chave ${parsed.chaveAcesso || doc.chave} (NSU ${doc.nsu || 'N/A'}) - R$ ${parsed.valorTotal.toFixed(2)}`);
       if (parsed.isNovo) {
         result.documentosNovos++;
         result.totalValorServicos += parsed.valorTotal;
@@ -345,11 +390,11 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
       `✅ Varredura ADN finalizada. ${result.documentosNovos} NFS-e novas gravadas, ${result.documentosExistentes} já existentes.`
     );
 
-    // Persistir checkpoint de NSU de NFS-e no banco de dados da empresa
+    // Persistir checkpoint de NSU de NFS-e no banco de dados da empresa (SQLite + Supabase)
     if (empresaId && !responseData.connError && !responseData.authError) {
+      const brasiliaNow = getBrasiliaTimestamp();
       try {
         const db = getDatabase();
-        const brasiliaNow = getBrasiliaTimestamp();
         db.prepare(`
           UPDATE empresas
           SET ultimo_nsu_nfse = ?, max_nsu_nfse = ?, updated_at = ?
@@ -357,7 +402,22 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
         `).run(result.ultNSU, result.maxNSU, brasiliaNow, empresaId);
         result.mensagens.push(`💾 Checkpoint salvo no banco: ultimo_nsu_nfse=${result.ultNSU}, max_nsu_nfse=${result.maxNSU}`);
       } catch (errDb: any) {
-        console.warn('Aviso ao persistir NSU de NFS-e no banco:', errDb.message);
+        console.warn('Aviso ao persistir NSU de NFS-e no banco local:', errDb.message);
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = getSupabaseAdmin();
+          if (supabase) {
+            await supabase.from('empresas').update({
+              ultimo_nsu_nfse: result.ultNSU,
+              max_nsu_nfse: result.maxNSU,
+              updated_at: brasiliaNow
+            }).eq('id', empresaId);
+          }
+        } catch (supaErr: any) {
+          console.warn('Aviso ao persistir NSU de NFS-e no Supabase:', supaErr?.message || supaErr);
+        }
       }
     }
   } catch (err: any) {
@@ -374,10 +434,17 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
 async function persistirNfseNoBanco(
   xmlContent: string,
   empresaId: string,
-  tenantCnpj: string
-): Promise<{ isNovo: boolean; valorTotal: number; valorIss: number; valorIrrf: number; valorInss: number; valorPis: number; valorCofins: number; valorCsll: number }> {
+  tenantCnpj: string,
+  chaveAcessoFallback?: string
+): Promise<{ isNovo: boolean; chaveAcesso: string; valorTotal: number; valorIss: number; valorIrrf: number; valorInss: number; valorPis: number; valorCofins: number; valorCsll: number }> {
   const sanitized = sanitizeXmlAntiXXE(xmlContent);
   const parsed = await parseFiscalXml(sanitized, tenantCnpj);
+  if (!parsed.chaveAcesso && chaveAcessoFallback) {
+    parsed.chaveAcesso = chaveAcessoFallback;
+  }
+  if (!parsed.chaveAcesso) {
+    parsed.chaveAcesso = `31062001${Date.now()}`.padEnd(50, '0');
+  }
   const brasiliaNow = getBrasiliaTimestamp();
 
   let isNovo = false;
@@ -496,6 +563,7 @@ async function persistirNfseNoBanco(
 
   return {
     isNovo,
+    chaveAcesso: parsed.chaveAcesso || chaveAcessoFallback || '',
     valorTotal: parsed.valorTotal,
     valorIss: parsed.valorIss,
     valorIrrf: parsed.valorIrrf,
