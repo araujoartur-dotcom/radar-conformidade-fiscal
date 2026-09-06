@@ -38,6 +38,19 @@ export interface NfseSyncParams {
   dataFim?: string;
 }
 
+export interface OcorrenciaConectorMunicipal {
+  ibge?: string;
+  municipio: string;
+  uf: string;
+  provedor: string;
+  tecnologia?: string;
+  status: 'sem_notas' | 'erro_500' | 'erro_rede_dns' | 'timeout' | 'erro_envelope' | 'autenticacao' | 'redirecionamento' | 'outro';
+  statusCode?: number;
+  mensagem: string;
+  detalheTecnico?: string;
+  acaoSugerida: string;
+}
+
 export interface NfseSyncResult {
   success: boolean;
   provedor: string;
@@ -57,6 +70,7 @@ export interface NfseSyncResult {
   };
   mensagens: string[];
   detalhes?: any;
+  prefeiturasSemCaptura?: OcorrenciaConectorMunicipal[];
 }
 
 export interface NfseStatusResumo {
@@ -1328,7 +1342,8 @@ export async function sincronizarNfseUnificada(params: {
     documentosExistentes: 0,
     totalValorServicos: 0,
     totalRetencoes: { iss: 0, irrf: 0, inss: 0, pis: 0, cofins: 0, csll: 0 },
-    mensagens: []
+    mensagens: [],
+    prefeiturasSemCaptura: []
   };
 
   // 1. Identificar dados da empresa ativa e de suas filiais vinculadas
@@ -1492,8 +1507,75 @@ export async function sincronizarNfseUnificada(params: {
         for (const m of munRes.mensagens) {
           result.mensagens.push(`      └ ${m}`);
         }
+
+        // Se não capturou nenhuma nota nova nem existente, registrar ocorrência
+        if (munRes.documentosNovos === 0 && munRes.documentosExistentes === 0 && result.prefeiturasSemCaptura) {
+          const rawMsgs = munRes.mensagens.join(' ');
+          let statusTipo: OcorrenciaConectorMunicipal['status'] = 'outro';
+          let acao = 'Verificar parâmetros no catálogo de Conectores Municipais';
+          let msgResumida = 'Nenhum documento retornado';
+
+          if (rawMsgs.includes('HTTP 200 (sem notas') || (rawMsgs.includes('HTTP 200') && !rawMsgs.includes('inválida'))) {
+            statusTipo = 'sem_notas';
+            msgResumida = 'HTTP 200: Nenhuma NFS-e tomada emitida no período pesquisado';
+            acao = 'Comunicação normal. Nenhuma nota tomada contra o CNPJ nos últimos 30 dias.';
+          } else if (rawMsgs.includes('nfseCabecMsg') || rawMsgs.includes('nfseDadosMsg') || rawMsgs.includes('inválida')) {
+            statusTipo = 'erro_envelope';
+            msgResumida = 'Envelope SOAP ou parâmetros nfseCabecMsg/nfseDadosMsg rejeitados';
+            acao = 'Ajustar formato do envelope SOAP do provedor';
+          } else if (rawMsgs.includes('ENOTFOUND') || rawMsgs.includes('getaddrinfo')) {
+            statusTipo = 'erro_rede_dns';
+            msgResumida = 'Host/Domínio não encontrado no DNS (ENOTFOUND)';
+            acao = 'Atualizar URL do endpoint no módulo Conectores Municipais';
+          } else if (rawMsgs.includes('Timeout') || rawMsgs.includes('ETIMEDOUT') || rawMsgs.includes('ESOCKETTIMEDOUT')) {
+            statusTipo = 'timeout';
+            msgResumida = 'Timeout de conexão excedido (> 25s)';
+            acao = 'Servidor municipal sobrecarregado ou bloqueando porta. Testar individualmente';
+          } else if (rawMsgs.includes('HTTP 500') || rawMsgs.includes('HTTP 502') || rawMsgs.includes('HTTP 503')) {
+            statusTipo = 'erro_500';
+            msgResumida = 'Erro interno ou indisponibilidade no webservice da prefeitura (HTTP 50x)';
+            acao = 'Instabilidade temporária da prefeitura ou layout XML rejeitado';
+          } else if (rawMsgs.includes('HTTP 401') || rawMsgs.includes('HTTP 403') || rawMsgs.includes('HTTP 405') || rawMsgs.includes('HTTP 406')) {
+            statusTipo = 'autenticacao';
+            msgResumida = 'Acesso não autorizado / Método HTTP rejeitado (40x)';
+            acao = 'Verificar método HTTP (POST/GET) ou credenciais de acesso municipal';
+          } else if (rawMsgs.includes('HTTP 301') || rawMsgs.includes('HTTP 302')) {
+            statusTipo = 'redirecionamento';
+            msgResumida = 'Redirecionamento HTTP (301/302)';
+            acao = 'Ajustar URL direta do WebService (remover redirecionamento)';
+          }
+
+          const detalheLinha = munRes.mensagens.find(m => m.includes('⚠️') || m.includes('ℹ️') || m.includes('Retorno')) || munRes.mensagens[munRes.mensagens.length - 1] || '';
+
+          result.prefeiturasSemCaptura.push({
+            ibge: conector.ibge,
+            municipio: conector.municipio,
+            uf: conector.uf,
+            provedor: conector.provedor,
+            tecnologia: conector.tecnologia || 'SOAP',
+            status: statusTipo,
+            mensagem: msgResumida,
+            detalheTecnico: detalheLinha,
+            acaoSugerida: acao
+          });
+        }
       } catch (err: any) {
         result.mensagens.push(`      └ ⚠️ Erro na consulta de ${conector.municipio}: ${err.message}`);
+        if (result.prefeiturasSemCaptura) {
+          const isDns = err.message.includes('ENOTFOUND') || err.message.includes('getaddrinfo');
+          const isTimeout = err.message.includes('Timeout') || err.message.includes('ETIMEDOUT');
+          result.prefeiturasSemCaptura.push({
+            ibge: conector.ibge,
+            municipio: conector.municipio,
+            uf: conector.uf,
+            provedor: conector.provedor,
+            tecnologia: conector.tecnologia || 'SOAP',
+            status: isDns ? 'erro_rede_dns' : isTimeout ? 'timeout' : 'erro_500',
+            mensagem: `Falha na requisição: ${err.message}`,
+            detalheTecnico: err.message,
+            acaoSugerida: isDns ? 'Validar URL de DNS no cadastro do conector' : 'Testar prefeitura individualmente'
+          });
+        }
       }
     }
   }
