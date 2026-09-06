@@ -4,20 +4,9 @@ import {
   Receipt,
   RefreshCw,
   ShieldCheck,
-  Building2,
   CheckCircle2,
-  AlertTriangle,
-  Globe,
-  Database,
-  ArrowRight,
-  Server,
   Zap,
-  Info,
-  DollarSign,
-  Scale,
-  FileCheck,
-  Sparkles,
-  Layers
+  Info
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
@@ -45,9 +34,6 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
   const [syncResult, setSyncResult] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedAmbiente, setSelectedAmbiente] = useState<'1' | '2'>(ambienteSefaz === 'producao' ? '1' : '2');
-  const [selectedConector, setSelectedConector] = useState<'unificado' | 'adn' | 'pmsp'>('unificado');
-  const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
-  const [ultNSUInput, setUltNSUInput] = useState<string>('0');
 
   const logsEndRef = React.useRef<HTMLDivElement>(null);
 
@@ -88,22 +74,14 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
     setIsSyncing(true);
     setSyncResult(null);
     addLog(`Iniciando varredura de NFS-e para ${empresaAtiva.razaoSocial} (${empresaAtiva.cnpjCompleto})...`);
-    addLog(`Ambiente selecionado: ${selectedAmbiente === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação/Testes (tpAmb=2)'}`);
-    
-    if (selectedConector === 'unificado') {
-      addLog(`⚡ Disparando Varredura Fiscal Completa (Ambiente Nacional ADN + Filiais + Prefeituras)...`);
-    } else if (selectedConector === 'pmsp') {
-      addLog(`Consultando Prefeitura de São Paulo (Nota do Milhão)...`);
-    } else {
-      addLog(`Consultando Ambiente de Dados Nacional (ADN) a partir do NSU ${ultNSUInput}...`);
-    }
+    addLog(`Ambiente: ${selectedAmbiente === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação/Testes (tpAmb=2)'}`);
+    addLog(`Executando varredura unificada (ADN Nacional + Filiais + Prefeituras)...`);
 
     try {
       const res = await post<any>('/nfse/sincronizar', {
         empresaId: empresaAtiva.id,
         tpAmb: selectedAmbiente,
-        ultNSU: ultNSUInput,
-        conector: selectedConector
+        conector: 'unificado'
       });
 
       if (res.ok && res.data) {
@@ -168,159 +146,49 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-6 overflow-y-auto space-y-5">
           
-          {/* Conectores & Status Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            
-            {/* Card 1: ADN Nacional */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-teal-800/40 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-teal-400 flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5" /> ADN Nacional (RFB)
-                </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              </div>
-              <div className="text-sm font-bold text-white">Ambiente de Dados Nacional</div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Distribuição DF-e via mTLS com Certificado A1. Captura serviços tomados e prestados de municípios conveniados e MEIs.
-              </p>
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>Protocolo: REST / Serpro</span>
-                <span className="text-emerald-400 font-bold">Conector Operacional</span>
-              </div>
-            </div>
-
-            {/* Card 2: PMSP São Paulo */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-400 flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5" /> PMSP (São Paulo)
-                </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              </div>
-              <div className="text-sm font-bold text-white">Nota do Milhão (TBFWeb)</div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Webservice SOAP dedicado da Capital de SP. Consulta notas de serviços tomados por prestadores paulistanos.
-              </p>
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>IBGE: 3550308</span>
-                <span className="text-cyan-400 font-bold">Conector Ativo</span>
-              </div>
-            </div>
-
-            {/* Card 3: Padrão ABRASF */}
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold tracking-wider text-indigo-400 flex items-center gap-1.5">
-                  <Server className="w-3.5 h-3.5" /> Rede ABRASF
-                </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              </div>
-              <div className="text-sm font-bold text-white">Nota Carioca & Capitais</div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Suporte ao padrão ABRASF (Rio de Janeiro, Belo Horizonte, Curitiba, Ginfes, Betha e rede conveniada).
-              </p>
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>Versões: 1.0, 2.0 e 2.04</span>
-                <span className="text-indigo-400 font-bold">Conector Ativo</span>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Action Bar — Varredura Fiscal Inteligente (Modo Topo de Linha) */}
-          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-teal-950/40 border border-teal-500/30 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
-            <div className="space-y-1 text-left w-full md:w-auto">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-black text-white flex items-center gap-2 tracking-tight">
-                  <Sparkles className="w-4 h-4 text-teal-400" />
-                  Varredura Fiscal Autônoma Unificada
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/30 font-bold uppercase tracking-wider">
-                  Tudo em 1 Clique
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Varre automaticamente o <b>Ambiente Nacional (ADN)</b> para a matriz e filiais sob o CNPJ Base, integrando <b>São Paulo e Prefeituras ativas</b>.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-              <button
-                onClick={() => setShowAdvanced(!showAdvanced)}
-                className="text-xs text-slate-400 hover:text-slate-200 underline cursor-pointer py-2 px-2 whitespace-nowrap"
+          {/* Barra Simples & Funcional: Seletor de Ambiente + Botão Executar */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-400 font-medium">Ambiente:</span>
+              <select
+                value={selectedAmbiente}
+                onChange={(e) => setSelectedAmbiente(e.target.value as '1' | '2')}
+                className="bg-slate-900 border border-slate-700 text-white font-medium rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-teal-500 cursor-pointer"
               >
-                {showAdvanced ? 'Ocultar Opções' : 'Opções Avançadas'}
-              </button>
+                <option value="1">Produção Oficial (tpAmb = 1)</option>
+                <option value="2">Homologação / Testes (tpAmb = 2)</option>
+              </select>
 
-              <button
-                onClick={handleSyncNfse}
-                disabled={isSyncing}
-                className={`px-6 py-3 rounded-xl font-bold text-xs flex items-center gap-2.5 shadow-xl transition-all cursor-pointer ${
-                  isSyncing
-                    ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
-                    : 'bg-gradient-to-r from-teal-500 via-emerald-500 to-cyan-500 hover:from-teal-400 hover:to-cyan-400 text-slate-950 font-black shadow-teal-500/20 hover:shadow-teal-500/40 hover:scale-[1.02]'
-                }`}
-              >
-                {isSyncing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-teal-400" />
-                    <span>Varrendo Webservices e Filiais...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4 fill-slate-950" />
-                    <span>Executar Varredura Inteligente</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 ml-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Certificado A1 Autenticado</span>
+              </div>
             </div>
-          </div>
 
-          {/* Opções Avançadas de Auditoria (Recolhidas por padrão) */}
-          {showAdvanced && (
-            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center gap-4 text-xs animate-in fade-in duration-150">
-              <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Modo Diagnóstico:</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Escopo:</span>
-                <select
-                  value={selectedConector}
-                  onChange={(e) => setSelectedConector(e.target.value as any)}
-                  className="bg-slate-900 border border-slate-700 text-teal-400 font-bold rounded-lg px-2.5 py-1 text-xs focus:outline-none"
-                >
-                  <option value="unificado">Unificado (Nacional ADN + Filiais + Prefeituras)</option>
-                  <option value="adn">Apenas ADN Nacional (RFB)</option>
-                  <option value="pmsp">Apenas PMSP (São Paulo)</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Ambiente:</span>
-                <select
-                  value={selectedAmbiente}
-                  onChange={(e) => setSelectedAmbiente(e.target.value as '1' | '2')}
-                  className="bg-slate-900 border border-slate-700 text-white font-bold rounded-lg px-2.5 py-1 text-xs focus:outline-none"
-                >
-                  <option value="1">Produção (tpAmb = 1)</option>
-                  <option value="2">Homologação (tpAmb = 2)</option>
-                </select>
-              </div>
-
-              {selectedConector === 'adn' && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400">NSU Inicial:</span>
-                  <input
-                    type="text"
-                    value={ultNSUInput}
-                    onChange={(e) => setUltNSUInput(e.target.value)}
-                    className="w-20 bg-slate-900 border border-slate-700 text-white font-mono rounded-lg px-2 py-1 text-xs text-center"
-                    placeholder="0"
-                  />
-                </div>
+            <button
+              onClick={handleSyncNfse}
+              disabled={isSyncing}
+              className={`px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+                isSyncing
+                  ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                  : 'bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold shadow-md shadow-teal-500/20'
+              }`}
+            >
+              {isSyncing ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                  <span>Executando...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 fill-slate-950" />
+                  <span>Executar</span>
+                </>
               )}
-            </div>
-          )}
+            </button>
+          </div>
 
           {/* Sync Result Summary */}
           {syncResult && (
