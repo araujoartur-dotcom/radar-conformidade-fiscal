@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS public.empresas (
     regime_tributario VARCHAR(50) NOT NULL DEFAULT 'Lucro Real',
     natureza_juridica_codigo VARCHAR(20) DEFAULT NULL,
     natureza_juridica_desc VARCHAR(255) DEFAULT NULL,
+    manifestar_ciencia_automatica BOOLEAN DEFAULT TRUE,
+    ultimo_nsu VARCHAR(30) DEFAULT '000000000000000',
+    max_nsu VARCHAR(30) DEFAULT '000000000000000',
+    ultimo_nsu_nfse VARCHAR(30) DEFAULT '0',
+    max_nsu_nfse VARCHAR(30) DEFAULT '0',
     status VARCHAR(20) NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo', 'suspenso', 'inativo')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -29,6 +34,30 @@ CREATE TABLE IF NOT EXISTS public.empresas (
 
 CREATE INDEX IF NOT EXISTS idx_empresas_cnpj_raiz ON public.empresas(cnpj_raiz);
 CREATE INDEX IF NOT EXISTS idx_empresas_uf ON public.empresas(uf);
+
+-- ============================================================
+-- 1.1 TABELA DE CONECTORES MUNICIPAIS (NFS-e Prefeituras)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.conectores_municipais (
+    id VARCHAR(60) PRIMARY KEY,
+    ibge VARCHAR(7) NOT NULL UNIQUE,
+    municipio VARCHAR(100) NOT NULL,
+    uf VARCHAR(2) NOT NULL,
+    provedor VARCHAR(100) NOT NULL,
+    tecnologia VARCHAR(10) NOT NULL DEFAULT 'SOAP',
+    endpoint_producao TEXT DEFAULT '',
+    endpoint_homologacao TEXT DEFAULT '',
+    tipo_autenticacao VARCHAR(30) NOT NULL DEFAULT 'certificado_a1',
+    token_api TEXT DEFAULT '',
+    usuario VARCHAR(100) DEFAULT '',
+    senha TEXT DEFAULT '',
+    status VARCHAR(30) NOT NULL DEFAULT 'ativo',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conectores_ibge ON public.conectores_municipais(ibge);
+CREATE INDEX IF NOT EXISTS idx_conectores_uf ON public.conectores_municipais(uf);
 
 -- ============================================================
 -- 2. TABELA DE USUÁRIOS (Sincronizado ou Custom)

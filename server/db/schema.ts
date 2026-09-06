@@ -367,6 +367,27 @@ export function initializeSchema(): void {
       ip_address            TEXT DEFAULT '',
       dados_extras          TEXT DEFAULT ''
     );
+
+    -- =========================================================
+    -- CONECTORES MUNICIPAIS (NFS-e PREFEITURAS)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS conectores_municipais (
+      id                    TEXT PRIMARY KEY,
+      ibge                  TEXT NOT NULL UNIQUE,
+      municipio             TEXT NOT NULL,
+      uf                    TEXT NOT NULL,
+      provedor              TEXT NOT NULL,
+      tecnologia            TEXT NOT NULL DEFAULT 'SOAP', -- SOAP | REST
+      endpoint_producao     TEXT NOT NULL DEFAULT '',
+      endpoint_homologacao  TEXT DEFAULT '',
+      tipo_autenticacao     TEXT NOT NULL DEFAULT 'certificado_a1', -- certificado_a1 | token_api | usuario_senha | certificado_token
+      token_api             TEXT DEFAULT '',
+      usuario               TEXT DEFAULT '',
+      senha                 TEXT DEFAULT '',
+      status                TEXT NOT NULL DEFAULT 'ativo', -- ativo | inativo | configuracao_pendente | erro_autenticacao
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // 2. Migração dinâmica segura: adicionar colunas ausentes
@@ -387,6 +408,8 @@ export function initializeSchema(): void {
   addColumnIfNotExists('empresas', 'manifestar_ciencia_automatica', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfNotExists('empresas', 'ultimo_nsu', 'TEXT NOT NULL DEFAULT "000000000000000"');
   addColumnIfNotExists('empresas', 'max_nsu', 'TEXT NOT NULL DEFAULT "000000000000000"');
+  addColumnIfNotExists('empresas', 'ultimo_nsu_nfse', 'TEXT NOT NULL DEFAULT "0"');
+  addColumnIfNotExists('empresas', 'max_nsu_nfse', 'TEXT NOT NULL DEFAULT "0"');
 
   // Migrações em usuarios
   addColumnIfNotExists('usuarios', 'empresa_ativa_id', 'TEXT DEFAULT NULL');
@@ -486,7 +509,40 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_eventos_chave_empresa ON eventos_transmitidos(chave_acesso, empresa_id);
     CREATE INDEX IF NOT EXISTS idx_eventos_doc_id ON eventos_transmitidos(documento_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_empresa ON audit_log(empresa_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_conectores_ibge ON conectores_municipais(ibge);
+    CREATE INDEX IF NOT EXISTS idx_conectores_uf ON conectores_municipais(uf);
   `);
+
+  // Seed automático de Conectores Municipais das principais prefeituras
+  try {
+    const countConectores = (db.prepare('SELECT COUNT(*) as total FROM conectores_municipais').get() as any)?.total || 0;
+    if (countConectores === 0) {
+      const initialConectores = [
+        { id: 'con-3550308', ibge: '3550308', municipio: 'São Paulo', uf: 'SP', provedor: 'PMSP (Nota do Milhão)', tecnologia: 'SOAP', endpoint_producao: 'https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx', endpoint_homologacao: 'https://nfehomologacao.prefeitura.sp.gov.br/ws/lotenfe.asmx', tipo_autenticacao: 'certificado_a1', status: 'ativo' },
+        { id: 'con-3304557', ibge: '3304557', municipio: 'Rio de Janeiro', uf: 'RJ', provedor: 'Nota Carioca (ABRASF 1.0)', tecnologia: 'SOAP', endpoint_producao: 'https://notacarioca.rio.gov.br/WSNacional/nfse.asmx', endpoint_homologacao: 'https://homologacao.notacarioca.rio.gov.br/WSNacional/nfse.asmx', tipo_autenticacao: 'certificado_a1', status: 'ativo' },
+        { id: 'con-3106200', ibge: '3106200', municipio: 'Belo Horizonte', uf: 'MG', provedor: 'BHISS (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://bhissdigital.pbh.gov.br/bhiss-ws/nfse', endpoint_homologacao: 'https://bhisshomologa.pbh.gov.br/bhiss-ws/nfse', tipo_autenticacao: 'certificado_a1', status: 'ativo' },
+        { id: 'con-4106902', ibge: '4106902', municipio: 'Curitiba', uf: 'PR', provedor: 'Curitiba (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://isscuritiba.curitiba.pr.gov.br/Iss.NfseWebService/Nfsews.asmx', endpoint_homologacao: '', tipo_autenticacao: 'certificado_token', status: 'configuracao_pendente' },
+        { id: 'con-4314902', ibge: '4314902', municipio: 'Porto Alegre', uf: 'RS', provedor: 'NFSE POA (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.portoalegre.rs.gov.br/bhiss-ws/nfse', endpoint_homologacao: '', tipo_autenticacao: 'certificado_a1', status: 'ativo' },
+        { id: 'con-3509502', ibge: '3509502', municipio: 'Campinas', uf: 'SP', provedor: 'ISSONLINE (DSF)', tecnologia: 'REST', endpoint_producao: 'https://issonline.campinas.sp.gov.br/ws/v1', endpoint_homologacao: '', tipo_autenticacao: 'token_api', status: 'configuracao_pendente' },
+        { id: 'con-2611606', ibge: '2611606', municipio: 'Recife', uf: 'PE', provedor: 'Recife (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.recife.pe.gov.br/ws/nfse.asmx', endpoint_homologacao: '', tipo_autenticacao: 'certificado_a1', status: 'ativo' },
+        { id: 'con-2927408', ibge: '2927408', municipio: 'Salvador', uf: 'BA', provedor: 'Salvador (ABRASF 1.0)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.salvador.ba.gov.br/rps/service.asmx', endpoint_homologacao: '', tipo_autenticacao: 'token_api', status: 'configuracao_pendente' },
+        { id: 'con-5300108', ibge: '5300108', municipio: 'Brasília', uf: 'DF', provedor: 'ISSNET (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://www.issnetonline.com.br/webservice/df/servicos.asmx', endpoint_homologacao: '', tipo_autenticacao: 'usuario_senha', status: 'configuracao_pendente' }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO conectores_municipais (
+          id, ibge, municipio, uf, provedor, tecnologia, endpoint_producao, endpoint_homologacao, tipo_autenticacao, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const c of initialConectores) {
+        stmt.run(c.id, c.ibge, c.municipio, c.uf, c.provedor, c.tecnologia, c.endpoint_producao, c.endpoint_homologacao, c.tipo_autenticacao, c.status);
+      }
+      console.log(`🏛️ Seed de Conectores Municipais executado: ${initialConectores.length} prefeituras cadastradas.`);
+    }
+  } catch (err: any) {
+    console.warn('Aviso no seed de conectores municipais:', err.message);
+  }
 
   console.log(`✅ Schema do banco de dados inicializado com sucesso em Horário Oficial de Brasília [${getBrasiliaTimestamp()}].`);
 }

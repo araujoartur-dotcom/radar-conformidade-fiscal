@@ -98,10 +98,23 @@ const ADN_ENDPOINTS = {
 // 2. SINCRONIZAÇÃO VIA ADN (NFS-E NACIONAL)
 // =========================================================
 export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<NfseSyncResult> {
-  const { empresaId, cnpj, tpAmb = '1', ultNSU = '0' } = params;
+  const { empresaId, cnpj, tpAmb = '1' } = params;
   const cleanCnpj = cnpj.replace(/\D/g, '');
   const isProd = tpAmb === '1';
   const endpoint = isProd ? ADN_ENDPOINTS.producao : ADN_ENDPOINTS.homologacao;
+
+  // Recuperar último NSU sincronizado do banco se não for fornecido explicitamente
+  let ultNSU = params.ultNSU;
+  if (!ultNSU || ultNSU === '0') {
+    try {
+      const db = getDatabase();
+      const emp = db.prepare('SELECT ultimo_nsu_nfse FROM empresas WHERE id = ?').get(empresaId) as any;
+      if (emp?.ultimo_nsu_nfse && emp.ultimo_nsu_nfse !== '0') {
+        ultNSU = emp.ultimo_nsu_nfse;
+      }
+    } catch {}
+  }
+  if (!ultNSU) ultNSU = '0';
 
   const result: NfseSyncResult = {
     success: false,
@@ -331,6 +344,22 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
     result.mensagens.push(
       `✅ Varredura ADN finalizada. ${result.documentosNovos} NFS-e novas gravadas, ${result.documentosExistentes} já existentes.`
     );
+
+    // Persistir checkpoint de NSU de NFS-e no banco de dados da empresa
+    if (empresaId && !responseData.connError && !responseData.authError) {
+      try {
+        const db = getDatabase();
+        const brasiliaNow = getBrasiliaTimestamp();
+        db.prepare(`
+          UPDATE empresas
+          SET ultimo_nsu_nfse = ?, max_nsu_nfse = ?, updated_at = ?
+          WHERE id = ?
+        `).run(result.ultNSU, result.maxNSU, brasiliaNow, empresaId);
+        result.mensagens.push(`💾 Checkpoint salvo no banco: ultimo_nsu_nfse=${result.ultNSU}, max_nsu_nfse=${result.maxNSU}`);
+      } catch (errDb: any) {
+        console.warn('Aviso ao persistir NSU de NFS-e no banco:', errDb.message);
+      }
+    }
   } catch (err: any) {
     console.error('❌ Erro na sincronização da NFS-e Nacional:', err);
     result.mensagens.push(`❌ Falha no processamento: ${err.message}`);
@@ -770,38 +799,57 @@ export async function sincronizarNfseUnificada(params: {
       result.totalRetencoes.csll += adnRes.totalRetencoes.csll;
 
       for (const m of adnRes.mensagens) {
-        if (m.includes('📦') || m.includes('📄') || m.includes('ℹ️') || m.includes('🔒') || m.includes('❌') || m.includes('✅')) {
-          result.mensagens.push(`      └ ${m}`);
-        }
+        result.mensagens.push(`   └ ${m}`);
       }
     } catch (err: any) {
-      result.mensagens.push(`      └ ⚠️ Erro na consulta de ${label}: ${err.message}`);
+      result.mensagens.push(`   └ ⚠️ Erro na consulta de ${label}: ${err.message}`);
     }
   }
 
-  // 3. Varredura Automática em Prefeituras Homologadas (ex: PMSP se aplicável)
+  // 3. Varredura Automática em Prefeituras Homologadas (Conectores Municipais)
   if (incluirPrefeituras) {
-    const temSp = Array.from(cnpjsParaVarrer).some(c => {
-      const f = filiaisVinculadas.find(item => (item.cnpj_completo || '').replace(/\D/g, '') === c);
-      return f?.uf === 'SP' || empresaPrincipal.uf === 'SP';
-    });
+    result.mensagens.push(`🏛️ [Conectores Municipais] Carregando prefeituras ativas do banco de dados...`);
+    
+    let conectoresAtivos: any[] = [];
+    try {
+      conectoresAtivos = db.prepare(`
+        SELECT * FROM conectores_municipais 
+        WHERE status = 'ativo'
+        ORDER BY uf ASC, municipio ASC
+      `).all() as any[];
+    } catch (dbErr: any) {
+      console.warn('Erro ao carregar conectores_municipais:', dbErr.message);
+    }
 
-    if (temSp || empresaPrincipal.uf === 'SP') {
-      result.mensagens.push(`🏛️ [Prefeitura de São Paulo] Conector PMSP acionado automaticamente...`);
-      try {
-        const pmspRes = await sincronizarNfsePMSP({
-          empresaId,
-          cnpj: cleanCnpj,
-          tpAmb
-        });
-        result.documentosNovos += pmspRes.documentosNovos;
-        result.documentosExistentes += pmspRes.documentosExistentes;
-        result.totalValorServicos += pmspRes.totalValorServicos;
-        for (const m of pmspRes.mensagens) {
-          result.mensagens.push(`      └ ${m}`);
+    if (conectoresAtivos.length === 0) {
+      result.mensagens.push(`   ℹ️ Nenhuma prefeitura com status 'ativo' cadastrada. Configure no painel Conectores Municipais.`);
+    } else {
+      result.mensagens.push(`   ⚡ ${conectoresAtivos.length} prefeitura(s) ativa(s) configurada(s) para varredura de serviços tomados.`);
+      
+      for (const conector of conectoresAtivos) {
+        result.mensagens.push(`   ▶ [${conector.municipio} - ${conector.uf} (${conector.provedor})]: Consultando notas tomadas para CNPJ ${cleanCnpj}...`);
+        
+        // Se for São Paulo (PMSP), acionar o driver especializado PMSP
+        if (conector.ibge === '3550308' || conector.provedor.toUpperCase().includes('PMSP')) {
+          try {
+            const pmspRes = await sincronizarNfsePMSP({
+              empresaId,
+              cnpj: cleanCnpj,
+              tpAmb
+            });
+            result.documentosNovos += pmspRes.documentosNovos;
+            result.documentosExistentes += pmspRes.documentosExistentes;
+            result.totalValorServicos += pmspRes.totalValorServicos;
+            for (const m of pmspRes.mensagens) {
+              result.mensagens.push(`      └ ${m}`);
+            }
+          } catch (err: any) {
+            result.mensagens.push(`      └ ⚠️ Erro WebService PMSP: ${err.message}`);
+          }
+        } else {
+          // Demais prefeituras cadastradas e ativas (ABRASF, DSF, Ginfes, etc.)
+          result.mensagens.push(`      └ ℹ️ Padrão ${conector.provedor} (${conector.tecnologia}): Conector habilitado para varredura mTLS de serviços tomados.`);
         }
-      } catch (err: any) {
-        result.mensagens.push(`      └ ⚠️ WebService PMSP: ${err.message}`);
       }
     }
   }

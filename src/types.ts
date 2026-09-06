@@ -770,13 +770,20 @@ export interface NcmRegraAnexoItem {
 export type TipoAutenticacaoConector = 'certificado_a1' | 'token_api' | 'usuario_senha' | 'certificado_token';
 
 export interface MunicipioConector {
+  id?: string;
   ibge: string;
   municipio: string;
   uf: string;
   provedor: string; // Ex: 'ABRASF 2.04', 'PMSP', 'Nota Carioca', 'Ginfes'
+  tecnologia?: 'SOAP' | 'REST';
+  endpoint_producao?: string;
+  endpoint_homologacao?: string;
+  urlProducao?: string; // compatibilidade
+  urlHomologacao?: string; // compatibilidade
   tipoAutenticacao: TipoAutenticacaoConector;
+  token_api?: string;
+  usuario?: string;
+  senha?: string;
   status: 'ativo' | 'inativo' | 'configuracao_pendente' | 'erro_autenticacao';
-  urlProducao?: string;
-  urlHomologacao?: string;
   credenciaisConfiguradas?: boolean;
 }

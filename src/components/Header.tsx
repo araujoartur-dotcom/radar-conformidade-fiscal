@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'detalhada':
         return { title: 'Consulta Rápida Direta', icon: Search, color: 'text-indigo-400' };
       case 'dfe_xml':
-        return { title: 'Captura XML (NF-e, NFS-e e CT-e)', icon: FileCode, color: 'text-cyan-400' };
+        return { title: 'Captura de XMLs', icon: FileCode, color: 'text-cyan-400' };
       case 'eventos_dfe':
         return { title: 'Central de Eventos DF-e', icon: Send, color: 'text-indigo-400' };
       case 'integracao_erp':

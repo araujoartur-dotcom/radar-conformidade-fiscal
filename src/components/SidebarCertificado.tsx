@@ -68,7 +68,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
     {
       title: 'Documentos Fiscais (DF-e)',
       items: [
-        { id: 'dfe_xml' as QueryMode, label: 'XMLs & Ref. Tributária', icon: FileCode, accent: 'cyan' },
+        { id: 'dfe_xml' as QueryMode, label: 'Captura de XMLs', icon: FileCode, accent: 'cyan' },
         { id: 'eventos_dfe' as QueryMode, label: 'Central de Eventos DF-e', icon: Send, accent: 'indigo' },
       ]
     },

@@ -1,0 +1,107 @@
+
+
+No Supabase, tanto a **NF-e** quanto o **CT-e** (e também a **NFS-e**) são gravados e unificados na tabela **`public.dfe_documentos`**, diferenciados pela coluna **`tipo_doc`**.
+
+Abaixo estão os `SELECTs` prontos para você copiar e rodar no SQL Editor do Supabase:
+
+---
+
+### 1. Visão Geral (Últimos Documentos Capturados - NFe e CTe)
+Exibe os 50 documentos mais recentes com emitente, destinatário, valores e status de manifestação:
+
+```sql
+SELECT 
+    tipo_doc,
+    numero_serie,
+    chave_acesso,
+    data_emissao,
+    fornecedor_razao AS emitente,
+    cliente_razao AS destinatario,
+    valor_total,
+    situacao_manifestacao,
+    created_at
+FROM public.dfe_documentos
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+---
+
+### 2. Consultar Apenas NF-e (Mercadorias)
+Filtra somente notas fiscais de produtos (entradas de fornecedores ou saídas):
+
+```sql
+SELECT 
+    numero_serie,
+    chave_acesso,
+    data_emissao,
+    fornecedor_cnpj,
+    fornecedor_razao,
+    fornecedor_uf,
+    valor_total,
+    valor_icms,
+    valor_ipi,
+    situacao_manifestacao,
+    status_sefaz,
+    created_at
+FROM public.dfe_documentos
+WHERE tipo_doc = 'NFe'
+ORDER BY data_emissao DESC;
+```
+
+---
+
+### 3. Consultar Apenas CT-e (Conhecimento de Transporte / Fretes)
+Filtra os conhecimentos de fretes emitidos por transportadoras contra o seu CNPJ:
+
+```sql
+SELECT 
+    numero_serie,
+    chave_acesso,
+    data_emissao,
+    fornecedor_cnpj AS transportador_cnpj,
+    fornecedor_razao AS transportadora,
+    cliente_razao AS tomador_frete,
+    valor_total AS valor_frete,
+    valor_icms,
+    created_at
+FROM public.dfe_documentos
+WHERE tipo_doc = 'CTe'
+ORDER BY data_emissao DESC;
+```
+
+---
+
+### 4. Resumo Consolidado (Total de Documentos e Valor por Tipo)
+Para ver rapidamente a volumetria da sua base no Supabase:
+
+```sql
+SELECT 
+    tipo_doc, 
+    COUNT(*) AS total_documentos, 
+    TO_CHAR(SUM(valor_total), 'L999G999G999D99') AS valor_total_acumulado
+FROM public.dfe_documentos
+GROUP BY tipo_doc;
+```
+
+---
+
+### 5. Consultar Itens / Produtos de uma Nota Específica
+Se quiser ver os itens desmembrados (NCM, CFOP, quantidade, alíquotas) de uma NF-e:
+
+```sql
+SELECT 
+    i.item_nro,
+    i.codigo_item,
+    i.descricao_item,
+    i.ncm,
+    i.cfop,
+    i.quantidade,
+    i.valor_unitario,
+    i.valor_liquido_item,
+    i.valor_icms
+FROM public.dfe_itens i
+JOIN public.dfe_documentos d ON d.id = i.documento_id
+WHERE d.chave_acesso = 'COLE_A_CHAVE_DE_44_DIGITOS_AQUI'
+ORDER BY i.item_nro ASC;
+```

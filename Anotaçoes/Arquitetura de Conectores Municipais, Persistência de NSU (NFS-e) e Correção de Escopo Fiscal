@@ -1,0 +1,274 @@
+# Arquitetura de Conectores Municipais, Persistência de NSU (NFS-e) e Correção de Escopo Fiscal
+
+Este plano atende diretamente aos 3 pontos cruciais levantados:
+1. **Onde o sistema armazena o `maxNSU`:** Esclarecimento técnico e correção da persistência de `ultimo_nsu_nfse` e `max_nsu_nfse` no banco de dados.
+2. **Correção do Escopo Fiscal de Serviços Tomados:** Eliminação da restrição incorreta de UF (RJ vs SP/demais prefeituras) para captura de notas tomadas.
+3. **Catálogo de Conectores Municipais Funcional (CRUD Real):** Substituição da tela estática ("tela fria") por um gerenciador real conectado ao banco de dados, com cadastro de endpoints SOAP/WSDL e REST, autenticação flexível e botão de adicionar prefeituras.
+
+> [!IMPORTANT]
+> **RESTRICÃO ATIVA:** NENHUM deploy ou `git push` será executado até a aprovação explícita. Todas as alterações serão desenvolvidas, compiladas e testadas localmente.
+
+---
+
+## 1. Onde o sistema armazena o `maxNSU`?
+
+- **Para NF-e / CT-e (SEFAZ Mercadorias e Transportes):**
+  - Armazenado na tabela `empresas` do banco SQLite/Supabase, nas colunas `ultimo_nsu` e `max_nsu` (`server/db/schema.ts`).
+  - Atualizado a cada lote em `server/services/sefazService.ts` via SQL:
+    ```sql
+    UPDATE empresas SET ultimo_nsu = ?, max_nsu = ?, updated_at = ? WHERE id = ?
+    ```
+- **Para NFS-e (ADN - Ambiente de Dados Nacional / Receita Federal):**
+  - O webservice REST do ADN devolve `ultNSU` e `maxNSU` no JSON de resposta.
+  - O backend captura essas variáveis em `server/services/nfseService.ts:295-298`.
+  - **Diagnóstico da falha:** O código mantinha esses valores **apenas no objeto em memória** da resposta HTTP, **sem gravá-los na tabela `empresas`**. Por conta disso, toda nova consulta unificada de NFS-e recomeçava a partir do NSU `0`!
+  - **Correção:**
+    - Adicionar as colunas `ultimo_nsu_nfse` e `max_nsu_nfse` na tabela `empresas` (`server/db/schema.ts`).
+    - Após o retorno do ADN, salvar imediatamente no banco de dados o novo `ultNSU` e `maxNSU`.
+    - Na próxima consulta, usar o último NSU gravado no banco como ponto de partida.
+
+---
+
+## 2. Correção de Escopo: Serviços Tomados vs. UF da Matriz
+
+- **Regra Fiscal:** Uma empresa matriz sediada no Rio de Janeiro (RJ) toma serviços de fornecedores de TI, logística, consultoria, locação e manutenção localizados em São Paulo (SP), Belo Horizonte (MG), Curitiba (PR), Recife (PE), etc.
+- As prefeituras desses municípios emitem a NFS-e tendo o CNPJ da empresa como **TOMADOR**.
+- **Correção:**
+  - Remover a trava em `server/services/nfseService.ts` que exigia que a empresa tivesse estabelecimento cadastrado em SP (`uf === 'SP'`) para consultar a PMSP.
+  - A varredura de conectores municipais ativos deve ser disparada buscando **notas tomadas (onde o CNPJ da empresa é o tomador)** em todas as prefeituras ativas no sistema, independentemente de onde a matriz está sediada.
+
+---
+
+## 3. Catálogo de Conectores Municipais: Fim da "Tela Fria"
+
+Transformar o componente estático em uma ferramenta de governança fiscal completa:
+1. **Tabela no Banco de Dados (`conectores_municipais`):**
+   - `id`: TEXT PRIMARY KEY
+   - `ibge`: TEXT NOT NULL UNIQUE (7 dígitos)
+   - `municipio`: TEXT NOT NULL
+   - `uf`: TEXT NOT NULL
+   - `provedor`: TEXT NOT NULL (PMSP, ABRASF 1.0, ABRASF 2.04, DSF, Ginfes, Betha, IPM, WebISS, etc.)
+   - `tecnologia`: TEXT NOT NULL DEFAULT 'SOAP' ('SOAP' | 'REST')
+   - `endpoint_producao`: TEXT NOT NULL (URL WSDL ou API REST)
+   - `endpoint_homologacao`: TEXT DEFAULT ''
+   - `tipo_autenticacao`: TEXT NOT NULL ('certificado_a1' | 'token_api' | 'usuario_senha' | 'certificado_token')
+   - `token_api`: TEXT DEFAULT ''
+   - `usuario`: TEXT DEFAULT ''
+   - `senha`: TEXT DEFAULT ''
+   - `status`: TEXT NOT NULL DEFAULT 'ativo' ('ativo' | 'inativo' | 'configuracao_pendente' | 'erro_autenticacao')
+   - Seed inicial automático com os municípios mais relevantes pré-configurados.
+2. **API Backend (`server/routes/nfse.ts`):**
+   - `GET /api/nfse/conectores`: lista todos os conectores cadastrados no banco.
+   - `POST /api/nfse/conectores`: adiciona novo conector municipal (validação de IBGE e URLs).
+   - `PUT /api/nfse/conectores/:id`: atualiza endpoints, credenciais e status.
+   - `DELETE /api/nfse/conectores/:id`: exclui conector municipal customizado.
+3. **Painel Frontend (`src/components/ConectoresMunicipaisPanel.tsx`):**
+   - Consumo em tempo real da API (`GET /api/nfse/conectores`).
+   - Botão **"+ Adicionar Prefeitura"** com modal completo:
+     - Nome do Município e UF
+     - Código IBGE
+     - Padrão do Provedor (dropdown com opções padrão + personalizado)
+     - Tecnologia (SOAP com WSDL ou REST com Base URL)
+     - Endpoints (Produção e Homologação)
+     - Método de Autenticação (A1 mTLS, Token, Usuário/Senha)
+     - Credenciais
+     - Chave Ativo / Inativo
+   - Botão de editar e salvar prefeituras existentes.
+   - Exclusão de conectores criados pelo usuário.
+4. **Integração com o Robô de Captura (`server/services/nfseService.ts`):**
+   - Ao executar a varredura unificada, o robô carrega do banco de dados todos os conectores municipais com `status = 'ativo'` e consulta as notas tomadas para o CNPJ em cada um deles.
+
+---
+
+## Proposed Changes
+
+### Banco de Dados & Backend
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+- Adicionar colunas `ultimo_nsu_nfse` e `max_nsu_nfse` na tabela `empresas`.
+- Criar a tabela `conectores_municipais` e popular dados iniciais das capitais e maiores cidades.
+
+#### [MODIFY] [nfse.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts)
+- Adicionar rotas CRUD para conectores municipais: `GET`, `POST`, `PUT`, `DELETE`.
+
+#### [MODIFY] [nfseService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts)
+- Persistir `ultimo_nsu_nfse` e `max_nsu_nfse` na tabela `empresas` após a consulta ao ADN.
+- Remover o filtro de UF da empresa para consultas municipais de serviços tomados.
+- Ler conectores municipais ativos da tabela `conectores_municipais` do banco para a varredura unificada.
+
+### Frontend
+
+#### [MODIFY] [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+- Atualizar a interface `MunicipioConector` para incluir `id`, `tecnologia`, `endpoint_producao`, `endpoint_homologacao`, `token_api`, `usuario`, `senha`.
+
+#### [MODIFY] [ConectoresMunicipaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConectoresMunicipaisPanel.tsx)
+- Adicionar botão **"+ Adicionar Prefeitura"**.
+- Integrar com a API backend para carregar, cadastrar, editar e excluir prefeituras.
+- Modal completo de cadastro/edição com campos para WSDL/SOAP, REST, autenticação e credenciais.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- Compilação do TypeScript no backend e frontend:
+  ```powershell
+  npx tsc --noEmit
+  ```
+- Teste de inicialização e rotas do servidor Express.
+
+### Manual Verification
+1. Verificar que a tabela `conectores_municipais` é criada e seedada com sucesso no SQLite/Supabase.
+2. Acessar a tela de Conectores Municipais e verificar que os dados vêm do banco.
+3. Clicar em "+ Adicionar Prefeitura", cadastrar uma nova cidade (ex: Recife - PE, IBGE 2611606, ABRASF 2.04, endpoint SOAP) e salvar.
+4. Confirmar que a prefeitura adicionada persiste ao recarregar a página.
+5. Editar um conector e alterar o status para Ativo/Inativo.
+6. Testar a sincronização unificada de NFS-e confirmando no log que o robô avalia e executa os conectores ativos para notas tomadas sem ser bloqueado pela UF 'RJ' da matriz.
+
+
+Searched for "nsu"
+Searched for "ultimo_nsu"
+
+
+##### Para que fique 100% claro e transparente, vamos separar exatamente o que acontecia em cada um dos 3 mundos:
+
+---
+
+### 1. No caso de NF-e e CT-e (SEFAZ Mercadorias e Transportes)
+**O NSU SEMPRE existiu e sempre foi salvo no banco de dados!** Não havia nenhuma tabela oculta ou invisível.
+
+* **Onde ficava:** Na tabela [`empresas`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts#L35-L36), nas colunas:
+  * `ultimo_nsu` (TEXT)
+  * `max_nsu` (TEXT)
+* **Como era o fluxo:**
+  1. A tela [`ConsultaNsuModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaNsuModal.tsx#L195) enviava o `ultNSU` para a rota `/sefaz/distribui-dfe`.
+  2. O backend [`sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L1127-L1134) recebia o XML da SEFAZ, extraía as tags `<ultNSU>` e `<maxNSU>` e executava no banco SQLite/Supabase:
+     ```sql
+     UPDATE empresas
+     SET ultimo_nsu = ?, max_nsu = ?, updated_at = ?
+     WHERE id = ?
+     ```
+  3. Além disso, cada documento gravado na tabela `dfe_documentos` recebia o seu NSU específico daquele lote.
+  4. A resposta HTTP voltava para o modal e fazia `setUltNSU(data.ultNSU)`.
+
+---
+
+### 2. No caso da NFS-e Nacional (ADN - Receita Federal)
+**Aqui é onde residia a falha que você percebeu.** O NSU **NÃO** ficava em nenhuma tabela transitória ou oculta. Ele simplesmente **se perdia na memória RAM**.
+
+* **Como funcionava antes:**
+  1. O webservice REST do ADN (Receita Federal) respondia ao GET `/contribuintes/DFe/{NSU}` entregando no JSON os campos `ultNSU` e `maxNSU`.
+  2. O backend [`nfseService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts#L295-L298) lia essas propriedades da resposta:
+     ```typescript
+     const returnedUlt = responseData.ultNSU ?? responseData.nsu;
+     const returnedMax = responseData.maxNSU ?? responseData.maiorNSU;
+     result.ultNSU = String(returnedUlt);
+     result.maxNSU = String(returnedMax);
+     ```
+  3. **O problema:** Ele apenas preenchia o objeto JavaScript em memória (`result`) e devolvia o JSON para o navegador. **Ele NUNCA salvava no banco de dados!**
+  4. **A consequência:** Ao término da requisição HTTP, a memória era limpa. Na consulta seguinte, como não havia coluna para NFS-e na tabela `empresas`, o sistema não sabia onde tinha parado e começava de novo com `ultNSU = '0'`.
+
+* **O que corrigimos agora:**
+  * Criamos as colunas `ultimo_nsu_nfse` e `max_nsu_nfse` na tabela `empresas`.
+  * Assim que o ADN responde, o sistema executa o `UPDATE empresas SET ultimo_nsu_nfse = ?, max_nsu_nfse = ?`, garantindo a mesma persistência sólida que a NF-e já possuía.
+
+---
+
+### 3. E nas Prefeituras Municipais (PMSP, Nota Carioca, BHISS, Curitiba, etc.)?
+É importante ressaltar um ponto técnico fundamental: **as prefeituras municipais NÃO utilizam o conceito de NSU da SEFAZ.**
+
+* Nenhum webservice municipal (seja padrão ABRASF 1.0, 2.04, DSF ou PMSP Nota do Milhão) possui controle por NSU contínuo.
+* As prefeituras trabalham com consultas por:
+  * **Período de Datas** (ex: `DataInicio: 2026-08-01` e `DataFim: 2026-08-31`);
+  * **Número de Lote / RPS**;
+  * **Número de Inscrição Municipal e Chave de Verificação**.
+
+---
+
+### Resumo
+| Módulo Fiscal | Utiliza NSU? | Onde ficava armazenado? |
+| :--- | :---: | :--- |
+| **NF-e (Mercadorias)** | **Sim** | Gravado no banco na tabela `empresas.ultimo_nsu` e `empresas.max_nsu`. |
+| **CT-e (Transportes)** | **Sim** | Gravado no banco na tabela `empresas.ultimo_nsu` e `empresas.max_nsu`. |
+| **NFS-e Nacional (ADN)** | **Sim** | **Ficava volátil na memória RAM** (corrigido agora com as colunas `ultimo_nsu_nfse` e `max_nsu_nfse` no banco). |
+| **Prefeituras Municipais** | **Não** | Não existe NSU em prefeituras; a busca é feita por competência / intervalo de datas para notas tomadas. |
+
+
+
+A sua consulta no SQL Editor do Supabase revelou exatamente **a raiz do problema**:
+
+> **`ERROR: 42703: column "ultimo_nsu" does not exist`**
+
+---
+
+### O que estava acontecendo por baixo dos panos?
+
+O seu sistema possui **dois motores de banco de dados**:
+1. **SQLite Local (`better-sqlite3`):** Usado em ambiente de desenvolvimento local, cujo arquivo [`schema.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts#L35) criava as colunas `ultimo_nsu` e `max_nsu` no arquivo local `radar_fiscal.db`.
+2. **Supabase Cloud (PostgreSQL na Nuvem):** O banco de dados de **produção real** (o que você está vendo no dashboard).
+
+Quando a tabela `public.empresas` foi criada no Supabase através do script original [`supabase_schema.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql#L15-L28), **as colunas `ultimo_nsu` e `max_nsu` simplesmente NÃO foram incluídas no PostgreSQL!**
+
+Além disso, quando o serviço [`sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts#L1129) consultava a SEFAZ, ele fazia:
+```typescript
+db.prepare('UPDATE empresas SET ultimo_nsu = ?, max_nsu = ? ...').run(...)
+```
+Ele atualizava **apenas o arquivo SQLite local**, sem **nunca gravar no Supabase**!
+
+Por esse motivo:
+* Na nuvem (Supabase), a coluna **nunca existiu**;
+* Toda vez que o frontend ou a API consultava a empresa no Supabase, o campo vinha `undefined` e caía no fallback `'000000000000000'`;
+* E ao rodar a query direta no Supabase, o PostgreSQL rejeita porque a coluna não existe.
+
+---
+
+### Como resolver agora mesmo no Supabase
+
+Como você já está com o **SQL Editor do Supabase aberto** nessa exata tela do print, basta colar e executar o script abaixo para criar as colunas de NSU e a tabela de Conectores Municipais:
+
+```sql
+-- 1. Adicionar colunas de controle de NSU (NF-e, CT-e e NFS-e) na tabela empresas
+ALTER TABLE public.empresas ADD COLUMN IF NOT EXISTS ultimo_nsu VARCHAR(30) DEFAULT '000000000000000';
+ALTER TABLE public.empresas ADD COLUMN IF NOT EXISTS max_nsu VARCHAR(30) DEFAULT '000000000000000';
+ALTER TABLE public.empresas ADD COLUMN IF NOT EXISTS ultimo_nsu_nfse VARCHAR(30) DEFAULT '0';
+ALTER TABLE public.empresas ADD COLUMN IF NOT EXISTS max_nsu_nfse VARCHAR(30) DEFAULT '0';
+ALTER TABLE public.empresas ADD COLUMN IF NOT EXISTS manifestar_ciencia_automatica BOOLEAN DEFAULT TRUE;
+
+-- 2. Criar a tabela de Conectores Municipais no Supabase
+CREATE TABLE IF NOT EXISTS public.conectores_municipais (
+    id VARCHAR(60) PRIMARY KEY,
+    ibge VARCHAR(7) NOT NULL UNIQUE,
+    municipio VARCHAR(100) NOT NULL,
+    uf VARCHAR(2) NOT NULL,
+    provedor VARCHAR(100) NOT NULL,
+    tecnologia VARCHAR(10) NOT NULL DEFAULT 'SOAP',
+    endpoint_producao TEXT DEFAULT '',
+    endpoint_homologacao TEXT DEFAULT '',
+    tipo_autenticacao VARCHAR(30) NOT NULL DEFAULT 'certificado_a1',
+    token_api TEXT DEFAULT '',
+    usuario VARCHAR(100) DEFAULT '',
+    senha TEXT DEFAULT '',
+    status VARCHAR(30) NOT NULL DEFAULT 'ativo',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 3. Índices de busca rápida
+CREATE INDEX IF NOT EXISTS idx_conectores_ibge ON public.conectores_municipais(ibge);
+CREATE INDEX IF NOT EXISTS idx_conectores_uf ON public.conectores_municipais(uf);
+```
+
+---
+
+### O que estou ajustando no código (Backend)
+
+Para garantir que o backend nunca mais ignore o Supabase:
+1. Em [`sefazService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/sefazService.ts), ao receber o retorno da SEFAZ, o sistema atualiza `ultimo_nsu` e `max_nsu` **diretamente no Supabase** via `supabase.from('empresas').update(...)`.
+2. Em [`nfseService.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/nfseService.ts), ao receber o retorno da NFS-e Nacional, o sistema atualiza `ultimo_nsu_nfse` e `max_nsu_nfse` **diretamente no Supabase**.
+
+Assim que você clicar em **Run (Ctrl + Enter)** no Supabase para rodar o SQL acima, sua consulta:
+```sql
+SELECT id, ultimo_nsu, max_nsu, ultimo_nsu_nfse, max_nsu_nfse, updated_at
+FROM empresas;
+```
+Retornará com sucesso imediato!

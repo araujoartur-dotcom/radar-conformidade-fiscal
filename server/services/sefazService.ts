@@ -1124,7 +1124,7 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
       }
     }
 
-    // 4. Atualizar NSU da empresa no banco
+    // 4. Atualizar NSU da empresa no banco (SQLite + Supabase)
     try {
       db.prepare(`
         UPDATE empresas
@@ -1132,6 +1132,21 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
         WHERE id = ?
       `).run(ultNSURetorno, maxNSURetorno, brasiliaNow, empresaId);
     } catch {}
+
+    if (isSupabaseConfigured() && empresaId) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          await supabase.from('empresas').update({
+            ultimo_nsu: ultNSURetorno,
+            max_nsu: maxNSURetorno,
+            updated_at: brasiliaNow
+          }).eq('id', empresaId);
+        }
+      } catch (supaErr: any) {
+        console.warn('⚠️ Aviso ao sincronizar NSU no Supabase:', supaErr?.message || supaErr);
+      }
+    }
 
     const success = ['137', '138'].includes(cStat);
 
@@ -1329,6 +1344,30 @@ export async function consultarDistribuicaoCTe(params: DistribucaoDfeRequest): P
         });
       } catch (cteErr: any) {
         console.warn('⚠️ Erro ao processar item CT-e:', cteErr.message);
+      }
+    }
+
+    // 4. Atualizar NSU da empresa no banco para CT-e (SQLite + Supabase)
+    try {
+      db.prepare(`
+        UPDATE empresas
+        SET ultimo_nsu = ?, max_nsu = ?, updated_at = ?
+        WHERE id = ?
+      `).run(ultNSURetorno, maxNSURetorno, brasiliaNow, empresaId);
+    } catch {}
+
+    if (isSupabaseConfigured() && empresaId) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          await supabase.from('empresas').update({
+            ultimo_nsu: ultNSURetorno,
+            max_nsu: maxNSURetorno,
+            updated_at: brasiliaNow
+          }).eq('id', empresaId);
+        }
+      } catch (supaErr: any) {
+        console.warn('⚠️ Aviso ao sincronizar NSU de CT-e no Supabase:', supaErr?.message || supaErr);
       }
     }
 

@@ -1,0 +1,48 @@
+# Gestão Global de Conectores Municipais (NFS-e)
+
+Como existem mais de 5.700 prefeituras no Brasil com diferentes padrões (ABRASF, DSF, Ginfes, WebISS, Nota Carioca, Nota do Milhão, etc) e a adesão ao Ambiente de Dados Nacional (ADN) ainda é muito baixa, não é escalável manter os conectores em um simples dropdown.
+
+Precisamos de uma **Tela de Configurações de Conectores Municipais** dedicada, onde o usuário possa pesquisar prefeituras, configurar o padrão de autenticação de cada uma (pois algumas exigem *Tokens* ou *Usuário/Senha* além do Certificado A1) e ativá-las.
+
+## Proposta de Solução (UI/UX)
+
+Vou criar um novo painel: `ConectoresMunicipaisPanel.tsx`.
+
+1. **Barra de Pesquisa Global:**
+   - Buscar por município (ex: "São Paulo", "Campinas", "Rio de Janeiro").
+   - Filtro por UF.
+2. **Grid de Prefeituras / Conectores:**
+   - Exibe o Município, UF, Código IBGE, **Provedor/Padrão** (ex: ABRASF 2.04, Ginfes, PMSP) e o Status da Integração (Ativa / Inativa).
+3. **Modal de Configuração de Conector:**
+   - Ao clicar em um município, abre um modal para configurar os parâmetros de conexão exigidos por aquele padrão específico (ex: Login, Senha, Token de Produção/Homologação, ou simplesmente a chave de seleção "Utilizar Certificado A1 da Empresa").
+4. **Navegação Integrada:**
+   - A nova tela ficará acessível via Menu Lateral (`SidebarCertificado.tsx`) sob o grupo de *Governança & Integrações* ou *Documentos Fiscais*.
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **Armazenamento:** Você deseja que eu crie também a estrutura no banco de dados (SQLite/Supabase) para gravar as configurações e credenciais de cada município por empresa (`empresa_conectores`), ou por enquanto focamos apenas na construção da UI do Painel com um fluxo simulado (Mock) demonstrativo?
+> 2. **Posição no Menu:** Prefere que eu adicione um grupo chamado "Configurações" no menu lateral, ou encaixo essa tela em "Governança & Integrações"?
+> 3. **Integração com Captura:** A tela "Central de Captura de NFS-e" (`NfseManagerModal.tsx`) passará a exibir um botão como "Sincronizar Todos os Conectores Ativos" ou permitirá selecionar na hora qual das prefeituras (previamente ativadas no painel) deseja consultar?
+
+## Proposed Changes
+
+### Frontend - Componentes
+
+#### [MODIFY] `src/types.ts`
+- Adicionar `conectores_municipais` no tipo `QueryMode`.
+- Criar tipos/interfaces para `MunicipioConector`, `PadraoProvedor`, etc.
+
+#### [MODIFY] `src/components/SidebarCertificado.tsx`
+- Inserir a nova rota/aba no menu lateral (ex: ícone de *Plug* ou *Settings*).
+
+#### [MODIFY] `src/App.tsx`
+- Adicionar a renderização condicional (`activeMode === 'conectores_municipais'`) carregando o novo componente.
+
+#### [NEW] `src/components/ConectoresMunicipaisPanel.tsx`
+- Construção da UI deslumbrante (glassmorphism, cores vibrantes, tabela pesquisável de municípios, badges de provedores).
+
+## Verification Plan
+1. O usuário poderá clicar na aba de Conectores no menu lateral.
+2. Pesquisar e visualizar uma lista de prefeituras (com dados mockados contemplando as principais capitais e provedores).
+3. Abrir o modal de configuração de um município para inserir credenciais e ativá-lo, vendo o status ser atualizado no grid.
