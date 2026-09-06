@@ -182,28 +182,88 @@ router.post('/calcular-tributos', async (req: Request, res: Response) => {
 });
 
 // =========================================================
-// 8. CREDENCIAIS CGIBS (CONSULTA E ATUALIZAÇÃO)
 // =========================================================
+// 8. CREDENCIAIS CGIBS (ISOLAMENTO ESTRITO POR EMPRESA / CNPJ8)
+// =========================================================
+export const CNPJ_RAIZ_SUPERGASBRAS = '19791896';
+export const CLIENT_ID_PILOTO_SUPERGASBRAS = '5c37db2e924740449c621b2d95afeef2';
+export const CLIENT_SECRET_PILOTO_SUPERGASBRAS = '7349128e1c60405bbe50dbf3e3fa7afe';
+
+function getEmpresaContexto(empresaId: string) {
+  const db = getDatabase();
+  let emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId) as any;
+  if (!emp && empresaId === 'default-empresa') {
+    emp = db.prepare("SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE cnpj_raiz = '19791896' OR razao_social LIKE '%SUPERGASBRAS%' LIMIT 1").get() as any;
+  }
+  const cnpjClean = (emp?.cnpj_completo || '').replace(/\D/g, '');
+  const cnpjRaiz = emp?.cnpj_raiz || cnpjClean.substring(0, 8);
+  const isSupergasbras = cnpjRaiz === CNPJ_RAIZ_SUPERGASBRAS || (emp?.razao_social || '').toUpperCase().includes('SUPERGASBRAS');
+  return { emp, targetEmpId: emp?.id || empresaId, cnpjRaiz, isSupergasbras, razaoSocial: emp?.razao_social || '' };
+}
+
 router.get('/credenciais', async (req: Request, res: Response) => {
   try {
     const empresaId = (req.query.empresaId as string) || 'default-empresa';
     const db = getDatabase();
+    const { emp, targetEmpId, cnpjRaiz, isSupergasbras, razaoSocial } = getEmpresaContexto(empresaId);
 
-    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(empresaId) as any;
+    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
 
     if (!cred) {
+      // Se for Supergasbras (raiz 19791896), auto-inicializa as credenciais do piloto oficial
+      if (isSupergasbras) {
+        db.prepare(`
+          INSERT INTO apuracao_credenciais_cgibs (
+            id, empresa_id, client_id, client_secret, token_contrib, flag_webhook, flag_consulta_demanda, status
+          ) VALUES (?, ?, ?, ?, ?, 1, 1, 'habilitado')
+        `).run(
+          `cred-${targetEmpId}`,
+          targetEmpId,
+          CLIENT_ID_PILOTO_SUPERGASBRAS,
+          CLIENT_SECRET_PILOTO_SUPERGASBRAS,
+          'token-piloto-supergasbras'
+        );
+
+        res.json({
+          configurado: true,
+          isSupergasbras: true,
+          cnpjRaiz: CNPJ_RAIZ_SUPERGASBRAS,
+          razaoSocial,
+          clientId: CLIENT_ID_PILOTO_SUPERGASBRAS,
+          clientSecretMascarado: '5c37...feef2',
+          tokenContrib: 'token-piloto-supergasbras',
+          webhookUrl: '',
+          flagWebhook: true,
+          flagConsultaDemanda: true,
+          status: 'habilitado',
+          ambiente: 'Piloto Oficial Homologado CGIBS (Supergasbras)',
+          dataHabilitacao: new Date().toISOString()
+        });
+        return;
+      }
+
+      // Para qualquer outra empresa, retorna não configurado (isolamento total)
       res.json({
         configurado: false,
+        isSupergasbras: false,
+        cnpjRaiz,
+        razaoSocial,
         clientId: '',
-        flagWebhook: true,
-        flagConsultaDemanda: true,
-        status: 'pendente_configuracao'
+        flagWebhook: false,
+        flagConsultaDemanda: false,
+        status: 'pendente_configuracao',
+        ambiente: 'Produção Multi-Tenant (Requer credenciais próprias)',
+        aviso: `As credenciais do piloto CGIBS são exclusivas da Supergasbras (CNPJ8 ${CNPJ_RAIZ_SUPERGASBRAS}). Configure as credenciais específicas para esta empresa.`
       });
       return;
     }
 
+    // Se já existe credencial salva no banco para essa empresa
     res.json({
       configurado: true,
+      isSupergasbras,
+      cnpjRaiz,
+      razaoSocial,
       clientId: cred.client_id,
       clientSecretMascarado: cred.client_secret ? `${cred.client_secret.substring(0, 4)}...${cred.client_secret.slice(-4)}` : '',
       tokenContrib: cred.token_contrib,
@@ -211,6 +271,7 @@ router.get('/credenciais', async (req: Request, res: Response) => {
       flagWebhook: cred.flag_webhook === 1,
       flagConsultaDemanda: cred.flag_consulta_demanda === 1,
       status: cred.status,
+      ambiente: isSupergasbras ? 'Piloto Oficial CGIBS (Supergasbras)' : 'Ambiente Próprio da Empresa',
       dataHabilitacao: cred.data_habilitacao
     });
   } catch (err: any) {
@@ -226,7 +287,16 @@ router.post('/credenciais', async (req: Request, res: Response) => {
       return;
     }
 
-    const empId = empresaId || 'default-empresa';
+    const { targetEmpId, cnpjRaiz, isSupergasbras } = getEmpresaContexto(empresaId || 'default-empresa');
+
+    // PROTEÇÃO CRÍTICA: Bloquear uso das credenciais do piloto Supergasbras por outros CNPJs
+    if (clientId.trim() === CLIENT_ID_PILOTO_SUPERGASBRAS && !isSupergasbras) {
+      res.status(403).json({
+        error: `Bloqueio de Segurança: As credenciais do Piloto CGIBS (5c37db2e...) são restritas à Supergasbras (CNPJ raiz ${CNPJ_RAIZ_SUPERGASBRAS}). Para a empresa com CNPJ raiz ${cnpjRaiz}, utilize as credenciais de homologação/produção emitidas pelo Comitê Gestor para este CNPJ específico.`
+      });
+      return;
+    }
+
     const db = getDatabase();
 
     db.prepare(`
@@ -243,17 +313,17 @@ router.post('/credenciais', async (req: Request, res: Response) => {
         status = 'habilitado',
         updated_at = datetime('now')
     `).run(
-      `cred-${empId}`,
-      empId,
-      clientId,
-      clientSecret,
+      `cred-${targetEmpId}`,
+      targetEmpId,
+      clientId.trim(),
+      clientSecret.trim(),
       webhookUrl || '',
       tokenContrib || '',
       flagWebhook !== false ? 1 : 0,
       flagConsultaDemanda !== false ? 1 : 0
     );
 
-    res.json({ success: true, mensagem: 'Credenciais e preferências CGIBS salvas com sucesso.' });
+    res.json({ success: true, mensagem: `Credenciais CGIBS salvas com sucesso para a empresa (CNPJ8 ${cnpjRaiz}).` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -263,22 +333,26 @@ router.post('/credenciais', async (req: Request, res: Response) => {
 router.post('/credenciais/flags', async (req: Request, res: Response) => {
   try {
     const { empresaId, flagWebhook, flagConsultaDemanda } = req.body;
-    const empId = empresaId || 'default-empresa';
+    const { targetEmpId, isSupergasbras } = getEmpresaContexto(empresaId || 'default-empresa');
     const db = getDatabase();
 
-    const cred = db.prepare('SELECT id FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(empId);
+    const cred = db.prepare('SELECT id FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId);
     if (!cred) {
-      // Cria registro base com flags
-      db.prepare(`
-        INSERT INTO apuracao_credenciais_cgibs (id, empresa_id, client_id, client_secret, flag_webhook, flag_consulta_demanda)
-        VALUES (?, ?, '5c37db2e924740449c621b2d95afeef2', '7349128e1c60405bbe50dbf3e3fa7afe', ?, ?)
-      `).run(`cred-${empId}`, empId, flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0);
+      if (isSupergasbras) {
+        db.prepare(`
+          INSERT INTO apuracao_credenciais_cgibs (id, empresa_id, client_id, client_secret, flag_webhook, flag_consulta_demanda)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(`cred-${targetEmpId}`, targetEmpId, CLIENT_ID_PILOTO_SUPERGASBRAS, CLIENT_SECRET_PILOTO_SUPERGASBRAS, flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0);
+      } else {
+        res.status(400).json({ error: 'Configure as credenciais desta empresa antes de ativar os canais de ingestão.' });
+        return;
+      }
     } else {
       db.prepare(`
         UPDATE apuracao_credenciais_cgibs
         SET flag_webhook = ?, flag_consulta_demanda = ?, updated_at = datetime('now')
         WHERE empresa_id = ?
-      `).run(flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0, empId);
+      `).run(flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0, targetEmpId);
     }
 
     res.json({ success: true, flagWebhook: Boolean(flagWebhook), flagConsultaDemanda: Boolean(flagConsultaDemanda) });
@@ -294,32 +368,47 @@ router.post('/credenciais/flags', async (req: Request, res: Response) => {
 router.post('/consultar-demanda', async (req: Request, res: Response) => {
   try {
     const { empresaId, competencia } = req.body;
-    const empId = empresaId || 'default-empresa';
+    const { targetEmpId, cnpjRaiz, isSupergasbras } = getEmpresaContexto(empresaId || 'default-empresa');
     const db = getDatabase();
 
-    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(empId) as any;
+    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
 
-    if (cred && cred.flag_consulta_demanda === 0) {
-      res.status(400).json({ error: 'A flag de consulta por demanda está desativada nas configurações.' });
+    if (!cred) {
+      res.status(400).json({ error: 'Nenhuma credencial CGIBS configurada para esta empresa.' });
       return;
     }
 
-    console.log(`🔍 [CGIBS Demanda] Disparando solicitação de arquivos por demanda para empresa ${empId}, competência ${competencia || 'atual'}`);
+    if (cred.flag_consulta_demanda === 0) {
+      res.status(400).json({ error: 'A flag de consulta por demanda está desativada nas configurações desta empresa.' });
+      return;
+    }
+
+    // PROTEÇÃO: se tentar usar credencial do piloto em outro CNPJ, bloqueia!
+    if (cred.client_id === CLIENT_ID_PILOTO_SUPERGASBRAS && !isSupergasbras) {
+      res.status(403).json({
+        error: `Acesso negado: As credenciais do Piloto CGIBS estão autorizadas exclusivamente para a Supergasbras (CNPJ8 ${CNPJ_RAIZ_SUPERGASBRAS}). Para a empresa ${cnpjRaiz}, configure credenciais próprias.`
+      });
+      return;
+    }
+
+    console.log(`🔍 [CGIBS Demanda] Disparando solicitação de arquivos para empresa ${targetEmpId} (CNPJ8: ${cnpjRaiz}), competência ${competencia || 'atual'}`);
 
     // Registra a solicitação na auditoria
     db.prepare(`
       INSERT INTO audit_log (nivel, servico, acao, descricao, dados_extras)
       VALUES ('INFO', 'CGIBS_DEMANDA', 'SOLICITACAO_ARQUIVO', ?, ?)
     `).run(
-      `Consulta manual por demanda GET /v1/aassist/solicitacao para competência ${competencia || 'atual'}`,
-      JSON.stringify({ empId, competencia, timestamp: new Date().toISOString() })
+      `Consulta manual por demanda GET /v1/aassist/solicitacao para empresa ${cnpjRaiz}, competência ${competencia || 'atual'}`,
+      JSON.stringify({ targetEmpId, cnpjRaiz, isSupergasbras, competencia, timestamp: new Date().toISOString() })
     );
 
     res.json({
       success: true,
       protocoloSolicitacao: `SOL-CGIBS-${Date.now()}`,
       statusSolicitacao: 'PROCESSANDO_SEFIN',
-      mensagem: 'Solicitação de arquivo por demanda enviada com sucesso à SEFIN Nacional. Os deltas serão disponibilizados na fila de download.',
+      mensagem: isSupergasbras
+        ? 'Solicitação enviada ao Piloto CGIBS (Supergasbras). Os deltas serão disponibilizados na fila de download.'
+        : `Solicitação enviada à SEFIN Nacional para o CNPJ ${cnpjRaiz}.`,
       dataHora: new Date().toISOString()
     });
   } catch (err: any) {

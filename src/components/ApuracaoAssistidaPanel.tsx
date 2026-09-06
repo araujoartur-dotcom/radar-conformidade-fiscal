@@ -27,7 +27,9 @@ import {
   Zap,
   HelpCircle,
   Hash,
-  Filter
+  Filter,
+  Settings,
+  X
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 import {
@@ -85,6 +87,18 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
   const [flagConsultaDemanda, setFlagConsultaDemanda] = useState<boolean>(true);
   const [consultandoDemanda, setConsultandoDemanda] = useState<boolean>(false);
 
+  // Isolamento Multi-Tenant de Credenciais (Supergasbras vs Outros CNPJs)
+  const [credencialInfo, setCredencialInfo] = useState<any>(null);
+  const [isModalCredenciaisOpen, setIsModalCredenciaisOpen] = useState<boolean>(false);
+  const [formClientId, setFormClientId] = useState<string>('');
+  const [formClientSecret, setFormClientSecret] = useState<string>('');
+  const [formWebhookUrl, setFormWebhookUrl] = useState<string>('');
+  const [salvandoCreds, setSalvandoCreds] = useState<boolean>(false);
+
+  const cnpjClean = (empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '');
+  const cnpjRaizAtivo = empresaAtiva?.cnpjRaiz || cnpjClean.substring(0, 8);
+  const isSupergasbras = cnpjRaizAtivo === '19791896' || (empresaAtiva?.razaoSocial || '').toUpperCase().includes('SUPERGASBRAS');
+
   // Carregar dados da competência
   const carregarDados = async () => {
     try {
@@ -104,11 +118,14 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
         setTotalOperacoes(opRes.data.total);
       }
 
-      // Carregar preferências de flags
+      // Carregar preferências e credenciais isoladas por empresa
       const credRes = await get<any>(`/apuracao/credenciais?empresaId=${empId}`);
       if (credRes.ok && credRes.data) {
+        setCredencialInfo(credRes.data);
         if (credRes.data.flagWebhook !== undefined) setFlagWebhook(credRes.data.flagWebhook);
         if (credRes.data.flagConsultaDemanda !== undefined) setFlagConsultaDemanda(credRes.data.flagConsultaDemanda);
+        if (credRes.data.clientId) setFormClientId(credRes.data.clientId);
+        if (credRes.data.webhookUrl) setFormWebhookUrl(credRes.data.webhookUrl);
       }
     } catch (err: any) {
       console.error('Erro ao carregar dados da apuração:', err);
@@ -239,6 +256,35 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
     }
   };
 
+  // Salvar credenciais próprias para empresa multi-tenant
+  const handleSalvarCredenciaisEmpresa = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setSalvandoCreds(true);
+      const empId = empresaAtiva?.id || 'default-empresa';
+      const res = await post<any>('/apuracao/credenciais', {
+        empresaId: empId,
+        clientId: formClientId,
+        clientSecret: formClientSecret,
+        webhookUrl: formWebhookUrl,
+        flagWebhook,
+        flagConsultaDemanda
+      });
+
+      if (res.ok && res.data?.success) {
+        setAcaoStatus({ msg: res.data.mensagem || 'Credenciais registradas com sucesso para a empresa!', tipo: 'sucesso' });
+        setIsModalCredenciaisOpen(false);
+        carregarDados();
+      } else {
+        setAcaoStatus({ msg: res.data?.error || 'Erro ao registrar credenciais.', tipo: 'erro' });
+      }
+    } catch (err: any) {
+      setAcaoStatus({ msg: `Falha: ${err.message}`, tipo: 'erro' });
+    } finally {
+      setSalvandoCreds(false);
+    }
+  };
+
   return (
     <div className="w-full flex flex-col gap-6 pb-12">
       
@@ -252,13 +298,24 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               <Calculator className="w-7 h-7" />
             </div>
             <div>
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <h1 className="text-2xl font-bold text-white tracking-tight">
                   Apuração Assistida <span className="text-cyan-400">IBS / CBS</span>
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                   CGIBS MOC v1.00 & RFB RTC v1
                 </span>
+                {isSupergasbras ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-950">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Piloto Oficial CGIBS: Supergasbras (CNPJ8 19791896)
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-sm shadow-amber-950">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    Multi-Tenant: {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — {credencialInfo?.configurado ? 'Credenciais Próprias' : 'Configuração Pendente'}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl">
                 Operacionalização da não-cumulatividade, controle do Conta Corrente Fiscal em 7 campos oficiais e ledger incremental com cálculo em tempo real.
@@ -284,6 +341,21 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 <option value="2026-09" className="bg-slate-900 text-white">09/2026 (Set/2026 — Vigente)</option>
               </select>
             </div>
+
+            {/* Botão Configurar Credenciais */}
+            <button
+              onClick={() => {
+                setFormClientId(credencialInfo?.clientId || '');
+                setFormClientSecret('');
+                setFormWebhookUrl(credencialInfo?.webhookUrl || '');
+                setIsModalCredenciaisOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold transition-all cursor-pointer"
+              title="Configurar Credenciais do CGIBS / SEFIN Nacional"
+            >
+              <Settings className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Credenciais</span>
+            </button>
 
             {/* Botão Carregar Cenários Didáticos Oficiais */}
             <button
@@ -497,6 +569,29 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
             </button>
           )}
         </div>
+
+        {/* Aviso de Isolamento para Empresas Multi-Tenant (Não-Supergasbras) */}
+        {!isSupergasbras && !credencialInfo?.configurado && (
+          <div className="w-full mt-2 p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>
+                Esta empresa (CNPJ raiz <strong>{cnpjRaizAtivo}</strong>) ainda não possui credenciais do CGIBS registradas. As credenciais do piloto oficial pertencem exclusivamente à <strong>Supergasbras</strong>.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setFormClientId('');
+                setFormClientSecret('');
+                setFormWebhookUrl('');
+                setIsModalCredenciaisOpen(true);
+              }}
+              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs shrink-0 cursor-pointer shadow-sm transition-all"
+            >
+              Cadastrar Credenciais Desta Empresa
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Navegação por Abas Oficiais */}
@@ -1121,6 +1216,127 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               <span>Sistemática Incremental: Cada linha é um evento imutável.</span>
               <span className="font-bold text-white">Total: {extratoData.extrato.length} lançamentos</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Configuração de Credenciais Multi-Tenant CGIBS */}
+      {isModalCredenciaisOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Credenciais CGIBS / SEFIN Nacional</h3>
+                  <p className="text-xs text-slate-400">
+                    {empresaAtiva?.razaoSocial || 'Empresa'} — CNPJ raiz: <span className="font-mono text-cyan-400">{cnpjRaizAtivo}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsModalCredenciaisOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Aviso de Isolamento */}
+            <div className="p-4 bg-slate-950/40 border-b border-slate-800/80 text-xs">
+              {isSupergasbras ? (
+                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <Check className="w-4 h-4" /> Piloto Oficial Autorizado (Supergasbras)
+                  </p>
+                  <p className="mt-1 text-[11px] text-emerald-400/90 leading-relaxed">
+                    As credenciais oficiais do piloto CGIBS (5c37db2e...) estão ativas e vinculadas exclusivamente a esta empresa.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-300">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" /> Isolamento Multi-Tenant Garantido
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-300 leading-relaxed">
+                    Informe as credenciais OAuth 2.0 (Client ID e Client Secret) emitidas pelo Comitê Gestor para este CNPJ raiz ({cnpjRaizAtivo}). O sistema não permite o reuso das chaves do piloto Supergasbras por outros CNPJs.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSalvarCredenciaisEmpresa} className="p-5 flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Client ID (CGIBS / SEFIN)
+                </label>
+                <input
+                  type="text"
+                  required
+                  disabled={isSupergasbras}
+                  value={formClientId}
+                  onChange={(e) => setFormClientId(e.target.value)}
+                  placeholder="Ex: 5c37db2e924740449c621b2d95afeef2"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Client Secret (Chave Privada de Acesso)
+                </label>
+                <input
+                  type="password"
+                  required={!credencialInfo?.configurado}
+                  disabled={isSupergasbras}
+                  value={formClientSecret}
+                  onChange={(e) => setFormClientSecret(e.target.value)}
+                  placeholder={credencialInfo?.clientSecretMascarado ? `Atual: ${credencialInfo.clientSecretMascarado}` : 'Informe o Client Secret emitido'}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                {isSupergasbras && (
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    As credenciais do piloto Supergasbras estão protegidas contra vazamento entre inquilinos.
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  URL de Retorno Webhook (Opcional)
+                </label>
+                <input
+                  type="url"
+                  value={formWebhookUrl}
+                  onChange={(e) => setFormWebhookUrl(e.target.value)}
+                  placeholder="https://seu-dominio.com/api/apuracao/webhook"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsModalCredenciaisOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Fechar
+                </button>
+                {!isSupergasbras && (
+                  <button
+                    type="submit"
+                    disabled={salvandoCreds}
+                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {salvandoCreds ? 'Salvando...' : 'Salvar Credenciais'}
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         </div>
       )}
