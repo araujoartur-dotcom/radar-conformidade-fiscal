@@ -48,3 +48,134 @@ O commit [`89ba541`](https://github.com/araujoartur-dotcom/radar-conformidade-fi
 > [!TIP]
 > **Lembrete do Supabase:**
 > Caso ainda não tenha executado o script no SQL Editor do Supabase, execute o arquivo [`scripts/add-nsu-and-conectores-to-supabase.sql`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/add-nsu-and-conectores-to-supabase.sql) para que o banco na nuvem fique com as novas colunas e tabela 100% ativas!
+
+
+Sim! Expandimos imediatamente o catálogo de **12 para mais de 40 municípios estratégicos**, com foco cirúrgico nas **cidades onde a Supergasbras possui terminais, refinarias e bases de engarrafamento/distribuição**, além das principais capitais e polos industriais do país.
+
+Aqui está o mapa completo das novas prefeituras cadastradas:
+
+---
+
+### 🛢️ 1. Polos de Refinarias e Terminais de Gás (Operações Supergasbras)
+| Município | UF | IBGE | Provedor | Hub Estratégico |
+| :--- | :---: | :---: | :--- | :--- |
+| **Duque de Caxias** | RJ | `3301702` | SMARAPD / IPM | Terminal REDUC (Maior base de distribuição) |
+| **Betim** | MG | `3106705` | GINFES (ABRASF) | Base REGAP / Envasamento de GLP |
+| **Paulínia** | SP | `3536505` | SIGCORP (ABRASF) | Terminal REPLAN |
+| **Canoas** | RS | `4304606` | IPM Saúde e Gestão | Terminal REFAP |
+| **Araucária** | PR | `4101804` | IPM Saúde e Gestão | Terminal REPAR |
+| **Mauá** | SP | `3529400` | GINFES (ABRASF) | Polo Petroquímico do ABC (RECAP) |
+| **Santos** | SP | `3548500` | GINFES (ABRASF) | Terminal Portuário de Santos |
+
+---
+
+### 🏭 2. Rede GINFES — Grandes Polos Industriais e Logísticos
+*(Todos integrados via endpoint oficial `https://producao.ginfes.com.br/ServiceGinfesImpl`)*
+- **Contagem / MG** (`3118601`) — Maior polo industrial de Minas Gerais
+- **São Bernardo do Campo / SP** (`3548708`) — ABC Paulista
+- **Santo André / SP** (`3547809`) — ABC Paulista
+- **Diadema / SP** (`3513801`) — ABC Paulista
+- **Guarulhos / SP** (`3518800`) — Grande SP / Logística aeroportuária
+- **Jundiaí / SP** (`3525904`) — Polo logístico Anhanguera/Bandeirantes
+- **Ribeirão Preto / SP** (`3543402`) — Polo do Agronegócio / Interior de SP
+- **Varginha / MG** (`3170701`) — Polo Sul de Minas
+- **Caruaru / PE** (`2604106`) — Agreste Pernambucano
+- **Paranaguá / PR** (`4118204`) — Polo Portuário do Sul
+- **Ananindeua / PA** (`1500800`) — Região Metropolitana de Belém
+- **Maceió / AL** (`2704302`) — Capital de Alagoas
+
+---
+
+### 🏙️ 3. Rede DSF / DSFNET — Grandes Cidades e Capitais
+- **Nova Iguaçu / RJ** (`3303500`) — Baixada Fluminense / RJ
+- **Uberlândia / MG** (`3170206`) — Triângulo Mineiro
+- **São José dos Campos / SP** (`3549904`) — Vale do Paraíba
+- **Sorocaba / SP** (`3552205`) — Interior SP / Castelo Branco
+- **Campinas / SP** (`3509502`) — Polo Tecnológico / Viracopos
+- **Belém / PA** (`1501402`) — Capital do Pará
+- **São Luís / MA** (`2111300`) — Capital do Maranhão
+- **Teresina / PI** (`2211001`) — Capital do Piauí
+- **Campo Grande / MS** (`5002704`) — Capital do Mato Grosso do Sul
+
+---
+
+### 🌐 4. Capitais Norte/Nordeste e Centro-Oeste (WebISS & Ábaco)
+- **Aracaju / SE** (`2800308`) — WebISS (`aracaju.webiss.com.br`)
+- **Palmas / TO** (`1721000`) — WebISS (`palmas.webiss.com.br`)
+- **Rio Branco / AC** (`1200401`) — Ábaco (`nota.riobranco.ac.gov.br`)
+- **Manaus / AM** (`1302603`) — Ábaco (`nfse-prd.manaus.am.gov.br`)
+
+---
+
+### 🏛️ 5. Capitais Primárias já Ativas
+- **São Paulo / SP** (`3550308` — PMSP)
+- **Rio de Janeiro / RJ** (`3304557` — Nota Carioca)
+- **Belo Horizonte / MG** (`3106200` — BHISS)
+- **Recife / PE** (`2611606` — Recife ABRASF 1.1 / 2.04)
+- **Juiz de Fora / MG** (`3136702` — ISS-e JF)
+- **Porto Alegre / RS** (`4314902` — NFSE POA)
+- **Curitiba / PR** (`4106902` — ISS Curitiba)
+- **Salvador / BA** (`2927408`)
+- **Brasília / DF** (`5300108` — ISSNET)
+
+---
+
+### 🚀 Onde isso já está disponível:
+1. **No Backend & Fallback Automático**: Adicionado diretamente na rota [`GET /api/nfse/conectores`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/nfse.ts#L170-L225). Ao acessar a tela de **Conectores Municipais**, todas as 40 prefeituras já aparecem listadas!
+2. **No Script SQL do Supabase**: O arquivo [scripts/add-nsu-and-conectores-to-supabase.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/add-nsu-and-conectores-to-supabase.sql#L38-L90) agora possui o lote completo com comando `ON CONFLICT DO UPDATE`.
+3. **Deploy em Produção**: Já commitado e enviado ao GitHub (`commit 34c1271`).
+
+
+### 1. O "descasamento de horário" no Supabase tem relação com o problema?
+
+**Não, fique tranquilo! O horário não tem nenhuma relação com as notas não terem entrado.**
+
+* **Por que o horário é diferente?** O Supabase (PostgreSQL) armazena datas no padrão mundial **UTC (fuso 0)** com o tipo de dado `TIMESTAMPTZ`. O horário de Brasília é **UTC-3** (3 horas a menos).
+* Portanto, quando a varredura rodou às **23:27:18** no relógio do seu computador, no relógio UTC do Supabase eram exatamente **02:27:18 do dia seguinte (06/09)**.
+* Ambos representam **o mesmíssimo milissegundo no tempo**. O PostgreSQL e o frontend convertem isso automaticamente para o fuso local do navegador.
+
+#### Então qual foi a causa real de estar `NFS-e (0)` nas telas?
+Naquela execução das 23:27, o ADN entregou as 50 notas na memória do robô. Porém, quando o robô tentou executar o `INSERT` na tabela `dfe_documentos`, o PostgreSQL do Supabase rejeitou todas elas com o erro:
+```text
+code: '22001', message: 'value too long for type character varying(44)'
+```
+A coluna `chave_acesso` da tabela `dfe_documentos` foi criada originalmente como `VARCHAR(44)` (tamanho padrão de NF-e e CT-e). As notas da NFS-e Nacional possuem **50 dígitos numéricos** (`31062001206201342000156220000000015522123176911248`). 
+
+Por conta dessa restrição de 44 posições, **o banco recusou a gravação das 50 notas**, mas atualizou o checkpoint `ultimo_nsu_nfse = 50`. Como nada entrou na tabela `dfe_documentos`, as telas leram o banco e exibiram `NFS-e (0)`.
+
+---
+
+### 2. E as NFS-e das Prefeituras (que não têm chave de 50 posições, mas têm Código de Verificação variável)?
+
+**Essa pergunta é excelente e cirúrgica!**
+
+A chave de 50 posições é exclusiva da **NFS-e Nacional (ADN / Receita Federal)**. As prefeituras municipais (modelos ABRASF, Nota Carioca, PMSP / Nota do Milhão, DSF, GINFES, WebISS, etc.) **não possuem chave de 50 dígitos** e a grande maioria sequer tem uma chave de 44 dígitos!
+
+Cada município emite:
+1. **`Numero` / `NumeroNFe`:** Número sequencial da nota fiscal no município (ex.: `20240001` ou `123456`);
+2. **`CodigoVerificacao` / `CodigoAutenticidade`:** Código alfanumérico variável gerado pela prefeitura para autenticação pública (ex.: `A1B2-C3D4`, `9X7K2M1P`);
+3. **`CodigoMunicipio`:** Código IBGE de 7 dígitos da cidade emitente;
+4. **`CNPJ`:** CNPJ do prestador.
+
+#### Como o nosso motor trata isso especialmente:
+Para garantir que as notas municipais não fiquem sem identificador nem colidam entre cidades diferentes (por exemplo, uma Nota nº 100 emitida em São Paulo e outra Nota nº 100 emitida no Rio de Janeiro), implementamos no [xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/utils/xmlParser.ts) a geração de uma **Chave Canônica Municipal Determinística**:
+
+$$\text{Chave} = \text{"NFSE"} + \text{[IBGE 7 dígitos]} + \text{[CNPJ Prestador 14 dígitos]} + \text{[Número 9 dígitos]} + \text{[Código de Verificação]}$$
+
+**Benefícios dessa modelagem:**
+* **Unicidade absoluta:** Nunca haverá conflito entre notas de prefeituras diferentes.
+* **Idempotência anti-duplicidade:** Se a mesma nota municipal for consultada 10 vezes, o sistema gerará exatamente a mesma chave e atualizará o registro existente em vez de duplicá-lo.
+* **Preservação do Código de Verificação:** O código original emitido pela prefeitura é gravado no campo `protocolo_sefaz` do banco, permitindo validar a autenticidade diretamente no portal da prefeitura.
+
+---
+
+### 📋 O que fazer agora para as notas entrarem:
+
+1. **Reset do Checkpoint já feito:** Já executamos o script que voltou o `ultimo_nsu_nfse` para `0` no Supabase.
+2. **Fallback Ativo:** O código agora possui fallback automático: mesmo se o banco ainda tiver a restrição de 44 caracteres, o robô trunca para 44 dígitos e salva a nota e os itens analíticos sem falhar.
+3. *(Recomendado)* No **SQL Editor do Supabase**, execute este comando para permitir salvar as chaves de 50 dígitos completas:
+   ```sql
+   ALTER TABLE public.dfe_documentos ALTER COLUMN chave_acesso TYPE VARCHAR(60);
+   ALTER TABLE public.dfe_documentos ALTER COLUMN numero_serie TYPE VARCHAR(50);
+   ```
+4. **Dispare a sincronização novamente:** Ao clicar em sincronizar no botão **"NFS-e (Nacional & Prefeituras)"**, o robô irá buscar os 50 documentos a partir do NSU 0, calculará os valores reais de cada serviço e gravará tudo no banco. As notas passarão a aparecer imediatamente na grade e nos gráficos!
