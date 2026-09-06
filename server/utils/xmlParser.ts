@@ -309,6 +309,23 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || extractTagRegex(sanitized, 'SerieRPS')
     || (chaveAcesso.length >= 25 ? chaveAcesso.substring(22, 25) : '1');
 
+  // 5b. Código de Verificação e Chave Canônica para NFS-e Municipal (ABRASF, PMSP, DSF, etc.)
+  const codigoVerificacao = extractTagRegex(sanitized, 'CodigoVerificacao')
+    || extractTagRegex(sanitized, 'CodigoAutenticidade')
+    || extractTagRegex(sanitized, 'CodVerificacao')
+    || extractTagRegex(sanitized, 'CodVerif')
+    || '';
+
+  if (!chaveAcesso && tipoDoc === 'NFSe') {
+    const cleanEmit = emitCnpj.replace(/\D/g, '') || '00000000000000';
+    const cleanMun = (emitMun || '0000000').replace(/\D/g, '').padStart(7, '0').substring(0, 7);
+    const cleanNum = numero.replace(/\D/g, '').padStart(9, '0');
+    const cleanVerif = codigoVerificacao.replace(/[^a-zA-Z0-9]/g, '');
+    if (cleanVerif || (cleanNum && cleanNum !== '000000001')) {
+      chaveAcesso = `NFSE${cleanMun}${cleanEmit}${cleanNum}${cleanVerif}`.substring(0, 44);
+    }
+  }
+
   // 6. Datas e Horários no Fuso de Brasília
   const rawDhEmi = extractTagRegex(sanitized, 'dhEmi') 
     || extractTagRegex(sanitized, 'dhProc') 
