@@ -12,7 +12,7 @@ import { Router, Response } from 'express';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { getDatabase } from '../db/database';
 import { isSupabaseConfigured, getSupabaseAdmin } from '../db/supabase';
-import { sincronizarNfseNacional, sincronizarNfseUnificada, sincronizarNfsePMSP, obterStatusNfse } from '../services/nfseService';
+import { sincronizarNfseNacional, sincronizarNfseUnificada, sincronizarNfsePMSP, obterStatusNfse, obterDanfseNacionalPdf } from '../services/nfseService';
 
 const router = Router();
 
@@ -129,26 +129,47 @@ router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: 
  */
 router.get('/conectores', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const db = getDatabase();
-    const rows = db.prepare(`
-      SELECT 
-        id,
-        ibge,
-        municipio,
-        uf,
-        provedor,
-        tecnologia,
-        endpoint_producao,
-        endpoint_homologacao,
-        tipo_autenticacao,
-        token_api,
-        usuario,
-        status,
-        created_at,
-        updated_at
-      FROM conectores_municipais
-      ORDER BY uf ASC, municipio ASC
-    `).all() as any[];
+    let rows: any[] = [];
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data, error } = await supabase
+            .from('conectores_municipais')
+            .select('*')
+            .order('uf', { ascending: true })
+            .order('municipio', { ascending: true });
+          if (!error && data && data.length > 0) {
+            rows = data;
+          }
+        }
+      } catch (e: any) {
+        console.warn('Aviso Supabase conectores:', e.message);
+      }
+    }
+
+    if (rows.length === 0) {
+      const db = getDatabase();
+      rows = db.prepare(`
+        SELECT 
+          id,
+          ibge,
+          municipio,
+          uf,
+          provedor,
+          tecnologia,
+          endpoint_producao,
+          endpoint_homologacao,
+          tipo_autenticacao,
+          token_api,
+          usuario,
+          status,
+          created_at,
+          updated_at
+        FROM conectores_municipais
+        ORDER BY uf ASC, municipio ASC
+      `).all() as any[];
+    }
 
     const conectores = rows.map(r => ({
       id: r.id,
@@ -350,6 +371,37 @@ router.delete('/conectores/:id', requireAuth, async (req: AuthenticatedRequest, 
     res.json({ success: true, message: 'Conector municipal excluído com sucesso.' });
   } catch (err: any) {
     console.error('❌ Erro ao excluir conector municipal:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/nfse/danfse/:chave
+ * Faz o download do DANFSe (PDF) oficial gerado pelo Ambiente de Dados Nacional (ADN).
+ */
+router.get('/danfse/:chave', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { chave } = req.params;
+    const activeEmpresaId = req.user?.empresaAtivaId;
+    const empresaId = (req.query.empresaId as string) || activeEmpresaId;
+    let cleanCnpj = (req.query.cnpj as string) || (req.user?.empresaCnpj ? req.user.empresaCnpj.replace(/\D/g, '') : '');
+
+    if (!empresaId || !cleanCnpj) {
+      res.status(400).json({ success: false, error: 'Empresa e CNPJ obrigatórios para emissão do DANFSe.' });
+      return;
+    }
+
+    const pdfBuffer = await obterDanfseNacionalPdf(chave, empresaId, cleanCnpj);
+    if (!pdfBuffer) {
+      res.status(404).json({ success: false, error: 'DANFSe em PDF não retornado pelo ADN para esta chave.' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="DANFSE-${chave}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('❌ Erro ao baixar DANFSe do ADN:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

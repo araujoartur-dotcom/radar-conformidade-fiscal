@@ -858,6 +858,20 @@ export async function sincronizarConectorMunicipalSoap(params: {
     </not:ConsultarNfseServicoTomadoRequest>
   </soapenv:Body>
 </soapenv:Envelope>`;
+  } else if (provUpper.includes('GINFES')) {
+    // Padrão GINFES (Guarulhos, Betim, Contagem, Santos, SBC, Santo André, etc.)
+    soapAction = 'http://nfse.ginfes.com.br/ConsultarNfseServicoTomado';
+    soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:gin="http://nfse.ginfes.com.br">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <gin:ConsultarNfseServicoTomadoEnvio>
+      <gin:Consulente><gin:Cnpj>${cleanCnpj}</gin:Cnpj></gin:Consulente>
+      <gin:PeriodoEmissao><gin:DataInicial>${dtInicioStr}</gin:DataInicial><gin:DataFinal>${dtFimStr}</gin:DataFinal></PeriodoEmissao>
+      <gin:Tomador><gin:CpfCnpj><gin:Cnpj>${cleanCnpj}</gin:Cnpj></gin:CpfCnpj></gin:Tomador>
+    </gin:ConsultarNfseServicoTomadoEnvio>
+  </soapenv:Body>
+</soapenv:Envelope>`;
   } else {
     // Padrão Geral ABRASF 2.04 (Belo Horizonte - BHISS, Recife, Porto Alegre, Curitiba, etc.)
     soapAction = 'http://nfse.abrasf.org.br/ConsultarNfseServicoTomado';
@@ -970,6 +984,70 @@ export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseS
     tpAmb: params.tpAmb,
     dataInicio: params.dataInicio,
     dataFim: params.dataFim
+  });
+}
+
+// =========================================================
+// 8. OBTENÇÃO DE DANFSE OFICIAL (PDF) VIA ADN NACIONAL
+// Ref: https://adn.nfse.gov.br/danfse/docs/index.html
+// =========================================================
+export async function obterDanfseNacionalPdf(
+  chaveAcesso: string,
+  empresaId: string,
+  cnpj: string,
+  tpAmb: '1' | '2' = '1'
+): Promise<Buffer | null> {
+  const cleanCnpj = cnpj.replace(/\D/g, '');
+  const certData = await descriptografarCertificado(empresaId, cleanCnpj);
+  if (!certData) return null;
+
+  let pem: { key: string; cert: string; ca?: string[] };
+  try {
+    pem = converterPfxParaPem(certData.pfxBuffer, certData.senha);
+  } catch {
+    return null;
+  }
+
+  const isProd = tpAmb === '1';
+  const baseUrl = isProd ? 'https://adn.nfse.gov.br' : 'https://adn.producaorestrita.nfse.gov.br';
+  const url = `${baseUrl}/danfse/${chaveAcesso}`;
+
+  return new Promise((resolve) => {
+    try {
+      const parsedUrl = new URL(url);
+      const req = https.request({
+        hostname: parsedUrl.hostname,
+        port: 443,
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        agent: new https.Agent({
+          cert: pem.cert,
+          key: pem.key,
+          ca: pem.ca && pem.ca.length > 0 ? pem.ca : undefined,
+          rejectUnauthorized: false
+        }),
+        headers: {
+          'Accept': 'application/pdf, application/json'
+        },
+        timeout: 20000
+      }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', chunk => chunks.push(chunk));
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            resolve(Buffer.concat(chunks));
+          } else {
+            resolve(null);
+          }
+        });
+      });
+
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => { req.destroy(); resolve(null); });
+      req.end();
+    } catch {
+      resolve(null);
+    }
   });
 }
 
@@ -1118,14 +1196,17 @@ export async function sincronizarNfseUnificada(params: {
       }
     }
 
-    // Se nenhuma prefeitura estiver cadastrada, utilizar catálogo padrão das principais capitais
+    // Se nenhuma prefeitura estiver cadastrada, utilizar catálogo padrão com endpoints oficiais validados
     if (conectoresAtivos.length === 0) {
       conectoresAtivos = [
         { ibge: '3550308', municipio: 'São Paulo', uf: 'SP', provedor: 'PMSP (Nota do Milhão)', tecnologia: 'SOAP', endpoint_producao: 'https://nfe.prefeitura.sp.gov.br/ws/lotenfe.asmx', status: 'ativo' },
         { ibge: '3304557', municipio: 'Rio de Janeiro', uf: 'RJ', provedor: 'Nota Carioca (ABRASF 1.0)', tecnologia: 'SOAP', endpoint_producao: 'https://notacarioca.rio.gov.br/WSNacional/nfse.asmx', status: 'ativo' },
-        { ibge: '3106200', municipio: 'Belo Horizonte', uf: 'MG', provedor: 'BHISS (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://bhissdigital.pbh.gov.br/bhiss-ws/nfse', status: 'ativo' },
-        { ibge: '2611606', municipio: 'Recife', uf: 'PE', provedor: 'Recife (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.recife.pe.gov.br/ws/nfse.asmx', status: 'ativo' },
+        { ibge: '3106200', municipio: 'Belo Horizonte', uf: 'MG', provedor: 'BHISS (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://bhissdigitalws.pbh.gov.br/bhiss-ws/nfse', status: 'ativo' },
+        { ibge: '2611606', municipio: 'Recife', uf: 'PE', provedor: 'Recife (ABRASF 1.1 / 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.recife.pe.gov.br/WS/nfse_v03.asmx', status: 'ativo' },
+        { ibge: '3136702', municipio: 'Juiz de Fora', uf: 'MG', provedor: 'ISS-e JF (ABRASF 2.02)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.pjf.mg.gov.br:4431/WebService.asmx', status: 'ativo' },
         { ibge: '4314902', municipio: 'Porto Alegre', uf: 'RS', provedor: 'NFSE POA (ABRASF 2.04)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse.portoalegre.rs.gov.br/bhiss-ws/nfse', status: 'ativo' },
+        { ibge: '1302603', municipio: 'Manaus', uf: 'AM', provedor: 'Ábaco (ABRASF)', tecnologia: 'SOAP', endpoint_producao: 'https://nfse-prd.manaus.am.gov.br/nfse', status: 'ativo' },
+        { ibge: '3518800', municipio: 'Guarulhos', uf: 'SP', provedor: 'GINFES (ABRASF)', tecnologia: 'SOAP', endpoint_producao: 'https://producao.ginfes.com.br/ServiceGinfesImpl', status: 'ativo' },
       ];
     }
 
