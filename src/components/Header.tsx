@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User, Lock, FileCheck2, Users
+  ChevronDown, Check, User, Lock, FileCheck2, Users, Calculator
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -100,6 +100,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Conciliação SPED Fiscal x SEFAZ', icon: FileCheck2, color: 'text-indigo-400' };
       case 'observabilidade_dlq':
         return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
+      case 'apuracao_assistida':
+        return { title: 'Apuração Assistida (IBS/CBS)', icon: Calculator, color: 'text-emerald-400' };
       default:
         return { title: 'Painel de Auditoria', icon: Building2, color: 'text-cyan-400' };
     }

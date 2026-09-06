@@ -16,7 +16,8 @@ import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
-  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt
+  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt,
+  Sparkles, Clock
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -850,6 +851,54 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 <div>Rotina Automática: {selectedItemForModal.rotinaCaptura}</div>
                 <div>Regra de Elegibilidade Aplicada: {selectedItemForModal.regraAplicadaId} ({selectedItemForModal.resultadoElegibilidade})</div>
                 <div>Critério Onerosidade: {selectedItemForModal.criterioOnerosidade}</div>
+              </div>
+
+              {/* Seção Conta Corrente Fiscal & CGIBS (Apuração Assistida - LC 215/2025) */}
+              <div className="md:col-span-2 p-3 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 rounded-xl border border-cyan-900/50 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-cyan-400 uppercase font-sans font-bold flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-cyan-400" />
+                    Conta Corrente Fiscal & Homologação CGIBS (Apuração Assistida)
+                  </div>
+                  {selectedItemForModal.statusCreditoCgibs === 'CONFIRMADO' ? (
+                    <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
+                      🟢 Crédito Confirmado (Débito Fornecedor Extinto)
+                    </span>
+                  ) : selectedItemForModal.statusCreditoCgibs === 'PENDENTE_EXTINCAO' ? (
+                    <span className="px-2.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-bold">
+                      🟡 Pendente de Extinção pelo Fornecedor (Art. 27 LC 215)
+                    </span>
+                  ) : selectedItemForModal.statusCreditoCgibs === 'UTILIZADO' ? (
+                    <span className="px-2.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-bold">
+                      🔵 Crédito Já Utilizado na Apuração
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold">
+                      ⚪ Aguardando Lote de Sincronismo CGIBS
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] pt-1.5 border-t border-slate-800/80">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Diagnóstico Oficial:</span>
+                    <span className="text-slate-200 font-sans font-medium">
+                      {selectedItemForModal.motivoCreditoCgibs || 'Documento apto para processamento na SEFIN Nacional'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Identificador da Operação:</span>
+                    <span className="text-cyan-300 font-mono">
+                      {selectedItemForModal.operacaoId || `OP-${selectedItemForModal.chaveAcesso.substring(25, 34)}`}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Hash SHA-1 de Integridade:</span>
+                    <span className="text-purple-300 font-mono text-[10px] truncate block" title={selectedItemForModal.hashCgibs || 'Aguardando consolidação'}>
+                      {selectedItemForModal.hashCgibs ? `${selectedItemForModal.hashCgibs.substring(0, 18)}...` : 'Gerado no MOC CGIBS'}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 

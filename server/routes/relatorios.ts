@@ -275,6 +275,34 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const cfops = db.prepare('SELECT cfop, tratamento_padrao, exige_onerosidade FROM cfop_tratamento WHERE ativo = 1').all() as any[];
     const cfopMap = new Map(cfops.map(c => [c.cfop, c]));
 
+    // Carregar mapa leve da Conta Corrente Fiscal / Apuração Assistida (Zero Duplicação)
+    let apuracaoMap = new Map<string, any>();
+    try {
+      const apuracaoRows = db.prepare(`
+        SELECT 
+          op.id as operacao_id,
+          op.chave_acesso,
+          op.tipo_operacao,
+          op.hash_acumulado,
+          COALESCE(SUM(cc.credito_a_propriar), 0) as tot_credito_a_propriar,
+          COALESCE(SUM(cc.credito_nao_utilizado), 0) as tot_credito_nao_utilizado,
+          COALESCE(SUM(cc.credito_utilizado), 0) as tot_credito_utilizado,
+          COALESCE(SUM(cc.debito_em_aberto), 0) as tot_debito_em_aberto,
+          COALESCE(SUM(cc.debito_extinto), 0) as tot_debito_extinto
+        FROM apuracao_operacoes op
+        LEFT JOIN apuracao_extrato_cc cc ON cc.operacao_id = op.id
+        GROUP BY op.id, op.chave_acesso
+      `).all() as any[];
+
+      for (const ap of apuracaoRows) {
+        if (ap.chave_acesso) {
+          apuracaoMap.set(ap.chave_acesso, ap);
+        }
+      }
+    } catch (e: any) {
+      console.warn('⚠️ Não foi possível carregar mapa de apuração assistida:', e?.message || e);
+    }
+
     const mapped = rows.map(r => {
       const itemCfop = r.cfop || (r.tipoDoc === 'NFSe' ? '1933' : '1102');
       const cfopInfo = cfopMap.get(itemCfop) || { tratamento_padrao: 'Elegível', exige_onerosidade: 1 };
@@ -291,6 +319,27 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       let resultadoElegibilidade = 'Elegível';
       if (cfopInfo.tratamento_padrao === 'Não elegível') resultadoElegibilidade = 'Não elegível';
       if (cfopInfo.tratamento_padrao === 'Depende') resultadoElegibilidade = 'Pendente';
+
+      // ========================================================
+      // CONCILIAÇÃO DINÂMICA COM CONTA CORRENTE FISCAL (CGIBS / RTC)
+      // Art. 27 LC 215/2025 - Não-cumulatividade vinculada à liquidação
+      // ========================================================
+      const apOp = apuracaoMap.get(r.chaveAcesso);
+      let statusCreditoCgibs: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
+      let motivoCreditoCgibs = 'Aguardando sincronismo com CGIBS / RTC';
+
+      if (apOp) {
+        if (apOp.tot_credito_utilizado > 0) {
+          statusCreditoCgibs = 'UTILIZADO';
+          motivoCreditoCgibs = 'Crédito já apropriado e utilizado para abater débitos do período';
+        } else if (apOp.tot_credito_nao_utilizado > 0 || (apOp.tot_debito_extinto > 0 && apOp.tot_debito_em_aberto <= 0)) {
+          statusCreditoCgibs = 'CONFIRMADO';
+          motivoCreditoCgibs = 'Débito extinto pelo fornecedor (Split Payment / DARF). Crédito 100% elegível (Art. 27 LC 215/2025)';
+        } else if (apOp.tot_credito_a_propriar > 0 || apOp.tot_debito_em_aberto > 0) {
+          statusCreditoCgibs = 'PENDENTE_EXTINCAO';
+          motivoCreditoCgibs = 'Aguardando extinção do débito pelo fornecedor no CGIBS (Art. 27 LC 215/2025)';
+        }
+      }
 
       // ==========================================
       // RETENÇÕES NA FONTE (NFS-E / SERVIÇOS)
@@ -339,6 +388,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           motivoDiagnosticoRetencao = 'Serviço com valor superior a R$ 5.000 sem destaque de retenção na fonte (verificar se optante pelo Simples Nacional)';
         }
       }
+
+      const ehPendenteCgibs = statusCreditoCgibs === 'PENDENTE_EXTINCAO';
 
       return {
         id: r.itemId || `doc-item-${r.chaveAcesso}`,
@@ -408,13 +459,13 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         destinacao: 'atividade_tributada',
         regraAplicadaId: isNfse ? 'RET_SRV_001' : 'ELEG_001',
         resultadoElegibilidade,
-        motivoPadronizado: isNfse ? 'Serviço com retenções na fonte mapeadas' : 'Processado via API de relatórios',
+        motivoPadronizado: isNfse ? 'Serviço com retenções na fonte mapeadas' : (ehPendenteCgibs ? 'Aguardando extinção do débito do fornecedor (Art. 27 LC 215/2025)' : 'Processado via API de relatórios'),
         evidencia: 'XML DF-e válido e auditado',
         
         usuarioCaptura: 'Processo Automático',
         rotinaCaptura: 'Robô SEFAZ / Upload',
         
-        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO',
+        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO' || ehPendenteCgibs,
         
         temEventoAfetaCredito: Boolean(r.alertaFraude),
         creditoOriginalTotal: creditoEsperadoIbs + creditoEsperadoCbs,
@@ -438,7 +489,13 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         codigoServicoLc116: r.ncm && r.ncm !== '2711.19.10' ? r.ncm : (isNfse ? '17.01' : ''),
         discriminacaoServico: r.descricaoItem || (isNfse ? 'Prestação de Serviços Profissionais / Técnicos' : ''),
         diagnosticoRetencao,
-        motivoDiagnosticoRetencao
+        motivoDiagnosticoRetencao,
+
+        // Campos de Conta Corrente Fiscal CGIBS / RTC
+        operacaoId: apOp?.operacao_id,
+        statusCreditoCgibs,
+        motivoCreditoCgibs,
+        hashCgibs: apOp?.hash_acumulado
       };
     });
 

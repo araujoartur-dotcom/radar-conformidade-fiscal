@@ -1,0 +1,205 @@
+# Plano de Implementação — Módulo de Apuração Assistida (IBS / CBS) & Conta Corrente Fiscal
+
+Este documento apresenta o diagnóstico detalhado de adequação do **Radar de Conformidade Fiscal** aos padrões oficiais divulgados no **Manual de Orientação ao Contribuinte da Apuração Assistida do IBS (CGIBS - Julho/2026)** e no **Manual da Reforma Tributária do Consumo (RFB - Versão I - 13/01/2026)**, acompanhado do plano técnico de arquitetura para tornar a Apuração Assistida simples, transparente e automatizada para a empresa.
+
+---
+
+## 1. Diagnóstico de Adequação do Sistema Atual (Gap Analysis)
+
+Analisamos toda a estrutura atual do sistema (banco de dados SQLite/Supabase, parsers de XML, rotas de backend e componentes da interface) confrontando com as diretrizes do CGIBS e da Receita Federal:
+
+| Domínio / Exigência Oficial | Como o Radar Fiscal está Hoje | O que é Exigido pelo CGIBS / RFB | Nível de Aderência |
+| :--- | :--- | :--- | :---: |
+| **1. Captura de Documentos Base** | Captura NF-e (55), CT-e (57) e NFS-e (nacional e 77 municípios) com chave de 44 dígitos, fornecedor, adquirente, valores e datas. | Exige os mesmos documentos (NF-e 55, NFC-e 65, CT-e 57, CT-e OS 67, NFS-e, NFCom 62, NF3e 66, BP-e 63) como base de abertura de operações. | **90%** (Excelente base) |
+| **2. Extração de Tags da RTC** | O `xmlParser.ts` já lê `<pCBS>`, `<pIBS>`, `<vCBS>`, `<vIBS>`, `<cClassTrib>` e alíquotas conforme NT 2025.002. | Exige leitura das tags destacadas no XML como base de cálculo e débito gerado da operação. | **85%** (Muito avançado) |
+| **3. Conceito de "Operação"** | Os documentos são tratados como linhas de notas isoladas (`dfe_documentos`). | Cada fornecimento ou aquisição constitui uma **Operação** com ciclo de vida próprio e chave de acesso vinculada. | **50%** (Necessita camada de abstração de Operação) |
+| **4. Conta Corrente Fiscal (7 Campos)** | O sistema calcula totais e saldos estáticos multiplicando ou somando campos de XML. | Exige **Ledger Incremental Imutável** com **7 campos financeiros obrigatórios** (Débito em Aberto, Débito Extinto, Crédito a Apropriar, Crédito Não Utilizado, Crédito Utilizado, Recurso a Transferir, Recurso Disponível para Transferência). | **20%** (Requer nova modelagem) |
+| **5. Cálculo Incremental de Saldos** | Os saldos são agregados via `SUM()` simples no banco. | O saldo de cada conta é o resultado da **soma histórica das linhas de eventos (`MOV`)**, nunca lendo um valor isolado. Cada linha de movimentação é imutável. | **15%** (Novo motor necessário) |
+| **6. Integração API CGIBS & Webhook** | O usuário já possui `ClientID` e `ClientSecret` gravados em notas, mas não há rotas ativas de comunicação com o CGIBS. | Exige endpoints de Habilitação (`POST /v1/aassist/habilitar`), Webhook de recebimento de notificações e download de arquivos Delta/Manuais (ZIP contendo JSON do Anexo I e II). | **10%** (A construir) |
+| **7. Calculadora de Tributos RFB** | Possui motor simulador com tabelas de referência e regras de NCM/cClassTrib. | A RFB disponibiliza motor open-source offline (Docker / Java JAR) na porta local `http://localhost:8080/api` para cálculo exato e conferência de divergências. | **40%** (Pode plugar a API local da RFB) |
+| **8. Interface de Apuração Assistida** | Telas de "Central de KPIs", "Tabelas Fiscais" e "Split Payment". | Exige visão por competência (`Em Andamento`, `Período de Ajuste`, `Concluída`) com as 3 abas oficiais: **Resultado**, **Saldo Atualizado** e **Outras Informações**. | **30%** (Interface dedicada necessária) |
+
+---
+
+## 2. User Review Required
+
+> [!IMPORTANT]
+> **Credenciais Reais do Piloto CGIBS:**
+> Identificamos que você já possui o par de credenciais de acesso do CGIBS anotado no projeto:
+> * `ClientID`: `5c37db2e924740449c621b2d95afeef2`
+> * `ClientSecret`: `7349128e1c60405bbe50dbf3e3fa7afe`
+> 
+> Essas credenciais serão configuradas no cofre seguro (`.env` e tabela de credenciais) para conectar diretamente ao ambiente piloto do CGIBS quando autorizado.
+
+> [!NOTE]
+> **Modo Dual da Calculadora da RFB (Local vs Embarcada):**
+> O manual da RFB reforça que **não existe API pública na nuvem para cálculo de IBS/CBS por questões de sigilo fiscal**. O integrador deve rodar o componente offline localmente via Docker ou JAR Java 21 (`http://localhost:8080/api`).
+> 
+> *Nossa Solução Inteligente:* O Radar Fiscal implementará um cliente para a Calculadora Oficial na porta 8080 e manterá um **mecanismo de fallback automático para as nossas tabelas locais em banco de dados** (caso o Docker/JAR não esteja em execução na máquina do usuário), garantindo disponibilidade contínua sem quebrar o sistema.
+
+---
+
+## 3. Open Questions
+
+1. **URL de Webhook Externa:** Para receber notificações automáticas do CGIBS via Webhook (`POST {webhookUrl}`), seu servidor de backend precisa ter um endereço público acessível (ex: a URL do backend no Render ou túnel ngrok/Cloudflare em ambiente de testes). Você pretende habilitar o Webhook para receber os Deltas automaticamente ou prefere, no início, utilizar a consulta de arquivos por demanda (`GET /v1/aassist/solicitacao/...`)?
+2. **Ambiente Inicial:** Deseja que a tela de Apuração Assistida venha com um botão para carregar os **Cenários Didáticos 1 (Aquisição) e 2 (Fornecimento)** fornecidos pelo próprio CGIBS nas páginas 33 a 43 do Manual para validação imediata da equipe fiscal antes da entrada dos dados reais?
+
+---
+
+## 4. Proposed Changes
+
+O plano divide-se em **4 Fases Modulares**:
+
+```mermaid
+graph TD
+    subgraph "Fase 1: Dados & Ledger Incremental"
+        DB1[Tabela: apuracao_operacoes]
+        DB2[Tabela: apuracao_extrato_cc - 7 Campos]
+        DB3[Tabela: apuracao_competencias]
+        ENGINE[Motor de Ledger Incremental & Hash SHA1]
+    end
+
+    subgraph "Fase 2: Conector CGIBS & Arquivos Delta"
+        API1[Client CGIBS: Habilitação & Download]
+        WH[Webhook Receiver: Notificações Delta]
+        PARSER[Parser de JSON Fatiado do CGIBS]
+    end
+
+    subgraph "Fase 3: Calculadora RFB & Divergências"
+        CALC[Client Calculadora RFB Local 8080]
+        FALLBACK[Fallback Motor Local SQLite/Supabase]
+        DIV[Detector de Divergências de CBS/IBS]
+    end
+
+    subgraph "Fase 4: Interface Apuração Assistida"
+        UI_HEADER[Ciclo de Vida: Andamento / Ajuste / Concluída]
+        TAB1[Aba 1: Resultado da Apuração]
+        TAB2[Aba 2: Saldo Atualizado]
+        TAB3[Aba 3: Outras Informações]
+        MODAL_EXTRATO[Extrato Completo do Conta Corrente da Operação]
+    end
+
+    DB1 --> ENGINE
+    DB2 --> ENGINE
+    PARSER --> DB1
+    PARSER --> DB2
+    WH --> PARSER
+    CALC --> DIV
+    ENGINE --> UI_HEADER
+    ENGINE --> TAB1
+    ENGINE --> TAB2
+    ENGINE --> TAB3
+```
+
+---
+
+### Componente 1: Banco de Dados & Modelagem do Conta Corrente Fiscal
+
+Criação das tabelas no SQLite local (`./data/radar_fiscal.db`) e Supabase Cloud.
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+#### [MODIFY] [supabase_schema.sql](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/supabase_schema.sql)
+
+* **Tabela `apuracao_operacoes`**:
+  * `id` (INTEGER / TEXT): ID numérico da operação atribuído pelo CGIBS.
+  * `chave_acesso` (VARCHAR 44): Chave do documento fiscal que inaugurou a operação.
+  * `dth_emissao`, `dth_autorizacao`: Datas oficiais do documento.
+  * `cnpj_fornecedor` (VARCHAR 8/14), `cnpj_adquirente` (VARCHAR 8/14).
+  * `tipo_operacao` (`fornecimento` | `aquisicao`).
+  * `hash_acumulado` (VARCHAR 40): Hash SHA-1 de integridade do extrato acumulado.
+  * `empresa_id`: Vínculo com a empresa do sistema.
+* **Tabela `apuracao_extrato_cc` (Ledger dos 7 Campos Oficiais)**:
+  * `id` (INTEGER / TEXT): ID único da linha de lançamento.
+  * `operacao_id`: Vínculo com `apuracao_operacoes`.
+  * `dth_lancto`: Timestamp do evento.
+  * `mov`: Descrição/código da movimentação (ex: "Aquisicao", "Apropriacao de Credito", "Extincao por Compensacao", "SPLIT provisionado", etc.).
+  * **7 Campos Financeiros Oficiais (FLOAT NOT NULL DEFAULT 0.0)**:
+    1. `recurso_financeiro_disponivel_para_transferencia`
+    2. `recurso_financeiro_a_transferir`
+    3. `credito_a_propriar`
+    4. `credito_nao_utilizado`
+    5. `credito_utilizado`
+    6. `debito_em_aberto`
+    7. `debito_extinto`
+  * `arquivo_origem`: Nome do arquivo JSON/ZIP que originou o lançamento.
+* **Tabela `apuracao_competencias`**:
+  * `empresa_id`, `competencia` (ex: `2026-01`).
+  * `fase` (`em_andamento`, `periodo_ajuste`, `concluida`).
+  * Totais consolidados acumulados para exibição instantânea.
+
+---
+
+### Componente 2: Backend — Serviços CGIBS, Calculadora RFB e Ledger Incremental
+
+#### [NEW] [cgibsService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/cgibsService.ts)
+* Gerenciamento de credenciais (`ClientID` / `ClientSecret`).
+* Habilitação do contribuinte no CGIBS (`POST /v1/aassist/habilitar`).
+* Ingestão de arquivos de apuração (Diferenciais Delta e Manuais).
+* Parser do payload JSON oficial (Anexos I e II):
+  * Leitura do nó `header` (`nomearquivo`, `tiposolicitacao`, `datageracao`, `parametrosgeracao`);
+  * Iteração segura sobre `operacoes[]` e `extrato_cc.lista[]`;
+  * Tratamento de fatiamento de arquivos (múltiplas partes com identificadores idênticos);
+  * Validação de integridade SHA-1 do extrato.
+
+#### [NEW] [calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts)
+* Cliente HTTP conectado a `http://localhost:8080/api` (Swagger oficial da Calculadora da RFB).
+* Fallback automático para o motor fiscal local em banco (`aliquotas_tabelas` e `ncm_regras_anexos`) se o serviço local na porta 8080 estiver desligado.
+* Detecção de divergências entre a CBS/IBS calculada e o que veio destacado no XML da nota fiscal.
+
+#### [NEW] [apuracaoAssistidaService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/apuracaoAssistidaService.ts)
+* Motor de consolidação das 3 abas oficiais do MOC:
+  1. **Aba "Resultado"**: Consolida débitos de fornecimento, redutores, créditos apropriados e pagamentos utilizados.
+  2. **Aba "Saldo Atualizado"**: Gerencia saldos pós-conclusão da apuração (após o dia 25 do mês subsequente), desfazimentos e créditos enviados para competência seguinte.
+  3. **Aba "Outras Informações"**: Gerencia débitos em fila de ordenação (janela de 10 minutos) e créditos de aquisição aguardando a extinção do débito pelo fornecedor para tornarem-se apropriáveis.
+
+#### [NEW] [apuracaoRoutes.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts)
+* Rotas REST:
+  * `GET /api/apuracao/competencia/:periodo`: Retorna os dados consolidados das 3 abas e o ciclo de vida.
+  * `GET /api/apuracao/operacoes`: Listagem paginada das operações com filtros por tipo, fornecedor, adquirente e status de débito/crédito.
+  * `GET /api/apuracao/operacao/:id/extrato`: Retorna o extrato detalhado de lançamentos do Conta Corrente Fiscal com evolução dos 7 saldos.
+  * `POST /api/apuracao/webhook`: Endpoint pronto para receber chamadas de push do CGIBS.
+  * `POST /api/apuracao/simular-cenario`: Carrega os cenários didáticos 1 e 2 do manual para testes visuais imediatos.
+  * `POST /api/apuracao/habilitar`: Dispara habilitação no CGIBS com as credenciais cadastradas.
+
+---
+
+### Componente 3: Frontend — Interface Dedicada de Apuração Assistida
+
+#### [NEW] [ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)
+Construção de uma tela executiva e moderna que transforma a complexidade técnica do MOC em uma experiência visual intuitiva:
+
+1. **Barra de Navegação Temporal & Ciclo de Vida**:
+   * Seletor de Competência (ex: `JAN/2026`, `FEV/2026`...);
+   * Indicador visual do estágio da competência:
+     * 🔵 **Em Andamento** (01 a 31 do mês de apuração);
+     * 🟡 **Período de Ajuste** (01 a 25 do mês seguinte);
+     * 🟢 **Concluída** (a partir de 26 do mês seguinte);
+   * Cards de topo: **Resultado da Apuração** e **Saldo Atualizado**.
+2. **Navegação em Abas (Conforme Padrão do Portal RTC / CGIBS)**:
+   * **Aba 1 — Resultado**: Tabela estruturada com Débitos, Redutores de Débitos, Créditos Apropriados, Redutores de Créditos, Pagamentos Utilizados (Split / DARF / Compensação) e Saldo Líquido do Período.
+   * **Aba 2 — Saldo Atualizado**: Visão acionada após o fechamento da competência com lançamentos extemporâneos, desfazimentos e créditos enviados para períodos futuros.
+   * **Aba 3 — Outras Informações**: Débitos aguardando fila de ordenação e **Créditos Acumulados Passíveis de Apropriação** (compras onde o débito do fornecedor ainda está pendente de extinção).
+   * **Aba 4 — Extrato das Operações**: Tabela de todas as notas fiscais vinculadas com busca rápida, destacando se a empresa figura como Fornecedora ou Adquirente.
+   * **Aba 5 — Auditoria de Divergências**: Confronto automático entre o XML e a Calculadora da RFB.
+3. **Modal de Detalhe da Conta Corrente Fiscal (`ExtratoOperacaoModal.tsx`)**:
+   * Ao clicar em qualquer operação, abre o extrato completo com a linha do tempo dos lançamentos (`MOV`), evolução gráfica dos 7 campos financeiros e conferência do hash SHA-1 de integridade.
+
+#### [MODIFY] [Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx) e [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx)
+* Adicionar a aba **"Apuração Assistida"** no menu principal do Radar, posicionando o sistema na vanguarda tecnológica da Reforma Tributária do Consumo.
+
+---
+
+## 5. Verification Plan
+
+### Testes Automatizados & Validação Estrutural
+1. **Validação do Ledger com os Dados Oficiais do Manual**:
+   * Executar teste importando o arquivo `cenario1_aquisicao_arquivo1.json` e `cenario1_aquisicao_arquivo2.json` (fatiamento de 13 movimentações) e verificar se a soma acumulada dos saldos bate exatamente com a tabela da página 33 do manual do CGIBS.
+   * Executar teste com o `cenario2_fornecimento.json` (16 movimentações de fornecimento, split payment e devolução) e validar os saldos da página 38.
+2. **Checagem de Compilação & Build**:
+   * `npx tsc --noEmit` sem erros.
+   * `npm run build` executando sem alertas.
+
+### Verificação Manual com o Usuário
+* Apresentação da interface no navegador com os cenários piloto carregados;
+* Demonstração do ciclo de vida das competências e das 3 abas em funcionamento;
+* Visualização do extrato do Conta Corrente Fiscal com os 7 campos financeiros.

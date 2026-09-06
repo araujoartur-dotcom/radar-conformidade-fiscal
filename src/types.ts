@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio' | 'conectores_municipais';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio' | 'conectores_municipais' | 'apuracao_assistida';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -446,6 +446,12 @@ export interface XmlItemDetailReport {
   discriminacaoServico?: string;
   diagnosticoRetencao?: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL';
   motivoDiagnosticoRetencao?: string;
+
+  // Conta Corrente Fiscal & Homologação CGIBS (Apuração Assistida - LC 215/2025)
+  operacaoId?: string;
+  statusCreditoCgibs?: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO';
+  motivoCreditoCgibs?: string;
+  hashCgibs?: string;
 }
 
 export interface MapaCfopItem {

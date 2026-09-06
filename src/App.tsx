@@ -19,6 +19,7 @@ import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
 import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
+import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
@@ -522,6 +523,11 @@ export default function App() {
             {/* Mode 8: Relatórios Múltiplos com Base nos XMLs de Entradas */}
             {activeMode === 'relatorios_xml' && (
               <RelatoriosXmlPanel dfeList={dfeList} />
+            )}
+
+            {/* Mode: Apuração Assistida IBS / CBS & Conta Corrente Fiscal (CGIBS / RTC) */}
+            {activeMode === 'apuracao_assistida' && (
+              <ApuracaoAssistidaPanel empresaAtiva={empresaAtiva} />
             )}
 
             {/* Mode 12: Parâmetros & Tabelas Fiscais */}

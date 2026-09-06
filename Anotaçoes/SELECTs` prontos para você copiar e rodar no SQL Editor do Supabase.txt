@@ -105,3 +105,93 @@ JOIN public.dfe_documentos d ON d.id = i.documento_id
 WHERE d.chave_acesso = 'COLE_A_CHAVE_DE_44_DIGITOS_AQUI'
 ORDER BY i.item_nro ASC;
 ```
+
+Você pode consultar os dados gravados no Supabase de duas maneiras muito simples: pelo Painel Web (Navegador) ou direto pelo Terminal aqui do seu ambiente.
+
+Método 1: Pelo Painel Web do Supabase (Navegador)
+Acesse o seu projeto no Supabase: 👉 https://supabase.com/dashboard/project/vhkkmklzsstoxoenpyua
+
+No menu lateral esquerdo, você tem duas opções:
+
+Opção A — Table Editor (Visual estilo Excel)
+Clique no ícone de tabela (Table Editor) no menu lateral esquerdo.
+Selecione a tabela conectores_municipais.
+Você verá todos os 77 municípios listados em formato de planilha.
+Dá para ordenar por municipio, uf ou provedor.
+Dá para usar a barra de busca ou clicar em "Filter" (por exemplo: uf = MG).
+Opção B — SQL Editor (Consultas Customizadas)
+Clique no ícone de terminal (SQL Editor) no menu lateral esquerdo.
+Clique em "+ New query" (Nova consulta).
+
+Cole qualquer um dos SELECTs prontos abaixo e clique em "Run" (ou aperte Ctrl + Enter):
+
+1. Conferir o total de prefeituras cadastradas (deve retornar 77):
+sql
+SELECT COUNT(*) AS total_conectores 
+FROM public.conectores_municipais;
+
+2. Ver todas as 77 cidades com UF, Provedor e Endpoint:
+sql
+SELECT 
+    uf, 
+    municipio, 
+    ibge, 
+    provedor, 
+    tecnologia, 
+    endpoint_producao,
+    status
+FROM public.conectores_municipais
+ORDER BY uf ASC, municipio ASC;
+
+
+
+3. Ver apenas cidades de um estado específico (Ex: Minas Gerais):
+sql
+SELECT ibge, municipio, provedor, tecnologia, endpoint_producao 
+FROM public.conectores_municipais 
+WHERE uf = 'MG' 
+ORDER BY municipio ASC;
+
+4. Pesquisar por nome de cidade (Ex: Ipatinga ou Cuiabá):
+sql
+SELECT * 
+FROM public.conectores_municipais 
+WHERE municipio ILIKE '%Ipatinga%' OR municipio ILIKE '%Cuiabá%';
+
+5. Ver o resumo de quantidade por Provedor:
+sql
+SELECT provedor, COUNT(*) as qtd 
+FROM public.conectores_municipais 
+GROUP BY provedor 
+ORDER BY qtd DESC;
+
+6. Consultar Notas Fiscais de Serviços (NFS-e) já capturadas:
+sql
+SELECT 
+    tipo_doc,
+    numero_serie,
+    chave_acesso,
+    data_emissao,
+    fornecedor_razao AS prestador,
+    cliente_razao AS tomador,
+    valor_total,
+    created_at
+FROM public.dfe_documentos
+WHERE tipo_doc = 'NFSe'
+ORDER BY created_at DESC;
+
+
+Método 2: Consulta Rápida pelo Terminal (sem abrir o navegador)
+Se quiser consultar o Supabase diretamente pelo terminal do VS Code / PowerShell, basta rodar:
+
+powershell
+npx tsx -e "
+import { getSupabaseAdmin } from './server/db/supabase';
+async function test() {
+  const supabase = getSupabaseAdmin();
+  const { data, count } = await supabase.from('conectores_municipais').select('uf, municipio, provedor', { count: 'exact' });
+  console.log('Total de conectores no Supabase:', count);
+  console.table(data.slice(0, 15)); // Mostra os 15 primeiros
+}
+test();
+"

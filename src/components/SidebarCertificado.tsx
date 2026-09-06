@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Shield, Lock, Upload, Play, Pause, Square, Trash2, Download, Sliders, CheckCircle2, KeyRound, RefreshCw,
   FileSpreadsheet, Layers, Search, FileCode, Send, Database, ShieldAlert, ChevronRight, FileBarChart,
-  Building2, Users, BarChart3, TrendingUp, Sparkles, FileCheck2, PanelLeftClose, PanelLeftOpen, Plug
+  Building2, Users, BarChart3, TrendingUp, Sparkles, FileCheck2, PanelLeftClose, PanelLeftOpen, Plug, Calculator
 } from 'lucide-react';
 import { CertificadoA1, BatchStats, QueryMode } from '../types';
 
@@ -70,6 +70,12 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       items: [
         { id: 'dfe_xml' as QueryMode, label: 'Captura de XMLs', icon: FileCode, accent: 'cyan' },
         { id: 'eventos_dfe' as QueryMode, label: 'Central de Eventos DF-e', icon: Send, accent: 'indigo' },
+      ]
+    },
+    {
+      title: 'Reforma Tributária (RTC / CGIBS)',
+      items: [
+        { id: 'apuracao_assistida' as QueryMode, label: 'Apuração Assistida (IBS/CBS)', icon: Calculator, accent: 'emerald', badge: 'RTC' },
       ]
     },
     {

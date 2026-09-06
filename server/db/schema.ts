@@ -388,6 +388,70 @@ export function initializeSchema(): void {
       created_at            TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- =========================================================
+    -- APURAÇÃO ASSISTIDA & CONTA CORRENTE FISCAL (CGIBS / RTC)
+    -- Ref: Manual MOC Versão 1.00 (Julho/2026) & RFB RTC v1
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS apuracao_operacoes (
+      id                    TEXT PRIMARY KEY,                  -- ID da Operação (CGIBS ou gerado)
+      chave_acesso          TEXT NOT NULL,                     -- Chave de 44 dígitos que inaugurou a operação
+      dth_emissao           TEXT NOT NULL,
+      dth_autorizacao       TEXT NOT NULL,
+      cnpj_fornecedor       TEXT NOT NULL,                     -- CNPJ8 (raiz) ou CNPJ14
+      cnpj_adquirente       TEXT DEFAULT '',                   -- CNPJ8 (raiz) ou CNPJ14
+      tipo_operacao         TEXT NOT NULL DEFAULT 'fornecimento', -- fornecimento | aquisicao
+      hash_acumulado        TEXT DEFAULT '',                   -- Hash SHA-1 de integridade do extrato
+      empresa_id            TEXT DEFAULT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS apuracao_extrato_cc (
+      id                    TEXT PRIMARY KEY,                  -- ID do lançamento (CGIBS)
+      operacao_id           TEXT NOT NULL REFERENCES apuracao_operacoes(id) ON DELETE CASCADE,
+      dth_lancto            TEXT NOT NULL,
+      mov                   TEXT NOT NULL,                     -- Descrição ou código da movimentação
+      -- 7 Campos Financeiros Oficiais (CGIBS / RTC)
+      recurso_financeiro_disponivel_para_transferencia REAL NOT NULL DEFAULT 0.0,
+      recurso_financeiro_a_transferir                 REAL NOT NULL DEFAULT 0.0,
+      credito_a_propriar                              REAL NOT NULL DEFAULT 0.0,
+      credito_nao_utilizado                           REAL NOT NULL DEFAULT 0.0,
+      credito_utilizado                               REAL NOT NULL DEFAULT 0.0,
+      debito_em_aberto                                REAL NOT NULL DEFAULT 0.0,
+      debito_extinto                                  REAL NOT NULL DEFAULT 0.0,
+      arquivo_origem        TEXT DEFAULT '',
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS apuracao_competencias (
+      id                    TEXT PRIMARY KEY,
+      empresa_id            TEXT NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+      competencia           TEXT NOT NULL,                     -- YYYY-MM
+      fase                  TEXT NOT NULL DEFAULT 'em_andamento', -- em_andamento | periodo_ajuste | concluida
+      total_debitos         REAL NOT NULL DEFAULT 0.0,
+      total_creditos        REAL NOT NULL DEFAULT 0.0,
+      saldo_apuracao        REAL NOT NULL DEFAULT 0.0,
+      saldo_atualizado      REAL NOT NULL DEFAULT 0.0,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(empresa_id, competencia)
+    );
+
+    CREATE TABLE IF NOT EXISTS apuracao_credenciais_cgibs (
+      id                    TEXT PRIMARY KEY,
+      empresa_id            TEXT NOT NULL UNIQUE REFERENCES empresas(id) ON DELETE CASCADE,
+      client_id             TEXT NOT NULL,
+      client_secret         TEXT NOT NULL,
+      token_contrib         TEXT DEFAULT '',
+      webhook_url           TEXT DEFAULT '',
+      flag_webhook          INTEGER NOT NULL DEFAULT 1,        -- 1 = Ativo (recebe push deltas), 0 = Inativo
+      flag_consulta_demanda INTEGER NOT NULL DEFAULT 1,        -- 1 = Ativo (permite GET /v1/aassist/solicitacao), 0 = Inativo
+      status                TEXT NOT NULL DEFAULT 'habilitado',
+      data_habilitacao      TEXT DEFAULT (datetime('now')),
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // 2. Migração dinâmica segura: adicionar colunas ausentes
@@ -403,6 +467,10 @@ export function initializeSchema(): void {
       console.warn(`Aviso na migração de ${table}.${column}:`, err.message);
     }
   };
+
+  // Migrações em apuracao_credenciais_cgibs
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'flag_webhook', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'flag_consulta_demanda', 'INTEGER NOT NULL DEFAULT 1');
 
   // Migrações em empresas
   addColumnIfNotExists('empresas', 'manifestar_ciencia_automatica', 'INTEGER NOT NULL DEFAULT 1');
@@ -511,6 +579,13 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_audit_log_empresa ON audit_log(empresa_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_conectores_ibge ON conectores_municipais(ibge);
     CREATE INDEX IF NOT EXISTS idx_conectores_uf ON conectores_municipais(uf);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_operacoes_chave ON apuracao_operacoes(chave_acesso);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_operacoes_empresa ON apuracao_operacoes(empresa_id);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_operacoes_fornecedor ON apuracao_operacoes(cnpj_fornecedor);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_operacoes_adquirente ON apuracao_operacoes(cnpj_adquirente);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_extrato_operacao ON apuracao_extrato_cc(operacao_id);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_extrato_data ON apuracao_extrato_cc(dth_lancto);
+    CREATE INDEX IF NOT EXISTS idx_apuracao_competencias_empresa ON apuracao_competencias(empresa_id, competencia);
   `);
 
   // Seed automático de Conectores Municipais das principais prefeituras

@@ -14,6 +14,7 @@
  * ============================================================
  */
 
+import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -797,6 +798,7 @@ export async function sincronizarConectorMunicipalSoap(params: {
   empresaId: string;
   cnpj: string;
   conector: {
+    id?: string;
     ibge: string;
     municipio: string;
     uf: string;
@@ -804,6 +806,10 @@ export async function sincronizarConectorMunicipalSoap(params: {
     tecnologia: string;
     endpoint_producao?: string;
     endpoint_homologacao?: string;
+    tipo_autenticacao?: string;
+    token_api?: string;
+    usuario?: string;
+    senha?: string;
   };
   tpAmb?: '1' | '2';
   dataInicio?: string;
@@ -853,7 +859,109 @@ export async function sincronizarConectorMunicipalSoap(params: {
   dtInicioDate.setDate(dtInicioDate.getDate() - 30);
   const dtInicioStr = params.dataInicio || dtInicioDate.toISOString().split('T')[0];
 
-  // 3. Montar Envelope SOAP de acordo com o provedor/padrão
+  // 3. Suporte a Conectores REST (Ex: Campinas, DSF v1, APIs modernas)
+  if (conector.tecnologia === 'REST') {
+    result.mensagens.push(`📡 Conectando ao WebService REST (${url})... Período: ${dtInicioStr} a ${dtFimStr}`);
+    try {
+      const parsedUrl = new URL(url);
+      parsedUrl.searchParams.set('cnpj', cleanCnpj);
+      parsedUrl.searchParams.set('dataInicio', dtInicioStr);
+      parsedUrl.searchParams.set('dataFim', dtFimStr);
+
+      const headers: Record<string, string> = {
+        'Accept': 'application/json, application/xml, text/xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) RadarFiscal/2.0'
+      };
+
+      if (conector.tipo_autenticacao === 'token_api' && conector.token_api) {
+        headers['Authorization'] = `Bearer ${conector.token_api}`;
+      } else if (conector.tipo_autenticacao === 'usuario_senha' && conector.usuario) {
+        headers['Authorization'] = `Basic ${Buffer.from(`${conector.usuario}:${conector.senha || ''}`).toString('base64')}`;
+      }
+
+      const isHttps = parsedUrl.protocol === 'https:';
+      const agent = isHttps
+        ? new https.Agent({
+            cert: pem.cert,
+            key: pem.key,
+            ca: pem.ca && pem.ca.length > 0 ? pem.ca : undefined,
+            rejectUnauthorized: false,
+            timeout: 25000
+          })
+        : undefined;
+
+      const restResp = await new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
+        const client = isHttps ? https : http;
+        const req = client.request(
+          parsedUrl.toString(),
+          {
+            method: 'GET',
+            headers,
+            agent,
+            timeout: 25000
+          },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => { body += chunk; });
+            res.on('end', () => resolve({ statusCode: res.statusCode || 0, body }));
+          }
+        );
+        req.on('error', reject);
+        req.on('timeout', () => {
+          req.destroy();
+          reject(new Error('Timeout de 25s excedido na conexão REST com a prefeitura'));
+        });
+        req.end();
+      });
+
+      result.mensagens.push(`🔄 Prefeitura REST respondeu com HTTP ${restResp.statusCode}.`);
+
+      let decodedXml = restResp.body
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&');
+
+      const regexNfse = /<(?:[a-zA-Z0-9_-]+:)?(CompNfse|tcCompNfse|NFe|Nfse)[\s\S]*?<\/(?:[a-zA-Z0-9_-]+:)?\1>/gi;
+      let match;
+      const xmlsEncontrados: string[] = [];
+      while ((match = regexNfse.exec(decodedXml)) !== null) {
+        xmlsEncontrados.push(match[0]);
+      }
+
+      if (xmlsEncontrados.length > 0) {
+        result.mensagens.push(`📦 ${xmlsEncontrados.length} NFS-e(s) localizada(s) em ${conector.municipio}!`);
+        for (const xmlNota of xmlsEncontrados) {
+          const parsed = await persistirNfseNoBanco(xmlNota, empresaId, cleanCnpj);
+          result.mensagens.push(`📄 NFS-e Tomada: Nº ${parsed.numero || 'S/N'} - R$ ${parsed.valorTotal.toFixed(2)} - Chave: ${parsed.chaveAcesso}`);
+          if (parsed.isNovo) {
+            result.documentosNovos++;
+            result.totalValorServicos += parsed.valorTotal;
+            result.totalRetencoes.iss += parsed.valorIss;
+            result.totalRetencoes.irrf += parsed.valorIrrf;
+            result.totalRetencoes.inss += parsed.valorInss;
+            result.totalRetencoes.pis += parsed.valorPis;
+            result.totalRetencoes.cofins += parsed.valorCofins;
+            result.totalRetencoes.csll += parsed.valorCsll;
+          } else {
+            result.documentosExistentes++;
+          }
+        }
+      } else if (restResp.statusCode === 200) {
+        result.mensagens.push(`ℹ️ A prefeitura REST retornou HTTP 200 (sem notas tomadas emitidas no período pesquisado).`);
+      } else {
+        result.mensagens.push(`ℹ️ Retorno REST (${conector.municipio}): HTTP ${restResp.statusCode}`);
+      }
+
+      result.success = true;
+      return result;
+    } catch (restErr: any) {
+      result.mensagens.push(`⚠️ WebService REST Indisponível / Erro de Rede (${conector.municipio}): ${restErr.message}`);
+      return result;
+    }
+  }
+
+  // 4. Montar Envelope SOAP de acordo com o provedor/padrão
   let soapEnvelope = '';
   let soapAction = '';
 
@@ -1011,6 +1119,128 @@ export async function sincronizarNfsePMSP(params: NfseSyncParams): Promise<NfseS
     dataInicio: params.dataInicio,
     dataFim: params.dataFim
   });
+}
+
+// =========================================================
+// 7b. CONSULTA INDIVIDUALIZADA POR MUNICÍPIO (CIRÚRGICA)
+// Consulta especificamente uma prefeitura cadastrada sem acionar o ADN
+// =========================================================
+export async function sincronizarPrefeituraIndividual(params: {
+  empresaId: string;
+  cnpj?: string;
+  ibge: string;
+  tpAmb?: '1' | '2';
+  dataInicio?: string;
+  dataFim?: string;
+}): Promise<NfseSyncResult> {
+  const { empresaId, ibge, tpAmb = '1', dataInicio, dataFim } = params;
+  const db = getDatabase();
+
+  // 1. Obter CNPJ da empresa
+  let cleanCnpj = (params.cnpj || '').replace(/\D/g, '');
+  if (!cleanCnpj) {
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data: emp } = await supabase.from('empresas').select('cnpj_completo').eq('id', empresaId).maybeSingle();
+          if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+        }
+      } catch {}
+    }
+    if (!cleanCnpj) {
+      try {
+        const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
+        if (emp?.cnpj_completo) cleanCnpj = emp.cnpj_completo.replace(/\D/g, '');
+      } catch {}
+    }
+  }
+
+  // 2. Buscar conector municipal de forma 100% dinâmica no Supabase ou SQLite (suporta qualquer novo município)
+  let conector: any = null;
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase
+          .from('conectores_municipais')
+          .select('*')
+          .or(`ibge.eq.${ibge},id.eq.${ibge}`)
+          .maybeSingle();
+        if (!error && data) {
+          conector = data;
+        }
+      }
+    } catch (err: any) {
+      console.warn('Erro ao buscar conector individual no Supabase:', err.message);
+    }
+  }
+
+  if (!conector) {
+    try {
+      conector = db.prepare(`
+        SELECT * FROM conectores_municipais 
+        WHERE ibge = ? OR id = ?
+      `).get(ibge, ibge) as any;
+    } catch (dbErr: any) {
+      console.warn('Erro ao carregar conector individual do SQLite:', dbErr.message);
+    }
+  }
+
+  if (!conector) {
+    return {
+      success: false,
+      provedor: 'Conector Municipal',
+      tpAmb: tpAmb === '1' ? 'Produção (tpAmb=1)' : 'Homologação (tpAmb=2)',
+      ultNSU: '0',
+      maxNSU: '0',
+      documentosNovos: 0,
+      documentosExistentes: 0,
+      totalValorServicos: 0,
+      totalRetencoes: { iss: 0, irrf: 0, inss: 0, pis: 0, cofins: 0, csll: 0 },
+      mensagens: [`❌ Município com IBGE/ID "${ibge}" não foi encontrado no cadastro de Conectores Municipais.`]
+    };
+  }
+
+  // 3. Executar chamada exclusivamente para a prefeitura selecionada
+  const result: NfseSyncResult = {
+    success: true,
+    provedor: `${conector.municipio} - ${conector.uf} (${conector.provedor})`,
+    tpAmb: tpAmb === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação (tpAmb=2)',
+    ultNSU: '0',
+    maxNSU: '0',
+    documentosNovos: 0,
+    documentosExistentes: 0,
+    totalValorServicos: 0,
+    totalRetencoes: { iss: 0, irrf: 0, inss: 0, pis: 0, cofins: 0, csll: 0 },
+    mensagens: [
+      `🎯 Iniciando Consulta Individual para ${conector.municipio} - ${conector.uf} (${conector.provedor})...`,
+      `🏢 CNPJ Tomador: ${cleanCnpj}`,
+      `⚙️ Endpoint: ${conector.endpoint_producao || 'Não configurado'} (${conector.tecnologia || 'SOAP'})`
+    ]
+  };
+
+  try {
+    const munRes = await sincronizarConectorMunicipalSoap({
+      empresaId,
+      cnpj: cleanCnpj,
+      conector,
+      tpAmb,
+      dataInicio,
+      dataFim
+    });
+
+    result.documentosNovos = munRes.documentosNovos;
+    result.documentosExistentes = munRes.documentosExistentes;
+    result.totalValorServicos = munRes.totalValorServicos;
+    result.totalRetencoes = munRes.totalRetencoes;
+    result.mensagens.push(...munRes.mensagens);
+    result.mensagens.push(`🏁 Consulta individualizada em ${conector.municipio} finalizada: ${munRes.documentosNovos} nova(s) NFS-e, ${munRes.documentosExistentes} já existente(s).`);
+  } catch (err: any) {
+    result.mensagens.push(`❌ Falha na consulta de ${conector.municipio}: ${err.message}`);
+  }
+
+  return result;
 }
 
 // =========================================================

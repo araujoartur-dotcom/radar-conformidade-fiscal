@@ -28,6 +28,7 @@ import auditRoutes from './routes/audit';
 import partnersRoutes from './routes/partners';
 import exportRoutes from './routes/export';
 import nfseRoutes from './routes/nfse';
+import apuracaoRoutes from './routes/apuracao';
 
 export const app = express();
 
@@ -66,6 +67,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/partners', partnersRoutes);
 app.use('/api/nfse', nfseRoutes);
+app.use('/api/apuracao', apuracaoRoutes);
 
 // =========================================================
 // HEALTH CHECK

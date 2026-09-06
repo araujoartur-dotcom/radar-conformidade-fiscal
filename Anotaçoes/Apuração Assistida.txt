@@ -3,9 +3,6 @@ Apuração Assistida CGIBS
 Credenciais: 5c37db2e924740449c621b2d95afeef2
 Cliente Secret: 7349128e1c60405bbe50dbf3e3fa7afe
 
+ClientID: 5c37db2e924740449c621b2d95afeef2
+ClientSecret: 7349128e1c60405bbe50dbf3e3fa7afe
 
-
-Documentos Fiscais (DF-e)
-Trocar nome do módulo
-De: XMLs & Ref. Tributária
-Para: Captura de XMLs

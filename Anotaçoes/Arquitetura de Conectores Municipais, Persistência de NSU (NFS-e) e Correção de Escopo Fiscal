@@ -272,3 +272,204 @@ SELECT id, ultimo_nsu, max_nsu, ultimo_nsu_nfse, max_nsu_nfse, updated_at
 FROM empresas;
 ```
 Retornará com sucesso imediato!
+
+
+Viewed sefazService.ts:810-860
+Viewed sefazService.ts:790-820
+Searched for "insertDocStmt"
+Searched for "INSERT INTO dfe_documentos"
+Viewed sefazService.ts:940-965
+Viewed sefazService.ts:890-940
+
+
+Para consultar o **NSU de NF-e e CT-e**, existem duas consultas principais dependendo do que você precisa verificar:
+
+---
+
+### 1. Consultar o NSU Atual da Empresa (Checkpoint SEFAZ)
+Este é o select mais importante. Ele mostra exatamente **onde a sua consulta na SEFAZ parou** (`ultimo_nsu`) e **até onde a SEFAZ tem notas disponíveis** (`max_nsu`):
+
+```sql
+SELECT 
+    id,
+    cnpj_completo,
+    razao_social,
+    ultimo_nsu,
+    max_nsu,
+    updated_at AS data_ultima_sincronizacao
+FROM public.empresas;
+```
+
+> *(Obs: este SELECT funciona logo após rodar o `ALTER TABLE` que adicionou as colunas no Supabase).*
+
+#### Como interpretar esse retorno:
+* **`ultimo_nsu = '000000000000000'` e `max_nsu = '000000000000000'`:** A empresa ainda não realizou varredura na SEFAZ ou o webservice não retornou documentos.
+* **`ultimo_nsu` menor que `max_nsu` (Ex: `ultimo_nsu = 000000000000050` e `max_nsu = 000000000000300`):** Significa que a SEFAZ ainda tem **250 documentos** na fila para serem baixados nas próximas requisições.
+* **`ultimo_nsu` igual a `max_nsu`:** A base da sua empresa está **100% sincronizada** com a SEFAZ (nenhuma nota pendente de download).
+
+---
+
+### 2. Consultar o Histórico de Eventos / Manifestações com NSU
+Quando o sistema consulta a SEFAZ e realiza a **Ciência da Emissão** ou registra eventos de notas e conhecimentos de transporte, esses eventos ficam na tabela **`public.eventos_transmitidos`**:
+
+```sql
+SELECT 
+    id,
+    chave_acesso,
+    nome_evento,
+    categoria,
+    protocolo_sefaz,
+    codigo_retorno,
+    motivo_retorno,
+    status,
+    data_hora
+FROM public.eventos_transmitidos
+ORDER BY data_hora DESC
+LIMIT 50;
+```
+
+---
+
+### 3. Consultar Documentos (NFe / CTe) Filtrando por Período ou Chave
+Se quiser auditar as notas fiscais e conhecimentos de transporte autorizados que foram capturados através desse avanço de NSU:
+
+```sql
+SELECT 
+    tipo_doc,
+    numero_serie,
+    chave_acesso,
+    fornecedor_cnpj,
+    fornecedor_razao,
+    valor_total,
+    situacao_manifestacao,
+    created_at AS data_captura
+FROM public.dfe_documentos
+WHERE tipo_doc IN ('NFe', 'CTe')
+ORDER BY created_at DESC;
+```
+
+> **Conceito Chave:** Na arquitetura da SEFAZ Nacional, o NSU é um **cursor sequencial atrelado ao CNPJ da Empresa**. Ele avança lote a lote (de 50 em 50 documentos). Por isso, o controle de continuidade reside no cadastro da empresa (`public.empresas`).
+
+
+Implantaçao de 2 modos de envio de Consulta de XML NFS-e
+
+Compreendi perfeitamente a sua necessidade e a sua visão faz total sentido prático e operacional!
+
+💡 1. O que foi compreendido
+O problema que você quer evitar:
+
+No envio completo unificado, o robô sempre bate primeiro no Ambiente Nacional (ADN da Receita Federal) e depois em todas as prefeituras ativas.
+Se uma prefeitura específica der erro (ex.: HTTP 404, HTTP 500 ou URL que precisa de ajuste no catálogo), você precisará ajustar o endereço dela e testar novamente.
+Se toda vez que você testar uma prefeitura o robô rodar a busca completa, há risco real de bloqueio por "Consumo Indevido" da Receita Federal (ADN) pelo excesso de requisições em curto intervalo, além de gastar tempo desnecessário chamando municípios que já foram consultados.
+O objetivo da solução:
+
+Manter 100% intacto o Envio Completo Atual (ADN Nacional Matriz + Filiais + Prefeituras em lote).
+Adicionar o Envio Individualizado por Prefeitura: Permitir selecionar uma prefeitura específica da lista de municípios (ex.: Belo Horizonte - MG, São Paulo - SP, Duque de Caxias - RJ, etc.) e executar a consulta exclusivamente nela, de forma cirúrgica e imediata, sem tocar no ADN e sem nenhum risco de consumo indevido.
+🎨 2. Como iremos estruturar a solução na Interface (UI)
+No modal "Central de Captura & Gestão de NFS-e", logo abaixo do cabeçalho da empresa ativa, estruturaremos duas áreas de acionamento bem delimitadas e visuais:
+
+text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ Central de Captura & Gestão de NFS-e                                                ✕ │
+│ Empresa Ativa: SUPERGASBRAS ENERGIA LTDA (19.791.896/0001-00)                         │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│ 🌐 MODO 1: VARREDURA UNIFICADA COMPLETA (Já existente - Intacto)                       │
+│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Ambiente: [ Produção Oficial (tpAmb = 1) ▼ ]  🛡️ Certificado A1   [ ⚡ Executar Tudo]│ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ 🏛️ MODO 2: CONSULTA INDIVIDUAL POR PREFEITURA (Nova Funcionalidade)                    │
+│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ Prefeitura: [ Selecione o Município (ex: Belo Horizonte - MG) ▼ ] [ 🎯 Testar/Env ]│ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                        │
+│ LOG DE EXECUÇÃO EM TEMPO REAL                                                          │
+│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│ │ [10:15:00] ▶ [Belo Horizonte - MG (BHISS)]: Consultando notas tomadas...           │ │
+│ │ [10:15:01] └ 📡 Conectando ao WebService SOAP (https://bhissdigitalws.pbh.gov.br)...│ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+Detalhes do Novo Seletor Individual:
+Dropdown Inteligente: Carrega dinamicamente todas as 41 prefeituras cadastradas no Supabase, ordenadas alfabeticamente por UF e Cidade (ex.: [MG] Belo Horizonte (BHISS), [RJ] Rio de Janeiro (Nota Carioca), [SP] Paulínia (SIGCORP), [RS] Canoas (IPM)...).
+Tag de Status ao lado: Exibe se o município está configurado como Ativo e a tecnologia (SOAP ou REST).
+Botão dedicado de disparo rápido: Ex.: 🎯 Consultar Município.
+⚙️ 3. Como iremos estruturar o Backend
+Novo Método Isolado no Serviço (
+
+nfseService.ts
+):
+
+Criar a função sincronizarPrefeituraIndividual({ empresaId, cnpj, ibge, tpAmb }).
+Essa função:
+Localiza o conector cadastrado para aquele código IBGE no banco (Supabase / SQLite).
+Carrega as credenciais e certificado A1 da empresa ativa.
+Executa única e exclusivamente a chamada SOAP/REST para aquele município.
+Persiste as notas capturadas no banco e retorna o log específico daquele teste.
+Não aciona o ADN, zerando o risco de bloqueio.
+Extensão Limpa da Rota (
+
+nfse.ts
+):
+
+No endpoint POST /api/nfse/sincronizar:
+Se conector === 'unificado': segue o fluxo normal atual (ADN + filiais + prefeituras).
+Se conector === 'individual' e vier com ibge: '3106200': direciona diretamente para a função daquela prefeitura específica.
+🚦 Aguardando sua validação
+Nenhum deploy ou alteração de código foi feito ainda, respeitando estritamente a sua instrução.
+
+Essa proposta atende exatamente o que você planejou? Podemos seguir com a implementação desse modelo?
+
+### 4. Municípios Integrados ao Sistema Radar Conformidade
+
+🏛️ Catálogo Completo Atualizado: 60 Municípios Integrados
+Com a adição dessas 11 novas cidades (e a atualização de Paranaguá), nosso catálogo saltou de 49 para 60 prefeituras ativas sincronizadas no Supabase e no SQLite local:
+
+Região Nordeste (13 municípios)
+Pernambuco (PE) — 6 municípios (Polo Metropolitano & Suape)
+
+Cabo de Santo Agostinho (PE) — IBGE 2602902 | Tinus (ABRASF 1.0) (SOAP)
+Camaragibe (PE) — IBGE 2603454 | Tinus (ABRASF 1.0) (SOAP)
+Caruaru (PE) — IBGE 2604106 | GINFES (ABRASF) (SOAP)
+Goiana (PE) — IBGE 2606200 | Tinus (ABRASF 1.0) (SOAP)
+Jaboatão dos Guararapes (PE) — IBGE 2607901 | Tinus (ABRASF 1.0) (SOAP)
+Recife (PE) — IBGE 2611606 | Recife (ABRASF 1.1 / 2.04) (SOAP)
+Paraíba (PB) — 1 município 7. Cabedelo (PB) — IBGE 2503209 | Tinus (ABRASF 1.0) (SOAP)
+
+Bahia (BA) — 2 municípios 8. Itacaré (BA) — IBGE 2914906 | WebISS (SOAP) 9. Salvador (BA) — IBGE 2927408 | Salvador (ABRASF 1.0) (SOAP)
+
+Alagoas (AL) — 1 município 10. Maceió (AL) — IBGE 2704302 | GINFES (ABRASF) (SOAP)
+
+Maranhão (MA) — 1 município 11. São Luís (MA) — IBGE 2111300 | ISSONLINE (DSF) (SOAP)
+
+Piauí (PI) — 1 município 12. Teresina (PI) — IBGE 2211001 | ISSONLINE (DSF) (SOAP)
+
+Sergipe (SE) — 1 município 13. Aracaju (SE) — IBGE 2800308 | WebISS (SOAP)
+
+Região Sul (12 municípios)
+Paraná (PR) — 5 municípios 14. Araucária (PR) — IBGE 4101804 | IPM Saúde e Gestão (SOAP) 15. Cascavel (PR) — IBGE 4104808 | IPM (AtendeNet) (REST) 16. Colombo (PR) — IBGE 4105508 | IPM (AtendeNet) (REST) 17. Curitiba (PR) — IBGE 4106902 | Curitiba (ABRASF 2.04) (SOAP) 18. Paranaguá (PR) — IBGE 4118204 | IPM (AtendeNet) (REST) (Atualizado de GINFES)
+
+Santa Catarina (SC) — 4 municípios 19. Biguaçu (SC) — IBGE 4202008 | IPM (AtendeNet) (SOAP) 20. Blumenau (SC) — IBGE 4202404 | Simpliss (NFS-e Nacional / DPS - REST) 21. Palhoça (SC) — IBGE 4211900 | IPM (AtendeNet) (REST) 22. Porto Belo (SC) — IBGE 4212650 | IPM (AtendeNet) (REST)
+
+Rio Grande do Sul (RS) — 3 municípios 23. Cachoeirinha (RS) — IBGE 4303103 | IPM (AtendeNet 2.0) (REST) 24. Canoas (RS) — IBGE 4304606 | IPM Saúde e Gestão (SOAP) 25. Porto Alegre (RS) — IBGE 4314902 | NFSE POA (ABRASF 2.04) (SOAP)
+
+Região Sudeste (27 municípios)
+São Paulo (SP) — 17 municípios 26. Americana (SP) — IBGE 3501608 | Tiplan (ABRASF 2.03 - SOAP) 27. Campinas (SP) — IBGE 3509502 | ISSONLINE (DSF) (REST) 28. Diadema (SP) — IBGE 3513801 | GINFES (ABRASF) (SOAP) 29. Guarulhos (SP) — IBGE 3518800 | GINFES (ABRASF) (SOAP) 30. Jundiaí (SP) — IBGE 3525904 | GINFES (ABRASF) (SOAP) 31. Mauá (SP) — IBGE 3529400 | GINFES (ABRASF) (SOAP) 32. Paulínia (SP) — IBGE 3536505 | SIGCORP (ABRASF) (SOAP) 33. Piracicaba (SP) — IBGE 3538709 | Simpliss (SOAP) 34. Ribeirão Preto (SP) — IBGE 3543402 | GINFES (ABRASF) (SOAP) 35. Santana de Parnaíba (SP) — IBGE 3547304 | Simpliss (SOAP) 36. Santo André (SP) — IBGE 3547809 | GINFES (ABRASF) (SOAP) 37. Santos (SP) — IBGE 3548500 | GINFES (ABRASF) (SOAP) 38. São Bernardo do Campo (SP) — IBGE 3548708 | GINFES (ABRASF) (SOAP) 39. São José do Rio Preto (SP) — IBGE 3549805 | GINFES (SOAP) 40. São José dos Campos (SP) — IBGE 3549904 | ISSONLINE (DSF) (SOAP) 41. São Paulo (SP) — IBGE 3550308 | PMSP (Nota do Milhão) (SOAP) 42. Sorocaba (SP) — IBGE 3552205 | ISSONLINE (DSF) (SOAP)
+
+Minas Gerais (MG) — 7 municípios 43. Belo Horizonte (MG) — IBGE 3106200 | BHISS (ABRASF 2.04) (SOAP) 44. Betim (MG) — IBGE 3106705 | GINFES (ABRASF) (SOAP) 45. Contagem (MG) — IBGE 3118601 | GINFES (ABRASF) (SOAP) 46. Juiz de Fora (MG) — IBGE 3136702 | ISS-e JF (ABRASF 2.02) (SOAP) 47. Uberaba (MG) — IBGE 3170107 | WebISS (SOAP) 48. Uberlândia (MG) — IBGE 3170206 | ISSONLINE (DSF) (SOAP) 49. Varginha (MG) — IBGE 3170701 | GINFES (ABRASF) (SOAP)
+
+Rio de Janeiro (RJ) — 3 municípios 50. Duque de Caxias (RJ) — IBGE 3301702 | SMARAPD / IPM (SOAP) 51. Nova Iguaçu (RJ) — IBGE 3303500 | ISSONLINE (DSF) (SOAP) 52. Rio de Janeiro (RJ) — IBGE 3304557 | Nota Carioca (ABRASF 1.0) (SOAP)
+
+Região Centro-Oeste (2 municípios)
+Distrito Federal (DF) 53. Brasília (DF) — IBGE 5300108 | ISSNET (ABRASF 2.04) (SOAP)
+
+Mato Grosso do Sul (MS) 54. Campo Grande (MS) — IBGE 5002704 | ISSONLINE (DSF) (SOAP)
+
+Região Norte (6 municípios)
+Amazonas (AM) 55. Manaus (AM) — IBGE 1302603 | Ábaco (ABRASF) (SOAP)
+
+Pará (PA) 56. Ananindeua (PA) — IBGE 1500800 | GINFES (ABRASF) (SOAP) 57. Belém (PA) — IBGE 1501402 | ISSONLINE (DSF) (SOAP)
+
+Tocantins (TO) 58. Araguatins (TO) — IBGE 1702109 | WebISS (SOAP) 59. Palmas (TO) — IBGE 1721000 | WebISS (SOAP)
+
+Acre (AC) 60. Rio Branco (AC) — IBGE 1200401 | Ábaco (ABRASF) (SOAP)

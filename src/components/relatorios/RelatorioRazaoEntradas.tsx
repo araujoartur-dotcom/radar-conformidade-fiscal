@@ -1,6 +1,6 @@
 import React from 'react';
 import { XmlItemDetailReport } from '../../types';
-import { CheckCircle2, AlertTriangle, ShieldAlert, FileText, ArrowRight, Tag, Lock, Building2 } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, ShieldAlert, FileText, ArrowRight, Tag, Lock, Building2, Clock, Layers } from 'lucide-react';
 
 interface RelatorioRazaoEntradasProps {
   items: XmlItemDetailReport[];
@@ -167,9 +167,33 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                       </span>
                     </td>
 
-                    {/* Status Regra */}
+                    {/* Status Regra & Conciliação Conta Corrente CGIBS */}
                     <td className="p-3 text-center font-sans">
-                      {it.isExcecao ? (
+                      {it.statusCreditoCgibs === 'CONFIRMADO' ? (
+                        <div className="flex flex-col items-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold" title={it.motivoCreditoCgibs}>
+                            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                            Crédito Confirmado
+                          </span>
+                          <span className="text-[9px] text-emerald-400/90 font-mono mt-0.5">Extinto Fornec.</span>
+                        </div>
+                      ) : it.statusCreditoCgibs === 'PENDENTE_EXTINCAO' ? (
+                        <div className="flex flex-col items-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[10px] font-bold" title={it.motivoCreditoCgibs}>
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            Pendente Fornec.
+                          </span>
+                          <span className="text-[9px] text-amber-400/90 font-mono mt-0.5">Art. 27 LC 215</span>
+                        </div>
+                      ) : it.statusCreditoCgibs === 'UTILIZADO' ? (
+                        <div className="flex flex-col items-center">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-bold" title={it.motivoCreditoCgibs}>
+                            <Layers className="w-3 h-3 text-blue-400" />
+                            Utilizado
+                          </span>
+                          <span className="text-[9px] text-blue-400/90 font-mono mt-0.5">Compensado</span>
+                        </div>
+                      ) : it.isExcecao ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 text-[10px] font-bold">
                           <AlertTriangle className="w-3 h-3 text-rose-400" />
                           Exceção

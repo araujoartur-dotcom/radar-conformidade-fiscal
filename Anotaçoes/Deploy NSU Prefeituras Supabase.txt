@@ -179,3 +179,49 @@ $$\text{Chave} = \text{"NFSE"} + \text{[IBGE 7 dígitos]} + \text{[CNPJ Prestado
    ALTER TABLE public.dfe_documentos ALTER COLUMN numero_serie TYPE VARCHAR(50);
    ```
 4. **Dispare a sincronização novamente:** Ao clicar em sincronizar no botão **"NFS-e (Nacional & Prefeituras)"**, o robô irá buscar os 50 documentos a partir do NSU 0, calculará os valores reais de cada serviço e gravará tudo no banco. As notas passarão a aparecer imediatamente na grade e nos gráficos!
+
+
+**Sim, com certeza deveria! E agora já estão aparecendo!** 🎉
+
+---
+
+### 🔍 Por que não estavam aparecendo antes?
+
+A tabela `conectores_municipais` já havia sido criada na estrutura do seu Supabase, porém ela estava com **0 registros gravados** (o script com a lista dos 41 municípios precisava ser executado no SQL Editor do Supabase).
+
+---
+
+### ⚡ O que acabamos de fazer:
+
+Conectamos diretamente na sua base do Supabase e **populamos todos os 41 conectores municipais estratégicos**!
+
+Acabamos de validar via consulta direta no banco:
+* **Total de conectores no Supabase:** **`41`**
+* **Estados cobertos:** 17 UFs (`SP`, `RJ`, `MG`, `PR`, `RS`, `BA`, `DF`, `PE`, `AM`, `PA`, `MA`, `MS`, `PI`, `SE`, `TO`, `AC`, `AL`).
+
+---
+
+### 🏙️ Cidades que estão ativas agora na tela:
+
+1. **Capitais e Grandes Metrópoles:**
+   * São Paulo (SP), Rio de Janeiro (RJ), Belo Horizonte (MG), Salvador (BA), Brasília (DF), Curitiba (PR), Porto Alegre (RS), Recife (PE), Manaus (AM), Belém (PA), São Luís (MA), Campo Grande (MS), Aracaju (SE), Maceió (AL), Teresina (PI), Palmas (TO), Rio Branco (AC), Juiz de Fora (MG).
+
+2. **Polos Industriais, Logísticos e Terminais (Rede GINFES):**
+   * Guarulhos (SP), Betim (MG), Contagem (MG), São Bernardo do Campo (SP), Santo André (SP), Diadema (SP), Mauá (SP), Santos (SP), Jundiaí (SP), Ribeirão Preto (SP), Varginha (MG), Caruaru (PE), Paranaguá (PR), Ananindeua (PA).
+
+3. **Grandes Cidades e Polos Econômicos (Rede DSF):**
+   * Campinas (SP), Nova Iguaçu (RJ), Uberlândia (MG), São José dos Campos (SP), Sorocaba (SP).
+
+4. **Hubs Operacionais de Refinarias e Petróleo & Gás (Centrais para a Supergasbras):**
+   * **Duque de Caxias (RJ)** (Polo REDUC)
+   * **Paulínia (SP)** (Polo REPLAN)
+   * **Betim (MG)** (Polo REGAP)
+   * **Canoas (RS)** (Polo REFAP)
+   * **Araucária (PR)** (Polo REPAR)
+
+---
+
+### 📲 Como visualizar agora:
+
+Basta dar um **F5 / Atualizar** no seu navegador em `radarconformidade.netlify.app` e clicar em **"Conectores Municipais"** no menu lateral esquerdo:
+* Todos os **41 municípios** já carregarão automaticamente com seus cards, provedores (PMSP, Nota Carioca, BHISS, GINFES, DSF, Ábaco, WebISS, etc.), URLs oficiais e status operacional!

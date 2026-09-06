@@ -6,7 +6,9 @@ import {
   ShieldCheck,
   CheckCircle2,
   Zap,
-  Info
+  Info,
+  Building2,
+  Target
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
@@ -34,6 +36,9 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
   const [syncResult, setSyncResult] = useState<any>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [selectedAmbiente, setSelectedAmbiente] = useState<'1' | '2'>(ambienteSefaz === 'producao' ? '1' : '2');
+  const [listaConectores, setListaConectores] = useState<any[]>([]);
+  const [selectedConectorIbge, setSelectedConectorIbge] = useState<string>('');
+  const [isSyncingIndividual, setIsSyncingIndividual] = useState<boolean>(false);
 
   const logsEndRef = React.useRef<HTMLDivElement>(null);
 
@@ -61,11 +66,30 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
     }
   };
 
+  const carregarConectores = async () => {
+    try {
+      const res = await get<any>('/nfse/conectores');
+      if (res.ok && res.data?.conectores && Array.isArray(res.data.conectores)) {
+        setListaConectores(res.data.conectores);
+        if (res.data.conectores.length > 0) {
+          setSelectedConectorIbge(prev => {
+            const exists = res.data.conectores.some((c: any) => (c.ibge || c.id) === prev);
+            if (exists) return prev;
+            return res.data.conectores[0].ibge || res.data.conectores[0].id;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar lista dinâmica de conectores:', err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       setSyncResult(null);
       setLogs([]);
       loadStatus();
+      carregarConectores();
     }
   }, [isOpen, empresaAtiva?.id]);
 
@@ -73,7 +97,7 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
     if (!empresaAtiva?.id) return;
     setIsSyncing(true);
     setSyncResult(null);
-    addLog(`Iniciando varredura de NFS-e para ${empresaAtiva.razaoSocial} (${empresaAtiva.cnpjCompleto})...`);
+    addLog(`Iniciando varredura unificada de NFS-e para ${empresaAtiva.razaoSocial} (${empresaAtiva.cnpjCompleto})...`);
     addLog(`Ambiente: ${selectedAmbiente === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação/Testes (tpAmb=2)'}`);
     addLog(`Executando varredura unificada (ADN Nacional + Filiais + Prefeituras)...`);
 
@@ -107,6 +131,52 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
       addLog(`❌ Falha inesperada: ${err.message}`);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleSyncIndividual = async () => {
+    if (!empresaAtiva?.id || !selectedConectorIbge) return;
+    
+    const conectorObj = listaConectores.find(c => c.ibge === selectedConectorIbge || c.id === selectedConectorIbge);
+    const nomePrefeitura = conectorObj ? `${conectorObj.municipio} - ${conectorObj.uf} (${conectorObj.provedor})` : selectedConectorIbge;
+
+    setIsSyncingIndividual(true);
+    setSyncResult(null);
+    addLog(`🎯 Iniciando Consulta Individualizada para [${nomePrefeitura}]...`);
+    addLog(`Ambiente: ${selectedAmbiente === '1' ? 'Produção Oficial (tpAmb=1)' : 'Homologação/Testes (tpAmb=2)'}`);
+    addLog(`⚡ Consulta cirúrgica no webservice municipal (sem acionar o ADN da Receita Federal)...`);
+
+    try {
+      const res = await post<any>('/nfse/sincronizar', {
+        empresaId: empresaAtiva.id,
+        tpAmb: selectedAmbiente,
+        conector: 'individual',
+        municipioIbge: selectedConectorIbge
+      });
+
+      if (res.ok && res.data) {
+        setSyncResult(res.data);
+        const time = new Date().toLocaleTimeString('pt-BR');
+        if (res.data.mensagens && Array.isArray(res.data.mensagens)) {
+          setLogs(prev => [
+            ...prev,
+            ...res.data.mensagens.map((m: string) => `[${time}] ${m}`),
+            `[${time}] Consulta em ${nomePrefeitura} finalizada: ${res.data.documentosNovos || 0} nova(s) NFS-e.`
+          ]);
+        } else {
+          addLog(`Consulta em ${nomePrefeitura} finalizada: ${res.data.documentosNovos || 0} nova(s) NFS-e.`);
+        }
+        loadStatus();
+        if (onSuccessSync) {
+          onSuccessSync();
+        }
+      } else {
+        addLog(`❌ Erro na consulta de ${nomePrefeitura}: ${res.error || 'Falha na comunicação com o webservice municipal.'}`);
+      }
+    } catch (err: any) {
+      addLog(`❌ Falha inesperada: ${err.message}`);
+    } finally {
+      setIsSyncingIndividual(false);
     }
   };
 
@@ -148,13 +218,14 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-5">
           
-          {/* Barra Simples & Funcional: Seletor de Ambiente + Botão Executar */}
-          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-xs">
+          {/* MODO 1: Varredura Unificada Completa (ADN Nacional Matriz + Filiais + Prefeituras) */}
+          <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-400 font-medium">Ambiente:</span>
               <select
                 value={selectedAmbiente}
                 onChange={(e) => setSelectedAmbiente(e.target.value as '1' | '2')}
+                disabled={isSyncing || isSyncingIndividual}
                 className="bg-slate-900 border border-slate-700 text-white font-medium rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-teal-500 cursor-pointer"
               >
                 <option value="1">Produção Oficial (tpAmb = 1)</option>
@@ -169,8 +240,8 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
 
             <button
               onClick={handleSyncNfse}
-              disabled={isSyncing}
-              className={`px-5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all cursor-pointer ${
+              disabled={isSyncing || isSyncingIndividual}
+              className={`px-5 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
                 isSyncing
                   ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
                   : 'bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold shadow-md shadow-teal-500/20'
@@ -179,12 +250,72 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
               {isSyncing ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
-                  <span>Executando...</span>
+                  <span>Executando Varredura Geral...</span>
                 </>
               ) : (
                 <>
                   <Zap className="w-3.5 h-3.5 fill-slate-950" />
-                  <span>Executar</span>
+                  <span>Executar Varredura Geral (Completa)</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* MODO 2: Consulta Cirúrgica Individualizada por Prefeitura (Sem tocar no ADN da Receita Federal) */}
+          <div className="p-3.5 rounded-xl bg-slate-950/80 border border-teal-800/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 text-teal-400 font-semibold whitespace-nowrap">
+                <Building2 className="w-4 h-4 text-teal-400" />
+                <span>Prefeitura Específica ({listaConectores.length}):</span>
+              </div>
+              <select
+                value={selectedConectorIbge}
+                onChange={(e) => setSelectedConectorIbge(e.target.value)}
+                disabled={isSyncing || isSyncingIndividual}
+                className="bg-slate-900 border border-slate-700 text-white font-medium rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-teal-500 cursor-pointer flex-1 min-w-0 truncate"
+              >
+                {listaConectores.length === 0 ? (
+                  <option value="">Carregando prefeituras cadastradas...</option>
+                ) : (
+                  listaConectores.map((c) => {
+                    const statusTag = c.status === 'inativo' ? ' [Inativo]' : c.status === 'configuracao_pendente' ? ' [Pendente]' : '';
+                    return (
+                      <option key={c.id || c.ibge} value={c.ibge || c.id}>
+                        [{c.uf}] {c.municipio} — {c.provedor} ({c.tecnologia || 'SOAP'}){statusTag}
+                      </option>
+                    );
+                  })
+                )}
+              </select>
+              <button
+                type="button"
+                onClick={carregarConectores}
+                disabled={isSyncing || isSyncingIndividual}
+                title="Atualizar lista de prefeituras cadastradas no banco"
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-teal-300 hover:border-teal-500 transition-all cursor-pointer flex-shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <button
+              onClick={handleSyncIndividual}
+              disabled={isSyncing || isSyncingIndividual || !selectedConectorIbge}
+              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                isSyncingIndividual
+                  ? 'bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700'
+                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 hover:border-emerald-500 shadow-sm'
+              }`}
+            >
+              {isSyncingIndividual ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                  <span>Consultando Prefeitura...</span>
+                </>
+              ) : (
+                <>
+                  <Target className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Consultar Prefeitura Específica</span>
                 </>
               )}
             </button>
