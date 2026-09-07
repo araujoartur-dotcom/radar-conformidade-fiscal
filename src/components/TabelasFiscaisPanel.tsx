@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
+import { getSupabaseFrontend } from '../utils/supabaseFrontend';
 import { AliquotaTabelaItem, NcmRegraAnexoItem } from '../types';
 
 interface CClassRule {
@@ -188,10 +189,31 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const loadRetencoes = async () => {
     setLoadingRetencoes(true);
     try {
+      // Tenta via API backend primeiro
       const res = await get<{ success: boolean; data: any[] }>('/tables/regras-retencao-servicos');
-      if (res?.success) setRegrasRetencao(res.data);
+      if (res?.ok && res?.data?.data) {
+        setRegrasRetencao(res.data.data);
+      } else if (res?.success && res?.data) {
+        setRegrasRetencao(res.data as any);
+      } else {
+        // Fallback: buscar direto do Supabase
+        const sb = getSupabaseFrontend();
+        if (sb) {
+          const { data, error } = await sb.from('regras_retencao_servicos').select('*').order('item_lc116');
+          if (!error && data) setRegrasRetencao(data);
+          else console.warn('Supabase fallback falhou:', error?.message);
+        }
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Erro ao carregar retenções:', e);
+      // Fallback direto Supabase em caso de falha total da API
+      try {
+        const sb = getSupabaseFrontend();
+        if (sb) {
+          const { data, error } = await sb.from('regras_retencao_servicos').select('*').order('item_lc116');
+          if (!error && data) setRegrasRetencao(data);
+        }
+      } catch (_) {}
     }
     setLoadingRetencoes(false);
   };
@@ -202,36 +224,108 @@ export const TabelasFiscaisPanel: React.FC = () => {
     
     setIsUploadingCSV(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const res = await fetch('/api/tables/regras-retencao-servicos/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
-      });
-      
-      let data;
-      try {
-        data = await res.json();
-      } catch (parseErr) {
-        const text = await res.text();
-        console.error('Erro de parsing JSON no upload:', text);
-        throw new Error(`Erro no servidor (Status: ${res.status}): A resposta não é um JSON válido. Verifique os logs do Backend/Vercel.`);
+      // 1. Ler o arquivo no navegador usando XLSX
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const rawData = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1 }) as any[][];
+
+      if (rawData.length < 2) {
+        alert('Arquivo parece estar vazio ou sem cabeçalhos.');
+        setIsUploadingCSV(false);
+        return;
       }
 
-      if (data.success) {
-        showSuccess(data.message);
-        loadRetencoes();
-      } else {
-        console.error('Erro retornado pela API no upload:', data);
-        alert(`Erro retornado pela API: ${data.message || 'Erro desconhecido.'}`);
+      // 2. Montar os registros conforme a estrutura do CSV
+      const records: any[] = [];
+      for (let i = 1; i < rawData.length; i++) {
+        const row = rawData[i];
+        if (!row || row.length === 0 || !row[0]) continue;
+        const getStr = (idx: number) => row[idx] ? String(row[idx]).trim() : '';
+        records.push({
+          item_lc116: getStr(0),
+          descricao_item: getStr(1),
+          nbs: getStr(2),
+          descricao_nbs: getStr(3),
+          ps_onerosa: getStr(4).toUpperCase() === 'S',
+          adq_exterior: getStr(5).toUpperCase() === 'S',
+          cclasstrib: getStr(6),
+          nome_cclasstrib: getStr(7),
+          irrf: getStr(8),
+          csrf: getStr(9),
+          inss: getStr(10),
+          iss: getStr(11),
+          cosirf_orgaos_publicos: getStr(12),
+          fundamentos_legais: getStr(13),
+          indop: getStr(14),
+          local_incidencia_ibs: getStr(15),
+          tipo_operacao: getStr(16),
+          caracteristica_fornecimento: getStr(17),
+          local_fornecimento: getStr(18),
+          dispositivo_legal_lc214: getStr(19),
+          observacao: getStr(20),
+          indnfe: getStr(21),
+          indnfse: getStr(22),
+        });
       }
+
+      if (records.length === 0) {
+        alert('Nenhum registro válido encontrado no arquivo.');
+        setIsUploadingCSV(false);
+        return;
+      }
+
+      // 3. Tentar gravar via API backend primeiro
+      let success = false;
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await uploadFile<{ success: boolean; message: string }>('/tables/regras-retencao-servicos/upload', formData);
+        if (res.ok && res.data?.success) {
+          success = true;
+          showSuccess(res.data.message || `Importadas ${records.length} regras via API!`);
+        }
+      } catch (_) { /* API indisponível, tentará Supabase */ }
+
+      // 4. Se a API falhou, gravar direto no Supabase
+      if (!success) {
+        const sb = getSupabaseFrontend();
+        if (!sb) {
+          alert('Erro: Supabase não está configurado no frontend. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
+          setIsUploadingCSV(false);
+          return;
+        }
+
+        // Limpar tabela antiga
+        const { error: delErr } = await sb.from('regras_retencao_servicos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        if (delErr) {
+          console.error('Erro ao limpar tabela no Supabase:', delErr);
+          alert(`Erro ao limpar tabela antiga no Supabase: ${delErr.message}`);
+          setIsUploadingCSV(false);
+          return;
+        }
+
+        // Inserir em lotes de 500 (limite do Supabase)
+        const BATCH_SIZE = 500;
+        let totalInseridos = 0;
+        for (let i = 0; i < records.length; i += BATCH_SIZE) {
+          const batch = records.slice(i, i + BATCH_SIZE);
+          const { error: insErr } = await sb.from('regras_retencao_servicos').insert(batch);
+          if (insErr) {
+            console.error(`Erro ao inserir lote ${i}-${i + batch.length}:`, insErr);
+            alert(`Erro ao inserir lote no Supabase: ${insErr.message}`);
+            setIsUploadingCSV(false);
+            return;
+          }
+          totalInseridos += batch.length;
+        }
+        showSuccess(`Importadas ${totalInseridos} regras diretamente no Supabase!`);
+      }
+
+      loadRetencoes();
     } catch (err: any) {
-      console.error('Falha crítica ao enviar arquivo:', err);
-      alert(`Falha crítica ao enviar o arquivo:\n${err.message || 'Erro desconhecido. Verifique o console.'}`);
+      console.error('Falha crítica ao processar arquivo:', err);
+      alert(`Falha ao processar o arquivo:\n${err.message || 'Erro desconhecido.'}`);
     }
     setIsUploadingCSV(false);
     if (csvInputRef.current) csvInputRef.current.value = '';
