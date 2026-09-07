@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   SlidersHorizontal, Table, Plus, Edit3, Trash2, CheckCircle2,
   AlertTriangle, FileText, Scale, Save, Percent, ShieldCheck, Search, Filter, X,
-  Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt
+  Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt,
+  Pencil, Calculator
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
@@ -62,7 +63,7 @@ export interface InferenciaParamItem {
 // REGRAS_RETENCAO_SERVICOS foi removido. Os dados agora vêm do backend.
 
 export const TabelasFiscaisPanel: React.FC = () => {
-  const { get, post, put, del } = useApi();
+  const { get, post, put, del, uploadFile } = useApi();
   const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'cclasstrib' | 'cfop' | 'regras' | 'inferencia'>('ad_valorem');
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -191,9 +192,9 @@ export const TabelasFiscaisPanel: React.FC = () => {
     try {
       // Tenta via API backend primeiro
       const res = await get<{ success: boolean; data: any[] }>('/tables/regras-retencao-servicos');
-      if (res?.ok && res?.data?.data) {
+      if (res?.ok && res?.data?.data && Array.isArray(res.data.data)) {
         setRegrasRetencao(res.data.data);
-      } else if (res?.success && res?.data) {
+      } else if (res?.ok && Array.isArray(res?.data)) {
         setRegrasRetencao(res.data as any);
       } else {
         // Fallback: buscar direto do Supabase
@@ -364,23 +365,51 @@ export const TabelasFiscaisPanel: React.FC = () => {
       res = await post('/tables/regras-retencao-servicos', payload);
     }
 
-    if (res?.ok || res?.success) {
+    if (res?.ok && (res?.data?.success || res.status === 200 || res.status === 201)) {
       showSuccess(payload.id ? 'Regra atualizada com sucesso!' : 'Regra criada com sucesso!');
       setShowModalRegraRetencao(false);
       loadRetencoes();
     } else {
-      alert(res?.message || res?.error || 'Erro ao salvar regra');
+      // Fallback de resiliência: tentar direto no Supabase caso o backend Express não esteja respondendo
+      const sb = getSupabaseFrontend();
+      if (sb) {
+        let sbError = null;
+        if (payload.id) {
+          const { error } = await sb.from('regras_retencao_servicos').update(payload).eq('id', payload.id);
+          sbError = error;
+        } else {
+          const { error } = await sb.from('regras_retencao_servicos').insert([payload]);
+          sbError = error;
+        }
+        if (!sbError) {
+          showSuccess(payload.id ? 'Regra atualizada via Supabase!' : 'Regra criada via Supabase!');
+          setShowModalRegraRetencao(false);
+          loadRetencoes();
+          return;
+        }
+      }
+      alert(res?.error || res?.data?.message || 'Erro ao salvar regra');
     }
   };
 
   const handleDeleteRegraRetencao = async (id: string) => {
     if (confirm('Deseja realmente excluir esta regra de retenção?')) {
       const res = await del(`/tables/regras-retencao-servicos/${id}`);
-      if (res?.ok || res?.success) {
+      if (res?.ok && (res?.data?.success || res.status === 200)) {
         showSuccess('Regra excluída com sucesso!');
         loadRetencoes();
       } else {
-        alert(res?.message || res?.error || 'Erro ao excluir regra');
+        // Fallback Supabase
+        const sb = getSupabaseFrontend();
+        if (sb) {
+          const { error } = await sb.from('regras_retencao_servicos').delete().eq('id', id);
+          if (!error) {
+            showSuccess('Regra excluída via Supabase!');
+            loadRetencoes();
+            return;
+          }
+        }
+        alert(res?.error || res?.data?.message || 'Erro ao excluir regra');
       }
     }
   };

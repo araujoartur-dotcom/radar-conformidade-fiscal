@@ -370,6 +370,47 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
     const cfops = db.prepare('SELECT cfop, tratamento_padrao, exige_onerosidade FROM cfop_tratamento WHERE ativo = 1').all() as any[];
     const cfopMap = new Map(cfops.map(c => [c.cfop, c]));
 
+    // Carregar matriz de regras de retenção de serviços (Planilhão / LC 116 / Lei 10.833 / RIR 2018)
+    let regrasRetencao: any[] = [];
+    try {
+      regrasRetencao = db.prepare('SELECT * FROM regras_retencao_servicos').all() as any[];
+    } catch (_) {}
+    if (regrasRetencao.length === 0 && isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const { data } = await supabase.from('regras_retencao_servicos').select('*');
+          if (data && data.length > 0) regrasRetencao = data;
+        } catch (_) {}
+      }
+    }
+
+    const normalizeLc116 = (code: string | null | undefined): string => {
+      if (!code) return '';
+      const clean = String(code).replace(/\D/g, '');
+      return clean.padStart(4, '0');
+    };
+
+    const parseAliqStr = (val: any): number => {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return val;
+      const str = String(val).replace('%', '').replace(',', '.').trim();
+      const num = parseFloat(str);
+      return isNaN(num) ? 0 : num;
+    };
+
+    const regrasMapLc116 = new Map<string, any>();
+    const regrasMapCClass = new Map<string, any>();
+    for (const reg of regrasRetencao) {
+      if (reg.item_lc116) {
+        regrasMapLc116.set(normalizeLc116(reg.item_lc116), reg);
+        regrasMapLc116.set(String(reg.item_lc116).trim(), reg);
+      }
+      if (reg.cclasstrib) {
+        regrasMapCClass.set(String(reg.cclasstrib).trim(), reg);
+      }
+    }
+
     // Carregar mapa leve da Conta Corrente Fiscal / Apuração Assistida (Zero Duplicação)
     let apuracaoMap = new Map<string, any>();
     try {
@@ -440,47 +481,86 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       // RETENÇÕES NA FONTE (NFS-E / SERVIÇOS)
       // ==========================================
       const isNfse = r.tipoDoc === 'NFSe' || r.tipoDoc === 'NFS-e' || (r.tipoDoc as string)?.toUpperCase().includes('NFS') || itemCfop === '1933' || itemCfop === '2933';
+      
+      let regraEncontrada: any = null;
+      if (isNfse) {
+        const candidateCode = r.ncm || '';
+        const normCandidate = normalizeLc116(candidateCode);
+        if (normCandidate && regrasMapLc116.has(normCandidate)) {
+          regraEncontrada = regrasMapLc116.get(normCandidate);
+        } else if (candidateCode && regrasMapLc116.has(candidateCode.trim())) {
+          regraEncontrada = regrasMapLc116.get(candidateCode.trim());
+        } else if (r.cClassTrib && regrasMapCClass.has(String(r.cClassTrib).trim())) {
+          regraEncontrada = regrasMapCClass.get(String(r.cClassTrib).trim());
+        } else if (regrasRetencao.length > 0) {
+          regraEncontrada = regrasMapLc116.get('1701') || regrasMapLc116.get('17.01') || regrasRetencao[0];
+        }
+      }
+
+      const expectedIrrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.irrf) : 1.5;
+      const expectedCsrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.csrf) : 4.65;
+      const expectedInssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.inss) : 11.0;
+      const expectedIssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.iss) : 5.0;
+
       const valorIrrf = Number(r.docValorIrrf) || 0;
       const valorInss = Number(r.docValorInss) || 0;
       const valorIssRetido = Number(r.docValorIss) || 0;
-      const valorCsllRetido = Number(r.docValorCsll) || (isNfse && docTotal > 0 ? Number((docTotal * 0.01).toFixed(2)) : 0);
-      const valorPisRetido = isNfse ? (Number(r.docValorPis) || (docTotal > 0 ? Number((docTotal * 0.0065).toFixed(2)) : 0)) : 0;
-      const valorCofinsRetido = isNfse ? (Number(r.docValorCofins) || (docTotal > 0 ? Number((docTotal * 0.03).toFixed(2)) : 0)) : 0;
+      const valorCsllRetido = Number(r.docValorCsll) || (isNfse && docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.01).toFixed(2)) : 0);
+      const valorPisRetido = isNfse ? (Number(r.docValorPis) || (docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.0065).toFixed(2)) : 0)) : 0;
+      const valorCofinsRetido = isNfse ? (Number(r.docValorCofins) || (docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.03).toFixed(2)) : 0)) : 0;
 
       const totalRetencoes = valorIrrf + valorInss + valorIssRetido + valorCsllRetido + valorPisRetido + valorCofinsRetido;
       const valorLiquidoServico = docTotal > 0 ? Math.max(0, docTotal - totalRetencoes) : docTotal;
 
-      const aliquotaIrrf = docTotal > 0 && valorIrrf > 0 ? Number(((valorIrrf / docTotal) * 100).toFixed(2)) : (isNfse ? 1.5 : 0);
-      const aliquotaInss = docTotal > 0 && valorInss > 0 ? Number(((valorInss / docTotal) * 100).toFixed(2)) : (isNfse ? 11.0 : 0);
+      const aliquotaIrrf = docTotal > 0 && valorIrrf > 0 ? Number(((valorIrrf / docTotal) * 100).toFixed(2)) : (isNfse ? expectedIrrfAliq : 0);
+      const aliquotaInss = docTotal > 0 && valorInss > 0 ? Number(((valorInss / docTotal) * 100).toFixed(2)) : (isNfse ? expectedInssAliq : 0);
       const aliquotaCsllRetido = 1.0;
       const aliquotaPisRetido = 0.65;
       const aliquotaCofinsRetido = 3.0;
-      const aliquotaIssRetido = docTotal > 0 && valorIssRetido > 0 ? Number(((valorIssRetido / docTotal) * 100).toFixed(2)) : 5.0;
+      const aliquotaIssRetido = docTotal > 0 && valorIssRetido > 0 ? Number(((valorIssRetido / docTotal) * 100).toFixed(2)) : expectedIssAliq;
 
-      // Diagnóstico contra a Matriz de Retenções (Lei 10.833/03, RIR/2018, LC 116/03)
+      // Diagnóstico contra a Matriz de Retenções Parametrizada (LC 116 / Lei 10.833 / RIR 2018)
       let diagnosticoRetencao: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' = 'CONFORME';
       let motivoDiagnosticoRetencao = 'Retenções em conformidade legal';
 
       if (isNfse) {
+        const crfTotal = valorPisRetido + valorCofinsRetido + valorCsllRetido;
+        const crfAliq = docTotal > 0 ? (crfTotal / docTotal) * 100 : 0;
+        const itemCodeDesc = regraEncontrada ? `Item ${regraEncontrada.item_lc116 || ''} (${regraEncontrada.descricao_item || ''})` : 'Serviço';
+
         if (docTotal <= 215.00 && totalRetencoes === 0) {
           diagnosticoRetencao = 'DISPENSADO_LIMITE';
-          motivoDiagnosticoRetencao = 'Dispensa de CRF (imposto <= R$ 10,00 - Art. 31 da Lei 10.833/03)';
+          motivoDiagnosticoRetencao = `Dispensa de retenção CRF (imposto <= R$ 10,00 - Art. 31 da Lei 10.833/03) para ${itemCodeDesc}`;
         } else if (totalRetencoes > 0) {
-          const crfTotal = valorPisRetido + valorCofinsRetido + valorCsllRetido;
-          const crfAliq = docTotal > 0 ? (crfTotal / docTotal) * 100 : 0;
-          if (valorIrrf > 0 && aliquotaIrrf !== 1.5 && aliquotaIrrf !== 1.0) {
+          const divergencias: string[] = [];
+
+          if (valorIrrf > 0 && expectedIrrfAliq > 0 && Math.abs(aliquotaIrrf - expectedIrrfAliq) > 0.1) {
+            divergencias.push(`IRRF: aplicado ${aliquotaIrrf}% vs previsto ${expectedIrrfAliq}%`);
+          } else if (valorIrrf > 0 && expectedIrrfAliq === 0) {
+            divergencias.push(`IRRF retido indevidamente (regra prevê 0% ou não incidência)`);
+          }
+
+          if (crfTotal > 0 && expectedCsrfAliq > 0 && Math.abs(crfAliq - expectedCsrfAliq) > 0.25) {
+            divergencias.push(`CRF/PCC: aplicado ${crfAliq.toFixed(2)}% vs previsto ${expectedCsrfAliq}%`);
+          } else if (crfTotal > 0 && expectedCsrfAliq === 0) {
+            divergencias.push(`CRF/PCC retido indevidamente (regra prevê 0%)`);
+          }
+
+          if (valorInss > 0 && expectedInssAliq > 0 && Math.abs(aliquotaInss - expectedInssAliq) > 0.5) {
+            divergencias.push(`INSS: aplicado ${aliquotaInss}% vs previsto ${expectedInssAliq}%`);
+          }
+
+          if (divergencias.length > 0) {
             diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
-            motivoDiagnosticoRetencao = `Alíquota IRRF aplicada (${aliquotaIrrf}%) diverge do padrão legal (1,50% ou 1,00% - Art. 714/716 RIR/2018)`;
-          } else if (crfTotal > 0 && Math.abs(crfAliq - 4.65) > 0.25) {
-            diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
-            motivoDiagnosticoRetencao = `Alíquota CRF/PCC (${crfAliq.toFixed(2)}%) diverge do padrão (4,65% - Art. 30 Lei 10.833/03)`;
+            const baseLegal = regraEncontrada?.fundamentos_legais || regraEncontrada?.dispositivo_legal_lc214 || 'Lei 10.833/03 e RIR/2018';
+            motivoDiagnosticoRetencao = `Divergência de alíquota para ${itemCodeDesc}: ${divergencias.join('; ')} [Base: ${baseLegal}]`;
           } else {
             diagnosticoRetencao = 'CONFORME';
-            motivoDiagnosticoRetencao = 'Retenções destacadas com 100% de aderência à Lei 10.833/03 e RIR/2018';
+            motivoDiagnosticoRetencao = `Retenções validadas conforme regra cadastrada do ${itemCodeDesc} (IRRF ${expectedIrrfAliq}%, CRF ${expectedCsrfAliq}%, INSS ${expectedInssAliq}%)`;
           }
-        } else if (docTotal > 5000) {
+        } else if (docTotal > 5000 && (expectedIrrfAliq > 0 || expectedCsrfAliq > 0)) {
           diagnosticoRetencao = 'FALTA_RETENCAO';
-          motivoDiagnosticoRetencao = 'Serviço com valor superior a R$ 5.000 sem destaque de retenção na fonte (verificar se optante pelo Simples Nacional)';
+          motivoDiagnosticoRetencao = `Serviço (${itemCodeDesc}) acima de R$ 5.000 sem retenção destacada na fonte (previsto IRRF ${expectedIrrfAliq}% / CRF ${expectedCsrfAliq}%). Verificar se optante do Simples Nacional`;
         }
       }
 
@@ -581,10 +661,22 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         aliquotaIssRetido,
         totalRetencoes,
         valorLiquidoServico,
-        codigoServicoLc116: isNfse ? (r.ncm && r.ncm !== '2711.19.10' ? r.ncm : '17.01') : '',
-        discriminacaoServico: isNfse ? (r.descricaoItem || 'Prestação de Serviços Profissionais / Técnicos') : (r.descricaoItem || 'Operação Fiscal'),
+        codigoServicoLc116: isNfse ? (regraEncontrada?.item_lc116 || (r.ncm && r.ncm !== '2711.19.10' ? r.ncm : '17.01')) : '',
+        discriminacaoServico: isNfse ? (regraEncontrada?.descricao_item || r.descricaoItem || 'Prestação de Serviços Profissionais / Técnicos') : (r.descricaoItem || 'Operação Fiscal'),
         diagnosticoRetencao,
         motivoDiagnosticoRetencao,
+        regraRetencaoAplicada: regraEncontrada ? {
+          id: regraEncontrada.id,
+          item_lc116: regraEncontrada.item_lc116,
+          descricao_item: regraEncontrada.descricao_item,
+          irrf: regraEncontrada.irrf,
+          csrf: regraEncontrada.csrf,
+          inss: regraEncontrada.inss,
+          iss: regraEncontrada.iss,
+          fundamentos_legais: regraEncontrada.fundamentos_legais,
+          dispositivo_legal_lc214: regraEncontrada.dispositivo_legal_lc214,
+          observacao: regraEncontrada.observacao
+        } : undefined,
 
         // Campos de Conta Corrente Fiscal CGIBS / RTC
         operacaoId: apOp?.operacao_id,

@@ -531,13 +531,36 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                 </div>
               </div>
 
+              {/* Regra Parametrizada Aplicada */}
+              {modalItem.regraRetencaoAplicada && (
+                <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/60 space-y-1">
+                  <div className="flex justify-between items-center text-[10px] uppercase font-bold text-indigo-400">
+                    <span>Regra Parametrizada da Matriz Fiscal</span>
+                    <span>Item LC 116: {modalItem.regraRetencaoAplicada.item_lc116 || modalItem.codigoServicoLc116}</span>
+                  </div>
+                  <div className="text-white font-semibold text-xs">
+                    {modalItem.regraRetencaoAplicada.descricao_item || modalItem.discriminacaoServico}
+                  </div>
+                  {(modalItem.regraRetencaoAplicada.fundamentos_legais || modalItem.regraRetencaoAplicada.dispositivo_legal_lc214) && (
+                    <div className="text-[11px] text-slate-300 pt-1">
+                      <strong className="text-indigo-300">Base Legal:</strong> {modalItem.regraRetencaoAplicada.fundamentos_legais || modalItem.regraRetencaoAplicada.dispositivo_legal_lc214}
+                    </div>
+                  )}
+                  {modalItem.regraRetencaoAplicada.observacao && (
+                    <div className="text-[10px] text-slate-400 italic">
+                      Obs: {modalItem.regraRetencaoAplicada.observacao}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Quadro Comparativo de Tributos Retidos */}
               <div className="border border-slate-800 rounded-xl overflow-hidden">
                 <table className="w-full text-left">
                   <thead className="bg-slate-950 text-slate-400 text-[10px] uppercase font-mono">
                     <tr>
                       <th className="p-2.5">Tributo Retido</th>
-                      <th className="p-2.5">Alíquota Legal</th>
+                      <th className="p-2.5">Alíquota Prevista na Regra</th>
                       <th className="p-2.5 text-right">Valor Retido (R$)</th>
                       <th className="p-2.5">Guia / Obrigação</th>
                     </tr>
@@ -545,13 +568,17 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                   <tbody className="divide-y divide-slate-800 font-mono">
                     <tr>
                       <td className="p-2.5 text-amber-300 font-bold font-sans">IRRF Fonte</td>
-                      <td className="p-2.5 text-slate-300">1,50% (Art. 714 RIR/2018)</td>
+                      <td className="p-2.5 text-slate-300">
+                        {modalItem.regraRetencaoAplicada?.irrf || '1,50%'} (Art. 714 RIR/2018)
+                      </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorIrrf || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">DARF 1708 (Reinf / DCTFWeb)</td>
                     </tr>
                     <tr>
                       <td className="p-2.5 text-cyan-300 font-bold font-sans">CRF/PCC (PIS/COFINS/CSLL)</td>
-                      <td className="p-2.5 text-slate-300">4,65% (Art. 30 Lei 10.833/03)</td>
+                      <td className="p-2.5 text-slate-300">
+                        {modalItem.regraRetencaoAplicada?.csrf || '4,65%'} (Art. 30 Lei 10.833/03)
+                      </td>
                       <td className="p-2.5 text-right font-bold text-white">
                         R$ {((modalItem.valorCsllRetido || 0) + (modalItem.valorPisRetido || 0) + (modalItem.valorCofinsRetido || 0)).toFixed(2)}
                       </td>
@@ -559,13 +586,17 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </tr>
                     <tr>
                       <td className="p-2.5 text-emerald-300 font-bold font-sans">INSS Previdenciário</td>
-                      <td className="p-2.5 text-slate-300">11,00% (Art. 31 Lei 8.212/91)</td>
+                      <td className="p-2.5 text-slate-300">
+                        {modalItem.regraRetencaoAplicada?.inss || '11,00%'} (Art. 31 Lei 8.212/91)
+                      </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorInss || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">EFD-Reinf / DCTFWeb</td>
                     </tr>
                     <tr>
                       <td className="p-2.5 text-purple-300 font-bold font-sans">ISSQN Municipal</td>
-                      <td className="p-2.5 text-slate-300">2% a 5% (LC 116/03)</td>
+                      <td className="p-2.5 text-slate-300">
+                        {modalItem.regraRetencaoAplicada?.iss || '2% a 5%'} (LC 116/03)
+                      </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorIssRetido || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">DAM Municipal (Tomador Substituto)</td>
                     </tr>

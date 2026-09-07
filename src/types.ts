@@ -446,6 +446,18 @@ export interface XmlItemDetailReport {
   discriminacaoServico?: string;
   diagnosticoRetencao?: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL';
   motivoDiagnosticoRetencao?: string;
+  regraRetencaoAplicada?: {
+    id?: string;
+    item_lc116?: string;
+    descricao_item?: string;
+    irrf?: string;
+    csrf?: string;
+    inss?: string;
+    iss?: string;
+    fundamentos_legais?: string;
+    dispositivo_legal_lc214?: string;
+    observacao?: string;
+  };
 
   // Conta Corrente Fiscal & Homologação CGIBS (Apuração Assistida - LC 215/2025)
   operacaoId?: string;
