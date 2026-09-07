@@ -912,6 +912,7 @@ router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admi
 
     res.json({ success: true, message: `Foram importadas ${records.length} regras com sucesso!` });
   } catch (err: any) {
+    console.error('CRITICAL ERROR NO UPLOAD DE REGRAS DE RETENCAO:', err);
     res.status(500).json({ success: false, message: 'Erro ao processar o upload: ' + err.message });
   }
 });

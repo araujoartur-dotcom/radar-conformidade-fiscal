@@ -213,16 +213,25 @@ export const TabelasFiscaisPanel: React.FC = () => {
         body: formData
       });
       
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseErr) {
+        const text = await res.text();
+        console.error('Erro de parsing JSON no upload:', text);
+        throw new Error(`Erro no servidor (Status: ${res.status}): A resposta não é um JSON válido. Verifique os logs do Backend/Vercel.`);
+      }
+
       if (data.success) {
         showSuccess(data.message);
         loadRetencoes();
       } else {
-        alert(data.message || 'Erro no upload.');
+        console.error('Erro retornado pela API no upload:', data);
+        alert(`Erro retornado pela API: ${data.message || 'Erro desconhecido.'}`);
       }
-    } catch (err) {
-      console.error(err);
-      alert('Falha ao enviar o arquivo.');
+    } catch (err: any) {
+      console.error('Falha crítica ao enviar arquivo:', err);
+      alert(`Falha crítica ao enviar o arquivo:\n${err.message || 'Erro desconhecido. Verifique o console.'}`);
     }
     setIsUploadingCSV(false);
     if (csvInputRef.current) csvInputRef.current.value = '';

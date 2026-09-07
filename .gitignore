@@ -52,6 +52,6 @@ data/certificates/
 *.sw?
 
 # Vercel & Gemini cache
-.vercel
+#.vercel
 .gemini
 .system_generated
