@@ -58,80 +58,7 @@ export interface InferenciaParamItem {
   updated_at?: string;
 }
 
-export const REGRAS_RETENCAO_SERVICOS = [
-  {
-    codigo: 'RET-IRRF-01',
-    tributo: 'IRRF (Serviços Profissionais)',
-    aliquota: '1,50%',
-    baseLegal: 'Art. 714 do RIR/2018 (Decreto nº 9.580/2018)',
-    hipotese: 'Serviços de assessoria, consultoria, contabilidade, auditoria, advocacia, engenharia, informática e profissões regulamentadas.',
-    tipoRetencao: 'Federal (DARF 1708)',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-IRRF-02',
-    tributo: 'IRRF (Limpeza, Segurança e Mão de Obra)',
-    aliquota: '1,00%',
-    baseLegal: 'Art. 716 do RIR/2018',
-    hipotese: 'Serviços de limpeza, conservação, segurança, vigilância e locação de mão de obra temporária.',
-    tipoRetencao: 'Federal (DARF 1708)',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-CSLL-01',
-    tributo: 'CSLL Retida (Segregada Individual)',
-    aliquota: '1,00%',
-    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e IN RFB nº 2.145/2023',
-    hipotese: 'Serviços profissionais e locação de mão de obra. Segregada individualmente na apuração.',
-    tipoRetencao: 'Federal',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-PIS-01',
-    tributo: 'PIS Retido',
-    aliquota: '0,65%',
-    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e Lei nº 13.137/2015',
-    hipotese: 'Componente da retenção na fonte sobre pagamentos a pessoas jurídicas prestadoras de serviços.',
-    tipoRetencao: 'Federal',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-COF-01',
-    tributo: 'COFINS Retida',
-    aliquota: '3,00%',
-    baseLegal: 'Art. 30 da Lei nº 10.833/2003 e Lei nº 13.137/2015',
-    hipotese: 'Componente da retenção na fonte sobre pagamentos a pessoas jurídicas prestadoras de serviços.',
-    tipoRetencao: 'Federal',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-CRF-01',
-    tributo: 'CRF / PCC Global (PIS + COFINS + CSLL)',
-    aliquota: '4,65%',
-    baseLegal: 'Art. 30 a 32 da Lei nº 10.833/2003',
-    hipotese: 'Retenção conjunta das 3 contribuições sociais federais (DARF 5952). Dispensa se imposto <= R$ 10,00.',
-    tipoRetencao: 'Federal (DARF 5952)',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-INSS-01',
-    tributo: 'INSS Previdenciário (Mão de Obra)',
-    aliquota: '11,00% (ou 3,5% CPRB)',
-    baseLegal: 'Art. 31 da Lei nº 8.212/1991 e IN RFB nº 2.110/2022',
-    hipotese: 'Serviços prestados mediante cessão de mão de obra ou empreitada (limpeza, vigilância, construção civil, temporários).',
-    tipoRetencao: 'Previdenciária (DCTFWeb)',
-    responsavel: 'Tomador (Pessoa Jurídica)'
-  },
-  {
-    codigo: 'RET-ISS-01',
-    tributo: 'ISSQN Retido no Destino',
-    aliquota: '2,00% a 5,00%',
-    baseLegal: 'Art. 3º e 6º da Lei Complementar nº 116/2003',
-    hipotese: 'Serviços com incidência no local da prestação (incisos I a XXV do Art. 3º) ou tomador como substituto tributário municipal.',
-    tipoRetencao: 'Municipal (DAM)',
-    responsavel: 'Tomador (Substituto Tributário)'
-  }
-];
+// REGRAS_RETENCAO_SERVICOS foi removido. Os dados agora vêm do backend.
 
 export const TabelasFiscaisPanel: React.FC = () => {
   const { get, post, put, del } = useApi();
@@ -241,6 +168,120 @@ export const TabelasFiscaisPanel: React.FC = () => {
 
   const [regras, setRegras] = useState<RegraElegibilidade[]>([]);
 
+  // ── TAB 3.5: RETENCOES SERVICOS STATE ─────────────────────
+  const [regrasRetencao, setRegrasRetencao] = useState<any[]>([]);
+  const [loadingRetencoes, setLoadingRetencoes] = useState(false);
+  const [isUploadingCSV, setIsUploadingCSV] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const [showModalRegraRetencao, setShowModalRegraRetencao] = useState(false);
+  const [editingRegraRetencao, setEditingRegraRetencao] = useState<any | null>(null);
+  const [regraRetencaoForm, setRegraRetencaoForm] = useState<any>({
+    item_lc116: '', descricao_item: '', nbs: '', descricao_nbs: '',
+    ps_onerosa: true, adq_exterior: false, indop: '', local_incidencia_ibs: '',
+    cclasstrib: '', nome_cclasstrib: '', irrf: '', csrf: '', inss: '', iss: '',
+    cosirf_orgaos_publicos: '', fundamentos_legais: '', tipo_operacao: '',
+    caracteristica_fornecimento: '', local_fornecimento: '', dispositivo_legal_lc214: '',
+    observacao: '', indnfe: '', indnfse: ''
+  });
+
+  const loadRetencoes = async () => {
+    setLoadingRetencoes(true);
+    try {
+      const res = await get<{ success: boolean; data: any[] }>('/tables/regras-retencao-servicos');
+      if (res?.success) setRegrasRetencao(res.data);
+    } catch (e) {
+      console.error(e);
+    }
+    setLoadingRetencoes(false);
+  };
+
+  const handleUploadCSV = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    setIsUploadingCSV(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const res = await fetch('/api/tables/regras-retencao-servicos/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        showSuccess(data.message);
+        loadRetencoes();
+      } else {
+        alert(data.message || 'Erro no upload.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Falha ao enviar o arquivo.');
+    }
+    setIsUploadingCSV(false);
+    if (csvInputRef.current) csvInputRef.current.value = '';
+  };
+
+  const handleOpenNewRegraRetencao = () => {
+    setEditingRegraRetencao(null);
+    setRegraRetencaoForm({
+      item_lc116: '', descricao_item: '', nbs: '', descricao_nbs: '',
+      ps_onerosa: true, adq_exterior: false, indop: '', local_incidencia_ibs: '',
+      cclasstrib: '', nome_cclasstrib: '', irrf: '', csrf: '', inss: '', iss: '',
+      cosirf_orgaos_publicos: '', fundamentos_legais: '', tipo_operacao: '',
+      caracteristica_fornecimento: '', local_fornecimento: '', dispositivo_legal_lc214: '',
+      observacao: '', indnfe: '', indnfse: ''
+    });
+    setShowModalRegraRetencao(true);
+  };
+
+  const handleEditRegraRetencao = (item: any) => {
+    setEditingRegraRetencao(item);
+    setRegraRetencaoForm({ ...item, ps_onerosa: item.ps_onerosa === 1, adq_exterior: item.adq_exterior === 1 });
+    setShowModalRegraRetencao(true);
+  };
+
+  const handleSaveRegraRetencao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      id: editingRegraRetencao?.id,
+      ...regraRetencaoForm
+    };
+    
+    let res;
+    if (payload.id) {
+      res = await put(`/tables/regras-retencao-servicos/${payload.id}`, payload);
+    } else {
+      res = await post('/tables/regras-retencao-servicos', payload);
+    }
+
+    if (res?.ok || res?.success) {
+      showSuccess(payload.id ? 'Regra atualizada com sucesso!' : 'Regra criada com sucesso!');
+      setShowModalRegraRetencao(false);
+      loadRetencoes();
+    } else {
+      alert(res?.message || res?.error || 'Erro ao salvar regra');
+    }
+  };
+
+  const handleDeleteRegraRetencao = async (id: string) => {
+    if (confirm('Deseja realmente excluir esta regra de retenção?')) {
+      const res = await del(`/tables/regras-retencao-servicos/${id}`);
+      if (res?.ok || res?.success) {
+        showSuccess('Regra excluída com sucesso!');
+        loadRetencoes();
+      } else {
+        alert(res?.message || res?.error || 'Erro ao excluir regra');
+      }
+    }
+  };
+
   // ── LOAD ALL DATA ────────────────────────────────────────
   const reloadData = async () => {
     setLoading(true);
@@ -271,6 +312,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
 
   useEffect(() => {
     reloadData();
+    loadRetencoes();
   }, []);
 
   // ── AD VALOREM HANDLERS ──────────────────────────────────
@@ -1087,38 +1129,98 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 Matriz de Retenções na Fonte em Serviços (NFS-e) & Fundamentação Legal
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Regras tributárias parametrizadas para auditoria automática de retenção na fonte (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme Lei 10.833/03, RIR/2018 e LC 116/03.
+                Regras tributárias importadas via arquivo CSV para auditoria automática (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme LC 116/03, LC 214 e normativos federais.
               </p>
             </div>
 
-            <div className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs font-bold font-mono">
-              8 Regras Parametrizadas
+            <div className="flex items-center gap-3">
+              <input 
+                type="file" 
+                accept=".csv,.xlsx" 
+                className="hidden" 
+                ref={csvInputRef} 
+                onChange={handleUploadCSV}
+              />
+              <button 
+                onClick={() => csvInputRef.current?.click()}
+                disabled={isUploadingCSV}
+                className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-colors ${
+                  isUploadingCSV ? 'bg-slate-700 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
+                }`}
+              >
+                {isUploadingCSV ? (
+                  <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Processando...</span>
+                ) : (
+                  <><Upload className="w-4 h-4" /> Importar CSV</>
+                )}
+              </button>
+              <button
+                onClick={handleOpenNewRegraRetencao}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center gap-2 shadow-lg shadow-amber-600/20 cursor-pointer transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova Regra</span>
+              </button>
+              <div className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs font-bold font-mono">
+                {regrasRetencao.length} Regras
+              </div>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full text-left text-xs text-slate-300">
+          <div className="overflow-x-auto rounded-xl border border-slate-800 pb-2">
+            <table className="w-max min-w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
                 <tr>
-                  <th className="py-3 px-4">Código</th>
-                  <th className="py-3 px-4">Tributo Retido</th>
-                  <th className="py-3 px-4">Alíquota</th>
-                  <th className="py-3 px-4">Base Legal</th>
-                  <th className="py-3 px-4">Hipótese de Incidência</th>
-                  <th className="py-3 px-4">Tipo Recolhimento</th>
-                  <th className="py-3 px-4">Responsável</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Item LC116</th>
+                  <th className="py-3 px-4 min-w-[200px]">Descrição Serviço (LC116)</th>
+                  <th className="py-3 px-4 whitespace-nowrap">NBS</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-center">Onerosa?</th>
+                  <th className="py-3 px-4 whitespace-nowrap">IndOp</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-emerald-400">cClassTrib</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-red-400">IRRF</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-rose-400">CSRF</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-indigo-400">INSS</th>
+                  <th className="py-3 px-4 whitespace-nowrap text-cyan-400">ISS</th>
+                  <th className="py-3 px-4 min-w-[300px]">Fundamentos Legais</th>
+                  <th className="py-3 px-4 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {REGRAS_RETENCAO_SERVICOS.map((regra) => (
-                  <tr key={regra.codigo} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-amber-400 whitespace-nowrap">{regra.codigo}</td>
-                    <td className="py-3 px-4 font-bold text-white whitespace-nowrap">{regra.tributo}</td>
-                    <td className="py-3 px-4 font-mono font-bold text-emerald-400 whitespace-nowrap">{regra.aliquota}</td>
-                    <td className="py-3 px-4 font-mono text-cyan-300 text-[11px] whitespace-nowrap">{regra.baseLegal}</td>
-                    <td className="py-3 px-4 text-slate-300 text-[11px] max-w-xs">{regra.hipotese}</td>
-                    <td className="py-3 px-4 text-slate-400 whitespace-nowrap font-mono text-[11px]">{regra.tipoRetencao}</td>
-                    <td className="py-3 px-4 text-indigo-300 whitespace-nowrap font-semibold text-[11px]">{regra.responsavel}</td>
+                {loadingRetencoes ? (
+                  <tr><td colSpan={11} className="py-8 text-center text-slate-500">Carregando regras...</td></tr>
+                ) : regrasRetencao.length === 0 ? (
+                  <tr><td colSpan={11} className="py-8 text-center text-slate-500">Nenhuma regra encontrada. Importe um arquivo CSV.</td></tr>
+                ) : regrasRetencao.map((regra) => (
+                  <tr key={regra.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-2.5 px-4 font-mono font-bold text-amber-400 whitespace-nowrap">{regra.item_lc116}</td>
+                    <td className="py-2.5 px-4 text-slate-200 text-[11px] truncate max-w-[250px]" title={regra.descricao_item}>{regra.descricao_item}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-slate-200 whitespace-nowrap">{regra.nbs}</td>
+                    <td className="py-2.5 px-4 text-center font-bold">{regra.ps_onerosa ? <span className="text-emerald-400">S</span> : <span className="text-slate-500">N</span>}</td>
+                    <td className="py-2.5 px-4 font-mono text-[11px]">{regra.indop}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-emerald-400 whitespace-nowrap">{regra.cclasstrib}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-red-400">{regra.irrf || '-'}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-rose-400">{regra.csrf || '-'}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-indigo-400">{regra.inss || '-'}</td>
+                    <td className="py-2.5 px-4 font-mono font-bold text-cyan-400">{regra.iss || '-'}</td>
+                    <td className="py-2.5 px-4 text-slate-400 text-[10px] truncate max-w-[300px]" title={regra.fundamentos_legais}>{regra.fundamentos_legais}</td>
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={() => handleEditRegraRetencao(regra)}
+                          className="p-1.5 bg-slate-800 hover:bg-cyan-900/50 text-slate-400 hover:text-cyan-400 rounded-lg transition-colors border border-slate-700 hover:border-cyan-800 cursor-pointer"
+                          title="Editar"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRegraRetencao(regra.id)}
+                          className="p-1.5 bg-slate-800 hover:bg-rose-900/50 text-slate-400 hover:text-rose-400 rounded-lg transition-colors border border-slate-700 hover:border-rose-800 cursor-pointer"
+                          title="Excluir"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1993,6 +2095,178 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 <span>Confirmar Importação de {excelPreview.length} Itens</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL REGRA RETENÇÃO
+      ═══════════════════════════════════════════════════════ */}
+      {showModalRegraRetencao && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/50 rounded-t-2xl">
+              <div>
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Calculator className="w-5 h-5 text-amber-500" />
+                  {editingRegraRetencao ? 'Editar Regra de Retenção' : 'Nova Regra de Retenção'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Configure os parâmetros fiscais e tributários do serviço</p>
+              </div>
+              <button
+                onClick={() => setShowModalRegraRetencao(false)}
+                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRegraRetencao} className="p-6 flex-1 overflow-y-auto space-y-8">
+              
+              {/* SECTION: IDENTIFICAÇÃO DO SERVIÇO */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <FileText className="w-4 h-4" /> Identificação do Serviço
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Item LC116 *</label>
+                    <input required type="text" value={regraRetencaoForm.item_lc116} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, item_lc116: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" placeholder="Ex: 01.01" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Descrição do Serviço (LC116)</label>
+                    <input type="text" value={regraRetencaoForm.descricao_item} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, descricao_item: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">NBS</label>
+                    <input type="text" value={regraRetencaoForm.nbs} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, nbs: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Descrição NBS</label>
+                    <input type="text" value={regraRetencaoForm.descricao_nbs} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, descricao_nbs: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">IndOp</label>
+                    <input type="text" value={regraRetencaoForm.indop} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, indop: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">cClassTrib</label>
+                    <input type="text" value={regraRetencaoForm.cclasstrib} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, cclasstrib: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Nome cClassTrib</label>
+                    <input type="text" value={regraRetencaoForm.nome_cclasstrib} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, nome_cclasstrib: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+
+                  <div className="flex items-center gap-4 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={regraRetencaoForm.ps_onerosa} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, ps_onerosa: e.target.checked })} className="w-4 h-4 accent-amber-500" />
+                      <span className="text-sm font-bold text-slate-300">PS Onerosa?</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={regraRetencaoForm.adq_exterior} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, adq_exterior: e.target.checked })} className="w-4 h-4 accent-amber-500" />
+                      <span className="text-sm font-bold text-slate-300">Adq. Exterior?</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: TRIBUTAÇÃO */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-rose-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <Calculator className="w-4 h-4" /> Alíquotas e Tributos
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">IRRF</label>
+                    <input type="text" value={regraRetencaoForm.irrf} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, irrf: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-red-400 focus:outline-none focus:border-amber-500" placeholder="Ex: 1,50%" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">CSRF</label>
+                    <input type="text" value={regraRetencaoForm.csrf} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, csrf: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-rose-400 focus:outline-none focus:border-amber-500" placeholder="Ex: 4,65%" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">INSS</label>
+                    <input type="text" value={regraRetencaoForm.inss} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, inss: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-indigo-400 focus:outline-none focus:border-amber-500" placeholder="Ex: 11%" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">ISS</label>
+                    <input type="text" value={regraRetencaoForm.iss} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, iss: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-cyan-400 focus:outline-none focus:border-amber-500" placeholder="Ex: 2% a 5%" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5" title="Órgãos Públicos">COSIRF</label>
+                    <input type="text" value={regraRetencaoForm.cosirf_orgaos_publicos} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, cosirf_orgaos_publicos: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-sm text-purple-400 focus:outline-none focus:border-amber-500" placeholder="Ex: 9,45%" />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION: INFORMAÇÕES FISCAIS ADICIONAIS */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <FileText className="w-4 h-4" /> Informações Complementares DFe
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Fundamentos Legais</label>
+                    <textarea value={regraRetencaoForm.fundamentos_legais} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, fundamentos_legais: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" rows={2} />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Local Incidência IBS</label>
+                    <input type="text" value={regraRetencaoForm.local_incidencia_ibs} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, local_incidencia_ibs: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Tipo de Operação</label>
+                    <input type="text" value={regraRetencaoForm.tipo_operacao} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, tipo_operacao: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Característica do Fornecimento</label>
+                    <input type="text" value={regraRetencaoForm.caracteristica_fornecimento} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, caracteristica_fornecimento: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Local Fornecimento (DFe)</label>
+                    <input type="text" value={regraRetencaoForm.local_fornecimento} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, local_fornecimento: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Dispositivo Legal (LC 214/2025)</label>
+                    <input type="text" value={regraRetencaoForm.dispositivo_legal_lc214} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, dispositivo_legal_lc214: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">Observação</label>
+                    <textarea value={regraRetencaoForm.observacao} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, observacao: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" rows={2} />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">indNFe</label>
+                    <input type="text" value={regraRetencaoForm.indnfe} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, indnfe: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">indNFSe</label>
+                    <input type="text" value={regraRetencaoForm.indnfse} onChange={(e) => setRegraRetencaoForm({ ...regraRetencaoForm, indnfse: e.target.value })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-amber-500" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-6 border-t border-slate-800 sticky bottom-0 bg-slate-900 pb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowModalRegraRetencao(false)}
+                  className="px-6 py-2.5 rounded-xl text-slate-300 font-bold hover:bg-slate-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold flex items-center gap-2 shadow-lg shadow-amber-600/20 cursor-pointer transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  {editingRegraRetencao ? 'Salvar Alterações' : 'Criar Regra'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

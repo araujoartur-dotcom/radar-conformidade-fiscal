@@ -253,6 +253,38 @@ export function initializeSchema(): void {
     );
 
     -- =========================================================
+    -- REGRAS DE RETENÇÃO DE SERVIÇOS (Importadas via CSV)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS regras_retencao_servicos (
+      id                    TEXT PRIMARY KEY,
+      item_lc116            TEXT,
+      descricao_item        TEXT,
+      nbs                   TEXT,
+      descricao_nbs         TEXT,
+      ps_onerosa            INTEGER DEFAULT 0,
+      adq_exterior          INTEGER DEFAULT 0,
+      indop                 TEXT,
+      local_incidencia_ibs  TEXT,
+      cclasstrib            TEXT,
+      nome_cclasstrib       TEXT,
+      irrf                  TEXT,
+      csrf                  TEXT,
+      inss                  TEXT,
+      iss                   TEXT,
+      cosirf_orgaos_publicos TEXT,
+      fundamentos_legais    TEXT,
+      tipo_operacao         TEXT,
+      caracteristica_fornecimento TEXT,
+      local_fornecimento    TEXT,
+      dispositivo_legal_lc214 TEXT,
+      observacao            TEXT,
+      indnfe                TEXT,
+      indnfse               TEXT,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
     -- PARÂMETROS DE INFERÊNCIA (ALÍQUOTAS MÉDIAS P/ SIMULADOR)
     -- =========================================================
     CREATE TABLE IF NOT EXISTS parametros_inferencia (

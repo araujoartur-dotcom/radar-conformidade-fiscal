@@ -14,7 +14,10 @@ import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil } from '../middleware/auth';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
+import multer from 'multer';
+import * as XLSX from 'xlsx';
 
+const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
 // =========================================================
@@ -770,6 +773,248 @@ router.delete('/inferencia/:id', requireAuth, requirePerfil('admin_master', 'con
     res.json({ success: true, message: 'Parâmetro de inferência excluído com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao excluir parâmetro de inferência: ' + err.message });
+  }
+});
+
+// =========================================================
+// REGRAS DE RETENÇÃO DE SERVIÇOS (Importadas via CSV)
+// =========================================================
+
+/** GET /api/tables/regras-retencao-servicos — Listar regras de retenção */
+router.get('/regras-retencao-servicos', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data, error } = await supabase.from('regras_retencao_servicos').select('*').order('item_lc116', { ascending: true });
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+        return;
+      }
+    }
+
+    const db = getDatabase();
+    const rows = db.prepare('SELECT * FROM regras_retencao_servicos ORDER BY item_lc116 ASC').all();
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar regras de retenção: ' + err.message });
+  }
+});
+
+/** POST /api/tables/regras-retencao-servicos/upload — Upload e substituição da tabela via CSV */
+router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admin_master', 'contador_gestor'), upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ success: false, message: 'Nenhum arquivo enviado.' });
+      return;
+    }
+
+    // Lê o buffer usando XLSX para suportar CSV e XLSX perfeitamente, tratando aspas duplas, etc
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    // Pegar o array de arrays
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as string[][];
+
+    if (rawData.length < 2) {
+      res.status(400).json({ success: false, message: 'Arquivo parece estar vazio ou sem cabeçalhos.' });
+      return;
+    }
+
+    // Assume-se que a primeira linha é cabeçalho. Iterar e preparar inserts.
+    const records = [];
+    for (let i = 1; i < rawData.length; i++) {
+      const row = rawData[i];
+      // Pular linhas vazias
+      if (!row || row.length === 0 || !row[0]) continue;
+
+      const getStr = (index: number) => row[index] ? String(row[index]).trim() : '';
+
+      records.push({
+        id: uuid(),
+        item_lc116: getStr(0),
+        descricao_item: getStr(1),
+        nbs: getStr(2),
+        descricao_nbs: getStr(3),
+        ps_onerosa: getStr(4).toUpperCase() === 'S' ? 1 : 0,
+        adq_exterior: getStr(5).toUpperCase() === 'S' ? 1 : 0,
+        cclasstrib: getStr(6),
+        nome_cclasstrib: getStr(7),
+        irrf: getStr(8),
+        csrf: getStr(9),
+        inss: getStr(10),
+        iss: getStr(11),
+        cosirf_orgaos_publicos: getStr(12),
+        fundamentos_legais: getStr(13),
+        indop: getStr(14),
+        local_incidencia_ibs: getStr(15),
+        tipo_operacao: getStr(16),
+        caracteristica_fornecimento: getStr(17),
+        local_fornecimento: getStr(18),
+        dispositivo_legal_lc214: getStr(19),
+        observacao: getStr(20),
+        indnfe: getStr(21),
+        indnfse: getStr(22),
+      });
+    }
+
+    // Bulk Insert Local (SQLite)
+    const db = getDatabase();
+    
+    db.transaction(() => {
+      // Deletar os atuais
+      db.prepare('DELETE FROM regras_retencao_servicos').run();
+
+      const insertStmt = db.prepare(`
+        INSERT INTO regras_retencao_servicos (
+          id, item_lc116, descricao_item, nbs, descricao_nbs, ps_onerosa, adq_exterior,
+          indop, local_incidencia_ibs, cclasstrib, nome_cclasstrib,
+          irrf, csrf, inss, iss, cosirf_orgaos_publicos,
+          fundamentos_legais, tipo_operacao, caracteristica_fornecimento,
+          local_fornecimento, dispositivo_legal_lc214, observacao, indnfe, indnfse
+        ) VALUES (
+          @id, @item_lc116, @descricao_item, @nbs, @descricao_nbs, @ps_onerosa, @adq_exterior,
+          @indop, @local_incidencia_ibs, @cclasstrib, @nome_cclasstrib,
+          @irrf, @csrf, @inss, @iss, @cosirf_orgaos_publicos,
+          @fundamentos_legais, @tipo_operacao, @caracteristica_fornecimento,
+          @local_fornecimento, @dispositivo_legal_lc214, @observacao, @indnfe, @indnfse
+        )
+      `);
+
+      for (const rec of records) {
+        insertStmt.run(rec);
+      }
+    })();
+
+    // Sincronizar Supabase se ativo
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        // Deletar existentes
+        const { error: delError } = await supabase.from('regras_retencao_servicos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        if (delError) {
+          console.error('Erro ao deletar regras do supabase:', delError);
+        } else {
+          // Converter booleanos de volta pra supabase (que espera boolean ou true/false, não 1/0)
+          const supRecords = records.map(r => ({
+            ...r,
+            ps_onerosa: r.ps_onerosa === 1,
+            adq_exterior: r.adq_exterior === 1
+          }));
+          
+          const { error: insError } = await supabase.from('regras_retencao_servicos').insert(supRecords);
+          if (insError) {
+             console.error('Erro ao inserir regras no supabase:', insError);
+          }
+        }
+      }
+    }
+
+    res.json({ success: true, message: `Foram importadas ${records.length} regras com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao processar o upload: ' + err.message });
+  }
+});
+
+/** POST /api/tables/regras-retencao-servicos — Criar nova regra manual */
+router.post('/regras-retencao-servicos', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const data = req.body;
+    const db = getDatabase();
+    
+    // Check if ID is provided, else create one
+    const id = data.id || uuid();
+    const ps_onerosa = data.ps_onerosa === 1 || data.ps_onerosa === true || data.ps_onerosa === 'S' ? 1 : 0;
+    const adq_exterior = data.adq_exterior === 1 || data.adq_exterior === true || data.adq_exterior === 'S' ? 1 : 0;
+    
+    db.prepare(`
+      INSERT INTO regras_retencao_servicos (
+        id, item_lc116, descricao_item, nbs, descricao_nbs, ps_onerosa, adq_exterior,
+        indop, local_incidencia_ibs, cclasstrib, nome_cclasstrib,
+        irrf, csrf, inss, iss, cosirf_orgaos_publicos,
+        fundamentos_legais, tipo_operacao, caracteristica_fornecimento,
+        local_fornecimento, dispositivo_legal_lc214, observacao, indnfe, indnfse,
+        created_at, updated_at
+      ) VALUES (
+        @id, @item_lc116, @descricao_item, @nbs, @descricao_nbs, @ps_onerosa, @adq_exterior,
+        @indop, @local_incidencia_ibs, @cclasstrib, @nome_cclasstrib,
+        @irrf, @csrf, @inss, @iss, @cosirf_orgaos_publicos,
+        @fundamentos_legais, @tipo_operacao, @caracteristica_fornecimento,
+        @local_fornecimento, @dispositivo_legal_lc214, @observacao, @indnfe, @indnfse,
+        datetime('now'), datetime('now')
+      )
+    `).run({ ...data, id, ps_onerosa, adq_exterior });
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('regras_retencao_servicos').insert([{
+          ...data, id, ps_onerosa: ps_onerosa === 1, adq_exterior: adq_exterior === 1
+        }]);
+      }
+    }
+
+    res.status(201).json({ success: true, message: 'Regra de retenção criada com sucesso.', id });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao criar regra de retenção: ' + err.message });
+  }
+});
+
+/** PUT /api/tables/regras-retencao-servicos/:id — Atualizar regra existente */
+router.put('/regras-retencao-servicos/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const data = req.body;
+    const db = getDatabase();
+
+    const ps_onerosa = data.ps_onerosa === 1 || data.ps_onerosa === true || data.ps_onerosa === 'S' ? 1 : 0;
+    const adq_exterior = data.adq_exterior === 1 || data.adq_exterior === true || data.adq_exterior === 'S' ? 1 : 0;
+
+    db.prepare(`
+      UPDATE regras_retencao_servicos SET
+        item_lc116 = @item_lc116, descricao_item = @descricao_item, nbs = @nbs, descricao_nbs = @descricao_nbs,
+        ps_onerosa = @ps_onerosa, adq_exterior = @adq_exterior,
+        indop = @indop, local_incidencia_ibs = @local_incidencia_ibs, cclasstrib = @cclasstrib, nome_cclasstrib = @nome_cclasstrib,
+        irrf = @irrf, csrf = @csrf, inss = @inss, iss = @iss, cosirf_orgaos_publicos = @cosirf_orgaos_publicos,
+        fundamentos_legais = @fundamentos_legais, tipo_operacao = @tipo_operacao, caracteristica_fornecimento = @caracteristica_fornecimento,
+        local_fornecimento = @local_fornecimento, dispositivo_legal_lc214 = @dispositivo_legal_lc214, observacao = @observacao, 
+        indnfe = @indnfe, indnfse = @indnfse, updated_at = datetime('now')
+      WHERE id = @id
+    `).run({ ...data, id, ps_onerosa, adq_exterior });
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('regras_retencao_servicos').update({
+          ...data, ps_onerosa: ps_onerosa === 1, adq_exterior: adq_exterior === 1, updated_at: new Date().toISOString()
+        }).eq('id', id);
+      }
+    }
+
+    res.json({ success: true, message: 'Regra de retenção atualizada com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao atualizar regra de retenção: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/regras-retencao-servicos/:id — Excluir regra existente */
+router.delete('/regras-retencao-servicos/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+
+    db.prepare('DELETE FROM regras_retencao_servicos WHERE id = ?').run(id);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('regras_retencao_servicos').delete().eq('id', id);
+      }
+    }
+
+    res.json({ success: true, message: 'Regra de retenção excluída com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir regra de retenção: ' + err.message });
   }
 });
 
