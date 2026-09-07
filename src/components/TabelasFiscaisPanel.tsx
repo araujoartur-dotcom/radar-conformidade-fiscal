@@ -237,12 +237,28 @@ export const TabelasFiscaisPanel: React.FC = () => {
         return;
       }
 
-      // 2. Montar os registros conforme a estrutura do CSV
+      const fixEncoding = (val: any): string => {
+        if (val === undefined || val === null) return '';
+        let str = String(val).trim();
+        if (!str) return '';
+        try {
+          if (/[\u00C2\u00C3]/.test(str)) {
+            const latin1Bytes = new Uint8Array([...str].map(c => c.charCodeAt(0) & 0xff));
+            const decodedUtf8 = new TextDecoder('utf-8').decode(latin1Bytes);
+            if (!decodedUtf8.includes('\uFFFD')) str = decodedUtf8;
+          }
+        } catch (_) {}
+        return str.replace(/\u00A0/g, ' ').trim();
+      };
+
+      // 2. Montar os registros conforme a estrutura do arquivo
       const records: any[] = [];
       for (let i = 1; i < rawData.length; i++) {
         const row = rawData[i];
-        if (!row || row.length === 0 || !row[0]) continue;
-        const getStr = (idx: number) => row[idx] ? String(row[idx]).trim() : '';
+        if (!row || row.length === 0) continue;
+        const hasValue = row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '');
+        if (!hasValue) continue;
+        const getStr = (idx: number) => fixEncoding(row[idx]);
         records.push({
           item_lc116: getStr(0),
           descricao_item: getStr(1),

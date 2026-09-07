@@ -12,14 +12,72 @@ const router = Router();
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = getDatabase();
+    let formatted: any[] = [];
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const { data: supaUsers, error: uErr } = await supabase
+            .from('usuarios')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!uErr && supaUsers && supaUsers.length > 0) {
+            const { data: supaVinculos } = await supabase
+              .from('usuario_empresa')
+              .select('usuario_id, empresa_id');
+
+            const { data: supaEmpresas } = await supabase
+              .from('empresas')
+              .select('id, cnpj_completo, razao_social');
+
+            const empMap = new Map((supaEmpresas || []).map(e => [e.id, e.cnpj_completo]));
+
+            formatted = supaUsers.map(u => {
+              const uVincs = (supaVinculos || []).filter(v => v.usuario_id === u.id);
+              let cnpjsAutorizados: string[] = [];
+
+              if (u.perfil === 'admin_master' && uVincs.length === 0) {
+                cnpjsAutorizados = ['*'];
+              } else if (uVincs.length > 0) {
+                cnpjsAutorizados = uVincs.map(v => empMap.get(v.empresa_id) || v.empresa_id).filter(Boolean);
+                if (supaEmpresas && supaEmpresas.length > 0 && cnpjsAutorizados.length === supaEmpresas.length && u.perfil === 'admin_master') {
+                  cnpjsAutorizados = ['*'];
+                }
+              } else {
+                cnpjsAutorizados = u.perfil === 'admin_master' ? ['*'] : [];
+              }
+
+              return {
+                id: u.id,
+                nome: u.nome,
+                email: u.email,
+                perfil: u.perfil,
+                grupoContabil: 'Carteira Geral',
+                cnpjsAutorizados,
+                mfaHabilitado: Boolean(u.mfa_habilitado),
+                status: u.status || 'ativo',
+                ultimoAcesso: u.ultimo_acesso || 'Nunca',
+                createdAt: u.created_at
+              };
+            });
+
+            return res.json({ success: true, data: formatted });
+          }
+        } catch (supaErr: any) {
+          console.warn('⚠️ Erro ao listar usuários do Supabase, tentando SQLite:', supaErr?.message);
+        }
+      }
+    }
+
+    // Fallback SQLite
     const users = db.prepare(`
       SELECT id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso, created_at
       FROM usuarios 
       ORDER BY created_at DESC
     `).all() as any[];
 
-    // Buscar vínculos de empresas para cada usuário
     const vinculosStmt = db.prepare(`
       SELECT ue.usuario_id, e.cnpj_completo, e.razao_social
       FROM usuario_empresa ue
@@ -27,11 +85,14 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
     `);
     const allVinculos = vinculosStmt.all() as any[];
 
-    const formatted = users.map((u: any) => {
+    formatted = users.map((u: any) => {
       const userVinculos = allVinculos.filter((v: any) => v.usuario_id === u.id);
-      const cnpjsAutorizados = userVinculos.length > 0 
-        ? userVinculos.map((v: any) => v.cnpj_completo) 
-        : ['*'];
+      let cnpjsAutorizados: string[] = [];
+      if (userVinculos.length > 0) {
+        cnpjsAutorizados = userVinculos.map((v: any) => v.cnpj_completo);
+      } else if (u.perfil === 'admin_master') {
+        cnpjsAutorizados = ['*'];
+      }
 
       return {
         id: u.id,
@@ -63,64 +124,118 @@ router.post('/', requireAuth, requirePerfil('admin_master'), async (req: Authent
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const db = getDatabase();
-
-    // Verificar duplicidade de e-mail
-    const existing = db.prepare('SELECT id FROM usuarios WHERE email = ?').get(cleanEmail);
-    if (existing) {
-      return res.status(409).json({ success: false, message: 'Já existe um usuário com este e-mail.' });
-    }
-
-    const id = uuid();
+    const cleanNome = nome.trim();
+    const userPerfil = perfil || 'analista_fiscal';
     const rawSenha = senha || 'Mudar@123456';
     const senhaHash = bcrypt.hashSync(rawSenha, AUTH.BCRYPT_ROUNDS);
+    const id = uuid();
 
-    db.transaction(() => {
-      // 1. Inserir usuário
-      db.prepare(`
-        INSERT INTO usuarios (id, nome, email, senha_hash, perfil, status)
-        VALUES (?, ?, ?, ?, ?, 'ativo')
-      `).run(id, nome.trim(), cleanEmail, senhaHash, perfil || 'analista_fiscal');
+    const isGlobal = !Array.isArray(cnpjsAutorizados) || cnpjsAutorizados.includes('*') || (cnpjsAutorizados.length === 0 && userPerfil === 'admin_master');
 
-      // 2. Vincular empresas autorizadas
-      if (Array.isArray(cnpjsAutorizados) && cnpjsAutorizados.length > 0 && !cnpjsAutorizados.includes('*')) {
-        const insertVinculo = db.prepare(`
-          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-          VALUES (?, ?, ?, 'total', '*')
-        `);
-
-        for (const cnpj of cnpjsAutorizados) {
-          const emp = db.prepare('SELECT id FROM empresas WHERE cnpj_completo = ?').get(cnpj) as any;
-          if (emp) {
-            insertVinculo.run(uuid(), id, emp.id);
+    // 1. Gravar no Supabase (se configurado)
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const { data: existingSupa } = await supabase.from('usuarios').select('id').eq('email', cleanEmail).maybeSingle();
+          if (existingSupa) {
+            return res.status(409).json({ success: false, message: 'Já existe um usuário com este e-mail no Supabase.' });
           }
-        }
-      } else {
-        // Vínculo global com todas as empresas cadastradas
-        const todasEmpresas = db.prepare('SELECT id FROM empresas WHERE status = \'ativo\'').all() as any[];
-        const insertVinculo = db.prepare(`
-          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-          VALUES (?, ?, ?, 'total', '*')
-        `);
-        for (const emp of todasEmpresas) {
-          insertVinculo.run(uuid(), id, emp.id);
+
+          const { error: insErr } = await supabase.from('usuarios').insert([{
+            id,
+            nome: cleanNome,
+            email: cleanEmail,
+            senha_hash: senhaHash,
+            perfil: userPerfil,
+            status: 'ativo'
+          }]);
+          if (insErr) throw insErr;
+
+          const { data: supaEmpresas } = await supabase.from('empresas').select('id, cnpj_completo');
+          const allEmpresas = supaEmpresas || [];
+
+          let empIdsToLink: string[] = [];
+          if (isGlobal) {
+            empIdsToLink = allEmpresas.map(e => e.id);
+          } else {
+            for (const cnpj of cnpjsAutorizados) {
+              const cleanCnpjDigits = String(cnpj).replace(/\D/g, '');
+              const found = allEmpresas.find(e => 
+                e.id === cnpj || 
+                e.cnpj_completo === cnpj || 
+                (e.cnpj_completo && e.cnpj_completo.replace(/\D/g, '') === cleanCnpjDigits)
+              );
+              if (found) empIdsToLink.push(found.id);
+            }
+          }
+
+          if (empIdsToLink.length > 0) {
+            const vinculosRows = empIdsToLink.map(empId => ({
+              id: uuid(),
+              usuario_id: id,
+              empresa_id: empId,
+              permissao: 'total',
+              modulos_permitidos: '*'
+            }));
+            await supabase.from('usuario_empresa').insert(vinculosRows);
+          }
+        } catch (e: any) {
+          console.warn('⚠️ Erro ao salvar usuário no Supabase:', e?.message);
         }
       }
-    })();
+    }
 
-    logAuditAction(req, 'USUARIO_CRIAR', `Usuário ${cleanEmail} criado com perfil ${perfil || 'analista_fiscal'}`);
+    // 2. Gravar no SQLite local
+    const db = getDatabase();
+    const existing = db.prepare('SELECT id FROM usuarios WHERE email = ?').get(cleanEmail);
+    if (!existing) {
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO usuarios (id, nome, email, senha_hash, perfil, status)
+          VALUES (?, ?, ?, ?, ?, 'ativo')
+        `).run(id, cleanNome, cleanEmail, senhaHash, userPerfil);
+
+        const todasEmpresas = db.prepare('SELECT id, cnpj_completo FROM empresas WHERE status = \'ativo\'').all() as any[];
+        let empIdsToLink: string[] = [];
+
+        if (isGlobal) {
+          empIdsToLink = todasEmpresas.map(e => e.id);
+        } else {
+          for (const cnpj of cnpjsAutorizados) {
+            const cleanCnpjDigits = String(cnpj).replace(/\D/g, '');
+            const found = todasEmpresas.find(e => 
+              e.id === cnpj || 
+              e.cnpj_completo === cnpj || 
+              (e.cnpj_completo && e.cnpj_completo.replace(/\D/g, '') === cleanCnpjDigits)
+            );
+            if (found) empIdsToLink.push(found.id);
+          }
+        }
+
+        const insertVinculo = db.prepare(`
+          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
+          VALUES (?, ?, ?, 'total', '*')
+        `);
+        for (const empId of empIdsToLink) {
+          insertVinculo.run(uuid(), id, empId);
+        }
+      })();
+    }
+
+    logAuditAction(req, 'USUARIO_CRIAR', `Usuário ${cleanEmail} criado com perfil ${userPerfil}`);
 
     return res.status(201).json({
       success: true,
       message: 'Usuário cadastrado com sucesso.',
       data: {
         id,
-        nome: nome.trim(),
+        nome: cleanNome,
         email: cleanEmail,
-        perfil: perfil || 'analista_fiscal',
+        perfil: userPerfil,
         status: 'ativo',
         mfaHabilitado: false,
-        cnpjsAutorizados: cnpjsAutorizados || ['*'],
+        cnpjsAutorizados: isGlobal ? ['*'] : cnpjsAutorizados,
         ultimoAcesso: 'Nunca'
       }
     });
@@ -131,16 +246,72 @@ router.post('/', requireAuth, requirePerfil('admin_master'), async (req: Authent
 });
 
 // PUT /api/users/:id - Editar usuário
-router.put('/:id', requireAuth, requirePerfil('admin_master'), (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { nome, email, perfil, status, senha, cnpjsAutorizados } = req.body;
-
-    const db = getDatabase();
     const cleanEmail = email ? email.toLowerCase().trim() : undefined;
+    const cleanNome = nome ? nome.trim() : undefined;
 
+    const isGlobal = Array.isArray(cnpjsAutorizados) && cnpjsAutorizados.includes('*');
+
+    // 1. Atualizar no Supabase (se configurado)
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const updatePayload: any = { updated_at: new Date().toISOString() };
+          if (cleanNome) updatePayload.nome = cleanNome;
+          if (cleanEmail) updatePayload.email = cleanEmail;
+          if (perfil) updatePayload.perfil = perfil;
+          if (status) updatePayload.status = status;
+          if (senha && senha.trim().length >= 6) {
+            updatePayload.senha_hash = bcrypt.hashSync(senha, AUTH.BCRYPT_ROUNDS);
+          }
+
+          await supabase.from('usuarios').update(updatePayload).eq('id', id);
+
+          if (Array.isArray(cnpjsAutorizados)) {
+            await supabase.from('usuario_empresa').delete().eq('usuario_id', id);
+
+            const { data: supaEmpresas } = await supabase.from('empresas').select('id, cnpj_completo');
+            const allEmpresas = supaEmpresas || [];
+
+            let empIdsToLink: string[] = [];
+            if (isGlobal) {
+              empIdsToLink = allEmpresas.map(e => e.id);
+            } else {
+              for (const cnpj of cnpjsAutorizados) {
+                const cleanCnpjDigits = String(cnpj).replace(/\D/g, '');
+                const found = allEmpresas.find(e => 
+                  e.id === cnpj || 
+                  e.cnpj_completo === cnpj || 
+                  (e.cnpj_completo && e.cnpj_completo.replace(/\D/g, '') === cleanCnpjDigits)
+                );
+                if (found) empIdsToLink.push(found.id);
+              }
+            }
+
+            if (empIdsToLink.length > 0) {
+              const vinculosRows = empIdsToLink.map(empId => ({
+                id: uuid(),
+                usuario_id: id,
+                empresa_id: empId,
+                permissao: 'total',
+                modulos_permitidos: '*'
+              }));
+              await supabase.from('usuario_empresa').insert(vinculosRows);
+            }
+          }
+        } catch (supaErr: any) {
+          console.warn('⚠️ Erro ao atualizar usuário no Supabase:', supaErr?.message);
+        }
+      }
+    }
+
+    // 2. Atualizar no SQLite local
+    const db = getDatabase();
     db.transaction(() => {
-      // 1. Atualizar campos básicos
       let updateSql = `
         UPDATE usuarios
         SET nome = COALESCE(?, nome),
@@ -149,7 +320,7 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), (req: Authenticat
             status = COALESCE(?, status),
             updated_at = datetime('now')
       `;
-      const params: any[] = [nome, cleanEmail, perfil, status];
+      const params: any[] = [cleanNome, cleanEmail, perfil, status];
 
       if (senha && senha.trim().length >= 6) {
         const novaSenhaHash = bcrypt.hashSync(senha, AUTH.BCRYPT_ROUNDS);
@@ -160,39 +331,37 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), (req: Authenticat
       updateSql += ` WHERE id = ?`;
       params.push(id);
 
-      const result = db.prepare(updateSql).run(...params);
-      if (result.changes === 0) {
-        throw new Error('USER_NOT_FOUND');
-      }
+      db.prepare(updateSql).run(...params);
 
-      // 2. Atualizar vínculos de empresas se informado
       if (Array.isArray(cnpjsAutorizados)) {
         db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
 
-        if (cnpjsAutorizados.includes('*')) {
-          const todasEmpresas = db.prepare('SELECT id FROM empresas WHERE status = \'ativo\'').all() as any[];
-          const insertVinculo = db.prepare(`
-            INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-            VALUES (?, ?, ?, 'total', '*')
-          `);
-          for (const emp of todasEmpresas) {
-            insertVinculo.run(uuid(), id, emp.id);
-          }
+        const todasEmpresas = db.prepare('SELECT id, cnpj_completo FROM empresas WHERE status = \'ativo\'').all() as any[];
+        let empIdsToLink: string[] = [];
+
+        if (isGlobal) {
+          empIdsToLink = todasEmpresas.map(e => e.id);
         } else {
-          const insertVinculo = db.prepare(`
-            INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-            VALUES (?, ?, ?, 'total', '*')
-          `);
           for (const cnpj of cnpjsAutorizados) {
-            const emp = db.prepare('SELECT id FROM empresas WHERE cnpj_completo = ?').get(cnpj) as any;
-            if (emp) {
-              insertVinculo.run(uuid(), id, emp.id);
-            }
+            const cleanCnpjDigits = String(cnpj).replace(/\D/g, '');
+            const found = todasEmpresas.find(e => 
+              e.id === cnpj || 
+              e.cnpj_completo === cnpj || 
+              (e.cnpj_completo && e.cnpj_completo.replace(/\D/g, '') === cleanCnpjDigits)
+            );
+            if (found) empIdsToLink.push(found.id);
           }
+        }
+
+        const insertVinculo = db.prepare(`
+          INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
+          VALUES (?, ?, ?, 'total', '*')
+        `);
+        for (const empId of empIdsToLink) {
+          insertVinculo.run(uuid(), id, empId);
         }
       }
 
-      // Se usuário for bloqueado, revogar sessões ativas
       if (status === 'bloqueado') {
         db.prepare('UPDATE sessoes SET revogada = 1 WHERE usuario_id = ?').run(id);
       }
@@ -211,16 +380,27 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), (req: Authenticat
 });
 
 // DELETE /api/users/:id - Excluir usuário
-router.delete('/:id', requireAuth, requirePerfil('admin_master'), (req: AuthenticatedRequest, res: Response) => {
+router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const db = getDatabase();
 
-    // Impedir que o usuário delete a si mesmo
     if (req.user?.userId === id) {
       return res.status(400).json({ success: false, message: 'Você não pode excluir o seu próprio usuário logado.' });
     }
 
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase.from('usuario_empresa').delete().eq('usuario_id', id);
+          await supabase.from('usuarios').delete().eq('id', id);
+        } catch (e: any) {
+          console.warn('⚠️ Erro ao excluir usuário no Supabase:', e?.message);
+        }
+      }
+    }
+
+    const db = getDatabase();
     db.transaction(() => {
       db.prepare('DELETE FROM sessoes WHERE usuario_id = ?').run(id);
       db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
@@ -244,3 +424,4 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master'), (req: Authenti
 });
 
 export default router;
+

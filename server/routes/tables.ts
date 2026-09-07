@@ -801,6 +801,27 @@ router.get('/regras-retencao-servicos', requireAuth, async (_req: AuthenticatedR
   }
 });
 
+/** Função para corrigir caracteres corrompidos por divergência de encoding (UTF-8 / Windows-1252 / ISO-8859-1) */
+function fixEncoding(val: any): string {
+  if (val === undefined || val === null) return '';
+  let str = String(val).trim();
+  if (!str) return '';
+
+  try {
+    if (/[\u00C2\u00C3]/.test(str)) {
+      const latin1Bytes = Buffer.from(str, 'latin1');
+      const decodedUtf8 = latin1Bytes.toString('utf-8');
+      if (!decodedUtf8.includes('\uFFFD')) {
+        str = decodedUtf8;
+      }
+    }
+  } catch (_e) {
+    // Seguir com str original
+  }
+
+  return str.replace(/\u00A0/g, ' ').trim();
+}
+
 /** POST /api/tables/regras-retencao-servicos/upload — Upload e substituição da tabela via CSV */
 router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admin_master', 'contador_gestor'), upload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -809,8 +830,8 @@ router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admi
       return;
     }
 
-    // Lê o buffer usando XLSX para suportar CSV e XLSX perfeitamente, tratando aspas duplas, etc
-    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    // Lê o buffer usando XLSX com codepage 65001 (UTF-8) como padrão para CSV e XLSX
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', codepage: 65001 });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     // Pegar o array de arrays
@@ -826,9 +847,11 @@ router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admi
     for (let i = 1; i < rawData.length; i++) {
       const row = rawData[i];
       // Pular linhas vazias
-      if (!row || row.length === 0 || !row[0]) continue;
+      if (!row || row.length === 0) continue;
+      const hasValue = row.some(cell => cell !== undefined && cell !== null && String(cell).trim() !== '');
+      if (!hasValue) continue;
 
-      const getStr = (index: number) => row[index] ? String(row[index]).trim() : '';
+      const getStr = (index: number) => fixEncoding(row[index]);
 
       records.push({
         id: uuid(),
@@ -895,17 +918,25 @@ router.post('/regras-retencao-servicos/upload', requireAuth, requirePerfil('admi
         if (delError) {
           console.error('Erro ao deletar regras do supabase:', delError);
         } else {
-          // Converter booleanos de volta pra supabase (que espera boolean ou true/false, não 1/0)
+          // Converter booleanos e inserir em lotes de 200 no Supabase (evita limite de payload/timeout)
           const supRecords = records.map(r => ({
             ...r,
             ps_onerosa: r.ps_onerosa === 1,
             adq_exterior: r.adq_exterior === 1
           }));
           
-          const { error: insError } = await supabase.from('regras_retencao_servicos').insert(supRecords);
-          if (insError) {
-             console.error('Erro ao inserir regras no supabase:', insError);
+          const BATCH_SIZE = 200;
+          let totalSupaInseridos = 0;
+          for (let i = 0; i < supRecords.length; i += BATCH_SIZE) {
+            const batch = supRecords.slice(i, i + BATCH_SIZE);
+            const { error: insError } = await supabase.from('regras_retencao_servicos').insert(batch);
+            if (insError) {
+              console.error(`Erro ao inserir lote ${i}-${i + batch.length} no supabase:`, insError);
+            } else {
+              totalSupaInseridos += batch.length;
+            }
           }
+          console.log(`✅ Supabase sincronizado com ${totalSupaInseridos} regras.`);
         }
       }
     }
