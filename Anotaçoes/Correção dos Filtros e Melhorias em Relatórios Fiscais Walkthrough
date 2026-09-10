@@ -1,0 +1,56 @@
+# Walkthrough: Correção dos Filtros e Melhorias em Relatórios Fiscais
+
+Todas as solicitações para a tela de **Relatórios Fiscais** foram implementadas e validadas localmente com sucesso.
+
+> [!IMPORTANT]
+> **Status de Deploy**: Conforme solicitado estritamente, **NENHUM deploy foi realizado**. Todas as alterações estão preservadas no ambiente local de desenvolvimento.
+
+---
+
+## 1. O que foi realizado
+
+### 1.1. Correção Integral dos Filtros (Data, Tipo de Documento, CFOP, UF e mais)
+- **Problema de Data Corrigido**:
+  - `dataInicio` e `dataFim` agora são normalizados com limites de tempo precisos (`T00:00:00.000Z` e `T23:59:59.999Z`). Anteriormente, `lte('data_emissao', '2026-06-05')` comparava com meia-noite e descartava todos os documentos emitidos durante o dia final.
+  - A busca e injeção secundária de NFS-e agora obedece estritamente a `dataInicio`, `dataFim` e filtros de tipo de documento, impedindo a exibição de notas fora do período selecionado.
+- **Tipo de Documento (`tipoDoc`)**:
+  - Ajustado para uso de `.in('tipo_doc', [...])` tanto para `NF-e`, `CT-e` quanto `NFS-e`, eliminando falhas de sintaxe com filtros OR de tenant.
+- **CFOP & cClassTrib**:
+  - Adicionada extração de `<CFOP>` e `<cClassTrib>` diretamente do `xml_raw` dos documentos, além de pós-filtragem no servidor garantindo que qualquer CFOP digitado (ex: `1102`, `5353`, `1933`) filtre exatamente os itens correspondentes.
+- **UF, Onerosidade, Elegibilidade e Exceções**:
+  - Os parâmetros `uf`, `indicadorOnerosidade`, `resultadoElegibilidade` e `apenasExcecoes` agora são enviados pelo frontend e filtrados tanto nas queries SQL/PostgREST quanto no array consolidado.
+- **Busca Rápida com Tecla Enter**:
+  - Todos os campos de texto e data agora acionam a pesquisa ao pressionar a tecla `Enter`.
+
+### 1.2. Botão de Expandir / Recolher Filtros
+- O link anterior de texto simples foi substituído por um **botão de ação proeminente e moderno**:
+  - Ícone `<Filter />` com chevrons dinâmicos (`ChevronUp` / `ChevronDown`).
+  - Badge numérico indicando quantos filtros estão ativos quando o painel estiver recolhido.
+  - Ao recolher o painel de filtros, uma **barra de resumo dos filtros ativos** é exibida com chips visuais (ex: período, tipo de documento, CFOP), permitindo que o usuário visualize a listagem analítica e as tabelas com aproveitamento total da tela vertical.
+
+### 1.3. Remoção do Botão "Importar XML Manual"
+- O botão "Importar XML Manual" foi removido da barra de ferramentas de relatórios, visto que essa rotina pertence ao módulo dedicado de **Captura de XMLs** (`DfeManagerPanel`).
+- O modal de upload associado e funções não utilizadas foram limpos do componente.
+
+---
+
+## 2. Arquivos Modificados
+
+| Arquivo | Modificações Principais |
+|---|---|
+| [server/routes/relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts) | Normalização de datas com limites de tempo, filtros de `tipo_doc` via `.in()`, inclusão de `uf`, extração de CFOP do `xml_raw`, e pós-filtragem para todas as dimensões de relatório. |
+| [src/components/RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx) | Envio de todos os parâmetros no `handleSearch`, novo botão com destaque visual para expandir/recolher bloco de filtros com badge de contagem, barra de resumo de filtros ativos, remoção do botão e modal de upload manual de XML, e suporte a tecla `Enter`. |
+
+---
+
+## 3. Validação Realizada
+
+1. **TypeScript Type Check**:
+   - `npx tsc --noEmit` executado com **0 erros** (código 0).
+2. **Build de Produção Frontend**:
+   - `npm run build` executado com **sucesso** (dist/ gerado em 23.85s).
+3. **Teste de Filtros no Supabase**:
+   - Período `01/06/2026` a `05/06/2026`: 4.649 documentos recuperados com exatidão (1.708 CT-e e 2.941 NF-e).
+   - Filtro isolado por CT-e no período: 1.708 registros.
+   - Filtro isolado por NF-e no período: 2.941 registros.
+   - Filtro por UF `SP`: 5.365 registros.

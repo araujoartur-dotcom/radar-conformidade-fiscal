@@ -1,0 +1,42 @@
+# Walkthrough — Execução das Ações da Auditoria de Integridade
+
+Todas as ações prioritárias aprovadas no plano de implementação foram executadas e validadas com sucesso.
+
+---
+
+## 🛠️ Modificações Realizadas
+
+### 1. Frontend — Correção de Build e Resiliência no CRUD
+- **Arquivo modificado:** [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx)
+  - **Imports Lucide:** Adicionados `Pencil` e `Calculator` à lista de imports de `'lucide-react'`.
+  - **Hook `useApi`:** Incluída a função `uploadFile` na desestruturação (`const { get, post, put, del, uploadFile } = useApi();`).
+  - **Fallback no CRUD:** Em `handleSaveRegraRetencao` e `handleDeleteRegraRetencao`, se a chamada via backend Express falhar (ou se o backend não estiver respondendo), a operação executa automaticamente direto no Supabase via `getSupabaseFrontend()`.
+  - **Tratamento de dados em `loadRetencoes()`:** Suporte a múltiplos formatos de resposta da API (`res.data.data` e `res.data` direto) com fallback gracioso para consulta direta ao Supabase.
+
+### 2. Backend — Motor do Relatório 9 Conectado ao Planilhão de Regras
+- **Arquivo modificado:** [relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)
+  - **Carregamento da Base de Regras:** Consulta `regras_retencao_servicos` no SQLite com fallback para o Supabase quando o banco local não tiver registros.
+  - **Indexação por Código:** Construídos mapas indexados por `item_lc116` normalizado (ex: `"01.01"`, `"17.01"`) e por `cclasstrib`.
+  - **Auditoria Parametrizada por Serviço:** 
+    - Identifica a regra cadastrada para a NFS-e.
+    - Extrai as alíquotas esperadas (`irrf`, `csrf`, `inss`, `iss`) da regra.
+    - Compara com os valores destacados na nota fiscal.
+    - Emite diagnósticos detalhados (`CONFORME`, `DIVERGENCIA_ALIQUOTA`, `FALTA_RETENCAO`, `DISPENSADO_LIMITE`) apontando o tributo divergente e os fundamentos legais da regra cadastrada.
+  - **Enriquecimento do Payload:** Anexa o objeto `regraRetencaoAplicada` contendo a descrição oficial, fundamentos legais (LC 214/2025, Lei 10.833/03, RIR/2018) e observações tributárias.
+
+### 3. Interface do Relatório 9 — Memória de Cálculo Dinâmica
+- **Arquivo modificado:** [RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx)
+  - Modal de inspeção e auditoria atualizado para exibir o card da regra parametrizada da matriz fiscal (LC 116, descrição, base legal e observações) e comparar as alíquotas aplicadas contra as alíquotas previstas na regra.
+
+### 4. Definição de Tipos
+- **Arquivo modificado:** [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+  - Adicionado o campo opcional `regraRetencaoAplicada` na interface `XmlItemDetailReport`.
+
+---
+
+## 🧪 Validação e Verificação
+
+| Teste | Comando | Resultado |
+|-------|---------|-----------|
+| **Checagem de Tipos TypeScript** | `npx tsc --noEmit` | ✅ **0 erros** (todos os 4 erros TS2304 eliminados) |
+| **Build de Produção Vite** | `npm run build` | ✅ **Sucesso** (`dist/` gerado em 27s com 1772 módulos) |

@@ -1,0 +1,67 @@
+Ran command: `git status --short`
+Ran command: `git diff --stat`
+
+Aqui está a relação completa e detalhada de **todas as alterações preparadas no código local**, organizadas por módulo e funcionalidade, que estão **aguardando sua autorização para deploy**:
+
+---
+
+### 1. 🛡️ Segregação Multi-Tenant & Segurança (APIs, Webhooks e Usuários)
+- **Central de APIs e Webhooks dentro do Cadastro da Empresa:**
+  - Migradas as configurações de API, chaves secretas, endpoints de Webhooks e conexões com RFB/CGIBS para dentro da **ficha cadastral individual de cada CNPJ** ([`CarteiraCnpjsPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)).
+  - Garante que nenhum usuário visualize ou altere credenciais fiscais de outras empresas.
+- **Isolamento de Usuários por Empresa (RBAC):**
+  - No controle de acesso corporativo ([`AcessoCorporativoModal.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx) e [`server/routes/users.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)), usuários comuns agora só acessam as empresas expressamente vinculadas ao seu perfil.
+- **Segregação na Apuração Assistida:**
+  - A apuração de débitos/créditos e saldo RTC/CGIBS agora roda com isolamento estrito por `tenant_id` ([`server/routes/apuracao.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts) e [`ApuracaoAssistidaPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)).
+
+---
+
+### 2. 📊 Central de KPIs & Dashboards (BI Fiscal)
+- **Filtros Dinâmicos de Ano e Mês:**
+  - Adicionado seletor de **Ano** e botão seletor de **Mês** (ou todos os meses do ano) no topo da tela ([`CentralKpisPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)).
+  - O calendário abre retroativamente a partir do ano da **primeira nota fiscal registrada pela empresa no banco**.
+- **Harmonização do Tamanho dos Números:**
+  - Reduzida a tipografia dos KPIs pela metade (estilo executivo elegante), eliminando números que ultrapassavam as bordas dos cards.
+
+---
+
+### 3. ⏱️ Consulta em Lote Excel & Barra de Tempo
+- **Otimização do Bloco de Upload:**
+  - O bloco extenso de seleção de arquivo foi substituído por um conjunto minimalista e direto (ícone + botão ao lado para selecionar o `.xlsx`) ([`ConsultaLotePanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaLotePanel.tsx)).
+- **Isolamento da Barra de Tempo:**
+  - A barra de progresso, cronômetro e ETA foi removida do rodapé global do sistema e agora é **exclusiva da Consulta em Lote**.
+
+---
+
+### 4. 📑 Módulo de Relatórios Fiscais (9 Relatórios)
+- **Correção Total dos Filtros:**
+  - Filtros por Período, CFOP, cClassTrib, Tipo de Documento (NF-e, CT-e, NFS-e) e Situação agora realizam a extração correta no Supabase e recalculam todos os totais em tempo real ([`server/routes/relatorios.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)).
+- **Botão de Expandir / Recolher Filtros:**
+  - Substituído o link de texto por um botão retrátil com contagem de filtros ativos e linha de resumo.
+- **Remoção da Importação de XML Manual:**
+  - Removido o botão e modal de importar XML dessa tela, mantendo o módulo com foco 100% analítico.
+- **Visibilidade de 100% das 9 Abas de Relatórios:**
+  - Aplicada quebra fluida (`flex-wrap`) nas abas ([`RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)), permitindo visualizar e alternar livremente entre todos os 9 relatórios (eliminando o corte que ocultava as abas 5 a 9).
+- **Fim do Limite de Visualização no Canto Direito (Todas as 9 Tabelas):**
+  - As 9 tabelas ganharam contêiner com altura máxima controlada (`max-h-[640px]`), fazendo com que a barra de rolagem horizontal fique **sempre visível na tela**.
+  - Cabeçalhos fixos (`sticky`) para não perder os nomes das colunas na rolagem.
+  - Larguras mínimas calibradas de forma que em monitores Full HD a leitura fique confortável e sem cortes.
+  - Barra de rolagem estilizada e mais espessa (`7px`) com realce no cursor ([`index.css`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/index.css)).
+
+---
+
+### 5. 🗄️ Backend e Banco de Dados (Supabase)
+- **Ajustes de Schema & Upload:**
+  - Mapeamento de novos campos de classificação fiscal e coerência nos XMLs (`server/db/schema.ts` e `server/routes/upload.ts`).
+
+---
+
+### 📈 Resumo Estatístico do Git (28 arquivos alterados)
+```text
+ 28 files changed, 1787 insertions(+), 929 deletions(-)
+ TypeScript: 0 erros (npx tsc --noEmit aprovado)
+ Vite Build: 100% gerado com sucesso em 8.74s
+ Deploy: NENHUMA linha enviada ao servidor (0 commits/push)
+```
+
+Tudo está testado, estável e pronto no seu repositório local. Quando você desejar que o deploy seja feito, basta me avisar!

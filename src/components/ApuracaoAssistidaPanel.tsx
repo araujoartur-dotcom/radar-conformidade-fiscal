@@ -87,7 +87,7 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
   const [flagConsultaDemanda, setFlagConsultaDemanda] = useState<boolean>(true);
   const [consultandoDemanda, setConsultandoDemanda] = useState<boolean>(false);
 
-  // Isolamento Multi-Tenant de Credenciais (Supergasbras vs Outros CNPJs)
+  // Isolamento Multi-Tenant de Credenciais por CNPJ
   const [credencialInfo, setCredencialInfo] = useState<any>(null);
   const [isModalCredenciaisOpen, setIsModalCredenciaisOpen] = useState<boolean>(false);
   const [formClientId, setFormClientId] = useState<string>('');
@@ -97,7 +97,6 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
   const cnpjClean = (empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '');
   const cnpjRaizAtivo = empresaAtiva?.cnpjRaiz || cnpjClean.substring(0, 8);
-  const isSupergasbras = cnpjRaizAtivo === '19791896' || (empresaAtiva?.razaoSocial || '').toUpperCase().includes('SUPERGASBRAS');
 
   // Carregar dados da competência
   const carregarDados = async () => {
@@ -305,15 +304,15 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
                   CGIBS MOC v1.00 & RFB RTC v1
                 </span>
-                {isSupergasbras ? (
+                {credencialInfo?.configurado ? (
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-950">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Piloto Oficial CGIBS: Supergasbras (CNPJ8 19791896)
+                    {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — Conectado CGIBS/RFB
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-sm shadow-amber-950">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                    Multi-Tenant: {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — {credencialInfo?.configurado ? 'Credenciais Próprias' : 'Configuração Pendente'}
+                    {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — Credenciais Pendentes
                   </span>
                 )}
               </div>
@@ -570,13 +569,13 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
           )}
         </div>
 
-        {/* Aviso de Isolamento para Empresas Multi-Tenant (Não-Supergasbras) */}
-        {!isSupergasbras && !credencialInfo?.configurado && (
+        {/* Aviso de Configuração de Credenciais Segregadas por CNPJ */}
+        {!credencialInfo?.configurado && (
           <div className="w-full mt-2 p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                Esta empresa (CNPJ raiz <strong>{cnpjRaizAtivo}</strong>) ainda não possui credenciais do CGIBS registradas. As credenciais do piloto oficial pertencem exclusivamente à <strong>Supergasbras</strong>.
+                A empresa <strong>{empresaAtiva?.razaoSocial || 'ativa'}</strong> (CNPJ raiz <strong>{cnpjRaizAtivo}</strong>) ainda não possui credenciais do CGIBS registradas. Configure os acessos exclusivos para este CNPJ.
               </span>
             </div>
             <button
@@ -588,7 +587,7 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               }}
               className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs shrink-0 cursor-pointer shadow-sm transition-all"
             >
-              Cadastrar Credenciais Desta Empresa
+              Cadastrar Credenciais do CNPJ
             </button>
           </div>
         )}
@@ -1247,25 +1246,14 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
             {/* Aviso de Isolamento */}
             <div className="p-4 bg-slate-950/40 border-b border-slate-800/80 text-xs">
-              {isSupergasbras ? (
-                <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-300">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <Check className="w-4 h-4" /> Piloto Oficial Autorizado (Supergasbras)
-                  </p>
-                  <p className="mt-1 text-[11px] text-emerald-400/90 leading-relaxed">
-                    As credenciais oficiais do piloto CGIBS (5c37db2e...) estão ativas e vinculadas exclusivamente a esta empresa.
-                  </p>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-300">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4" /> Isolamento Multi-Tenant Garantido
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-300 leading-relaxed">
-                    Informe as credenciais OAuth 2.0 (Client ID e Client Secret) emitidas pelo Comitê Gestor para este CNPJ raiz ({cnpjRaizAtivo}). O sistema não permite o reuso das chaves do piloto Supergasbras por outros CNPJs.
-                  </p>
-                </div>
-              )}
+              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-300">
+                <p className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4" /> Segregação e Isolamento Multi-Tenant Garantidos
+                </p>
+                <p className="mt-1 text-[11px] text-slate-300 leading-relaxed">
+                  Informe as credenciais OAuth 2.0 (Client ID e Client Secret) emitidas pelo Comitê Gestor para este CNPJ raiz ({cnpjRaizAtivo}). As chaves pertencem e são visualizadas estritamente por este CNPJ.
+                </p>
+              </div>
             </div>
 
             {/* Form */}
@@ -1277,11 +1265,10 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 <input
                   type="text"
                   required
-                  disabled={isSupergasbras}
                   value={formClientId}
                   onChange={(e) => setFormClientId(e.target.value)}
                   placeholder="Ex: 5c37db2e924740449c621b2d95afeef2"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
@@ -1292,17 +1279,11 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 <input
                   type="password"
                   required={!credencialInfo?.configurado}
-                  disabled={isSupergasbras}
                   value={formClientSecret}
                   onChange={(e) => setFormClientSecret(e.target.value)}
                   placeholder={credencialInfo?.clientSecretMascarado ? `Atual: ${credencialInfo.clientSecretMascarado}` : 'Informe o Client Secret emitido'}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
                 />
-                {isSupergasbras && (
-                  <span className="text-[10px] text-slate-500 mt-1 block">
-                    As credenciais do piloto Supergasbras estão protegidas contra vazamento entre inquilinos.
-                  </span>
-                )}
               </div>
 
               <div>
@@ -1326,15 +1307,13 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 >
                   Fechar
                 </button>
-                {!isSupergasbras && (
-                  <button
-                    type="submit"
-                    disabled={salvandoCreds}
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {salvandoCreds ? 'Salvando...' : 'Salvar Credenciais'}
-                  </button>
-                )}
+                <button
+                  type="submit"
+                  disabled={salvandoCreds}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {salvandoCreds ? 'Salvando...' : 'Salvar Credenciais'}
+                </button>
               </div>
             </form>
           </div>

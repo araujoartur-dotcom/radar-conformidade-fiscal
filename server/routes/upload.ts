@@ -1012,6 +1012,85 @@ router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// =========================================================
+// GET /api/upload/periodos-disponiveis — Anos e Intervalos da Empresa
+// =========================================================
+router.get('/periodos-disponiveis', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { empresaId } = req.query as Record<string, string>;
+    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
+    const isSuperadmin = req.user?.perfil === 'admin_master';
+
+    let minDataStr: string | null = null;
+    let maxDataStr: string | null = null;
+
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          let qMin = supabase.from('dfe_documentos').select('data_emissao').order('data_emissao', { ascending: true }).limit(1);
+          if (activeEmpresaId && !isSuperadmin) qMin = qMin.eq('empresa_id', activeEmpresaId);
+          const { data: minRes } = await qMin;
+          if (minRes && minRes[0]?.data_emissao) {
+            minDataStr = minRes[0].data_emissao;
+          }
+
+          let qMax = supabase.from('dfe_documentos').select('data_emissao').order('data_emissao', { ascending: false }).limit(1);
+          if (activeEmpresaId && !isSuperadmin) qMax = qMax.eq('empresa_id', activeEmpresaId);
+          const { data: maxRes } = await qMax;
+          if (maxRes && maxRes[0]?.data_emissao) {
+            maxDataStr = maxRes[0].data_emissao;
+          }
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Falha ao buscar periodos no Supabase, tentando SQLite:', err.message);
+      }
+    }
+
+    if (!minDataStr || !maxDataStr) {
+      try {
+        const db = getDatabase();
+        let sql = 'SELECT min(data_emissao) as minData, max(data_emissao) as maxData FROM dfe_documentos';
+        const params: any[] = [];
+        if (activeEmpresaId && !isSuperadmin) {
+          sql += ' WHERE empresa_id = ?';
+          params.push(activeEmpresaId);
+        }
+        const row = db.prepare(sql).get(...params) as any;
+        if (row?.minData) minDataStr = row.minData;
+        if (row?.maxData) maxDataStr = row.maxData;
+      } catch (err: any) {
+        console.warn('⚠️ Falha ao buscar periodos no SQLite:', err.message);
+      }
+    }
+
+    const currentYear = new Date().getFullYear();
+    let anoInicial = minDataStr ? parseInt(minDataStr.substring(0, 4), 10) : currentYear;
+    let anoFinal = maxDataStr ? parseInt(maxDataStr.substring(0, 4), 10) : currentYear;
+
+    if (isNaN(anoInicial) || anoInicial < 2000 || anoInicial > 2100) anoInicial = currentYear;
+    if (isNaN(anoFinal) || anoFinal < 2000 || anoFinal > 2100) anoFinal = currentYear;
+    if (anoFinal < anoInicial) anoFinal = anoInicial;
+
+    const anos: number[] = [];
+    for (let y = anoFinal; y >= anoInicial; y--) {
+      anos.push(y);
+    }
+
+    res.json({
+      success: true,
+      minData: minDataStr,
+      maxData: maxDataStr,
+      anoInicial,
+      anoFinal,
+      anos,
+    });
+  } catch (err: any) {
+    console.error('❌ Erro ao buscar períodos disponíveis:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { dataInicio, dataFim, tipoDoc, tipoOperacao, empresaId } = req.query as Record<string, string>;

@@ -16,8 +16,8 @@ import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
-  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, UploadCloud, Receipt,
-  Sparkles, Clock
+  RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, Receipt,
+  Sparkles, Clock, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -32,8 +32,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
-  const [uploadLoading, setUploadLoading] = useState<boolean>(false);
   const [dbKpis, setDbKpis] = useState<any>(null);
   const [totalDbCount, setTotalDbCount] = useState<number>(0);
 
@@ -66,7 +64,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const filteredItems = items; // items já vem filtrado da API
 
   const handleClearFilters = () => {
-    setFilters({
+    const cleared: ReportFilterState = {
       cnpjEmitente: '',
       cnpjDestinatario: '',
       uf: 'TODAS',
@@ -80,32 +78,39 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       resultadoElegibilidade: 'TODOS',
       apenasExcecoes: false,
       searchTerm: ''
-    });
+    };
+    setFilters(cleared);
+    handleSearch(activeTab, cleared);
   };
 
-  const handleSearch = async (tabOverride?: ReportTabType) => {
+  const handleSearch = async (tabOverride?: ReportTabType, customFilters?: ReportFilterState) => {
     setLoading(true);
     try {
+      const activeF = customFilters || filters;
       const currentTab = tabOverride || activeTab;
       const query = new URLSearchParams();
-      if (filters.cnpjEmitente) query.append('cnpjEmitente', filters.cnpjEmitente);
-      if (filters.cnpjDestinatario) query.append('cnpjDestinatario', filters.cnpjDestinatario);
-      if (filters.dataInicio) query.append('dataInicio', filters.dataInicio);
-      if (filters.dataFim) query.append('dataFim', filters.dataFim);
+      if (activeF.cnpjEmitente) query.append('cnpjEmitente', activeF.cnpjEmitente);
+      if (activeF.cnpjDestinatario) query.append('cnpjDestinatario', activeF.cnpjDestinatario);
+      if (activeF.dataInicio) query.append('dataInicio', activeF.dataInicio);
+      if (activeF.dataFim) query.append('dataFim', activeF.dataFim);
+      if (activeF.uf && activeF.uf !== 'TODAS') query.append('uf', activeF.uf);
 
       // No Relatório #9 (Retenções na Fonte / Serviços), se o usuário não escolheu outro tipo manual restritivo,
       // filtra estritamente por NFS-e para nunca carregar ou exibir CT-e
-      if (currentTab === 'retencoes_fonte' && (!filters.tipoDoc || filters.tipoDoc === 'TODOS')) {
+      if (currentTab === 'retencoes_fonte' && (!activeF.tipoDoc || activeF.tipoDoc === 'TODOS')) {
         query.append('tipoDoc', 'NFSe');
         query.append('relatorio', 'retencoes_fonte');
-      } else if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') {
-        query.append('tipoDoc', filters.tipoDoc);
+      } else if (activeF.tipoDoc && activeF.tipoDoc !== 'TODOS') {
+        query.append('tipoDoc', activeF.tipoDoc);
       }
 
-      if (filters.situacaoDoc && filters.situacaoDoc !== 'TODAS') query.append('situacaoDoc', filters.situacaoDoc);
-      if (filters.cfop) query.append('cfop', filters.cfop);
-      if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
-      if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
+      if (activeF.situacaoDoc && activeF.situacaoDoc !== 'TODAS') query.append('situacaoDoc', activeF.situacaoDoc);
+      if (activeF.cfop) query.append('cfop', activeF.cfop);
+      if (activeF.cClassTrib) query.append('cClassTrib', activeF.cClassTrib);
+      if (activeF.indicadorOnerosidade && activeF.indicadorOnerosidade !== 'TODOS') query.append('indicadorOnerosidade', activeF.indicadorOnerosidade);
+      if (activeF.resultadoElegibilidade && activeF.resultadoElegibilidade !== 'TODOS') query.append('resultadoElegibilidade', activeF.resultadoElegibilidade);
+      if (activeF.apenasExcecoes) query.append('apenasExcecoes', 'true');
+      if (activeF.searchTerm) query.append('searchTerm', activeF.searchTerm);
       if (empresaAtiva?.id) query.append('empresaId', empresaAtiva.id);
       query.append('limit', '25000');
       
@@ -128,9 +133,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       try {
         const kpiQuery = new URLSearchParams();
         if (empresaAtiva?.id) kpiQuery.append('empresaId', empresaAtiva.id);
-        if (filters.dataInicio) kpiQuery.append('dataInicio', filters.dataInicio);
-        if (filters.dataFim) kpiQuery.append('dataFim', filters.dataFim);
-        if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') kpiQuery.append('tipoDoc', filters.tipoDoc);
+        if (activeF.dataInicio) kpiQuery.append('dataInicio', activeF.dataInicio);
+        if (activeF.dataFim) kpiQuery.append('dataFim', activeF.dataFim);
+        if (activeF.tipoDoc && activeF.tipoDoc !== 'TODOS') kpiQuery.append('tipoDoc', activeF.tipoDoc);
         const kpiRes = await fetch(`${getApiBaseUrl()}/upload/kpis?${kpiQuery.toString()}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
@@ -152,7 +157,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             id: `mem-${doc.chaveAcesso}-${idx}`,
             empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
             empresaCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
+            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
             tipoDoc: (doc.tipo || 'NFe') as any,
             chaveAcesso: doc.chaveAcesso,
             numeroSerie: `${doc.numero || '1'} / ${doc.serie || '1'}`,
@@ -164,7 +169,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             fornecedorUf: doc.emitenteUf || 'SP',
             fornecedorMunicipio: 'São Paulo',
             clienteCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
+            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
             clienteUf: doc.destinatarioUf || 'SP',
             situacaoDoc: 'autorizado',
             situacaoManifestacao: doc.isResumoApenas ? 'sem_manifestacao' : 'confirmada',
@@ -238,7 +243,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             id: `mem-${doc.chaveAcesso}-${idx}`,
             empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
             empresaCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
+            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
             tipoDoc: (doc.tipo || 'NFe') as any,
             chaveAcesso: doc.chaveAcesso,
             numeroSerie: `${doc.numero || '1'} / ${doc.serie || '1'}`,
@@ -250,7 +255,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             fornecedorUf: doc.emitenteUf || 'SP',
             fornecedorMunicipio: 'São Paulo',
             clienteCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'SUPERGASBRAS ENERGIA LTDA',
+            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
             clienteUf: doc.destinatarioUf || 'SP',
             situacaoDoc: 'autorizado',
             situacaoManifestacao: doc.isResumoApenas ? 'sem_manifestacao' : 'confirmada',
@@ -317,38 +322,22 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     exportReportToExcel(filteredItems, `Relatorio_${activeTab}`);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadLoading(true);
-    try {
-      const text = await file.text();
-      const response = await fetch(`${getApiBaseUrl()}/upload/xml`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ xmlContent: text })
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Falha ao importar XML.');
-      }
-
-      const resData = await response.json();
-      alert(`Sucesso! XML classificado como Operação de ${resData.tipoOperacao}.`);
-      setIsUploadModalOpen(false);
-      handleSearch(); // Atualiza a tela de relatórios com o novo documento
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || 'Erro ao fazer upload do XML.');
-    } finally {
-      setUploadLoading(false);
-    }
-  };
+  // Cálculo de filtros ativos para badge visual
+  const activeFiltersCount = [
+    Boolean(filters.searchTerm),
+    Boolean(filters.cnpjEmitente),
+    Boolean(filters.cnpjDestinatario),
+    filters.uf !== 'TODAS',
+    Boolean(filters.dataInicio),
+    Boolean(filters.dataFim),
+    filters.tipoDoc !== 'TODOS',
+    filters.situacaoDoc !== 'TODAS',
+    Boolean(filters.cfop),
+    Boolean(filters.cClassTrib),
+    filters.indicadorOnerosidade !== 'TODOS',
+    filters.resultadoElegibilidade !== 'TODOS',
+    filters.apenasExcecoes
+  ].filter(Boolean).length;
 
   const reportTabs = [
     { id: 'razao_entradas' as ReportTabType, label: '1) Razão de Entradas (#1)', icon: FileText, badge: 'Relatório-Mãe' },
@@ -399,14 +388,29 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             >
               Limpar Filtros
             </button>
+
+            {/* Botão de Expandir / Recolher Filtros */}
             <button
               onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer mr-1"
+              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer border shadow-sm ${
+                isFiltersExpanded
+                  ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400'
+                  : 'bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900 hover:to-blue-900 text-cyan-300 border-cyan-500/60 hover:border-cyan-400 shadow-cyan-950/40'
+              }`}
+              title={isFiltersExpanded ? 'Recolher bloco de filtros para ampliar a visualização dos relatórios' : 'Expandir bloco de filtros para ajustar parâmetros'}
             >
-              {isFiltersExpanded ? 'Ocultar Filtros ▲' : 'Expandir Filtros ▼'}
+              <Filter className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{isFiltersExpanded ? 'Recolher Filtros' : 'Expandir Filtros'}</span>
+              {isFiltersExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {activeFiltersCount > 0 && !isFiltersExpanded && (
+                <span className="px-1.5 py-0.2 text-[10px] bg-cyan-500 text-slate-950 font-black rounded-full ml-0.5">
+                  {activeFiltersCount}
+                </span>
+              )}
             </button>
+
             <button
-              onClick={handleSearch}
+              onClick={() => handleSearch()}
               disabled={loading}
               className={`px-3.5 py-1.5 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-600/25 ${loading ? 'bg-slate-700 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'}`}
             >
@@ -422,14 +426,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             </button>
 
             <button
-              onClick={() => setIsUploadModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-            >
-              <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Importar XML Manual</span>
-            </button>
-
-            <button
               onClick={handleExportExcel}
               className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all cursor-pointer"
             >
@@ -438,6 +434,54 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             </button>
           </div>
         </div>
+
+        {/* Barra de resumo quando os filtros estiverem recolhidos */}
+        {!isFiltersExpanded && activeFiltersCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80 text-[11px]">
+            <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Filtros ativos:</span>
+            {filters.dataInicio && (
+              <span className="bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono">
+                De: {filters.dataInicio.split('-').reverse().join('/')}
+              </span>
+            )}
+            {filters.dataFim && (
+              <span className="bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono">
+                Até: {filters.dataFim.split('-').reverse().join('/')}
+              </span>
+            )}
+            {filters.tipoDoc !== 'TODOS' && (
+              <span className="bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-lg border border-slate-700">
+                Tipo: {filters.tipoDoc}
+              </span>
+            )}
+            {filters.cfop && (
+              <span className="bg-slate-800 text-amber-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono">
+                CFOP: {filters.cfop}
+              </span>
+            )}
+            {filters.uf !== 'TODAS' && (
+              <span className="bg-slate-800 text-indigo-300 px-2 py-0.5 rounded-lg border border-slate-700">
+                UF: {filters.uf}
+              </span>
+            )}
+            {filters.searchTerm && (
+              <span className="bg-slate-800 text-slate-200 px-2 py-0.5 rounded-lg border border-slate-700 truncate max-w-[150px]">
+                Busca: "{filters.searchTerm}"
+              </span>
+            )}
+            {filters.apenasExcecoes && (
+              <span className="bg-rose-950/60 text-rose-300 px-2 py-0.5 rounded-lg border border-rose-800/60">
+                Apenas Exceções
+              </span>
+            )}
+            <button
+              onClick={handleClearFilters}
+              className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
+            >
+              Limpar todos
+            </button>
+          </div>
+        )}
 
         {isFiltersExpanded && (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 text-xs w-full min-w-0">
@@ -454,6 +498,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                   placeholder="Digite CNPJ, Chave de Acesso, NCM, Razão Social..."
                   value={filters.searchTerm}
                   onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                   className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -469,6 +514,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 placeholder="Ex: 17.213.071/0001-75"
                 value={filters.cnpjEmitente}
                 onChange={(e) => setFilters({ ...filters, cnpjEmitente: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -483,6 +529,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 placeholder="Ex: 00.000.000/0001-91"
                 value={filters.cnpjDestinatario}
                 onChange={(e) => setFilters({ ...filters, cnpjDestinatario: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-indigo-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -516,6 +563,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 type="date"
                 value={filters.dataInicio}
                 onChange={(e) => setFilters({ ...filters, dataInicio: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
               />
             </div>
@@ -529,6 +577,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 type="date"
                 value={filters.dataFim}
                 onChange={(e) => setFilters({ ...filters, dataFim: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
               />
             </div>
@@ -578,6 +627,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 placeholder="Ex: 1102"
                 value={filters.cfop}
                 onChange={(e) => setFilters({ ...filters, cfop: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -593,6 +643,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 placeholder="Ex: 000001"
                 value={filters.cClassTrib}
                 onChange={(e) => setFilters({ ...filters, cClassTrib: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
                 className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -685,8 +736,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         </div>
       </div>
 
-      {/* Report Package Tabs Bar (#1 to #8) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800 w-full min-w-0 max-w-full">
+      {/* Report Package Tabs Bar (#1 to #9) */}
+      <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-800 w-full min-w-0">
         {reportTabs.map(tab => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -700,13 +751,13 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                   handleSearch(tab.id);
                 }
               }}
-              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 isActive
                   ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 text-white shadow-lg shadow-blue-600/25 border border-cyan-400/40'
                   : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
               }`}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              <Icon className="w-3.5 h-3.5 shrink-0" />
               <span>{tab.label}</span>
               {tab.badge && (
                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">
@@ -924,48 +975,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               >
                 Fechar Auditoria
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Upload XML Modal */}
-      {isUploadModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
-          <div className="bg-[#0f172a] border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-base font-bold text-white">Importar XML Manual</h3>
-              </div>
-              <button
-                onClick={() => setIsUploadModalOpen(false)}
-                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="p-4 border-2 border-dashed border-slate-700 rounded-xl text-center bg-slate-900">
-              <UploadCloud className="w-8 h-8 text-slate-500 mx-auto mb-2" />
-              <p className="text-xs text-slate-400 mb-4">
-                Selecione um arquivo .xml real (procNFe ou similar) para importar. O sistema identificará se é Entrada ou Saída com base no CNPJ.
-              </p>
-              
-              <label className="cursor-pointer inline-flex items-center justify-center px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-lg transition-colors">
-                {uploadLoading ? (
-                  <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Processando...</>
-                ) : (
-                  <>Selecionar Arquivo XML</>
-                )}
-                <input
-                  type="file"
-                  accept=".xml"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  disabled={uploadLoading}
-                />
-              </label>
             </div>
           </div>
         </div>

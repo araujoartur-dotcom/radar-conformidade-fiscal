@@ -1,0 +1,86 @@
+# Blindagem de Segurança RBAC Multi-Tenant: Isolamento Dinâmico por CNPJ/Empresa
+
+## 1. Visão Geral da Arquitetura Implementada
+
+A implementação seguiu rigorosamente o princípio de **Isolamento Multi-Tenant Genérico e Dinâmico**. Nenhuma empresa ou CNPJ está fixada no código — qualquer empresa cadastrada ou que venha a ser cadastrada no sistema obedece automaticamente às mesmas regras de governança e controle de acesso.
+
+---
+
+## 2. Hierarquia de Perfis e Escopos de Gestão
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  admin_master (Administrador Master)                                    │
+│  • Escopo: Global (Todos os CNPJs e empresas cadastradas no sistema).    │
+│  • Gestão: CRUD irrestrito em qualquer usuário de qualquer tenant.      │
+│  • Proteção: Conta master protegida contra edição e exclusão por outros.│
+│  • Exclusividade: Único que pode criar e atribuir o perfil suporte_ti. │
+├─────────────────────────────────────────────────────────────────────────┤
+│  suporte_ti (Suporte de TI / Gestor de Acessos Local) — NOVO            │
+│  • Escopo: Dinâmico (Restrito estritamente aos CNPJs vinculados a ele). │
+│  • Gestão: CRUD de usuários dentro do seu escopo de CNPJ(s).            │
+│  • Isolamento: NUNCA visualiza, edita ou exclui o Admin Master.         │
+│  • Restrições: Não pode criar Admin nem Suporte TI, não pode se auto-   │
+│    promover nem se auto-excluir, nem atribuir CNPJs fora do seu escopo. │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Perfis Operacionais (analista_fiscal, contador_gestor, auditor, etc.)  │
+│  • Gestão de Usuários: Acesso BLOQUEADO no backend e oculto no frontend.│
+│  • Não visualizam lista de usuários nem de outras empresas.             │
+│  • Acessam apenas suas rotinas fiscais e seu próprio MFA / 2FA.         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. Detalhamento Técnico das Modificações
+
+### 3.1. Tipagem Compartilhada
+- [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts):
+  - Adicionado o novo perfil `'suporte_ti'` ao tipo `PerfilUsuario`.
+
+### 3.2. Backend ([server/routes/users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts))
+1. **Helper `getUserCnpjSet(userId)`**: Resolve dinamicamente todos os CNPJs daquele usuário a partir da tabela `usuario_empresa` e `empresas`.
+2. **Helper `hasUserScopeAccess(req, targetUserId)`**: Valida se o solicitante compartilha pelo menos uma empresa com o usuário alvo.
+3. **`GET /api/users`**:
+   - Para perfis operacionais (`analista_fiscal`, `auditor_externo`, etc.): Retorna array vazio `[]`.
+   - Para `suporte_ti`: Filtra a lista retornando apenas usuários que compartilham seus CNPJs, e **remove totalmente contas `admin_master` da resposta**.
+   - Para `admin_master`: Retorna todos os usuários de todos os tenants.
+4. **`POST /api/users`**:
+   - Aceita `admin_master` e `suporte_ti`.
+   - `suporte_ti` é impedido de criar `admin_master` ou `suporte_ti` (403 Forbidden).
+   - `suporte_ti` é impedido de conceder acesso global (`*`) ou qualquer CNPJ fora dos que ele possui (403 Forbidden).
+   - Valida que pelo menos 1 CNPJ válido do escopo seja atribuído.
+5. **`PUT /api/users/:id`**:
+   - Conta `admin_master` não pode ser editada por terceiros (403).
+   - `suporte_ti` não pode editar usuários de outros CNPJs nem outro `suporte_ti`.
+   - `suporte_ti` não pode alterar seu próprio perfil nem promover ninguém a perfil privilegiado.
+   - `suporte_ti` pode gerenciar dados cadastrais e alternar perfis operacionais de usuários da sua empresa.
+   - Atualização de vínculos isolada para alterar apenas empresas do escopo do gestor, preservando integridade.
+6. **`DELETE /api/users/:id`**:
+   - Conta `admin_master` é permanentemente protegida contra exclusão.
+   - Nenhum usuário pode excluir a si próprio.
+   - `suporte_ti` só pode excluir usuários que compartilham seus CNPJs e não pode excluir outros de TI.
+
+### 3.3. Frontend ([src/components/AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx))
+1. **Controle de Visibilidade da Aba**:
+   - A aba "Gestão de Usuários" é renderizada **apenas** para quem possui `admin_master` ou `suporte_ti`.
+   - Para analistas, auditores e operadores, a aba inicial padrão é a de **MFA / 2FA**, e a aba de gestão sequer aparece na barra de navegação.
+2. **Formulário de Cadastro**:
+   - Select de perfis ajustado dinamicamente: `admin_master` vê todas as opções; `suporte_ti` vê apenas perfis operacionais locais.
+   - Opção de acesso global (`*`) oculta para `suporte_ti`.
+3. **Tabela de Usuários**:
+   - Exibe badge colorido para cada tipo de perfil.
+   - Botões de Editar e Excluir ocultados para contas `admin_master` e condicionados ao escopo do usuário.
+4. **Modal de Edição de Usuário**:
+   - `suporte_ti` pode alterar dados cadastrais, status, senha e perfis operacionais da sua equipe.
+   - Campo de perfil desabilitado contra auto-promoção.
+5. **Matriz de Permissões (Tab 3)**:
+   - Incluída a coluna `Suporte TI` com distinção clara entre "Total Global" (Admin) e "Total no CNPJ" (Suporte TI).
+
+---
+
+## 4. Validação e Testes
+
+- **Compilação de Tipos**: Executado `npx tsc --noEmit` — **0 erros de tipagem**.
+- **Build de Produção**: Executado `npm run build` (Vite) — **compilado com sucesso em 15.30s**.
+- **Validação de Código**: Verificado que não existe nenhum nome de empresa hardcoded — a lógica se baseia 100% no vínculo relacional entre `usuarios`, `usuario_empresa` e `empresas`.

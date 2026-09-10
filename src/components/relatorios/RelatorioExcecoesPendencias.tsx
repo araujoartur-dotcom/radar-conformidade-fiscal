@@ -39,18 +39,18 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1500px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Chave / Data</th>
-              <th className="p-3">Fornecedor / Emitente</th>
-              <th className="p-3">Item / NCM / CFOP</th>
-              <th className="p-3">Motivo da Exceção / Impasse</th>
-              <th className="p-3">Detalhamento Operacional do Bloqueio</th>
-              <th className="p-3 text-right">Crédito em Risco</th>
-              <th className="p-3 text-center">Status Saneamento</th>
-              <th className="p-3 text-center">Ações de Saneamento</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1150px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">Doc / Chave / Data</th>
+              <th className="py-2.5 px-3">Fornecedor / Emitente</th>
+              <th className="py-2.5 px-3">Item / NCM / CFOP</th>
+              <th className="py-2.5 px-3">Motivo da Exceção / Impasse</th>
+              <th className="py-2.5 px-3">Detalhamento Operacional do Bloqueio</th>
+              <th className="py-2.5 px-3 text-right">Crédito em Risco</th>
+              <th className="py-2.5 px-3 text-center">Status Saneamento</th>
+              <th className="py-2.5 px-3 text-center">Ações de Saneamento</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -70,7 +70,7 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                   <tr key={it.id} className="hover:bg-slate-900/50 transition-colors bg-rose-950/10">
                     
                     {/* Doc / Chave */}
-                    <td className="p-3">
+                    <td className="py-2.5 px-3">
                       <div className="font-bold text-white">
                         {it.tipoDoc} {it.numeroSerie} (Item {it.itemNro})
                       </div>
@@ -83,7 +83,7 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                     </td>
 
                     {/* Fornecedor */}
-                    <td className="p-3">
+                    <td className="py-2.5 px-3">
                       <div className="font-bold text-slate-200 truncate max-w-[190px]" title={it.fornecedorRazao}>
                         {it.fornecedorRazao}
                       </div>
@@ -93,7 +93,7 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                     </td>
 
                     {/* Item */}
-                    <td className="p-3">
+                    <td className="py-2.5 px-3">
                       <div className="font-bold text-cyan-300">
                         Item {it.itemNro}: {it.descricaoItem.substring(0, 25)}...
                       </div>
@@ -103,19 +103,19 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                     </td>
 
                     {/* Motivo Exceção */}
-                    <td className="p-3 font-sans">
+                    <td className="py-2.5 px-3 font-sans">
                       <span className="px-2 py-1 rounded bg-rose-950 text-rose-300 border border-rose-800 font-bold text-xs inline-block">
                         {it.tipoExcecao || 'Pendente de Classificação'}
                       </span>
                     </td>
 
                     {/* Detalhamento */}
-                    <td className="p-3 font-sans text-xs text-slate-300 max-w-[300px]">
+                    <td className="py-2.5 px-3 font-sans text-xs text-slate-300 max-w-[300px]">
                       {it.detalheExcecao || it.motivoPadronizado}
                     </td>
 
                     {/* Crédito em Risco */}
-                    <td className="p-3 text-right">
+                    <td className="py-2.5 px-3 text-right">
                       <div className="text-xs font-bold text-rose-400">
                         R$ {creditoRisco.toFixed(2)}
                       </div>
@@ -125,7 +125,7 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                     </td>
 
                     {/* Status Saneamento */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2.5 px-3 text-center font-sans">
                       <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                         acaoAtual === 'saneado' || acaoAtual === 'liberado'
                           ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
@@ -140,7 +140,7 @@ export const RelatorioExcecoesPendencias: React.FC<RelatorioExcecoesPendenciasPr
                     </td>
 
                     {/* Ações Saneamento */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2.5 px-3 text-center font-sans">
                       <div className="flex items-center justify-center gap-1.5 flex-wrap">
                         <button
                           onClick={() => handleSaneamento(it.id, 'saneado')}

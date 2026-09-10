@@ -49,20 +49,20 @@ export const RelatorioEstornosAjustes: React.FC<RelatorioEstornosAjustesProps> =
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1500px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Evento Gerador</th>
-              <th className="p-3">Chave Origem x Chave Evento</th>
-              <th className="p-3">Doc / Item #</th>
-              <th className="p-3 text-right">Crédito Original (IBS+CBS)</th>
-              <th className="p-3 text-right">Crédito Estornado ERP</th>
-              <th className="p-3 text-center">Status do Estorno</th>
-              <th className="p-3">Data Evento / Competência</th>
-              <th className="p-3">Motivo / Justificativa</th>
-              <th className="p-3">Usuário / Workflow</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1180px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">Evento Gerador</th>
+              <th className="py-2.5 px-3">Chave Origem x Chave Evento</th>
+              <th className="py-2.5 px-3">Doc / Item #</th>
+              <th className="py-2.5 px-3 text-right">Crédito Original (IBS+CBS)</th>
+              <th className="py-2.5 px-3 text-right">Crédito Estornado ERP</th>
+              <th className="py-2.5 px-3 text-center">Status do Estorno</th>
+              <th className="py-2.5 px-3">Data Evento / Competência</th>
+              <th className="py-2.5 px-3">Motivo / Justificativa</th>
+              <th className="py-2.5 px-3">Usuário / Workflow</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -74,7 +74,7 @@ export const RelatorioEstornosAjustes: React.FC<RelatorioEstornosAjustesProps> =
                 <tr key={it.id} className={`hover:bg-slate-900/50 transition-colors ${!estaSaneado ? 'bg-rose-950/20' : ''}`}>
                   
                   {/* Evento Gerador */}
-                  <td className="p-3 font-sans">
+                  <td className="py-2 px-3 font-sans">
                     <span className={`inline-block px-2.5 py-1 rounded text-xs font-bold border ${
                       it.tipoEventoAfetaCredito === 'Cancelamento' || it.situacaoDoc === 'cancelado'
                         ? 'bg-rose-950 text-rose-300 border-rose-800'
@@ -87,7 +87,7 @@ export const RelatorioEstornosAjustes: React.FC<RelatorioEstornosAjustesProps> =
                   </td>
 
                   {/* Chave Origem vs Evento */}
-                  <td className="p-3">
+                  <td className="py-2 px-3">
                     <div className="text-[10px] text-slate-400">
                       Origem: <span className="font-mono text-cyan-300 truncate inline-block max-w-[140px]" title={it.chaveDocOriginal || it.chaveAcesso}>{it.chaveDocOriginal || it.chaveAcesso}</span>
                     </div>
@@ -97,22 +97,22 @@ export const RelatorioEstornosAjustes: React.FC<RelatorioEstornosAjustesProps> =
                   </td>
 
                   {/* Doc / Item */}
-                  <td className="p-3 font-bold text-slate-200">
+                  <td className="py-2 px-3 font-bold text-slate-200">
                     {it.tipoDoc} {it.numeroSerie} (Item {it.itemNro})
                   </td>
 
                   {/* Crédito Original */}
-                  <td className="p-3 text-right font-bold text-slate-300">
+                  <td className="py-2 px-3 text-right font-bold text-slate-300">
                     R$ {it.creditoOriginalTotal.toFixed(2)}
                   </td>
 
                   {/* Crédito Estornado */}
-                  <td className="p-3 text-right font-bold text-emerald-400">
+                  <td className="py-2 px-3 text-right font-bold text-emerald-400">
                     R$ {it.creditoEstornadoTotal.toFixed(2)}
                   </td>
 
                   {/* Status */}
-                  <td className="p-3 text-center font-sans">
+                  <td className="py-2 px-3 text-center font-sans">
                     {estaSaneado ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Estornado / Conforme
@@ -125,23 +125,23 @@ export const RelatorioEstornosAjustes: React.FC<RelatorioEstornosAjustesProps> =
                   </td>
 
                   {/* Data / Comp */}
-                  <td className="p-3 text-slate-300">
+                  <td className="py-2 px-3 text-slate-300">
                     {it.dataEventoAfetaCredito || it.dataEmissao} ({it.competencia})
                   </td>
 
                   {/* Motivo */}
-                  <td className="p-3 font-sans text-xs text-slate-300 max-w-[220px]">
+                  <td className="py-2 px-3 font-sans text-xs text-slate-300 max-w-[220px]">
                     {it.motivoDiferenca || it.motivoPadronizado}
                   </td>
 
                   {/* Usuario / Workflow */}
-                  <td className="p-3 font-sans text-xs text-slate-400">
+                  <td className="py-2 px-3 font-sans text-xs text-slate-400">
                     <div>{it.usuarioAprovacaoEvento || it.usuarioCaptura}</div>
                     <div className="text-[10px] text-slate-500">{it.rotinaCaptura}</div>
                   </td>
 
                   {/* Ações */}
-                  <td className="p-3 text-center font-sans">
+                  <td className="py-2 px-3 text-center font-sans">
                     {onOpenDetail && (
                       <button
                         onClick={() => onOpenDetail(it)}

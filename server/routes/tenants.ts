@@ -301,9 +301,18 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
 // =========================================================
 // PUT /api/tenants/:id - Editar empresa
 // =========================================================
-router.put('/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+
+    if (req.user?.perfil !== 'admin_master') {
+      const db = getDatabase();
+      const vinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(req.user!.userId, id);
+      if (!vinculo && req.user?.empresaAtivaId !== id) {
+        return res.status(403).json({ success: false, message: 'Você não tem permissão para editar esta empresa (fora do seu escopo).' });
+      }
+    }
+
     const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica, naturezaJuridica, codigoNaturezaJuridica } = req.body;
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
     const brasiliaNow = getBrasiliaTimestamp();

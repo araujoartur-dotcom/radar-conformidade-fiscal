@@ -50,68 +50,58 @@ export const ConsultaLotePanel: React.FC<ConsultaLotePanelProps> = ({
   };
 
   return (
-    <div className="glass-panel-glow rounded-2xl p-5 flex flex-col gap-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+    <div 
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={handleDrop}
+      className="glass-panel-glow rounded-2xl p-5 flex flex-col gap-4"
+    >
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
         <div>
           <h2 className="text-base font-bold text-white flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-blue-400" />
             <span>Consulta em Lote (Excel / CSV)</span>
           </h2>
           <p className="text-xs text-slate-400">
-            Importe sua planilha contendo colunas <span className="text-cyan-300 font-mono">CNPJ</span> e <span className="text-cyan-300 font-mono">UF</span>
+            Importe sua planilha contendo colunas <span className="text-cyan-300 font-mono font-bold">CNPJ</span> e <span className="text-cyan-300 font-mono font-bold">UF</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Ações Compactas: Ícone + Selecionar .xlsx + Baixar Planilha Exemplo */}
+        <div className="flex flex-wrap items-center gap-2.5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          {fileName && (
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 text-xs font-mono font-bold shadow-sm">
+              <FileSpreadsheet className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span className="truncate max-w-[220px]" title={fileName}>{fileName}</span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer shrink-0"
+            title="Clique ou arraste um arquivo .xlsx/.csv para este painel"
+          >
+            <FileUp className="w-4 h-4 text-cyan-200" />
+            <span>{fileName ? 'Trocar .xlsx' : 'Selecionar .xlsx'}</span>
+          </button>
+
           <button
             onClick={downloadSampleExcel}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700/80 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700/80 transition-all cursor-pointer shrink-0"
             title="Baixar modelo .xlsx para teste"
           >
             <Download className="w-3.5 h-3.5 text-cyan-400" />
             <span>Baixar Planilha Exemplo</span>
           </button>
         </div>
-      </div>
-
-      {/* Upload Drop Zone */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        className="hidden"
-        onChange={handleFileChange}
-      />
-
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className="group relative border-2 border-dashed border-slate-700/80 hover:border-cyan-500/80 rounded-2xl p-6 lg:p-8 flex flex-col items-center justify-center gap-3 bg-slate-900/40 hover:bg-slate-900/80 transition-all cursor-pointer text-center"
-      >
-        <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-cyan-400 group-hover:scale-110 group-hover:border-cyan-500/50 shadow-inner transition-transform">
-          <FileUp className="w-7 h-7" />
-        </div>
-
-        <div>
-          <div className="text-sm font-bold text-slate-200">
-            {fileName ? (
-              <span className="text-cyan-400 font-mono">{fileName}</span>
-            ) : (
-              <span>Clique ou arraste aqui seu arquivo <span className="text-cyan-400 font-mono">.XLSX</span> ou <span className="text-cyan-400 font-mono">.CSV</span></span>
-            )}
-          </div>
-          <p className="text-xs text-slate-400 mt-1">
-            Suporta milhares de registros com validação de CNPJ e busca na SEFAZ/CCC
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="mt-1 px-4 py-2 rounded-xl bg-blue-600 group-hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/30 transition-all"
-        >
-          {fileName ? 'Trocar Arquivo' : 'Selecionar .xlsx'}
-        </button>
       </div>
 
       {/* Settings and Action Controls */}

@@ -273,18 +273,18 @@ export const RelatorioMapaCfop: React.FC = () => {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">CFOP</th>
-              <th className="p-3">Descrição CFOP (Tabela Oficial)</th>
-              <th className="p-3">Categoria Operacional</th>
-              <th className="p-3 text-center">Tratamento Padrão IBS/CBS</th>
-              <th className="p-3 text-center">Exige Onerosidade?</th>
-              <th className="p-3 text-center">Exige cClassTrib?</th>
-              <th className="p-3">Evidência Mínima Exigida</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">CFOP</th>
+              <th className="py-2.5 px-3">Descrição CFOP (Tabela Oficial)</th>
+              <th className="py-2.5 px-3">Categoria Operacional</th>
+              <th className="py-2.5 px-3 text-center">Tratamento Padrão IBS/CBS</th>
+              <th className="py-2.5 px-3 text-center">Exige Onerosidade?</th>
+              <th className="py-2.5 px-3 text-center">Exige cClassTrib?</th>
+              <th className="py-2.5 px-3">Evidência Mínima Exigida</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -292,26 +292,26 @@ export const RelatorioMapaCfop: React.FC = () => {
               <tr key={item.cfop} className="hover:bg-slate-900/50 transition-colors">
                 
                 {/* CFOP */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <span className="px-2 py-1 bg-cyan-950 text-cyan-300 border border-cyan-800 rounded font-bold text-xs">
                     {item.cfop}
                   </span>
                 </td>
 
                 {/* Descrição */}
-                <td className="p-3 font-sans font-semibold text-slate-200">
+                <td className="py-2 px-3 font-sans font-semibold text-slate-200">
                   {item.descricao}
                 </td>
 
                 {/* Categoria */}
-                <td className="p-3 font-sans">
+                <td className="py-2 px-3 font-sans">
                   <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 text-[11px] font-bold">
                     {item.categoria}
                   </span>
                 </td>
 
                 {/* Tratamento Padrão */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {item.tratamentoPadrao === 'Elegível' ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs font-bold">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Elegível
@@ -328,7 +328,7 @@ export const RelatorioMapaCfop: React.FC = () => {
                 </td>
 
                 {/* Exige Onerosidade */}
-                <td className="p-3 text-center font-sans font-bold">
+                <td className="py-2 px-3 text-center font-sans font-bold">
                   {item.exigeOnerosidade ? (
                     <span className="text-emerald-400">SIM</span>
                   ) : (
@@ -337,7 +337,7 @@ export const RelatorioMapaCfop: React.FC = () => {
                 </td>
 
                 {/* Exige cClassTrib */}
-                <td className="p-3 text-center font-sans font-bold">
+                <td className="py-2 px-3 text-center font-sans font-bold">
                   {item.exigeValidaçãoCClassTrib ? (
                     <span className="text-cyan-400">SIM</span>
                   ) : (
@@ -346,12 +346,12 @@ export const RelatorioMapaCfop: React.FC = () => {
                 </td>
 
                 {/* Evidencia Minima */}
-                <td className="p-3 font-sans text-xs text-slate-300">
+                <td className="py-2 px-3 font-sans text-xs text-slate-300">
                   {item.evidenciaMinima}
                 </td>
 
                 {/* Ações */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   <button
                     onClick={() => handleDeleteRule(item.cfop)}
                     className="p-1 rounded bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-800 transition-all cursor-pointer"

@@ -25,7 +25,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 }) => {
   const { token, empresaAtiva } = useAuth();
   // Main Panel Tab
-  const [activeTab, setActiveTab] = useState<'emissor' | 'notas_tecnicas' | 'apis_config' | 'schema_generator'>('emissor');
+  const [activeTab, setActiveTab] = useState<'emissor' | 'notas_tecnicas' | 'schema_generator'>('emissor');
 
   // Document Type Filter for Events
   const [selectedTipoDfe, setSelectedTipoDfe] = useState<TipoDFe>('NFe');
@@ -104,29 +104,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     loadEventos();
   }, [empresaAtiva?.id, currentDocument?.id]);
 
-  // State for API Credentials Config
-  const [apiEndpoints, setApiEndpoints] = useState({
-    cgibsUrl: 'https://api.cgibs.gov.br/v1/eventos/sync',
-    rfbUrl: 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
-    svrsUrl: 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
-    nfseNacionalUrl: 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
-    apiKeyCgibs: 'CGIBS-KEY-2026-LIVE-88912901-PROD',
-    bearerTokenRfb: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.rfb_2026_rtc_token',
-    certA1Status: 'Ativo (Vencimento em 12/2027)',
-    webhookUrl: 'https://erp.empresa.com.br/api/webhooks/fiscal-rtc-events'
-  });
 
-  const [pingStatus, setPingStatus] = useState<string | null>(null);
-  const [isTestingApi, setIsTestingApi] = useState(false);
-
-  const handleTestApiConnection = () => {
-    setIsTestingApi(true);
-    setPingStatus(null);
-    setTimeout(() => {
-      setIsTestingApi(false);
-      setPingStatus('Conexão Estabelecida com Sucesso! Resposta HTTP 200 OK (Latência: 38ms - CGIBS & RFB Synced)');
-    }, 1000);
-  };
 
   const handleTransmitEvent = async () => {
     if (!activeChave) {
@@ -235,17 +213,6 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
             <span>Notas Técnicas RTC (NT 2025.002, NT 2025.001, NT 009)</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('apis_config')}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'apis_config'
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
-                : 'bg-slate-900/80 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
-            }`}
-          >
-            <Globe className="w-4 h-4 text-emerald-400" />
-            <span>Central de APIs & Webhooks (CGIBS / RFB)</span>
-          </button>
 
           <button
             onClick={() => setActiveTab('schema_generator')}
@@ -835,162 +802,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         </div>
       )}
 
-      {/* TAB 3: CENTRAL DE CONFIGURAÇÃO DE APIS (CGIBS, RFB, SEFAZ, WEBHOOKS) */}
-      {activeTab === 'apis_config' && (
-        <div className="space-y-6">
-          <div className="p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-6 shadow-lg">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-emerald-400" />
-                  Endpoints & Conectividade dos Motores de Cálculo
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Configure as URLs oficiais do Comitê Gestor do IBS (CGIBS), Receita Federal (RFB) e WebServices Estaduais da SEFAZ.
-                </p>
-              </div>
 
-              <button
-                onClick={handleTestApiConnection}
-                disabled={isTestingApi}
-                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer shrink-0"
-              >
-                {isTestingApi ? (
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Radio className="w-4 h-4 text-emerald-200" />
-                )}
-                <span>Testar Ping Conectividade APIs</span>
-              </button>
-            </div>
-
-            {pingStatus && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/80 border border-emerald-700/60 text-xs text-emerald-300 font-mono flex items-center gap-2.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>{pingStatus}</span>
-              </div>
-            )}
-
-            {/* Endpoints Form Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-300 flex items-center gap-1.5">
-                  <Server className="w-4 h-4 text-cyan-400" />
-                  URL API do Comitê Gestor do IBS (CGIBS - Apuração Assistida)
-                </label>
-                <input
-                  type="text"
-                  value={apiEndpoints.cgibsUrl}
-                  onChange={(e) => setApiEndpoints({ ...apiEndpoints, cgibsUrl: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-300 flex items-center gap-1.5">
-                  <Cpu className="w-4 h-4 text-indigo-400" />
-                  URL API Receita Federal do Brasil (RFB - CBS & Imposto Seletivo)
-                </label>
-                <input
-                  type="text"
-                  value={apiEndpoints.rfbUrl}
-                  onChange={(e) => setApiEndpoints({ ...apiEndpoints, rfbUrl: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-300 flex items-center gap-1.5">
-                  <Database className="w-4 h-4 text-purple-400" />
-                  WebService SEFAZ Virtual RS (SVRS - Eventos NF-e/CT-e)
-                </label>
-                <input
-                  type="text"
-                  value={apiEndpoints.svrsUrl}
-                  onChange={(e) => setApiEndpoints({ ...apiEndpoints, svrsUrl: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-purple-500"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="font-bold text-slate-300 flex items-center gap-1.5">
-                  <Radio className="w-4 h-4 text-teal-400" />
-                  Endpoint API NFS-e Padrão Nacional (ABRASF / SERPRO)
-                </label>
-                <input
-                  type="text"
-                  value={apiEndpoints.nfseNacionalUrl}
-                  onChange={(e) => setApiEndpoints({ ...apiEndpoints, nfseNacionalUrl: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-teal-500"
-                />
-              </div>
-
-            </div>
-
-            {/* Authentication & Secrets */}
-            <div className="pt-4 border-t border-slate-800 space-y-4">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <Key className="w-4 h-4 text-amber-400" />
-                Chaves de Autenticação & Certificado A1
-              </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-300">API Key do Comitê Gestor IBS</label>
-                  <input
-                    type="password"
-                    value={apiEndpoints.apiKeyCgibs}
-                    onChange={(e) => setApiEndpoints({ ...apiEndpoints, apiKeyCgibs: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-300">OAuth2 Bearer Token Receita Federal (RFB)</label>
-                  <input
-                    type="password"
-                    value={apiEndpoints.bearerTokenRfb}
-                    onChange={(e) => setApiEndpoints({ ...apiEndpoints, bearerTokenRfb: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-300">URL de Webhook (Notificação de Eventos no ERP)</label>
-                  <input
-                    type="text"
-                    value={apiEndpoints.webhookUrl}
-                    onChange={(e) => setApiEndpoints({ ...apiEndpoints, webhookUrl: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-slate-200 font-mono focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="font-bold text-slate-300">Status do Certificado Digital A1 (.pfx)</label>
-                  <div className="p-2.5 rounded-xl bg-slate-950 border border-emerald-900/60 font-mono text-emerald-400 font-bold flex items-center justify-between">
-                    <span>{apiEndpoints.certA1Status}</span>
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => alert('Configurações de APIs e Webhooks salvas com sucesso no painel!')}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30"
-              >
-                <Check className="w-4 h-4" />
-                Salvar Configurações de API
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* TAB 4: GERADOR & VALIDADOR DE SCHEMAS */}
       {activeTab === 'schema_generator' && (

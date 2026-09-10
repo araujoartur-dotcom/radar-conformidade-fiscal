@@ -11,15 +11,39 @@ interface AcessoCorporativoModalProps {
   onClose?: () => void;
 }
 
+/** Perfis que têm acesso à gestão de usuários */
+const PERFIS_GESTAO = ['admin_master', 'suporte_ti'];
+
+/** Helper para formatar nome do perfil para exibição */
+function formatPerfil(perfil: string): string {
+  const map: Record<string, string> = {
+    admin_master: 'Admin Master',
+    suporte_ti: 'Suporte TI',
+    contador_gestor: 'Contador Gestor',
+    analista_fiscal: 'Analista Fiscal',
+    auditor_externo: 'Auditor Externo',
+    operador_leitura: 'Operador',
+  };
+  return map[perfil] || perfil.replace(/_/g, ' ');
+}
+
 export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState<'mfa_login' | 'admin_users' | 'perfil_usuario'>('admin_users');
-  const [allUsers, setAllUsers] = useState<UsuarioCorporativo[]>([]);
-  const [availableTenants, setAvailableTenants] = useState<ClienteEmpresaTenant[]>([]);
   const { get, post, put, del } = useApi();
   const { user: authUser } = useAuth();
-  
+
+  const callerPerfil = authUser?.perfil || '';
+  const isGestorUsuarios = PERFIS_GESTAO.includes(callerPerfil);
+  const isAdminMaster = callerPerfil === 'admin_master';
+  const isSuporteTi = callerPerfil === 'suporte_ti';
+
+  // Tab padrão: admin e suporte_ti veem usuários, demais veem MFA
+  const defaultTab = isGestorUsuarios ? 'admin_users' : 'mfa_login';
+  const [activeTab, setActiveTab] = useState<'mfa_login' | 'admin_users' | 'perfil_usuario'>(defaultTab);
+  const [allUsers, setAllUsers] = useState<UsuarioCorporativo[]>([]);
+  const [availableTenants, setAvailableTenants] = useState<ClienteEmpresaTenant[]>([]);
+
   const currentUser: UsuarioCorporativo = {
     id: authUser?.id || '',
     nome: authUser?.nome || '',
@@ -33,6 +57,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
   };
 
   const loadUsers = async () => {
+    if (!isGestorUsuarios) return; // Não carrega se não tem permissão
     const res = await get<{ success: boolean; data: any[] }>('/users');
     if (res.ok && res.data?.data) {
       setAllUsers(res.data.data.map(u => ({
@@ -105,19 +130,18 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
       setNewEmail('');
       setNewSenha('');
       setNewCnpjs(['*']);
+      setNewPerfil('analista_fiscal');
     } else {
       alert('Erro ao criar usuário: ' + (res.error || res.data?.message));
     }
   };
 
   const handleDeleteUser = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
-      const res = await del(`/users/${id}`);
-      if (res.ok) {
-        await loadUsers();
-      } else {
-        alert('Erro ao excluir usuário: ' + (res.error || res.data?.message));
-      }
+    const res = await del(`/users/${id}`);
+    if (res.ok) {
+      await loadUsers();
+    } else {
+      alert('Erro ao excluir usuário: ' + (res.error || res.data?.message));
     }
   };
 
@@ -140,6 +164,49 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
     }
   };
 
+  /**
+   * Retorna as opções de perfil disponíveis para o solicitante no select de criação/edição.
+   * admin_master: vê todos os perfis.
+   * suporte_ti: vê apenas perfis operacionais (não privilegiados).
+   */
+  const getPerfilOptions = (): { value: PerfilUsuario; label: string }[] => {
+    const allOptions: { value: PerfilUsuario; label: string }[] = [
+      { value: 'admin_master', label: 'Admin Master (Acesso Total Global)' },
+      { value: 'suporte_ti', label: 'Suporte TI (Gestão de Usuários por CNPJ)' },
+      { value: 'contador_gestor', label: 'Contador Gestor (Multi-CNPJ Operacional)' },
+      { value: 'analista_fiscal', label: 'Analista Fiscal (Emissão e Consultas)' },
+      { value: 'auditor_externo', label: 'Auditor Externo (Leitura e Evidências)' },
+      { value: 'operador_leitura', label: 'Operador (Apenas Consulta)' },
+    ];
+
+    if (isAdminMaster) return allOptions;
+
+    // suporte_ti: apenas perfis NÃO privilegiados
+    return allOptions.filter(o => !['admin_master', 'suporte_ti'].includes(o.value));
+  };
+
+  /**
+   * Verifica se o usuário logado pode editar/excluir o usuário alvo.
+   * (Defesa em profundidade: backend já valida, mas frontend esconde botões)
+   */
+  const canManageUser = (targetUser: UsuarioCorporativo): boolean => {
+    if (!isGestorUsuarios) return false;
+    if (targetUser.perfil === 'admin_master') return false; // Nunca exibe ações para admin_master
+
+    if (isAdminMaster) return true;
+
+    // suporte_ti: não pode gerenciar outro suporte_ti
+    if (isSuporteTi && targetUser.perfil === 'suporte_ti') return false;
+
+    return true;
+  };
+
+  const canDeleteUser = (targetUser: UsuarioCorporativo): boolean => {
+    if (!canManageUser(targetUser)) return false;
+    if (targetUser.id === authUser?.id) return false; // Nunca pode excluir a si mesmo
+    return true;
+  };
+
   return (
     <div className="space-y-6">
 
@@ -157,17 +224,20 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
           <span>Autenticação em Dois Fatores (MFA / 2FA)</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('admin_users')}
-          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-            activeTab === 'admin_users'
-              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
-              : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
-          }`}
-        >
-          <Users className="w-4 h-4 text-emerald-400" />
-          <span>Painel Admin: Usuários & CNPJs Liberados</span>
-        </button>
+        {/* Aba de gestão de usuários: visível SOMENTE para admin_master e suporte_ti */}
+        {isGestorUsuarios && (
+          <button
+            onClick={() => setActiveTab('admin_users')}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              activeTab === 'admin_users'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white border border-slate-800'
+            }`}
+          >
+            <Users className="w-4 h-4 text-emerald-400" />
+            <span>{isAdminMaster ? 'Painel Admin: Usuários & CNPJs Liberados' : 'Gestão de Usuários (Minha Empresa)'}</span>
+          </button>
+        )}
 
         <button
           onClick={() => setActiveTab('perfil_usuario')}
@@ -263,8 +333,8 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
         </div>
       )}
 
-      {/* TAB 2: ADMIN USER & PERMISSION MANAGEMENT */}
-      {activeTab === 'admin_users' && (
+      {/* TAB 2: ADMIN USER & PERMISSION MANAGEMENT — Somente admin_master e suporte_ti */}
+      {activeTab === 'admin_users' && isGestorUsuarios && (
         <div className="space-y-6">
           <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -272,13 +342,20 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <Users className="w-5 h-5 text-emerald-400" />
                   Gestão de Usuários
+                  {isSuporteTi && (
+                    <span className="text-[10px] text-amber-400 font-normal ml-2 bg-amber-950 px-2 py-0.5 rounded border border-amber-800">
+                      Escopo: CNPJs da sua empresa
+                    </span>
+                  )}
                 </h3>
               </div>
 
               <button
                 onClick={() => {
                   setShowAddUserForm(true);
-                  setNewCnpjs(['*']);
+                  // suporte_ti não pode atribuir acesso global
+                  setNewCnpjs(isAdminMaster ? ['*'] : []);
+                  setNewPerfil('analista_fiscal');
                 }}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg cursor-pointer shrink-0"
               >
@@ -337,11 +414,9 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                       onChange={(e) => setNewPerfil(e.target.value as PerfilUsuario)}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none"
                     >
-                      <option value="admin_master">Admin Master (Acesso Total)</option>
-                      <option value="contador_gestor">Contador Gestor (Multi-CNPJ)</option>
-                      <option value="analista_fiscal">Analista Fiscal (Emissão e Consultas)</option>
-                      <option value="auditor_externo">Auditor Externo (Leitura e Evidências)</option>
-                      <option value="operador_leitura">Operador (Apenas Consulta)</option>
+                      {getPerfilOptions().map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -360,7 +435,10 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                       }}
                       className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none h-20 font-mono text-[11px]"
                     >
-                      <option value="*">Todos os CNPJs (Acesso Global)</option>
+                      {/* Opção global: somente admin_master */}
+                      {isAdminMaster && (
+                        <option value="*">Todos os CNPJs (Acesso Global)</option>
+                      )}
                       {availableTenants.map(t => (
                         <option key={t.id} value={t.cnpjCompleto}>
                           {t.cnpjCompleto} — {t.razaoSocial}
@@ -403,6 +481,13 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {allUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-slate-500 font-sans">
+                        Nenhum usuário encontrado no seu escopo de acesso.
+                      </td>
+                    </tr>
+                  )}
                   {allUsers.map((usr) => (
                     <tr key={usr.id} className="hover:bg-slate-800/40">
                       <td className="p-3">
@@ -411,8 +496,14 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                       </td>
 
                       <td className="p-3">
-                        <span className="px-2.5 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold font-sans text-[11px] uppercase">
-                          {usr.perfil.replace('_', ' ')}
+                        <span className={`px-2.5 py-0.5 rounded font-bold font-sans text-[11px] uppercase ${
+                          usr.perfil === 'admin_master'
+                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                            : usr.perfil === 'suporte_ti'
+                            ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                            : 'bg-indigo-950 text-indigo-300 border border-indigo-800'
+                        }`}>
+                          {formatPerfil(usr.perfil)}
                         </span>
                       </td>
 
@@ -441,31 +532,39 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                       </td>
 
                       <td className="p-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => {
-                              setEditingUser({ ...usr });
-                              setEditCnpjs(usr.cnpjsAutorizados || ['*']);
-                              setEditSenha('');
-                            }}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition-all cursor-pointer"
-                            title="Editar Usuário"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
+                        {usr.perfil === 'admin_master' ? (
+                          <span className="text-[10px] text-slate-500 font-sans italic">Conta Master Protegida</span>
+                        ) : canManageUser(usr) ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => {
+                                setEditingUser({ ...usr });
+                                setEditCnpjs(usr.cnpjsAutorizados || ['*']);
+                                setEditSenha('');
+                              }}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition-all cursor-pointer"
+                              title="Editar Usuário"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
 
-                          <button
-                            onClick={() => {
-                              if (confirm(`Tem certeza que deseja remover o usuário ${usr.nome}?`)) {
-                                handleDeleteUser(usr.id);
-                              }
-                            }}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition-all cursor-pointer"
-                            title="Remover Usuário"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                          </button>
-                        </div>
+                            {canDeleteUser(usr) && (
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Tem certeza que deseja remover o usuário ${usr.nome}?`)) {
+                                    handleDeleteUser(usr.id);
+                                  }
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition-all cursor-pointer"
+                                title="Remover Usuário"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-500 font-sans italic">Somente Leitura</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -477,7 +576,19 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
         </div>
       )}
 
-      {/* TAB 3: PERMISSOES POR MODULO */}
+      {/* TAB 2 FALLBACK: Para perfis SEM gestão de usuários que clicam na aba (não devem ver, mas defesa em profundidade) */}
+      {activeTab === 'admin_users' && !isGestorUsuarios && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 text-center space-y-3">
+          <ShieldAlert className="w-10 h-10 text-amber-400 mx-auto" />
+          <div className="text-sm font-bold text-white">Acesso Restrito</div>
+          <p className="text-xs text-slate-400">
+            Seu perfil ({formatPerfil(callerPerfil)}) não possui permissão para gerenciar usuários.
+            Entre em contato com o Suporte TI da sua empresa ou o Administrador Master.
+          </p>
+        </div>
+      )}
+
+      {/* TAB 3: PERMISSOES POR MODULO — Atualizada com Suporte TI */}
       {activeTab === 'perfil_usuario' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 text-xs shadow-lg">
           <h3 className="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
@@ -491,6 +602,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                 <tr>
                   <th className="p-3">Módulo do Sistema</th>
                   <th className="p-3">Admin Master</th>
+                  <th className="p-3">Suporte TI</th>
                   <th className="p-3">Contador Gestor</th>
                   <th className="p-3">Analista Fiscal</th>
                   <th className="p-3">Auditor Externo</th>
@@ -503,11 +615,13 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                   <td className="p-3 text-emerald-400 font-bold">Total</td>
                   <td className="p-3 text-emerald-400 font-bold">Total</td>
                   <td className="p-3 text-emerald-400 font-bold">Total</td>
+                  <td className="p-3 text-emerald-400 font-bold">Total</td>
                   <td className="p-3 text-slate-400">Leitura</td>
                   <td className="p-3 text-slate-400">Leitura</td>
                 </tr>
                 <tr>
                   <td className="p-3 font-bold text-white">Disparo de Eventos RTC (Ciência, Crédito Presumido)</td>
+                  <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
@@ -520,19 +634,31 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
+                  <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-slate-400">Leitura</td>
                 </tr>
                 <tr>
-                  <td className="p-3 font-bold text-white">Alocação de CNPJs e Vinculo de Certificados A1</td>
+                  <td className="p-3 font-bold text-white">Alocação de CNPJs e Vínculo de Certificados A1</td>
+                  <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-emerald-400 font-bold">Sim</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
                 </tr>
+                <tr className="bg-slate-950/50">
+                  <td className="p-3 font-bold text-white">Gestão de Usuários & MFA</td>
+                  <td className="p-3 text-emerald-400 font-bold">Total Global</td>
+                  <td className="p-3 text-amber-400 font-bold">Total no CNPJ</td>
+                  <td className="p-3 text-rose-400 font-bold">Não</td>
+                  <td className="p-3 text-rose-400 font-bold">Não</td>
+                  <td className="p-3 text-rose-400 font-bold">Não</td>
+                  <td className="p-3 text-rose-400 font-bold">Não</td>
+                </tr>
                 <tr>
-                  <td className="p-3 font-bold text-white">Gestão de Usuários e MFA (Admin)</td>
+                  <td className="p-3 font-bold text-white">Configurações do Sistema</td>
                   <td className="p-3 text-emerald-400 font-bold">Exclusivo</td>
+                  <td className="p-3 text-rose-400 font-bold">Não</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
                   <td className="p-3 text-rose-400 font-bold">Não</td>
@@ -540,6 +666,37 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          {/* Legenda de Perfis */}
+          <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="font-bold text-white text-sm mb-2">Legenda dos Perfis</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 font-bold uppercase shrink-0">Admin Master</span>
+                <span className="text-slate-400">Acesso total e irrestrito a todos os CNPJs e módulos. Único que pode criar Suporte TI.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 font-bold uppercase shrink-0">Suporte TI</span>
+                <span className="text-slate-400">Gestor de usuários dentro dos CNPJs vinculados. Não vê Admin Master.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase shrink-0">Contador Gestor</span>
+                <span className="text-slate-400">Operações fiscais multi-CNPJ. Sem gestão de usuários.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase shrink-0">Analista Fiscal</span>
+                <span className="text-slate-400">Emissão, consultas e relatórios no CNPJ ativo.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase shrink-0">Auditor Externo</span>
+                <span className="text-slate-400">Leitura de relatórios e evidências de auditoria.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold uppercase shrink-0">Operador</span>
+                <span className="text-slate-400">Somente consulta e leitura básica.</span>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -595,17 +752,34 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-bold text-slate-300 block mb-1">Perfil de Acesso</label>
-                  <select
-                    value={editingUser.perfil}
-                    onChange={(e) => setEditingUser({ ...editingUser, perfil: e.target.value as PerfilUsuario })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
-                  >
-                    <option value="admin_master">Admin Master (Acesso Total)</option>
-                    <option value="contador_gestor">Contador Gestor (Multi-Empresa)</option>
-                    <option value="analista_fiscal">Analista Fiscal (Operacional)</option>
-                    <option value="auditor_externo">Auditor Externo (Leitura)</option>
-                    <option value="operador_leitura">Operador Leitura</option>
-                  </select>
+                  {isAdminMaster ? (
+                    <select
+                      value={editingUser.perfil}
+                      onChange={(e) => setEditingUser({ ...editingUser, perfil: e.target.value as PerfilUsuario })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
+                    >
+                      {getPerfilOptions().map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  ) : isSuporteTi && editingUser.id !== authUser?.id ? (
+                    <select
+                      value={editingUser.perfil}
+                      onChange={(e) => setEditingUser({ ...editingUser, perfil: e.target.value as PerfilUsuario })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none"
+                    >
+                      {getPerfilOptions().map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-400">
+                      {formatPerfil(editingUser.perfil)}
+                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                        {editingUser.id === authUser?.id ? 'Você não pode alterar seu próprio perfil.' : 'Perfil protegido.'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -648,7 +822,10 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                   }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none h-20 font-mono text-[11px]"
                 >
-                  <option value="*">Todos os CNPJs (Acesso Global)</option>
+                  {/* Opção global: somente admin_master */}
+                  {isAdminMaster && (
+                    <option value="*">Todos os CNPJs (Acesso Global)</option>
+                  )}
                   {availableTenants.map(t => (
                     <option key={t.id} value={t.cnpjCompleto}>
                       {t.cnpjCompleto} — {t.razaoSocial}

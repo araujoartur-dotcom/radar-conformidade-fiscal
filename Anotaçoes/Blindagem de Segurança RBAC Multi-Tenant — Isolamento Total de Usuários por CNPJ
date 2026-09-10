@@ -1,0 +1,157 @@
+# Blindagem de Segurança RBAC Multi-Tenant — Isolamento Total de Usuários por CNPJ
+
+## Contexto do Problema
+
+Um Analista Fiscal da Supergasbras (Artur Silveira) consegue **ver, editar e excluir** usuários de outras empresas (Sérgio Araujo do CNPJ 41.740.302/0001-83) e até o Administrador Master. Isso viola os princípios fundamentais de **Isolamento Multi-Tenant** e **Princípio do Menor Privilégio (PoLP)**.
+
+### Diagnóstico Técnico da Falha
+
+1. **Backend `GET /api/users`**: O filtro de isolamento por CNPJ existe no código, mas verifica `req.user.empresaCnpj` — que é o CNPJ da **empresa ativa** no JWT. Entretanto, a lógica de matching entre CNPJs autorizados pode falhar quando `cnpjsAutorizados` retorna `['*']` para admin_master, ou quando os vínculos estão mal normalizados.
+2. **Backend CRUD (`POST/PUT/DELETE`)**: As rotas aceitam `requirePerfil('admin_master', 'contador_gestor')` — mas o `requirePerfil` middleware dá bypass automático para `admin_master` sem validar tenant. E o `contador_gestor` não é validado por escopo de CNPJ.
+3. **Frontend**: O modal renderiza todos os usuários retornados pela API sem filtragem adicional, e mostra botões de edição/exclusão para perfis que não deveriam ter essa ação.
+
+---
+
+## Boas Práticas Aplicadas (NIST SP 800-207 / OWASP / ISO 27001)
+
+| Princípio | Aplicação |
+|-----------|-----------|
+| **Isolamento Multi-Tenant** | Cada consulta de dados é filtrada pelo escopo do CNPJ do usuário logado, no servidor |
+| **Menor Privilégio (PoLP)** | Cada perfil vê e faz apenas o mínimo necessário para sua função |
+| **Defesa em Profundidade** | Backend é a autoridade suprema; frontend é apenas espelho visual |
+| **Novo perfil `suporte_ti`** | Inspirado em IAM Admin das plataformas cloud (AWS IAM, Google Workspace Admin) |
+| **Separação Admin Global vs Admin de Tenant** | Padrão universal: Salesforce, SAP, Azure AD |
+
+---
+
+## Nova Hierarquia de Perfis
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  admin_master   │ Deus. Vê TODOS os tenants/usuários.          │
+│                 │ CRUD total. Único que atribui suporte_ti.    │
+├─────────────────┼──────────────────────────────────────────────-┤
+│  suporte_ti     │ Admin LOCAL do(s) CNPJ(s) vinculados.        │
+│   (NOVO)        │ CRUD de usuários apenas do seu escopo CNPJ.  │
+│                 │ NÃO vê admin_master. NÃO se auto-promove.    │
+├─────────────────┼──────────────────────────────────────────────-┤
+│  contador_gestor│ Operações fiscais multi-CNPJ.                │
+│                 │ NÃO gerencia usuários (removido do CRUD).    │
+├─────────────────┼──────────────────────────────────────────────-┤
+│  analista_fiscal│ Operações fiscais no CNPJ ativo.             │
+│                 │ Sem gestão de usuários. Sem ver lista.        │
+├─────────────────┼──────────────────────────────────────────────-┤
+│  auditor_externo│ Leitura de relatórios e evidências.          │
+│                 │ Nenhum CRUD.                                 │
+├─────────────────┼──────────────────────────────────────────────-┤
+│  operador       │ Somente leitura de consultas.                │
+│  _leitura       │ Nenhum CRUD.                                 │
+└─────────────────┴──────────────────────────────────────────────-┘
+```
+
+> [!IMPORTANT]
+> O perfil `suporte_ti` é o **gestor de acesso por empresa** que você descreveu. Ele pode criar, editar e excluir usuários, mas **somente dentro dos CNPJs a que ele está vinculado**. Não vê o Admin Master e não pode alterar seu próprio perfil.
+
+---
+
+## Nova Matriz de Permissões por Módulo
+
+| Módulo | Admin Master | Suporte TI | Contador Gestor | Analista Fiscal | Auditor Externo | Operador |
+|--------|:-----------:|:----------:|:---------------:|:---------------:|:---------------:|:--------:|
+| Consulta Lote/Avulsa SEFAZ | Total | Total | Total | Total | Leitura | Leitura |
+| Disparo de Eventos RTC | Sim | Sim | Sim | Sim | Não | Não |
+| Relatórios XML & Exportação | Sim | Sim | Sim | Sim | Sim | Leitura |
+| Alocação CNPJs & Certificados A1 | Sim | Sim | Sim | Não | Não | Não |
+| **Gestão de Usuários & MFA** | **Total Global** | **Total no CNPJ** | Não | Não | Não | Não |
+| Configurações do Sistema | Sim | Não | Não | Não | Não | Não |
+
+---
+
+## Propostas de Mudanças
+
+### Backend — Rotas de Usuários
+
+#### [MODIFY] [users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)
+
+**`GET /api/users`** — Blindar isolamento:
+- `admin_master`: retorna **todos** os usuários, sem filtro.
+- `suporte_ti`: retorna apenas usuários que compartilham **pelo menos 1 CNPJ** com o solicitante. **Nunca** exibe `admin_master`.
+- **Todos os outros perfis**: retorna **vazio** (não têm acesso à gestão de usuários).
+
+**`POST /api/users`** — Restringir criação:
+- `admin_master`: pode criar qualquer perfil em qualquer CNPJ.
+- `suporte_ti`: pode criar usuários **apenas nos CNPJs a que está vinculado**. Não pode criar `admin_master` nem `suporte_ti`.
+- **Demais perfis**: bloqueado (403).
+
+**`PUT /api/users/:id`** — Restringir edição:
+- `admin_master`: pode editar qualquer usuário (exceto auto-demoção de admin_master).
+- `suporte_ti`: pode editar usuários **que compartilham CNPJ** com ele. Não pode alterar perfil para `admin_master`/`suporte_ti`. Não pode editar seu próprio perfil.
+- **Demais perfis**: bloqueado (403).
+
+**`DELETE /api/users/:id`** — Restringir exclusão:
+- `admin_master`: pode excluir qualquer usuário (exceto a si mesmo e outros admin_master).
+- `suporte_ti`: pode excluir usuários **que compartilham CNPJ** com ele. Não pode excluir `admin_master`, `suporte_ti`, nem a si mesmo.
+- **Demais perfis**: bloqueado (403).
+
+Criar uma função helper `getCallerCnpjSet(req)` que retorna o set normalizado de CNPJs do usuário solicitante, e `getTargetCnpjSet(targetUserId)` para o alvo, permitindo verificação de interseção.
+
+---
+
+### Backend — Middleware de Auth
+
+#### [MODIFY] [auth.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/middleware/auth.ts)
+
+- Sem mudanças estruturais. O `requirePerfil` já dá bypass para `admin_master`. As novas rotas aceitarão `requirePerfil('admin_master', 'suporte_ti')`.
+
+---
+
+### Frontend — Tipos
+
+#### [MODIFY] [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+
+- Adicionar `'suporte_ti'` ao tipo `PerfilUsuario`.
+
+---
+
+### Frontend — Modal de Gestão de Acessos
+
+#### [MODIFY] [AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx)
+
+1. **Aba "Painel Admin: Usuários & CNPJs Liberados"**: visível apenas para `admin_master` e `suporte_ti`. Para os demais perfis, a aba é ocultada ou mostra apenas o perfil do próprio usuário em modo somente-leitura.
+2. **Botão "Incluir Usuários por Empresa"**: visível apenas para `admin_master` e `suporte_ti`.
+3. **Select de perfil no formulário de criação**:
+   - `admin_master` vê todos os perfis.
+   - `suporte_ti` vê apenas: `contador_gestor`, `analista_fiscal`, `auditor_externo`, `operador_leitura`.
+4. **Coluna Ações na tabela**:
+   - `admin_master`: editar e excluir todos (exceto auto-exclusão).
+   - `suporte_ti`: editar e excluir apenas dentro do escopo CNPJ.
+   - Demais: "Somente Leitura".
+5. **Atualizar Matriz de Permissões (Tab 3)**: incluir coluna `Suporte TI`.
+6. **Select de perfil no modal de edição**: restringir da mesma forma que criação.
+
+---
+
+## Verificação
+
+### Testes Automatizados
+```bash
+npx tsc --noEmit
+npm run build
+```
+
+### Verificação Manual (cenários críticos)
+1. Logar como **Artur Silveira (Analista Fiscal / Supergasbras)** → **não deve ver** a aba de gestão de usuários, nem o Sérgio Araujo, nem o Admin.
+2. Logar como **Admin Master** → deve ver todos os usuários de todas as empresas.
+3. Criar um **Suporte TI para Supergasbras** → deve ver apenas usuários vinculados à Supergasbras e nunca o Admin Master.
+4. Suporte TI **não pode** se auto-promover a Admin Master.
+5. Suporte TI **não pode** criar outro Suporte TI.
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Perfil `contador_gestor` e gestão de usuários**: Na versão atual, `contador_gestor` podia criar e editar usuários. No novo modelo, proponho que ele **perca** essa capacidade, ficando como perfil operacional multi-CNPJ (emissão, relatórios, consultas) sem CRUD de usuários. O novo `suporte_ti` assume essa responsabilidade. Concorda com essa separação?
+
+> [!IMPORTANT]
+> **Visibilidade da aba para Analista Fiscal**: Proponho que perfis que não gerenciam usuários (`analista_fiscal`, `auditor_externo`, `operador_leitura`) **não vejam** a aba "Painel Admin: Usuários & CNPJs Liberados" de forma alguma (a aba ficará oculta). Eles ainda verão a aba de MFA (para gerenciar seu próprio 2FA) e a de Permissões (somente leitura). Aprova?

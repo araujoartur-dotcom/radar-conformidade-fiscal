@@ -1,0 +1,117 @@
+# Segregação Multi-Tenant: APIs, Webhooks & Credenciais na Ficha Cadastral da Empresa
+
+## 1. Visão Geral e Diagnóstico
+
+### Diagnóstico Técnico das Falhas Existentes
+1. **Central de Eventos DF-e (`EventosDfePanel.tsx`)**:
+   - A aba "Central de APIs & Webhooks (CGIBS / RFB)" é atualmente um componente estático com chaves e URLs em memória (`useState`), compartilhado de forma idêntica para qualquer usuário ou empresa que acesse o painel.
+   - Qualquer usuário (inclusive analistas e operadores) pode visualizar a aba e chaves sensíveis.
+   - Os dados não são persistidos nem associados ao CNPJ ativo.
+
+2. **Apuração Assistida (`ApuracaoAssistidaPanel.tsx` e `server/routes/apuracao.ts`)**:
+   - Há regras condicionais e textos fixos (*hardcoded*) vinculados à **Supergasbras**:
+     - `CNPJ_RAIZ_SUPERGASBRAS = '19791896'`, `CLIENT_ID_PILOTO_SUPERGASBRAS = '5c37...'`.
+     - Mensagens explícitas na interface para outros CNPJs dizendo: *"As credenciais do piloto oficial pertencem exclusivamente à Supergasbras"*, causando vazamento de dados de clientes e quebra de sigilo.
+   - Rotas de credenciais (`GET /api/apuracao/credenciais`, `POST /api/apuracao/credenciais`) não possuem verificação de autenticação/RBAC (`requireAuth` e `requirePerfil`).
+
+3. **Arquitetura Desejada (Enterprise Multi-Tenant)**:
+   - Configurações de infraestrutura, endpoints e credenciais secretas (CGIBS, RFB, SEFAZ, ERP Webhook) devem pertencer **estritamente à Ficha Cadastral de cada Empresa (CNPJ)**.
+   - Apenas perfis autorizados (`admin_master` e `suporte_ti` daquele CNPJ) podem visualizar e gerenciar essas configurações na Carteira de CNPJs.
+   - A aba solta de APIs da Central de Eventos DF-e é removida.
+   - O módulo de Apuração Assistida torna-se 100% agnóstico e dinâmico para qualquer empresa.
+
+---
+
+## 2. User Review Required
+
+> [!IMPORTANT]
+> **Nenhum deploy será executado**. Todas as alterações serão desenvolvidas, testadas e validadas localmente. O deploy só ocorrerá quando você solicitar explicitamente.
+
+> [!IMPORTANT]
+> **Aba 5 na Ficha Cadastral da Empresa**:
+> No modal "Ficha Cadastral & Configuração SPED Bloco 0" (na tela de Carteira de Empresas / CNPJs), adicionaremos a nova aba:
+> **`5. APIs, Webhooks & Integrações (CGIBS / RFB / ERP)`**
+> Essa aba concentrará:
+> - **CGIBS (Apuração Assistida)**: Client ID, Client Secret, URL da API e Flag Webhook Push;
+> - **Receita Federal (RFB)**: Token / API Key e URL da API da RFB (CBS / Imposto Seletivo);
+> - **SEFAZ / WebServices**: Endpoint SVRS e Endpoint NFS-e Nacional;
+> - **ERP Webhook**: URL de webhook para notificação automática de eventos fiscais no ERP da empresa.
+> - **Controle de Acesso**: Apenas `admin_master` e `suporte_ti` do CNPJ podem editar.
+
+---
+
+## 3. Proposed Changes
+
+### Banco de Dados & Backend
+
+#### [MODIFY] [schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+- Adicionar colunas complementares de integração na tabela `apuracao_credenciais_cgibs` (ou tabela de integrações por empresa):
+  - `cgibs_url TEXT DEFAULT 'https://api.cgibs.gov.br/v1/eventos/sync'`
+  - `rfb_url TEXT DEFAULT 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida'`
+  - `svrs_url TEXT DEFAULT 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx'`
+  - `nfse_nacional_url TEXT DEFAULT 'https://www.nfse.gov.br/dnfse/api/v1/eventos'`
+  - `rfb_token TEXT DEFAULT ''`
+  - `api_key_cgibs TEXT DEFAULT ''`
+- Garantir migração com `addColumnIfNotExists` tanto no SQLite quanto compatibilidade no Supabase.
+
+#### [MODIFY] [apuracao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts)
+- Proteger as rotas de credenciais com `requireAuth` e `requirePerfil('admin_master', 'suporte_ti')`.
+- Adicionar validação de escopo de tenant (`hasUserScopeAccess` ou verificação de CNPJs autorizados).
+- **Remover constantes hardcoded** `CNPJ_RAIZ_SUPERGASBRAS`, `CLIENT_ID_PILOTO_SUPERGASBRAS` e `CLIENT_SECRET_PILOTO_SUPERGASBRAS`.
+- Tornar a consulta e gravação 100% genéricas: cada empresa possui e consome suas próprias credenciais registradas na tabela.
+- Se a empresa não tiver credenciais cadastradas, retornar resposta limpa com `configurado: false` e aviso neutro, sem citar nenhuma outra empresa.
+
+#### [MODIFY] [tenants.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts)
+- Incluir `suporte_ti` nos perfis autorizados de `PUT /api/tenants/:id` (com validação estrita de escopo para permitir apenas editar seu próprio CNPJ vinculado).
+- Expor endpoint específico ou integrar no fluxo de tenant a leitura e atualização dos parâmetros de integração/APIs do CNPJ.
+
+---
+
+### Frontend
+
+#### [MODIFY] [CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- Adicionar a **Aba 5: "5. APIs, Webhooks & Integrações (CGIBS / RFB / ERP)"** no modal da Ficha Cadastral.
+- Campos organizados em cards elegantes:
+  - **Comitê Gestor do IBS (CGIBS)**: Client ID, Client Secret (com toggle para ocultar/exibir caracteres), URL de sincronização e switches de canais (Push Webhook / Consulta por Demanda).
+  - **Receita Federal (RFB - CBS & Imposto Seletivo)**: API Key / Bearer Token e URL do Endpoint.
+  - **WebServices SEFAZ & NFS-e**: SVRS e Portal Nacional NFS-e.
+  - **Integração ERP**: URL de Webhook de retorno.
+- Integração com a API para carregar e salvar as credenciais atreladas ao `editingTenant.id`.
+
+#### [MODIFY] [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx)
+- **Remover a aba "Central de APIs & Webhooks (CGIBS / RFB)"** do cabeçalho da Central de Eventos DF-e.
+- O componente agora é 100% operacional (emissão, cancelamento, manifestação de eventos e visualização de notas técnicas).
+- A transmissão de eventos consome diretamente os dados cadastrados no CNPJ ativo.
+
+#### [MODIFY] [ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)
+- Remover **todas as ocorrências e condicionais hardcoded de `isSupergasbras`**.
+- Substituir o badge estático por:
+  - `Multi-Tenant: {razaoSocial} — [Credenciais Ativas | Pendente de Configuração]`
+- No modal / aviso de credenciais:
+  - Remover qualquer menção textual à "Supergasbras".
+  - Apresentar interface limpa e profissional com orientações neutras sobre credenciais oficiais emitidas pela SEFIN Nacional/CGIBS.
+  - Para usuários gestores (`admin_master` e `suporte_ti`), permitir cadastro/atualização direta ou redirecionamento para a Ficha Cadastral.
+
+---
+
+## 4. Verification Plan
+
+### Testes Automatizados
+- Validação estática de tipos TypeScript:
+  ```bash
+  npx tsc --noEmit
+  ```
+- Build local do bundle de produção do Vite:
+  ```bash
+  npm run build
+  ```
+
+### Verificação Manual & Segurança
+1. **Verificação de Textos Fixos (Hardcoded)**:
+   - Executar busca global (grep) por `Supergasbras` no código-fonte para confirmar que nenhuma regra de negócio ou mensagem pública contém o nome fixado.
+2. **Isolamento de Credenciais**:
+   - Abrir Ficha Cadastral da Empresa A → Configurar webhook e credencial do CGIBS.
+   - Abrir Ficha Cadastral da Empresa B → Confirmar que os campos estão vazios ou com as credenciais exclusivas da Empresa B.
+3. **Restrição de Acesso**:
+   - Logar com perfil Analista ou Auditor → Confirmar que não há visualização de chaves de API nem na Central de Eventos nem em telas operacionais.
+   - Logar com Suporte TI → Confirmar acesso para configurar APIs apenas das suas empresas vinculadas.

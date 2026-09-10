@@ -451,20 +451,32 @@ export default function App() {
             
             {/* Mode 1: Lote Excel */}
             {activeMode === 'lote' && (
-              <ConsultaLotePanel
-                onFileUpload={handleFileUpload}
-                fileName={selectedFileName}
-                stats={stats}
-                rateLimit={rateLimit}
-                setRateLimit={setRateLimit}
-                isProcessing={isProcessing}
-                isPaused={isPaused}
-                onStart={startBatchProcessing}
-                onPause={handlePause}
-                onCancel={handleCancel}
-                onClear={handleClear}
-                onExport={() => exportToExcel(items)}
-              />
+              <div className="flex flex-col gap-4">
+                <ConsultaLotePanel
+                  onFileUpload={handleFileUpload}
+                  fileName={selectedFileName}
+                  stats={stats}
+                  rateLimit={rateLimit}
+                  setRateLimit={setRateLimit}
+                  isProcessing={isProcessing}
+                  isPaused={isPaused}
+                  onStart={startBatchProcessing}
+                  onPause={handlePause}
+                  onCancel={handleCancel}
+                  onClear={handleClear}
+                  onExport={() => exportToExcel(items)}
+                />
+
+                {/* Barra de Progresso, Tempo e ETA exclusiva de Consulta em Lote */}
+                <StatusBar
+                  isProcessing={isProcessing}
+                  isPaused={isPaused}
+                  stats={stats}
+                  currentProcessingCnpj={currentProcessingCnpj}
+                  elapsedSeconds={elapsedSeconds}
+                  rateLimit={rateLimit}
+                />
+              </div>
             )}
 
             {/* Mode 4: XML DF-e Captura & Reforma Tributária */}
@@ -625,17 +637,7 @@ export default function App() {
           </main>
         </div>
 
-        {/* Footer Status Engine Bar */}
-        <div className="shrink-0 pt-2">
-          <StatusBar
-            isProcessing={isProcessing}
-            isPaused={isPaused}
-            stats={stats}
-            currentProcessingCnpj={currentProcessingCnpj}
-            elapsedSeconds={elapsedSeconds}
-            rateLimit={rateLimit}
-          />
-        </div>
+
 
       </div>
 

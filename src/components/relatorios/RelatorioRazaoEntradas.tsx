@@ -25,21 +25,21 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1700px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Chave / Data</th>
-              <th className="p-3">Fornecedor (CNPJ / Razão / UF)</th>
-              <th className="p-3">Item # / Descrição / NCM</th>
-              <th className="p-3">CFOP / cClassTrib / CST</th>
-              <th className="p-3 text-right">Qtd / Val. Líquido</th>
-              <th className="p-3 text-right">IBS / CBS Doc</th>
-              <th className="p-3 text-right">Crédito IBS / CBS Esperado</th>
-              <th className="p-3 text-right">Crédito Apropriado ERP</th>
-              <th className="p-3 text-center">Onerosidade</th>
-              <th className="p-3 text-center">Status / Regra</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-2.5">Doc / Chave / Data</th>
+              <th className="py-2.5 px-2.5">Fornecedor (CNPJ / Razão / UF)</th>
+              <th className="py-2.5 px-2.5">Item # / Descrição / NCM</th>
+              <th className="py-2.5 px-2.5">CFOP / cClassTrib / CST</th>
+              <th className="py-2.5 px-2.5 text-right">Qtd / Val. Líquido</th>
+              <th className="py-2.5 px-2.5 text-right">IBS / CBS Doc</th>
+              <th className="py-2.5 px-2.5 text-right">Crédito IBS / CBS Esperado</th>
+              <th className="py-2.5 px-2.5 text-right">Crédito Apropriado ERP</th>
+              <th className="py-2.5 px-2.5 text-center">Onerosidade</th>
+              <th className="py-2.5 px-2.5 text-center">Status / Regra</th>
+              <th className="py-2.5 px-2.5 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -59,7 +59,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                   <tr key={it.id} className="hover:bg-slate-900/50 transition-colors">
                     
                     {/* Doc / Chave */}
-                    <td className="p-3">
+                    <td className="py-2 px-2.5">
                       <div className="flex items-center gap-1.5 font-bold text-white">
                         <span className="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px]">
                           {it.tipoDoc}
@@ -75,7 +75,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Fornecedor */}
-                    <td className="p-3">
+                    <td className="py-2 px-2.5">
                       <div className="font-bold text-slate-200 truncate max-w-[200px]" title={it.fornecedorRazao}>
                         {it.fornecedorRazao}
                       </div>
@@ -88,7 +88,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Item */}
-                    <td className="p-3">
+                    <td className="py-2 px-2.5">
                       <div className="font-bold text-cyan-300 text-xs">
                         Item {it.itemNro}: <span className="font-sans font-semibold text-slate-100">{it.descricaoItem}</span>
                       </div>
@@ -98,7 +98,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* CFOP & cClassTrib */}
-                    <td className="p-3">
+                    <td className="py-2 px-2.5">
                       <div className="flex items-center gap-1 text-[11px]">
                         <span className="px-1.5 py-0.5 bg-slate-900 text-cyan-300 rounded font-bold border border-slate-700">
                           CFOP {it.cfop}
@@ -113,7 +113,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Qtd & Val Liquido */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className="text-xs font-bold text-slate-100">
                         {it.valorLiquidoItem.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </div>
@@ -123,7 +123,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* IBS / CBS Doc */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className="text-xs font-semibold text-cyan-300">
                         IBS ({it.aliquotaIbs}%): R$ {it.valorIbs.toFixed(2)}
                       </div>
@@ -133,7 +133,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Crédito Esperado */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className="text-xs font-bold text-emerald-400">
                         R$ {totalCreditoEsperado.toFixed(2)}
                       </div>
@@ -143,7 +143,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Crédito Apropriado ERP */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className={`text-xs font-bold ${Math.abs(dif) > 0.01 ? 'text-amber-400' : 'text-slate-200'}`}>
                         R$ {totalCreditoApropriado.toFixed(2)}
                       </div>
@@ -155,7 +155,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Onerosidade */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2 px-2.5 text-center font-sans">
                       <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
                         it.indicadorOnerosidade === 'Oneroso'
                           ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
@@ -168,7 +168,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Status Regra & Conciliação Conta Corrente CGIBS */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2 px-2.5 text-center font-sans">
                       {it.statusCreditoCgibs === 'CONFIRMADO' ? (
                         <div className="flex flex-col items-center">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold" title={it.motivoCreditoCgibs}>
@@ -207,7 +207,7 @@ export const RelatorioRazaoEntradas: React.FC<RelatorioRazaoEntradasProps> = ({ 
                     </td>
 
                     {/* Ações */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2 px-2.5 text-center font-sans">
                       {onOpenDetail && (
                         <button
                           onClick={() => onOpenDetail(it)}

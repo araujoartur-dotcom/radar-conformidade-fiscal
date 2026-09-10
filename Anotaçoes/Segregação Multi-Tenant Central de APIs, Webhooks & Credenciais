@@ -1,0 +1,89 @@
+# Segregação Multi-Tenant: Central de APIs, Webhooks & Credenciais
+
+Implementação completa do isolamento e blindagem de segurança para configurações de integração, endpoints, chaves e webhooks por CNPJ de empresa.
+
+> [!IMPORTANT]
+> **Status de Deploy**: **NENHUM DEPLOY FOI REALIZADO**, atendendo rigorosamente à instrução do usuário (*"só nao faça o deploy ainda"*). Todas as modificações estão salvas localmente no workspace prontas para sua conferência.
+
+---
+
+## 1. O Que Foi Realizado
+
+### A. Ficha Cadastral do CNPJ (`CarteiraCnpjsPanel.tsx`)
+- **Nova Aba 5: "5. APIs, Webhooks & Integrações (CGIBS / RFB / ERP)"**:
+  - Centraliza a governança técnica da empresa em sua respectiva ficha cadastral.
+  - Endpoints configuráveis por inquilino:
+    - URL CGIBS (Apuração Assistida MOC)
+    - URL RFB (CBS & Imposto Seletivo)
+    - WebService SVRS (SEFAZ Virtual)
+    - Endpoint NFS-e Padrão Nacional
+    - URL de Webhook para recepção de eventos no ERP do cliente
+  - Credenciais com mascaramento de segurança:
+    - Client ID & Client Secret (CGIBS/SEFIN)
+    - API Key CGIBS
+    - Bearer Token RFB
+  - Controle de visibilidade RBAC: Apenas administradores do sistema (`admin`) e suporte técnico da própria empresa (`suporte_ti`) têm privilégios para visualizar e editar esses dados.
+  - Botão interativo para teste de ping e conectividade em tempo real dos motores de cálculo.
+
+### B. Remoção da Central de APIs de Telas Operacionais (`EventosDfePanel.tsx`)
+- A aba `apis_config` ("Central de APIs & Webhooks"), que anteriormente ficava visível indiscriminadamente para operadores e analistas na tela de eventos fiscais, foi **completamente removida**.
+- Os analistas e operadores emissores agora interagem apenas com as abas de emissão de eventos, visualização de notas técnicas e gerador de schemas XML/JSON.
+
+### C. Generalização e Isolamento na Apuração Assistida (`ApuracaoAssistidaPanel.tsx` & Backend)
+- **Eliminação de Regras Hardcoded**: Removidas todas as variáveis e lógicas associadas a uma única empresa específica (`isSupergasbras`, `19791896`, credenciais fixas de piloto).
+- O badge superior e os avisos agora exibem o status dinâmico do CNPJ ativo selecionado:
+  - `{Razão Social} (CNPJ8: {CNPJ_RAIZ}) — Conectado CGIBS/RFB` ou `Credenciais Pendentes`.
+- O modal de credenciais foi unificado e generalizado para qualquer empresa cadastrada no sistema.
+
+### D. Segurança e RBAC no Backend (`server/routes/apuracao.ts` & `server/routes/tenants.ts`)
+- Rotas `GET /credenciais`, `POST /credenciais`, `POST /credenciais/flags` e `POST /consultar-demanda`:
+  - Protegidas com middleware de autenticação `requireAuth`.
+  - Validação estrita de inquilino via `canUserAccessEmpresa(req.user, empresaId)`.
+  - O `clientSecret` é persistido no banco e retornado mascarado (`****...`) para prevenir vazamentos.
+- `PUT /api/tenants/:id`:
+  - Usuários com perfil `suporte_ti` podem agora atualizar os parâmetros técnicos e de integração da sua respectiva empresa, com validação de escopo.
+
+### F. Otimização de Layout: Consulta em Lote e StatusBar ([ConsultaLotePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ConsultaLotePanel.tsx) & [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx))
+- **Remoção da StatusBar do Rodapé Global**:
+  - A barra que exibia cronômetro, progresso e ETA estava fixada no rodapé de toda a aplicação (`App.tsx`), consumindo espaço vertical mesmo em telas não relacionadas (como KPIs e Gestão de Acessos).
+  - Foi realocada para aparecer **exclusivamente dentro do módulo de Consulta em Lote**, logo abaixo dos controles de execução e contadores.
+### G. Filtros Dinâmicos de Ano e Mês/Período na Central de KPIs & Dashboards ([CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx) & [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts))
+- **Novo Endpoint `GET /api/upload/periodos-disponiveis`**:
+  - Consulta a data da primeira nota fiscal registrada (`min(data_emissao)`) e da mais recente (`max(data_emissao)`) da empresa ativa.
+  - Gera a listagem real de anos disponíveis (`[2026, 2025, 2024, 2023, 2022]`).
+- **Seletor de Ano Dinâmico**:
+  - Exibe os anos desde a primeira nota da empresa até o presente.
+  - Altera dinamicamente o período de cálculo e a régua do simulador de transição.
+- **Seletor de Mês e Trimestre**:
+  - Opções: `Todos os Meses (Ano Completo)`, trimestres (`1º ao 4º Trimestre`) e meses individuais (`01 - Janeiro` a `12 - Dezembro`, com destaque `06 - Junho ★`).
+- **Integração Ponta a Ponta com o Backend**:
+  - Calcula com precisão `dataInicio` e `dataFim` (incluindo último dia de cada mês).
+  - Envia os parâmetros para a rota `/api/upload/kpis`.
+  - Recalcula instantaneamente os totalizadores (R$ 764M), bases de cálculo, tributos RTC e o simulador comparativo de custo tributário.
+
+---
+
+## 2. Verificação e Validação
+
+1. **TypeScript (`npx tsc --noEmit`)**:
+   - Status: **0 erros**, tipagem estrita validada.
+2. **Bundle Vite (`npm run build`)**:
+   - Status: **Build com sucesso em 24s** (`dist/` gerado perfeitamente).
+3. **Auditoria de Termos Hardcoded**:
+   - Nenhuma lógica de negócio vinculada à razão social ou CNPJ fixo permanece ativa no código-fonte.
+4. **Git Status**:
+   - Nenhum commit realizado, nenhum `git push` executado.
+
+---
+
+## 3. Arquivos Modificados
+
+- [server/db/schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+- [server/routes/apuracao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/apuracao.ts)
+- [server/routes/tenants.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tenants.ts)
+- [server/services/apuracaoAssistidaService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/apuracaoAssistidaService.ts)
+- [src/components/CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- [src/components/EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx)
+- [src/components/ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)
+- [src/components/RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+- [src/utils/xmlParser.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/xmlParser.ts)

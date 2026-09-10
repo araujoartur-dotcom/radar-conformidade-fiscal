@@ -29,11 +29,61 @@ interface DfeTypeStat {
 
 export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = [], selectedTenantCnpj, empresaAtiva }) => {
   const { get } = useApi();
-  const [periodoFilter, setPeriodoFilter] = useState<'mes' | 'trimestre' | 'ano'>('ano');
+  const [anoSelecionado, setAnoSelecionado] = useState<number>(2026);
+  const [mesSelecionado, setMesSelecionado] = useState<string>('todos');
+  const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([2026, 2025, 2024, 2023, 2022]);
   const [operacaoFilter, setOperacaoFilter] = useState<'todas' | 'entradas' | 'saidas'>('todas');
   const [anoSimulado, setAnoSimulado] = useState<number>(2026);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [tabelasAliquotas, setTabelasAliquotas] = useState<AliquotaTabelaItem[]>([]);
+
+  // Carregar anos disponíveis conforme a data da primeira nota registrada pela empresa
+  useEffect(() => {
+    const empId = empresaAtiva?.id || '';
+    get<{ success: boolean; anos: number[]; anoInicial: number; anoFinal: number }>(
+      `/upload/periodos-disponiveis?empresaId=${empId}`
+    ).then(res => {
+      if (res?.success && Array.isArray(res.anos) && res.anos.length > 0) {
+        setAnosDisponiveis(res.anos);
+        if (!res.anos.includes(anoSelecionado)) {
+          setAnoSelecionado(res.anos[0]);
+          setAnoSimulado(res.anos[0]);
+        }
+      }
+    }).catch(err => {
+      console.warn('⚠️ Falha ao carregar períodos disponíveis:', err);
+    });
+  }, [empresaAtiva?.id]);
+
+  // Cálculo de intervalo de datas (dataInicio e dataFim) baseado no Ano e Mês selecionados
+  const { dataInicio, dataFim } = useMemo(() => {
+    const ano = anoSelecionado || 2026;
+    if (mesSelecionado === 'todos') {
+      return { dataInicio: `${ano}-01-01`, dataFim: `${ano}-12-31` };
+    }
+    if (mesSelecionado === 'Q1') {
+      return { dataInicio: `${ano}-01-01`, dataFim: `${ano}-03-31` };
+    }
+    if (mesSelecionado === 'Q2') {
+      return { dataInicio: `${ano}-04-01`, dataFim: `${ano}-06-30` };
+    }
+    if (mesSelecionado === 'Q3') {
+      return { dataInicio: `${ano}-07-01`, dataFim: `${ano}-09-30` };
+    }
+    if (mesSelecionado === 'Q4') {
+      return { dataInicio: `${ano}-10-01`, dataFim: `${ano}-12-31` };
+    }
+    const mesNum = parseInt(mesSelecionado, 10);
+    if (!isNaN(mesNum) && mesNum >= 1 && mesNum <= 12) {
+      const ultimoDia = new Date(ano, mesNum, 0).getDate();
+      const mesStr = mesSelecionado.padStart(2, '0');
+      return {
+        dataInicio: `${ano}-${mesStr}-01`,
+        dataFim: `${ano}-${mesStr}-${ultimoDia.toString().padStart(2, '0')}`
+      };
+    }
+    return { dataInicio: `${ano}-01-01`, dataFim: `${ano}-12-31` };
+  }, [anoSelecionado, mesSelecionado]);
 
   // Estado de KPIs Agregados Reais Direto do Banco de Dados (sem LIMIT de 1000)
   const [dbKpis, setDbKpis] = useState<{
@@ -47,7 +97,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     try {
       setLoadingKpis(true);
       const res = await get<{ success: boolean; totalGeral: any; totalFiltrado: any; source: string }>(
-        `/upload/kpis?empresaId=${empresaAtiva?.id || ''}&tipoOperacao=${operacaoFilter}`
+        `/upload/kpis?empresaId=${empresaAtiva?.id || ''}&tipoOperacao=${operacaoFilter}&dataInicio=${dataInicio}&dataFim=${dataFim}`
       );
       const payload = (res as any)?.data || res;
       if (payload?.success && payload.totalGeral) {
@@ -66,7 +116,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
 
   useEffect(() => {
     loadKpis();
-  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, operacaoFilter, periodoFilter]);
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, operacaoFilter, dataInicio, dataFim]);
 
   // Buscar alíquotas cadastradas no banco para cálculo 100% dinâmico
   useEffect(() => {
@@ -92,20 +142,25 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     return dfeList || [];
   }, [dfeList]);
 
-  // Filtragem por Operação
+  // Filtragem por Operação e Período (fallback de memória)
   const filteredItems = useMemo(() => {
     return baseItems.filter(item => {
       if (operacaoFilter === 'entradas') {
         const isEntrada = item.destinatarioCnpj?.replace(/\D/g, '') === empresaAtiva?.cnpjCompleto?.replace(/\D/g, '');
-        return isEntrada;
+        if (!isEntrada) return false;
       }
       if (operacaoFilter === 'saidas') {
         const isSaida = item.emitenteCnpj?.replace(/\D/g, '') === empresaAtiva?.cnpjCompleto?.replace(/\D/g, '');
-        return isSaida;
+        if (!isSaida) return false;
+      }
+      if (item.dataEmissao) {
+        const docDate = item.dataEmissao.substring(0, 10);
+        if (dataInicio && docDate < dataInicio) return false;
+        if (dataFim && docDate > dataFim) return false;
       }
       return true;
     });
-  }, [baseItems, operacaoFilter, empresaAtiva]);
+  }, [baseItems, operacaoFilter, empresaAtiva, dataInicio, dataFim]);
 
   const { kpis: globalKpis, totalGeral: globalTotalGeral, totalFiltrado: globalTotalFiltrado } = useKpis();
   const activeKpis = dbKpis?.totalFiltrado || (operacaoFilter === 'todas' ? globalTotalGeral : globalTotalFiltrado) || globalTotalGeral || globalKpis;
@@ -244,34 +299,35 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    loadKpis();
     setTimeout(() => {
       setIsRefreshing(false);
     }, 600);
   };
 
-  // Renderizador elegante de valor monetário sem cortes, preparado para dezenas de bilhões
+  // Renderizador elegante de valor monetário compacto e proporcional
   const renderKpiValor = (valor: number, colorClass: string) => {
     const v = Number(valor) || 0;
     const formatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
     const [inteiro, centavos] = formatted.split(',');
     
-    // Escala dinâmica de tipografia para garantir visualização perfeita de dezenas de bilhões sem reticências
-    const sizeClass = inteiro.length >= 14 // >= 10 bilhões (ex: 12.345.678.901)
-      ? 'text-base sm:text-lg xl:text-[19px]'
-      : inteiro.length >= 11 // >= 100 milhões (ex: 788.694.097)
-        ? 'text-lg sm:text-xl xl:text-[22px]'
-        : 'text-xl sm:text-2xl xl:text-[25px]';
+    // Escala dinâmica compacta reduzida pela metade para nunca ultrapassar a borda do card
+    const sizeClass = inteiro.length >= 14 // >= 10 bilhões
+      ? 'text-[11px] sm:text-xs'
+      : inteiro.length >= 10 // >= 100 milhões
+        ? 'text-xs sm:text-[13px] xl:text-[14px]'
+        : 'text-xs sm:text-sm xl:text-[15px]';
 
     return (
       <div 
-        className="flex items-baseline gap-1 mt-3 min-w-0" 
+        className="flex items-baseline gap-0.5 mt-2 min-w-0 overflow-hidden" 
         title={`R$ ${formatted}`}
       >
-        <span className="text-xs font-bold text-slate-400 shrink-0 select-none">R$</span>
-        <span className={`font-black tracking-tight tabular-nums whitespace-nowrap ${sizeClass} ${colorClass}`}>
+        <span className="text-[10px] font-bold text-slate-400 shrink-0 select-none">R$</span>
+        <span className={`font-bold tracking-tight tabular-nums truncate ${sizeClass} ${colorClass}`}>
           {inteiro}
         </span>
-        <span className="text-xs font-bold text-slate-400 tabular-nums shrink-0">
+        <span className="text-[10px] font-semibold text-slate-400 tabular-nums shrink-0">
           ,{centavos}
         </span>
       </div>
@@ -331,16 +387,59 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             </button>
           </div>
 
-          {/* Período */}
-          <select
-            value={periodoFilter}
-            onChange={(e) => setPeriodoFilter(e.target.value as any)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 font-semibold focus:outline-none cursor-pointer"
-          >
-            <option value="mes">Mês Atual</option>
-            <option value="trimestre">Último Trimestre</option>
-            <option value="ano">Ano Fiscal Completo</option>
-          </select>
+          {/* Filtro de Ano (inicia no ano da primeira nota registrada) */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs shadow-inner">
+            <span className="text-slate-400 font-bold text-[11px] uppercase tracking-wider">Ano:</span>
+            <select
+              value={anoSelecionado}
+              onChange={(e) => {
+                const novoAno = Number(e.target.value);
+                setAnoSelecionado(novoAno);
+                setAnoSimulado(novoAno);
+              }}
+              className="bg-transparent text-cyan-400 font-bold font-mono focus:outline-none cursor-pointer"
+              title="Filtrar ano de emissão dos documentos fiscais"
+            >
+              {anosDisponiveis.map(ano => (
+                <option key={ano} value={ano} className="bg-slate-900 text-white font-mono">
+                  {ano}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filtro de Mês / Período */}
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs shadow-inner">
+            <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <select
+              value={mesSelecionado}
+              onChange={(e) => setMesSelecionado(e.target.value)}
+              className="bg-transparent text-slate-200 font-semibold focus:outline-none cursor-pointer"
+              title="Filtrar mês ou período da competência"
+            >
+              <option value="todos" className="bg-slate-900 text-white font-bold">Todos os Meses ({anoSelecionado})</option>
+              <optgroup label="Trimestres" className="bg-slate-950 text-slate-400 font-bold">
+                <option value="Q1" className="bg-slate-900 text-white">1º Trimestre (Jan - Mar)</option>
+                <option value="Q2" className="bg-slate-900 text-white">2º Trimestre (Abr - Jun)</option>
+                <option value="Q3" className="bg-slate-900 text-white">3º Trimestre (Jul - Set)</option>
+                <option value="Q4" className="bg-slate-900 text-white">4º Trimestre (Out - Dez)</option>
+              </optgroup>
+              <optgroup label="Meses do Ano" className="bg-slate-950 text-slate-400 font-bold">
+                <option value="01" className="bg-slate-900 text-white">01 - Janeiro</option>
+                <option value="02" className="bg-slate-900 text-white">02 - Fevereiro</option>
+                <option value="03" className="bg-slate-900 text-white">03 - Março</option>
+                <option value="04" className="bg-slate-900 text-white">04 - Abril</option>
+                <option value="05" className="bg-slate-900 text-white">05 - Maio</option>
+                <option value="06" className="bg-slate-900 text-cyan-300 font-bold">06 - Junho ★</option>
+                <option value="07" className="bg-slate-900 text-white">07 - Julho</option>
+                <option value="08" className="bg-slate-900 text-white">08 - Agosto</option>
+                <option value="09" className="bg-slate-900 text-white">09 - Setembro</option>
+                <option value="10" className="bg-slate-900 text-white">10 - Outubro</option>
+                <option value="11" className="bg-slate-900 text-white">11 - Novembro</option>
+                <option value="12" className="bg-slate-900 text-white">12 - Dezembro</option>
+              </optgroup>
+            </select>
+          </div>
 
           {/* Action Buttons */}
           <button
@@ -453,7 +552,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
           </div>
           <div className="text-right">
             <span className="text-[10px] uppercase font-bold text-slate-400 block">Base Líquida Tributável</span>
-            <strong className="text-lg font-black text-teal-300 font-mono">
+            <strong className="text-sm sm:text-base font-bold text-teal-300 font-mono">
               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(baseLiquidaSimulada)}
             </strong>
           </div>
@@ -505,8 +604,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             </div>
 
             <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-              <span className="text-xs font-extrabold text-slate-300">Custo Atual Consolidado:</span>
-              <strong className="text-base font-black text-amber-300 font-mono">
+              <span className="text-xs font-bold text-slate-300">Custo Atual Consolidado:</span>
+              <strong className="text-sm font-bold text-amber-300 font-mono">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalRegimeAtualSimulado)}
               </strong>
             </div>
@@ -556,8 +655,8 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             </div>
 
             <div className="pt-2 border-t border-slate-800 flex justify-between items-baseline">
-              <span className="text-xs font-extrabold text-cyan-200">Custo Reforma Simulado:</span>
-              <strong className="text-base font-black text-cyan-300 font-mono">
+              <span className="text-xs font-bold text-cyan-200">Custo Reforma Simulado:</span>
+              <strong className="text-sm font-bold text-cyan-300 font-mono">
                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReformaSimulada)}
               </strong>
             </div>
@@ -585,12 +684,12 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
           </div>
 
           <div className="text-right shrink-0">
-            <strong className={`text-xl sm:text-2xl font-black font-mono block ${
+            <strong className={`text-base sm:text-lg font-bold font-mono block ${
               deltaTransicao <= 0 ? 'text-emerald-400' : 'text-rose-400'
             }`}>
               {deltaTransicao <= 0 ? '-' : '+'}{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(deltaTransicao))}
             </strong>
-            <span className={`text-xs font-mono font-bold ${
+            <span className={`text-[11px] font-mono font-semibold ${
               deltaTransicao <= 0 ? 'text-emerald-300' : 'text-rose-300'
             }`}>
               ({percentualDelta.toFixed(1)}% vs regime atual)

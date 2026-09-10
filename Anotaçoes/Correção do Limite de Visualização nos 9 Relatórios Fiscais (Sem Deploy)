@@ -1,0 +1,54 @@
+# Correção do Limite de Visualização nos 9 Relatórios Fiscais (Sem Deploy)
+
+## Problema Identificado na Captura
+Na imagem compartilhada, observou-se dois cortes visuais no canto direito:
+1. **Barra de Abas dos Relatórios (topo)**:
+   - Apenas os relatórios 1 a 4 estavam visíveis (`Razão de Entradas`, `Matriz Elegibilidade`, `Crédito Esperado`, `Exceções & Pendências`).
+   - Os relatórios 5 (`Estornos / Ajustes`), 6 (`Mapa CFOP`), 7 (`Mapa cClassTrib`), 8 (`Onerosidade`) e 9 (`Retenções na Fonte`) ficavam empurrados além da borda direita da tela devido ao contêiner estar sem quebra de linha (`flex` sem `flex-wrap`).
+2. **Tabelas Analíticas dos Relatórios**:
+   - As colunas à direita (como *Status Saneamento*, *Ações de Saneamento*, *Diferença*, etc.) ficavam cortadas.
+   - O contêiner da tabela não possuía contenção de altura (`max-h`), fazendo com que o scrollbar horizontal nativo do navegador ficasse localizado no final da página (a milhares de pixels para baixo da rolagem vertical), tornando-o invisível na visualização comum e passando a sensação de um "muro/limite fixo" sem rolagem.
+   - As larguras mínimas estavam superdimensionadas artificialmente (de `min-w-[1500px]` a `min-w-[1750px]`).
+
+---
+
+## Soluções Implementadas (Estritamente Local — SEM DEPLOY)
+
+### 1. Barra de Abas dos 9 Relatórios ([`RelatoriosXmlPanel.tsx`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx))
+- Substituição do layout de linha única sem quebra por `flex flex-wrap items-center gap-1.5`.
+- Redução do padding interno dos botões (`px-3 py-2 text-xs`).
+- **Resultado**: Todas as 9 abas de relatórios agora quebram harmoniosamente em 1 ou 2 linhas conforme a largura do monitor do usuário, garantindo acesso imediato a 100% dos relatórios sem esconder nenhuma aba.
+
+### 2. Contêiner e Rolagem de Todas as 9 Tabelas de Relatórios
+Aplicado a todos os 9 componentes em `src/components/relatorios/`:
+- **Viewport com scrollbar sempre visível na tela**:
+  ```tsx
+  <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+  ```
+  Agora a barra de rolagem horizontal fica **fixada na base do próprio quadro da tabela**, sempre visível e operável na tela sem precisar descer até o fim da página.
+- **Cabeçalho Fixo (`sticky`)**:
+  ```tsx
+  <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+  ```
+  Ao rolar as linhas verticalmente, o cabeçalho das colunas permanece fixo no topo.
+- **Otimização de Largura Mínima e Espaçamento (`padding`)**:
+  - `RelatorioExcecoesPendencias`: de `1500px` para `min-w-[1150px]` (cabe 100% sem scroll em telas Full HD 1080p).
+  - `RelatorioRazaoEntradas`: de `1700px` para `min-w-[1300px]`.
+  - `RelatorioMatrizElegibilidade`: de `1600px` para `min-w-[1180px]`.
+  - `RelatorioCalculoCreditoEsperado`: de `1500px` para `min-w-[1200px]`.
+  - `RelatorioEstornosAjustes`: de `1500px` para `min-w-[1180px]`.
+  - `RelatorioOnerosidade`: de `1500px` para `min-w-[1250px]`.
+  - `RelatorioRetencoesFonte`: de `1750px` para `min-w-[1300px]`.
+  - `RelatorioMapaCfop`: de `1200px` para `min-w-[1000px]`.
+  - `RelatorioMapaCClassTrib`: de `1200px` para `min-w-[1000px]`.
+  - Redução de `p-3` para `py-2.5 px-3` (ou `py-2 px-2.5`).
+
+### 3. Scrollbar Elegante e Destaque Visual ([`index.css`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/index.css))
+- Aumentada a espessura da scrollbar de `5px` para `7px` e ajustado o contraste do trilho e do polegar (`thumb` com transição e realce em ciano/azul no hover).
+
+---
+
+## Validação Técnica Realizada
+- `npx tsc --noEmit`: 0 erros de compilação TypeScript.
+- `npm run build`: Compilação de produção do Vite bem-sucedida em 8.74s.
+- `git status`: Modificações mantidas estritamente no repositório local. **Nenhum deploy realizado.**

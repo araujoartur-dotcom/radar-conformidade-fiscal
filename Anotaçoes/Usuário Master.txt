@@ -5,7 +5,7 @@ senha: Admin@RadarFiscal2026!
 BI & Inteligência Fiscal (Tax Analytics)
 
 
-Senha 41.740.302/0001-83
+Senha 41740302000183
 123Ari@
 Certificado Digital do Ari
 
@@ -18,3 +18,7 @@ C:\Radar Conformidade Fiscal\
 
 Token Github
 [CONFIGURADO_NO_GITHUB_SECRETS]
+
+
+estou com uma inconsistencia na criação de usuário.
+cada usuário que estou incluindo por ultimo está ficando com a função master de todos estabelecimentos, mesmo eu alterando para ficar apenas em uma empresa

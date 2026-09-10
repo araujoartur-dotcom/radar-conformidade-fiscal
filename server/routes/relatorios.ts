@@ -28,8 +28,23 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       cfop,
       cClassTrib,
       searchTerm,
+      uf,
+      indicadorOnerosidade,
+      resultadoElegibilidade,
+      apenasExcecoes,
       empresaId: paramEmpresaId,
     } = req.query;
+
+    const cleanDataInicio = dataInicio ? String(dataInicio).trim() : '';
+    const cleanDataFim = dataFim ? String(dataFim).trim() : '';
+
+    const supaDataInicio = cleanDataInicio 
+      ? (cleanDataInicio.includes('T') ? cleanDataInicio : `${cleanDataInicio}T00:00:00.000Z`)
+      : null;
+
+    const supaDataFim = cleanDataFim 
+      ? (cleanDataFim.includes('T') ? cleanDataFim : `${cleanDataFim}T23:59:59.999Z`)
+      : null;
 
     const isSuperadmin = req.user!.perfil === 'admin_master';
     const activeEmpresaId = req.user!.empresaAtivaId;
@@ -74,18 +89,22 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
           if (cnpjEmitente) supaQuery = supaQuery.ilike('fornecedor_cnpj', `%${cnpjEmitente}%`);
           if (cnpjDestinatario) supaQuery = supaQuery.ilike('cliente_cnpj', `%${cnpjDestinatario}%`);
-          if (dataInicio) supaQuery = supaQuery.gte('data_emissao', String(dataInicio));
-          if (dataFim) supaQuery = supaQuery.lte('data_emissao', String(dataFim));
-          if (situacaoDoc && situacaoDoc !== 'TODAS') supaQuery = supaQuery.eq('situacao_doc', String(situacaoDoc));
+          if (supaDataInicio) supaQuery = supaQuery.gte('data_emissao', supaDataInicio);
+          if (supaDataFim) supaQuery = supaQuery.lte('data_emissao', supaDataFim);
+          if (situacaoDoc && situacaoDoc !== 'TODAS') supaQuery = supaQuery.ilike('situacao_doc', `%${situacaoDoc}%`);
+
+          if (uf && uf !== 'TODAS') {
+            supaQuery = supaQuery.or(`fornecedor_uf.eq.${uf},cliente_uf.eq.${uf}`);
+          }
 
           if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
             const td = effectiveTipoDoc.toUpperCase();
             if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
-              supaQuery = supaQuery.or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%');
+              supaQuery = supaQuery.in('tipo_doc', ['NFSe', 'NFS-e', 'NFSE', 'NFS']);
             } else if (td === 'CTE' || td === 'CT-E') {
-              supaQuery = supaQuery.or('tipo_doc.eq.CTe,tipo_doc.eq.CT-e,tipo_doc.ilike.%cte%');
+              supaQuery = supaQuery.in('tipo_doc', ['CTe', 'CT-e', 'CTE', '57']);
             } else if (td === 'NFE' || td === 'NF-E') {
-              supaQuery = supaQuery.or('tipo_doc.eq.NFe,tipo_doc.eq.NF-e,tipo_doc.ilike.%nfe%');
+              supaQuery = supaQuery.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55']);
             } else {
               supaQuery = supaQuery.eq('tipo_doc', effectiveTipoDoc);
             }
@@ -109,7 +128,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                   let nfseQuery = supabase
                     .from('dfe_documentos')
                     .select('*')
-                    .or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%')
+                    .in('tipo_doc', ['NFSe', 'NFS-e', 'NFSE', 'NFS'])
                     .order('data_emissao', { ascending: false })
                     .limit(200);
 
@@ -117,6 +136,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                     nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
                   } else if (targetEmpresaId) {
                     nfseQuery = nfseQuery.eq('empresa_id', targetEmpresaId);
+                  }
+
+                  if (supaDataInicio) nfseQuery = nfseQuery.gte('data_emissao', supaDataInicio);
+                  if (supaDataFim) nfseQuery = nfseQuery.lte('data_emissao', supaDataFim);
+                  if (uf && uf !== 'TODAS') {
+                    nfseQuery = nfseQuery.or(`fornecedor_uf.eq.${uf},cliente_uf.eq.${uf}`);
                   }
 
                   const { data: extraNfse } = await nfseQuery;
@@ -136,16 +161,38 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                 const isDocNfse = (d.tipo_doc || '').toString().toUpperCase().includes('NFS');
                 let itemDesc = isDocNfse ? 'Prestação de Serviços Profissionais / Técnicos' : 'Item Principal / Operação Global';
                 let itemNcm = isDocNfse ? '17.01' : '2711.19.10';
+                let itemCfop = isDocNfse ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102');
+                let itemCClass = '000001';
 
-                if (isDocNfse && d.xml_raw) {
-                  const descMatch = d.xml_raw.match(/<xDescServ>(.*?)<\/xDescServ>/) || d.xml_raw.match(/<xTribNac>(.*?)<\/xTribNac>/);
-                  if (descMatch && descMatch[1]) {
-                    itemDesc = descMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+                if (d.xml_raw) {
+                  const cfopMatch = d.xml_raw.match(/<CFOP>(\d{4})<\/CFOP>/i);
+                  if (cfopMatch && cfopMatch[1]) {
+                    itemCfop = cfopMatch[1];
                   }
-                  const servMatch = d.xml_raw.match(/<cTribNac>(\d+)<\/cTribNac>/) || d.xml_raw.match(/<cServ>(\d+)<\/cServ>/);
-                  if (servMatch && servMatch[1]) {
-                    const rawCode = servMatch[1];
-                    itemNcm = rawCode.length >= 4 ? `${rawCode.substring(0, 2)}.${rawCode.substring(2, 4)}` : rawCode;
+                  const cClassMatch = d.xml_raw.match(/<cClassTrib>(\d{6})<\/cClassTrib>/i);
+                  if (cClassMatch && cClassMatch[1]) {
+                    itemCClass = cClassMatch[1];
+                  }
+
+                  if (isDocNfse) {
+                    const descMatch = d.xml_raw.match(/<xDescServ>(.*?)<\/xDescServ>/) || d.xml_raw.match(/<xTribNac>(.*?)<\/xTribNac>/);
+                    if (descMatch && descMatch[1]) {
+                      itemDesc = descMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+                    }
+                    const servMatch = d.xml_raw.match(/<cTribNac>(\d+)<\/cTribNac>/) || d.xml_raw.match(/<cServ>(\d+)<\/cServ>/);
+                    if (servMatch && servMatch[1]) {
+                      const rawCode = servMatch[1];
+                      itemNcm = rawCode.length >= 4 ? `${rawCode.substring(0, 2)}.${rawCode.substring(2, 4)}` : rawCode;
+                    }
+                  } else {
+                    const prodDescMatch = d.xml_raw.match(/<xProd>(.*?)<\/xProd>/i);
+                    if (prodDescMatch && prodDescMatch[1]) {
+                      itemDesc = prodDescMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+                    }
+                    const ncmMatch = d.xml_raw.match(/<NCM>(\d+)<\/NCM>/i);
+                    if (ncmMatch && ncmMatch[1]) {
+                      itemNcm = ncmMatch[1];
+                    }
                   }
                 }
 
@@ -185,8 +232,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                   descricaoItem: itemDesc,
                   ncm: itemNcm,
                   cest: '',
-                  cfop: isDocNfse ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102'),
-                  cClassTrib: '000001',
+                  cfop: itemCfop,
+                  cClassTrib: itemCClass,
                   cstCsosn: '000',
                   naturezaOperacao: isDocNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal',
                   quantidade: 1,
@@ -320,13 +367,17 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         query += ` AND d.cliente_cnpj LIKE ?`;
         params.push(`%${cnpjDestinatario}%`);
       }
-      if (dataInicio) {
-        query += ` AND d.data_emissao >= ?`;
-        params.push(dataInicio);
+      if (uf && uf !== 'TODAS') {
+        query += ` AND (d.fornecedor_uf = ? OR d.cliente_uf = ?)`;
+        params.push(uf, uf);
       }
-      if (dataFim) {
+      if (cleanDataInicio) {
+        query += ` AND d.data_emissao >= ?`;
+        params.push(cleanDataInicio.substring(0, 10));
+      }
+      if (cleanDataFim) {
         query += ` AND d.data_emissao <= ?`;
-        params.push(dataFim);
+        params.push(`${cleanDataFim.substring(0, 10)}T23:59:59`);
       }
       if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
         const td = effectiveTipoDoc.toUpperCase();
@@ -686,10 +737,109 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       };
     });
 
+    // ── PÓS-FILTRAGEM DETERMINÍSTICA E CONSISTENTE DE RELATÓRIOS ──
+    let finalMapped = mapped;
+
+    // 1. Filtro por Data Inicial (comparação estrita por YYYY-MM-DD)
+    if (cleanDataInicio) {
+      const dtIniStr = cleanDataInicio.substring(0, 10);
+      finalMapped = finalMapped.filter(item => {
+        const itemDate = (item.dataEmissao || '').substring(0, 10);
+        return itemDate ? itemDate >= dtIniStr : true;
+      });
+    }
+
+    // 2. Filtro por Data Final (comparação estrita por YYYY-MM-DD)
+    if (cleanDataFim) {
+      const dtFimStr = cleanDataFim.substring(0, 10);
+      finalMapped = finalMapped.filter(item => {
+        const itemDate = (item.dataEmissao || '').substring(0, 10);
+        return itemDate ? itemDate <= dtFimStr : true;
+      });
+    }
+
+    // 3. Filtro por Tipo de Documento
+    if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
+      const tdUpper = effectiveTipoDoc.toUpperCase();
+      finalMapped = finalMapped.filter(item => {
+        const itemTipo = (item.tipoDoc || '').toUpperCase();
+        if (tdUpper.includes('NFS')) return itemTipo.includes('NFS');
+        if (tdUpper.includes('CTE') || tdUpper.includes('CT-E')) return itemTipo.includes('CT');
+        if (tdUpper.includes('NFE') || tdUpper.includes('NF-E')) return itemTipo.includes('NF-E') || itemTipo === 'NFE' || itemTipo === '55';
+        return itemTipo.includes(tdUpper);
+      });
+    }
+
+    // 4. Filtro por Estado / UF Emitente ou Destinatário
+    if (uf && uf !== 'TODAS') {
+      const ufUpper = String(uf).toUpperCase();
+      finalMapped = finalMapped.filter(item => 
+        (item.fornecedorUf || '').toUpperCase() === ufUpper ||
+        (item.clienteUf || '').toUpperCase() === ufUpper
+      );
+    }
+
+    // 5. Filtro por CFOP
+    if (cfop && String(cfop).trim()) {
+      const cfopClean = String(cfop).trim();
+      finalMapped = finalMapped.filter(item => 
+        String(item.cfop || '').includes(cfopClean)
+      );
+    }
+
+    // 6. Filtro por cClassTrib
+    if (cClassTrib && String(cClassTrib).trim()) {
+      const cClassClean = String(cClassTrib).trim();
+      finalMapped = finalMapped.filter(item => 
+        String(item.cClassTrib || '').includes(cClassClean)
+      );
+    }
+
+    // 7. Filtro por Situação do Documento
+    if (situacaoDoc && situacaoDoc !== 'TODAS') {
+      const sitClean = String(situacaoDoc).toLowerCase();
+      finalMapped = finalMapped.filter(item => 
+        (item.situacaoDoc || '').toLowerCase().includes(sitClean)
+      );
+    }
+
+    // 8. Filtro por Indicador de Onerosidade
+    if (indicadorOnerosidade && indicadorOnerosidade !== 'TODOS') {
+      finalMapped = finalMapped.filter(item => 
+        item.indicadorOnerosidade === indicadorOnerosidade
+      );
+    }
+
+    // 9. Filtro por Resultado de Elegibilidade
+    if (resultadoElegibilidade && resultadoElegibilidade !== 'TODOS') {
+      finalMapped = finalMapped.filter(item => 
+        item.resultadoElegibilidade === resultadoElegibilidade
+      );
+    }
+
+    // 10. Filtro por Exceções e Pendências Críticas
+    if (String(apenasExcecoes) === 'true') {
+      finalMapped = finalMapped.filter(item => Boolean(item.isExcecao));
+    }
+
+    // 11. Busca Textual Geral
+    if (searchTerm && String(searchTerm).trim()) {
+      const termLower = String(searchTerm).trim().toLowerCase();
+      finalMapped = finalMapped.filter(item => 
+        (item.fornecedorRazao || '').toLowerCase().includes(termLower) ||
+        (item.fornecedorCnpj || '').includes(termLower) ||
+        (item.clienteRazao || '').toLowerCase().includes(termLower) ||
+        (item.clienteCnpj || '').includes(termLower) ||
+        (item.chaveAcesso || '').toLowerCase().includes(termLower) ||
+        (item.descricaoItem || '').toLowerCase().includes(termLower) ||
+        (item.ncm || '').toLowerCase().includes(termLower)
+      );
+    }
+
     res.json({ 
       success: true, 
-      data: mapped, 
-      total: totalCount || mapped.length,
+      data: finalMapped, 
+      total: (totalCount && totalCount > finalMapped.length && !cleanDataInicio && !cleanDataFim && !cfop && !cClassTrib && !uf && !situacaoDoc && !searchTerm) ? totalCount : finalMapped.length,
       limit: requestedLimit,
       offset: requestedOffset
     });

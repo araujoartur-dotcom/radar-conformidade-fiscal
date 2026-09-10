@@ -1,0 +1,70 @@
+# Correção dos Filtros e Melhorias no Módulo Relatórios Fiscais
+
+## Contexto e Objetivos
+O usuário reportou 3 necessidades na tela de **Relatórios Fiscais** (`src/components/RelatoriosXmlPanel.tsx` e `server/routes/relatorios.ts`):
+1. **Consertar todos os filtros**: Filtros por data (início/fim), tipo de documento (NF-e, CT-e, NFS-e), CFOP, UF, cClassTrib, indicador de onerosidade e exceções críticas não filtravam corretamente os dados na tela.
+2. **Botão Expandir / Recolher Filtros**: Incluir um botão visível e estilizado para expandir e recolher o bloco de filtros seletores, maximizando o espaço vertical para os relatórios analíticos.
+3. **Remover Botão "Importar XML Manual"**: Excluir este botão e seu modal, visto que a importação de XMLs pertence ao módulo de Captura de XMLs.
+4. **Sem Deploy**: Nenhuma ação de deploy ou push remoto será executada.
+
+---
+
+## Análise de Causa-Raiz
+
+1. **Filtro de Data (`dataInicio` e `dataFim`)**:
+   - O campo `input type="date"` envia datas no formato `YYYY-MM-DD` (ex: `2026-06-05`).
+   - No Supabase, `data_emissao` é armazenada em formato timestamp ISO (ex: `2026-06-05T14:30:00.000Z`).
+   - A query `.lte('data_emissao', '2026-06-05')` faz comparação com `00:00:00`, descartando todas as notas emitidas no próprio dia final.
+   - Solução: normalizar `dataInicio` para `T00:00:00.000Z` e `dataFim` para `T23:59:59.999Z`.
+
+2. **Injeção Cega de NFS-e**:
+   - Quando `requestedOffset === 0` e `tipoDoc === 'TODOS'`, uma busca secundária de NFS-e injetava até 200 notas sem aplicar `dataInicio` nem `dataFim`, trazendo NFS-e de datas fora do filtro.
+   - Solução: aplicar os mesmos limites de `dataInicio` e `dataFim` na query de NFS-e.
+
+3. **Filtro por Tipo de Documento (`tipoDoc`)**:
+   - Uso de `.or()` encadeado no Supabase entrava em conflito com a cláusula de tenant.
+   - Solução: usar `.in('tipo_doc', [...])` e assegurar filtragem no pós-processamento.
+
+4. **Filtros Omitidos no Frontend e Backend**:
+   - `uf`, `indicadorOnerosidade`, `resultadoElegibilidade` e `apenasExcecoes` não eram passados na URL do `handleSearch`.
+   - No backend, `cfop`, `cClassTrib`, `uf` e `indicadorOnerosidade` não eram processados na ramificação Supabase nem filtrados no array `mapped`.
+   - Solução: enviar todos os filtros no cliente e adicionar pós-filtragem completa no servidor garantindo 100% de consistência em qualquer engine de banco.
+
+---
+
+## Alterações Propostas
+
+### 1. Backend: [server/routes/relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts)
+- Receber `uf`, `indicadorOnerosidade`, `resultadoElegibilidade`, `apenasExcecoes` do `req.query`.
+- Normalizar timestamps para `dataInicio` (`T00:00:00.000Z`) e `dataFim` (`T23:59:59.999Z`).
+- Aplicar `dataInicio` e `dataFim` na query principal e na injeção secundária de NFS-e.
+- Utilizar `.in('tipo_doc', ...)` para `NF-e`, `CT-e` e `NFS-e`.
+- Extrair CFOP do `xml_raw` quando disponível (ex: `<CFOP>1102</CFOP>`).
+- Implementar pós-filtragem determinística em `mapped` para:
+  - `cfop`: busca substring no CFOP do item.
+  - `cClassTrib`: busca substring no cClassTrib do item.
+  - `uf`: verifica se `fornecedorUf === uf || clienteUf === uf`.
+  - `tipoDoc`: validação estrita no array mapeado.
+  - `indicadorOnerosidade`: validação no item mapeado.
+  - `resultadoElegibilidade`: validação no item mapeado.
+  - `apenasExcecoes`: filtra `item.isExcecao === true`.
+  - `searchTerm`: busca em fornecedor, cliente, chave, item e NCM.
+
+### 2. Frontend: [src/components/RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)
+- No `handleSearch`, serializar todos os campos de filtro na query:
+  - `uf`, `cfop`, `cClassTrib`, `indicadorOnerosidade`, `resultadoElegibilidade`, `apenasExcecoes`.
+- Permitir pressionar `Enter` nos campos de texto para disparar a busca.
+- Remover o botão "Importar XML Manual" da barra de ações.
+- Remover o modal de upload XML e suas variáveis de estado (`isUploadModalOpen`, `uploadLoading`, `handleFileUpload`).
+- Adicionar o botão destacado de **Expandir / Recolher Filtros** com estilo profissional e ícone, permitindo ocultar a grade de 12 filtros e liberar altura máxima para visualização dos relatórios.
+- Exibir uma barra de resumo com filtros ativos quando o bloco de filtros estiver recolhido.
+
+---
+
+## Plano de Validação
+- Executar `npx tsc --noEmit` para verificar tipos.
+- Executar `npm run build` para garantir compilação sem erros.
+- Testar requisição GET com datas `2026-06-01` a `2026-06-05` e validar retorno de documentos do período.
+- Testar filtro de CFOP (ex: `1102`, `5353`, `1933`).
+- Testar filtro de Tipo de Documento (`NF-e`, `CT-e`, `NFS-e`).
+- Testar toggle de expandir/recolher e verificar layout.

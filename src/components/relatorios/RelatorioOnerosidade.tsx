@@ -39,21 +39,21 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1500px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Chave / Item</th>
-              <th className="p-3">CFOP / cClassTrib</th>
-              <th className="p-3 text-right">Valor Bruto</th>
-              <th className="p-3 text-right">Desconto</th>
-              <th className="p-3 text-right">Valor Líquido</th>
-              <th className="p-3 text-center">Evidência de Cobrança (Fatura/Contrato)</th>
-              <th className="p-3 text-center">Indicador Onerosidade</th>
-              <th className="p-3">Critério da Onerosidade</th>
-              <th className="p-3 text-center">Tratamento do Crédito</th>
-              <th className="p-3">Justificativa / Documento Suporte</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1250px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">Doc / Chave / Item</th>
+              <th className="py-2.5 px-3">CFOP / cClassTrib</th>
+              <th className="py-2.5 px-3 text-right">Valor Bruto</th>
+              <th className="py-2.5 px-3 text-right">Desconto</th>
+              <th className="py-2.5 px-3 text-right">Valor Líquido</th>
+              <th className="py-2.5 px-3 text-center">Evidência de Cobrança (Fatura/Contrato)</th>
+              <th className="py-2.5 px-3 text-center">Indicador Onerosidade</th>
+              <th className="py-2.5 px-3">Critério da Onerosidade</th>
+              <th className="py-2.5 px-3 text-center">Tratamento do Crédito</th>
+              <th className="py-2.5 px-3">Justificativa / Documento Suporte</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -61,7 +61,7 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
               <tr key={it.id} className="hover:bg-slate-900/50 transition-colors">
                 
                 {/* Doc / Chave */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <div className="font-bold text-white">
                     {it.tipoDoc} {it.numeroSerie} (Item {it.itemNro})
                   </div>
@@ -71,7 +71,7 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
                 </td>
 
                 {/* CFOP / cClassTrib */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <div className="flex items-center gap-1">
                     <span className="px-1.5 py-0.5 bg-slate-900 text-cyan-300 rounded font-bold border border-slate-700">
                       CFOP {it.cfop}
@@ -83,22 +83,22 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
                 </td>
 
                 {/* Valor Bruto */}
-                <td className="p-3 text-right text-slate-300">
+                <td className="py-2 px-3 text-right text-slate-300">
                   R$ {it.valorBrutoItem.toFixed(2)}
                 </td>
 
                 {/* Desconto */}
-                <td className="p-3 text-right text-rose-300">
+                <td className="py-2 px-3 text-right text-rose-300">
                   R$ {it.descontoIncondicional.toFixed(2)}
                 </td>
 
                 {/* Valor Liquido */}
-                <td className="p-3 text-right text-emerald-400 font-bold">
+                <td className="py-2 px-3 text-right text-emerald-400 font-bold">
                   R$ {it.valorLiquidoItem.toFixed(2)}
                 </td>
 
                 {/* Evidencia Cobrança */}
-                <td className="p-3 text-center font-sans font-bold">
+                <td className="py-2 px-3 text-center font-sans font-bold">
                   {it.evidenciaCobranca ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px]">
                       <FileCheck className="w-3.5 h-3.5 text-emerald-400" /> SIM (Fatura/Duplicata)
@@ -111,7 +111,7 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
                 </td>
 
                 {/* Indicador Onerosidade */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   <span className={`inline-block px-2.5 py-0.5 rounded text-xs font-bold ${
                     it.indicadorOnerosidade === 'Oneroso'
                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
@@ -124,12 +124,12 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
                 </td>
 
                 {/* Criterio */}
-                <td className="p-3 font-sans text-xs text-slate-300">
+                <td className="py-2 px-3 font-sans text-xs text-slate-300">
                   {it.criterioOnerosidade}
                 </td>
 
                 {/* Tratamento Credito */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {it.indicadorOnerosidade === 'Oneroso' && it.resultadoElegibilidade === 'Elegível' ? (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Permitido
@@ -146,12 +146,12 @@ export const RelatorioOnerosidade: React.FC<RelatorioOnerosidadeProps> = ({ item
                 </td>
 
                 {/* Justificativa */}
-                <td className="p-3 font-sans text-xs text-slate-400">
+                <td className="py-2 px-3 font-sans text-xs text-slate-400">
                   {it.evidencia || 'Auditado via webservice NFe'}
                 </td>
 
                 {/* Ações */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {onOpenDetail && (
                     <button
                       onClick={() => onOpenDetail(it)}

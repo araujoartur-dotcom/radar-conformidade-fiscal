@@ -8,9 +8,69 @@ import { AuthenticatedRequest, requireAuth, requirePerfil, logAuditAction } from
 
 const router = Router();
 
-// GET /api/users - Listar usuários corporativos com CNPJs autorizados
+// ============================================================
+// HELPERS DE ISOLAMENTO MULTI-TENANT (RBAC + CNPJ SCOPING)
+// ============================================================
+
+/** Perfis que podem gerenciar usuários */
+const PERFIS_GESTAO_USUARIOS = ['admin_master', 'suporte_ti'];
+
+/** Perfis privilegiados que suporte_ti NÃO pode criar/atribuir */
+const PERFIS_PRIVILEGIADOS = ['admin_master', 'suporte_ti'];
+
+/**
+ * Retorna o Set normalizado de CNPJs (apenas dígitos) vinculados a um usuário.
+ * Consulta a tabela usuario_empresa para obter os CNPJs reais.
+ */
+function getUserCnpjSet(userId: string): Set<string> {
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT e.cnpj_completo
+    FROM usuario_empresa ue
+    JOIN empresas e ON e.id = ue.empresa_id
+    WHERE ue.usuario_id = ?
+  `).all(userId) as any[];
+  return new Set(rows.map(r => (r.cnpj_completo || '').replace(/\D/g, '')).filter(Boolean));
+}
+
+/**
+ * Verifica se dois conjuntos de CNPJs possuem interseção (compartilham empresa).
+ */
+function hasCnpjIntersection(setA: Set<string>, setB: Set<string>): boolean {
+  for (const cnpj of setA) {
+    if (setB.has(cnpj)) return true;
+  }
+  return false;
+}
+
+/**
+ * Verifica se o solicitante tem permissão de escopo sobre o usuário alvo.
+ * admin_master: acesso irrestrito.
+ * suporte_ti: somente se compartilham pelo menos 1 CNPJ.
+ */
+function hasUserScopeAccess(req: AuthenticatedRequest, targetUserId: string): boolean {
+  if (!req.user) return false;
+  if (req.user.perfil === 'admin_master') return true;
+  if (req.user.perfil !== 'suporte_ti') return false;
+
+  const callerCnpjs = getUserCnpjSet(req.user.userId);
+  const targetCnpjs = getUserCnpjSet(targetUserId);
+  return hasCnpjIntersection(callerCnpjs, targetCnpjs);
+}
+
+// ============================================================
+// GET /api/users — Listar usuários com isolamento por CNPJ
+// ============================================================
 router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const callerPerfil = req.user?.perfil;
+    const callerUserId = req.user?.userId;
+
+    // ── GATE: Apenas admin_master e suporte_ti podem listar usuários ──
+    if (!PERFIS_GESTAO_USUARIOS.includes(callerPerfil || '')) {
+      return res.json({ success: true, data: [] });
+    }
+
     const db = getDatabase();
     let formatted: any[] = [];
 
@@ -63,6 +123,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
               };
             });
 
+            // ── Aplicar isolamento de tenant ──
+            formatted = applyTenantIsolation(formatted, callerPerfil!, callerUserId!);
+
             return res.json({ success: true, data: formatted });
           }
         } catch (supaErr: any) {
@@ -108,6 +171,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       };
     });
 
+    // ── Aplicar isolamento de tenant ──
+    formatted = applyTenantIsolation(formatted, callerPerfil!, callerUserId!);
+
     return res.json({ success: true, data: formatted });
   } catch (err: any) {
     console.error('❌ Erro ao listar usuários:', err.message);
@@ -115,22 +181,92 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
   }
 });
 
-// POST /api/users - Criar novo usuário com hash seguro e vínculo de CNPJ
-router.post('/', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
+/**
+ * Filtra a lista de usuários com base no perfil e escopo CNPJ do solicitante.
+ * - admin_master: vê todos.
+ * - suporte_ti: vê apenas usuários que compartilham CNPJ. NUNCA vê admin_master.
+ */
+function applyTenantIsolation(users: any[], callerPerfil: string, callerUserId: string): any[] {
+  // admin_master vê tudo
+  if (callerPerfil === 'admin_master') return users;
+
+  // suporte_ti: filtrar por escopo de CNPJ
+  if (callerPerfil === 'suporte_ti') {
+    const callerCnpjs = getUserCnpjSet(callerUserId);
+
+    return users.filter(u => {
+      // 1. NUNCA exibir admin_master para suporte_ti
+      if (u.perfil === 'admin_master') return false;
+
+      // 2. O próprio usuário logado sempre aparece
+      if (u.id === callerUserId) return true;
+
+      // 3. Verificar interseção de CNPJs
+      const targetCnpjs = (u.cnpjsAutorizados || [])
+        .filter((c: string) => c !== '*')
+        .map((c: string) => c.replace(/\D/g, ''));
+      const targetSet = new Set<string>(targetCnpjs);
+      return hasCnpjIntersection(callerCnpjs, targetSet);
+    });
+  }
+
+  // Demais perfis: retorna vazio (não deveriam chegar aqui pelo gate acima)
+  return [];
+}
+
+// ============================================================
+// POST /api/users — Criar usuário (admin_master e suporte_ti)
+// ============================================================
+router.post('/', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { nome, email, perfil, senha, cnpjsAutorizados } = req.body;
     if (!nome || !email) {
       return res.status(400).json({ success: false, message: 'Nome e Email são obrigatórios.' });
     }
 
+    const callerPerfil = req.user?.perfil;
+    const userPerfil = perfil || 'analista_fiscal';
+
+    // ── TRAVA: suporte_ti NÃO pode criar perfis privilegiados ──
+    if (callerPerfil === 'suporte_ti' && PERFIS_PRIVILEGIADOS.includes(userPerfil)) {
+      return res.status(403).json({
+        success: false,
+        message: `O perfil Suporte TI não tem permissão para criar usuários com o perfil "${userPerfil}".`
+      });
+    }
+
+    // ── TRAVA: suporte_ti só pode vincular CNPJs que ele próprio possui ──
+    if (callerPerfil === 'suporte_ti') {
+      if (!Array.isArray(cnpjsAutorizados) || cnpjsAutorizados.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Informe ao menos um CNPJ para o novo usuário.'
+        });
+      }
+      if (cnpjsAutorizados.includes('*')) {
+        return res.status(403).json({
+          success: false,
+          message: 'Suporte TI não pode conceder acesso global (*) a todos os CNPJs.'
+        });
+      }
+      const callerCnpjs = getUserCnpjSet(req.user!.userId);
+      const requestedCnpjs = cnpjsAutorizados.map((c: string) => c.replace(/\D/g, ''));
+      const unauthorized = requestedCnpjs.filter((c: string) => !callerCnpjs.has(c));
+      if (unauthorized.length > 0) {
+        return res.status(403).json({
+          success: false,
+          message: `Suporte TI não tem acesso aos seguintes CNPJs: ${unauthorized.join(', ')}`
+        });
+      }
+    }
+
     const cleanEmail = email.toLowerCase().trim();
     const cleanNome = nome.trim();
-    const userPerfil = perfil || 'analista_fiscal';
     const rawSenha = senha || 'Mudar@123456';
     const senhaHash = bcrypt.hashSync(rawSenha, AUTH.BCRYPT_ROUNDS);
     const id = uuid();
 
-    const isGlobal = !Array.isArray(cnpjsAutorizados) || cnpjsAutorizados.includes('*') || (cnpjsAutorizados.length === 0 && userPerfil === 'admin_master');
+    const isGlobal = callerPerfil === 'admin_master' && (!Array.isArray(cnpjsAutorizados) || cnpjsAutorizados.includes('*') || (cnpjsAutorizados.length === 0 && userPerfil === 'admin_master'));
 
     // 1. Gravar no Supabase (se configurado)
     if (isSupabaseConfigured()) {
@@ -245,15 +381,72 @@ router.post('/', requireAuth, requirePerfil('admin_master'), async (req: Authent
   }
 });
 
-// PUT /api/users/:id - Editar usuário
-router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
+// ============================================================
+// PUT /api/users/:id — Editar usuário (admin_master e suporte_ti)
+// ============================================================
+router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { nome, email, perfil, status, senha, cnpjsAutorizados } = req.body;
     const cleanEmail = email ? email.toLowerCase().trim() : undefined;
     const cleanNome = nome ? nome.trim() : undefined;
+    const callerPerfil = req.user?.perfil;
 
-    const isGlobal = Array.isArray(cnpjsAutorizados) && cnpjsAutorizados.includes('*');
+    const db = getDatabase();
+    const targetUser = db.prepare('SELECT id, email, perfil FROM usuarios WHERE id = ?').get(id) as any;
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+    }
+
+    // ── TRAVA: admin_master não pode ser editado por ninguém exceto ele mesmo ──
+    if (targetUser.perfil === 'admin_master' && req.user?.userId !== id) {
+      return res.status(403).json({ success: false, message: 'O perfil Administrador Master não pode ser editado por terceiros.' });
+    }
+
+    // ── TRAVA: suporte_ti — validações de escopo ──
+    if (callerPerfil === 'suporte_ti') {
+      // Não pode editar admin_master nem outro suporte_ti (exceto a si mesmo)
+      if (PERFIS_PRIVILEGIADOS.includes(targetUser.perfil) && req.user?.userId !== id) {
+        return res.status(403).json({ success: false, message: 'Suporte TI não pode editar usuários com perfil privilegiado.' });
+      }
+
+      // Não pode alterar seu próprio perfil
+      if (req.user?.userId === id && perfil && perfil !== callerPerfil) {
+        return res.status(403).json({ success: false, message: 'Você não pode alterar seu próprio perfil.' });
+      }
+
+      // Deve compartilhar CNPJ com o alvo
+      if (req.user?.userId !== id && !hasUserScopeAccess(req, id)) {
+        return res.status(403).json({ success: false, message: 'Você não tem permissão para editar este usuário (fora do seu escopo de CNPJs).' });
+      }
+
+      // Não pode promover a perfil privilegiado
+      if (perfil && PERFIS_PRIVILEGIADOS.includes(perfil)) {
+        return res.status(403).json({ success: false, message: `Suporte TI não pode atribuir o perfil "${perfil}".` });
+      }
+
+      // Não pode conceder CNPJs fora do seu escopo
+      if (Array.isArray(cnpjsAutorizados)) {
+        if (cnpjsAutorizados.includes('*')) {
+          return res.status(403).json({ success: false, message: 'Suporte TI não pode conceder acesso global (*) a todos os CNPJs.' });
+        }
+        const callerCnpjs = getUserCnpjSet(req.user!.userId);
+        const requestedCnpjs = cnpjsAutorizados.map((c: string) => c.replace(/\D/g, ''));
+        const unauthorized = requestedCnpjs.filter((c: string) => !callerCnpjs.has(c));
+        if (unauthorized.length > 0) {
+          return res.status(403).json({
+            success: false,
+            message: `Suporte TI não tem acesso aos seguintes CNPJs: ${unauthorized.join(', ')}`
+          });
+        }
+      }
+    }
+
+    // Determinar se o perfil pode ser alterado
+    const effectivePerfil = (callerPerfil === 'admin_master' || (callerPerfil === 'suporte_ti' && perfil && !PERFIS_PRIVILEGIADOS.includes(perfil))) ? perfil : undefined;
+
+    const isGlobal = callerPerfil === 'admin_master' && Array.isArray(cnpjsAutorizados) && cnpjsAutorizados.includes('*');
 
     // 1. Atualizar no Supabase (se configurado)
     if (isSupabaseConfigured()) {
@@ -263,7 +456,7 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
           const updatePayload: any = { updated_at: new Date().toISOString() };
           if (cleanNome) updatePayload.nome = cleanNome;
           if (cleanEmail) updatePayload.email = cleanEmail;
-          if (perfil) updatePayload.perfil = perfil;
+          if (effectivePerfil) updatePayload.perfil = effectivePerfil;
           if (status) updatePayload.status = status;
           if (senha && senha.trim().length >= 6) {
             updatePayload.senha_hash = bcrypt.hashSync(senha, AUTH.BCRYPT_ROUNDS);
@@ -272,10 +465,20 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
           await supabase.from('usuarios').update(updatePayload).eq('id', id);
 
           if (Array.isArray(cnpjsAutorizados)) {
-            await supabase.from('usuario_empresa').delete().eq('usuario_id', id);
-
             const { data: supaEmpresas } = await supabase.from('empresas').select('id, cnpj_completo');
             const allEmpresas = supaEmpresas || [];
+
+            if (callerPerfil === 'suporte_ti') {
+              const callerCnpjs = getUserCnpjSet(req.user!.userId);
+              const callerEmpIds = allEmpresas
+                .filter(e => callerCnpjs.has((e.cnpj_completo || '').replace(/\D/g, '')))
+                .map(e => e.id);
+              if (callerEmpIds.length > 0) {
+                await supabase.from('usuario_empresa').delete().eq('usuario_id', id).in('empresa_id', callerEmpIds);
+              }
+            } else {
+              await supabase.from('usuario_empresa').delete().eq('usuario_id', id);
+            }
 
             let empIdsToLink: string[] = [];
             if (isGlobal) {
@@ -310,7 +513,6 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
     }
 
     // 2. Atualizar no SQLite local
-    const db = getDatabase();
     db.transaction(() => {
       let updateSql = `
         UPDATE usuarios
@@ -320,7 +522,7 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
             status = COALESCE(?, status),
             updated_at = datetime('now')
       `;
-      const params: any[] = [cleanNome, cleanEmail, perfil, status];
+      const params: any[] = [cleanNome, cleanEmail, effectivePerfil, status];
 
       if (senha && senha.trim().length >= 6) {
         const novaSenhaHash = bcrypt.hashSync(senha, AUTH.BCRYPT_ROUNDS);
@@ -334,9 +536,21 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
       db.prepare(updateSql).run(...params);
 
       if (Array.isArray(cnpjsAutorizados)) {
-        db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
-
         const todasEmpresas = db.prepare('SELECT id, cnpj_completo FROM empresas WHERE status = \'ativo\'').all() as any[];
+
+        if (callerPerfil === 'suporte_ti') {
+          const callerCnpjs = getUserCnpjSet(req.user!.userId);
+          const callerEmpIds = todasEmpresas
+            .filter(e => callerCnpjs.has((e.cnpj_completo || '').replace(/\D/g, '')))
+            .map(e => e.id);
+          if (callerEmpIds.length > 0) {
+            const placeholders = callerEmpIds.map(() => '?').join(',');
+            db.prepare(`DELETE FROM usuario_empresa WHERE usuario_id = ? AND empresa_id IN (${placeholders})`).run(id, ...callerEmpIds);
+          }
+        } else {
+          db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
+        }
+
         let empIdsToLink: string[] = [];
 
         if (isGlobal) {
@@ -379,13 +593,42 @@ router.put('/:id', requireAuth, requirePerfil('admin_master'), async (req: Authe
   }
 });
 
-// DELETE /api/users/:id - Excluir usuário
-router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: AuthenticatedRequest, res: Response) => {
+// ============================================================
+// DELETE /api/users/:id — Excluir usuário (admin_master e suporte_ti)
+// ============================================================
+router.delete('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const callerPerfil = req.user?.perfil;
 
+    // Não pode excluir a si mesmo
     if (req.user?.userId === id) {
       return res.status(400).json({ success: false, message: 'Você não pode excluir o seu próprio usuário logado.' });
+    }
+
+    const db = getDatabase();
+    const targetUser = db.prepare('SELECT id, email, perfil FROM usuarios WHERE id = ?').get(id) as any;
+
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+    }
+
+    // Conta admin_master NUNCA pode ser excluída
+    if (targetUser.perfil === 'admin_master') {
+      return res.status(403).json({ success: false, message: 'Contas Administrador Master não podem ser excluídas.' });
+    }
+
+    // ── TRAVA: suporte_ti — validações de escopo ──
+    if (callerPerfil === 'suporte_ti') {
+      // Não pode excluir outro suporte_ti
+      if (targetUser.perfil === 'suporte_ti') {
+        return res.status(403).json({ success: false, message: 'Suporte TI não pode excluir outro usuário Suporte TI.' });
+      }
+
+      // Deve compartilhar CNPJ com o alvo
+      if (!hasUserScopeAccess(req, id)) {
+        return res.status(403).json({ success: false, message: 'Você não tem permissão para excluir este usuário (fora do seu escopo de CNPJs).' });
+      }
     }
 
     if (isSupabaseConfigured()) {
@@ -400,7 +643,6 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: Au
       }
     }
 
-    const db = getDatabase();
     db.transaction(() => {
       db.prepare('DELETE FROM sessoes WHERE usuario_id = ?').run(id);
       db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
@@ -424,4 +666,3 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master'), async (req: Au
 });
 
 export default router;
-

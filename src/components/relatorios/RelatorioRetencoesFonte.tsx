@@ -289,21 +289,21 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
       </div>
 
       {/* Tabela Analítica de Retenções na Fonte */}
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80 shadow-2xl">
-        <table className="w-full text-left text-xs border-collapse min-w-[1750px]">
-          <thead>
-            <tr className="bg-slate-900/95 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Chave / Prestador</th>
-              <th className="p-3">Código LC 116 & Discriminação</th>
-              <th className="p-3 text-right">Valor Bruto (R$)</th>
-              <th className="p-3 text-right">IRRF (1,5% / 1%)</th>
-              <th className="p-3 text-right">CRF (4,65%)</th>
-              <th className="p-3 text-right">INSS (11% / 3,5%)</th>
-              <th className="p-3 text-right">ISS Retido</th>
-              <th className="p-3 text-right">Total Retido</th>
-              <th className="p-3 text-right">Líquido a Pagar</th>
-              <th className="p-3 text-center">Diagnóstico Matriz</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1300px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-2.5">Doc / Chave / Prestador</th>
+              <th className="py-2.5 px-2.5">Código LC 116 & Discriminação</th>
+              <th className="py-2.5 px-2.5 text-right">Valor Bruto (R$)</th>
+              <th className="py-2.5 px-2.5 text-right">IRRF (1,5% / 1%)</th>
+              <th className="py-2.5 px-2.5 text-right">CRF (4,65%)</th>
+              <th className="py-2.5 px-2.5 text-right">INSS (11% / 3,5%)</th>
+              <th className="py-2.5 px-2.5 text-right">ISS Retido</th>
+              <th className="py-2.5 px-2.5 text-right">Total Retido</th>
+              <th className="py-2.5 px-2.5 text-right">Líquido a Pagar</th>
+              <th className="py-2.5 px-2.5 text-center">Diagnóstico Matriz</th>
+              <th className="py-2.5 px-2.5 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -336,7 +336,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     }`}
                   >
                     {/* Doc / Prestador */}
-                    <td className="p-3">
+                    <td className="py-2 px-2.5">
                       <div className="font-bold text-white flex items-center gap-1.5">
                         <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px] border border-amber-500/30">
                           {it.tipoDoc}
@@ -355,7 +355,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* Código LC 116 e Discriminação */}
-                    <td className="p-3 font-sans">
+                    <td className="py-2 px-2.5 font-sans">
                       <div className="flex items-center gap-1.5 font-mono">
                         <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-300 font-bold text-[10px] border border-slate-700">
                           Item {it.codigoServicoLc116 || '17.01'}
@@ -367,12 +367,12 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* Valor Bruto */}
-                    <td className="p-3 text-right text-slate-100 font-bold text-xs">
+                    <td className="py-2 px-2.5 text-right text-slate-100 font-bold text-xs">
                       R$ {valorBruto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
 
                     {/* IRRF */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       {irrf > 0 ? (
                         <div>
                           <div className="font-bold text-amber-300">
@@ -388,7 +388,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* CRF / PCC 4,65% */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       {crf > 0 ? (
                         <div>
                           <div className="font-bold text-cyan-300">
@@ -404,7 +404,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* INSS 11% */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       {inss > 0 ? (
                         <div>
                           <div className="font-bold text-emerald-300">
@@ -420,7 +420,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* ISS Retido */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       {iss > 0 ? (
                         <div>
                           <div className="font-bold text-purple-300">
@@ -436,21 +436,21 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* Total Retido */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className={`font-black ${totalRet > 0 ? 'text-indigo-300' : 'text-slate-500'}`}>
                         R$ {totalRet.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     </td>
 
                     {/* Líquido a Pagar */}
-                    <td className="p-3 text-right">
+                    <td className="py-2 px-2.5 text-right">
                       <div className="font-black text-emerald-400">
                         R$ {valorLiq.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                     </td>
 
                     {/* Diagnóstico Matriz */}
-                    <td className="p-3 text-center font-sans">
+                    <td className="py-2 px-2.5 text-center font-sans">
                       {it.diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30" title={it.motivoDiagnosticoRetencao}>
                           <AlertTriangle className="w-3 h-3" />
@@ -474,13 +474,13 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </td>
 
                     {/* Ações */}
-                    <td className="p-3 text-center">
+                    <td className="py-2 px-2.5 text-center">
                       <button
                         onClick={() => {
                           setModalItem(it);
                           if (onOpenDetail) onOpenDetail(it);
                         }}
-                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs flex items-center gap-1 mx-auto transition-all font-sans"
+                        className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs flex items-center gap-1 mx-auto transition-all font-sans cursor-pointer"
                         title="Ver memória de cálculo e fundamentação jurídica"
                       >
                         <Eye className="w-3 h-3 text-amber-400" />

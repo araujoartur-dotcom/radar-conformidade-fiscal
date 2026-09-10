@@ -477,6 +477,12 @@ export function initializeSchema(): void {
       client_secret         TEXT NOT NULL,
       token_contrib         TEXT DEFAULT '',
       webhook_url           TEXT DEFAULT '',
+      cgibs_url             TEXT DEFAULT 'https://api.cgibs.gov.br/v1/eventos/sync',
+      rfb_url               TEXT DEFAULT 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+      svrs_url              TEXT DEFAULT 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+      nfse_nacional_url     TEXT DEFAULT 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
+      api_key_cgibs         TEXT DEFAULT '',
+      bearer_token_rfb      TEXT DEFAULT '',
       flag_webhook          INTEGER NOT NULL DEFAULT 1,        -- 1 = Ativo (recebe push deltas), 0 = Inativo
       flag_consulta_demanda INTEGER NOT NULL DEFAULT 1,        -- 1 = Ativo (permite GET /v1/aassist/solicitacao), 0 = Inativo
       status                TEXT NOT NULL DEFAULT 'habilitado',
@@ -503,6 +509,12 @@ export function initializeSchema(): void {
   // Migrações em apuracao_credenciais_cgibs
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'flag_webhook', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'flag_consulta_demanda', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'cgibs_url', "TEXT DEFAULT 'https://api.cgibs.gov.br/v1/eventos/sync'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'rfb_url', "TEXT DEFAULT 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'svrs_url', "TEXT DEFAULT 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'nfse_nacional_url', "TEXT DEFAULT 'https://www.nfse.gov.br/dnfse/api/v1/eventos'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'api_key_cgibs', "TEXT DEFAULT ''");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'bearer_token_rfb', "TEXT DEFAULT ''");
 
   // Migrações em empresas
   addColumnIfNotExists('empresas', 'manifestar_ciencia_automatica', 'INTEGER NOT NULL DEFAULT 1');

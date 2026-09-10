@@ -46,20 +46,20 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1500px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Item / Chave</th>
-              <th className="p-3 text-right">Base Calc. IBS</th>
-              <th className="p-3 text-right">Base Calc. CBS</th>
-              <th className="p-3 text-center">Alíq. IBS / CBS</th>
-              <th className="p-3 text-right">Crédito Esperado IBS / CBS</th>
-              <th className="p-3 text-right">Crédito Apropriado IBS / CBS</th>
-              <th className="p-3 text-right">Diferença Glosa / Impasse</th>
-              <th className="p-3">Fonte Alíquota</th>
-              <th className="p-3">Motivo da Divergência</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">Doc / Item / Chave</th>
+              <th className="py-2.5 px-3 text-right">Base Calc. IBS</th>
+              <th className="py-2.5 px-3 text-right">Base Calc. CBS</th>
+              <th className="py-2.5 px-3 text-center">Alíq. IBS / CBS</th>
+              <th className="py-2.5 px-3 text-right">Crédito Esperado IBS / CBS</th>
+              <th className="py-2.5 px-3 text-right">Crédito Apropriado IBS / CBS</th>
+              <th className="py-2.5 px-3 text-right">Diferença Glosa / Impasse</th>
+              <th className="py-2.5 px-3">Fonte Alíquota</th>
+              <th className="py-2.5 px-3">Motivo da Divergência</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -73,7 +73,7 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
                 <tr key={it.id} className={`hover:bg-slate-900/50 transition-colors ${temDiferenca ? 'bg-amber-950/10' : ''}`}>
                   
                   {/* Doc / Item */}
-                  <td className="p-3">
+                  <td className="py-2 px-3">
                     <div className="font-bold text-white">
                       {it.tipoDoc} {it.numeroSerie} (Item {it.itemNro})
                     </div>
@@ -83,24 +83,24 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
                   </td>
 
                   {/* Base Calc IBS */}
-                  <td className="p-3 text-right text-slate-200 font-bold">
+                  <td className="py-2 px-3 text-right text-slate-200 font-bold">
                     R$ {it.baseIbs.toFixed(2)}
                   </td>
 
                   {/* Base Calc CBS */}
-                  <td className="p-3 text-right text-slate-200 font-bold">
+                  <td className="py-2 px-3 text-right text-slate-200 font-bold">
                     R$ {it.baseCbs.toFixed(2)}
                   </td>
 
                   {/* Aliquotas */}
-                  <td className="p-3 text-center">
+                  <td className="py-2 px-3 text-center">
                     <span className="px-2 py-0.5 rounded bg-slate-900 text-cyan-300 font-bold border border-slate-700 text-[10px]">
                       IBS {it.aliquotaIbs}% / CBS {it.aliquotaCbs}%
                     </span>
                   </td>
 
                   {/* Crédito Esperado */}
-                  <td className="p-3 text-right">
+                  <td className="py-2 px-3 text-right">
                     <div className="text-xs font-bold text-emerald-400">
                       R$ {exp.toFixed(2)}
                     </div>
@@ -110,7 +110,7 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
                   </td>
 
                   {/* Crédito Apropriado */}
-                  <td className="p-3 text-right">
+                  <td className="py-2 px-3 text-right">
                     <div className="text-xs font-bold text-slate-200">
                       R$ {apr.toFixed(2)}
                     </div>
@@ -120,7 +120,7 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
                   </td>
 
                   {/* Diferença */}
-                  <td className="p-3 text-right">
+                  <td className="py-2 px-3 text-right">
                     {temDiferenca ? (
                       <div className="px-2 py-1 rounded bg-rose-950 text-rose-300 border border-rose-800 font-bold text-xs inline-block">
                         R$ {dif.toFixed(2)}
@@ -133,19 +133,19 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
                   </td>
 
                   {/* Fonte Aliquota */}
-                  <td className="p-3 font-sans">
+                  <td className="py-2 px-3 font-sans">
                     <span className="capitalize px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 text-[10px]">
                       {it.fonteAliquota.replace('_', ' ')}
                     </span>
                   </td>
 
                   {/* Motivo Diferença */}
-                  <td className="p-3 font-sans text-xs text-slate-300">
+                  <td className="py-2 px-3 font-sans text-xs text-slate-300">
                     {it.motivoDiferenca || (temDiferenca ? 'Aguardando justificativa de apuração' : 'Conforme regramento oficial')}
                   </td>
 
                   {/* Ações */}
-                  <td className="p-3 text-center font-sans">
+                  <td className="py-2 px-3 text-center font-sans">
                     {onOpenDetail && (
                       <button
                         onClick={() => onOpenDetail(it)}

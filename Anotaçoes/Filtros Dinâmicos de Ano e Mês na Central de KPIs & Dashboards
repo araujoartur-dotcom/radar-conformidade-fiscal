@@ -1,0 +1,89 @@
+# Plano: Filtros Dinâmicos de Ano e Mês na Central de KPIs & Dashboards
+
+Implementar seletores dinâmicos de **Ano** e **Mês/Período** no painel de KPIs, onde os anos disponíveis iniciam no ano da primeira nota fiscal registrada para a empresa (2022) até o ano mais recente (2026), e o seletor de meses permite filtrar o ano completo ("Todos"), meses individuais (ex: Junho/2026) ou trimestres.
+
+> [!IMPORTANT]
+> **Diretriz de Deploy**: NENHUM deploy será executado. Todas as alterações serão feitas e testadas exclusivamente no ambiente local.
+
+---
+
+## 1. Pesquisa e Diagnóstico Realizado
+
+1. **Dados reais no banco de dados da empresa**:
+   - Data do documento mais antigo: **`2022-12-01`** (Ano inicial: **2022**)
+   - Data do documento mais recente: **`2026-06-30`** (Ano final: **2026**)
+   - Intervalo de anos da empresa: **2022, 2023, 2024, 2025, 2026**
+2. **Backend**:
+   - A rota `/api/upload/kpis` já processa `dataInicio` e `dataFim`, mas a tela não os enviava.
+3. **Frontend**:
+   - O dropdown anterior (`periodoFilter`) possuía apenas opções estáticas que não calculavam datas nem disparavam requisição com filtros.
+
+---
+
+## 2. Alterações Propostas
+
+### Backend
+
+#### [NEW] Endpoint `GET /api/upload/periodos-disponiveis` em [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+- Recebe `empresaId`.
+- Consulta a menor e maior `data_emissao` para a empresa (com suporte a Supabase e SQLite).
+- Retorna:
+  ```json
+  {
+    "success": true,
+    "anoInicial": 2022,
+    "anoFinal": 2026,
+    "anos": [2026, 2025, 2024, 2023, 2022],
+    "mesesDisponiveisPorAno": {
+      "2026": ["01", "02", "03", "04", "05", "06"],
+      "2022": ["12"]
+    }
+  }
+  ```
+
+---
+
+### Frontend
+
+#### [MODIFY] [src/components/CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)
+1. **Novos Estados**:
+   - `anoSelecionado: number` (padrão: `2026`, sincronizado com o ano mais recente).
+   - `mesSelecionado: string` (padrão: `'todos'`, ou `'01'`, `'02'`, ..., `'06'`, etc.).
+   - `anosDisponiveis: number[]` (carregado dinamicamente da API ou calculado a partir dos documentos).
+2. **Cálculo de Intervalo de Datas**:
+   - Se `mesSelecionado === 'todos'`:
+     - `dataInicio = `${anoSelecionado}-01-01``
+     - `dataFim = `${anoSelecionado}-12-31``
+   - Se `mesSelecionado === '06'` (ex: Junho):
+     - `dataInicio = `${anoSelecionado}-06-01``
+     - `dataFim = `${anoSelecionado}-06-30`` (calcula último dia do mês dinamicamente).
+   - Se trimestre (ex: `'Q2'`):
+     - `dataInicio = `${anoSelecionado}-04-01``
+     - `dataFim = `${anoSelecionado}-06-30``
+3. **Conexão com a API**:
+   - `loadKpis` passa a enviar:
+     `/upload/kpis?empresaId=${empresaAtiva?.id}&tipoOperacao=${operacaoFilter}&dataInicio=${dataInicio}&dataFim=${dataFim}`
+4. **Interface Visual no Cabeçalho**:
+   - **Seletor de Ano**: Dropdown estilizado exibindo os anos disponíveis desde a primeira nota da empresa (`2026`, `2025`, `2024`, `2023`, `2022`).
+   - **Seletor de Mês**: Dropdown com ícone `<Calendar>`, permitindo selecionar:
+     - `Todos os Meses (Ano Completo)`
+     - `1º Trimestre (Jan - Mar)` / `2º Trimestre (Abr - Jun)` / etc.
+     - `01 - Janeiro` ... `06 - Junho` ... `12 - Dezembro` (indicando com destaque os meses com movimento).
+   - Sincronização automática com a régua do **Simulador Temporal da Reforma Tributária** quando aplicável.
+
+---
+
+## 3. Plano de Verificação
+
+### Testes e Validação
+1. **Validação do Endpoint**:
+   - Chamar `/api/upload/periodos-disponiveis` e conferir retorno `anoInicial: 2022` e `anoFinal: 2026`.
+2. **Teste dos Filtros**:
+   - Selecionar `Ano 2026` + `Todos os Meses` -> Verificar cálculo do ano de 2026.
+   - Selecionar `Ano 2026` + `Mês: 06 - Junho` -> Verificar recálculo imediato da tela apenas para os documentos de Junho/2026.
+   - Selecionar `Ano 2022` + `Mês: 12 - Dezembro` -> Verificar recálculo para as primeiras notas de 2022.
+3. **Compilação e Build**:
+   - Executar `npx tsc --noEmit` (garantir 0 erros).
+   - Executar `npm run build` (garantir build limpo).
+4. **Garantia de Não-Deploy**:
+   - Nenhum commit ou push no repositório.

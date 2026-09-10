@@ -4,7 +4,7 @@ export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
 // ==========================================
 
-export type PerfilUsuario = 'admin_master' | 'contador_gestor' | 'analista_fiscal' | 'auditor_externo' | 'operador_leitura';
+export type PerfilUsuario = 'admin_master' | 'suporte_ti' | 'contador_gestor' | 'analista_fiscal' | 'auditor_externo' | 'operador_leitura';
 
 export interface UsuarioCorporativo {
   id: string;

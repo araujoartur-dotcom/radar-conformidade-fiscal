@@ -128,11 +128,11 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     || getSubTagValue('tomador', 'RazaoSocial') 
     || getSubTagValue('TomadorServico', 'RazaoSocial')
     || getTagValue(xmlDoc, 'RazaoSocialTomador')
-    || 'SUPERGASBRAS ENERGIA LTDA';
+    || '';
   let destinatarioUf = getSubTagValue('enderDest', 'UF') 
     || getSubTagValue('endNac', 'UF') 
     || getSubTagValue('TomadorServico', 'Uf')
-    || 'PR';
+    || '';
   let destinatarioIe = getSubTagValue('dest', 'IE') || '';
 
   // 6. Valores Globais e Tributos

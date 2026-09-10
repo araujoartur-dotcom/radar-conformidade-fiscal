@@ -252,17 +252,17 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
         </form>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1200px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">cClassTrib</th>
-              <th className="p-3">Descrição Interna (Curta e Objetiva)</th>
-              <th className="p-3">Tratamento Esperado</th>
-              <th className="p-3 text-center">Permite Crédito?</th>
-              <th className="p-3">Alíquota Esperada</th>
-              <th className="p-3">Alertas & Regras Específicas</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">cClassTrib</th>
+              <th className="py-2.5 px-3">Descrição Interna (Curta e Objetiva)</th>
+              <th className="py-2.5 px-3">Tratamento Esperado</th>
+              <th className="py-2.5 px-3 text-center">Permite Crédito?</th>
+              <th className="py-2.5 px-3">Alíquota Esperada</th>
+              <th className="py-2.5 px-3">Alertas & Regras Específicas</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -270,26 +270,26 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
               <tr key={item.cClassTrib} className="hover:bg-slate-900/50 transition-colors">
                 
                 {/* Code */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <span className="px-2 py-1 bg-amber-950 text-amber-300 border border-amber-800 rounded font-bold text-xs">
                     {item.cClassTrib}
                   </span>
                 </td>
 
                 {/* Descricao */}
-                <td className="p-3 font-sans font-semibold text-slate-200">
+                <td className="py-2 px-3 font-sans font-semibold text-slate-200">
                   {item.descricaoInterna}
                 </td>
 
                 {/* Tratamento */}
-                <td className="p-3 font-sans">
+                <td className="py-2 px-3 font-sans">
                   <span className="capitalize px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800 text-[11px] font-bold">
                     {item.tratamentoEsperado.replace('_', ' ')}
                   </span>
                 </td>
 
                 {/* Permite Crédito */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {item.permiteCredito === 'Sim' ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs font-bold">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Sim
@@ -306,18 +306,18 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
                 </td>
 
                 {/* Aliquota */}
-                <td className="p-3 text-cyan-300 font-bold">
+                <td className="py-2 px-3 text-cyan-300 font-bold">
                   {item.aliquotaEsperada}
                 </td>
 
                 {/* Alertas */}
-                <td className="p-3 font-sans text-xs text-amber-300 flex items-center gap-1.5">
+                <td className="py-2 px-3 font-sans text-xs text-amber-300 flex items-center gap-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                   <span>{item.alertas}</span>
                 </td>
 
                 {/* Ações */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   <button
                     onClick={() => handleDeleteItem(item.cClassTrib)}
                     className="p-1 rounded bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-400 border border-slate-800 transition-all cursor-pointer"

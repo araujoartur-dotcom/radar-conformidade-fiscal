@@ -687,37 +687,14 @@ export async function carregarCenariosDidaticosOficiais(empresaId: string): Prom
   const res3 = await ingerirArquivoCgibs(cenario2, empresaId, "92000001_fornecimento.json");
   mensagens.push(...res3.mensagens);
 
-  // Grava as credenciais anotadas do CGIBS na tabela apuracao_credenciais_cgibs SOMENTE se for Supergasbras
+  // Verifica status das credenciais da empresa no banco
   try {
     const db = getDatabase();
-    const empRow = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId) as any;
-    const targetEmp = empRow || db.prepare("SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE cnpj_raiz = '19791896' OR razao_social LIKE '%SUPERGASBRAS%' LIMIT 1").get() as any;
-    
-    if (targetEmp) {
-      const cnpjClean = (targetEmp.cnpj_completo || '').replace(/\D/g, '');
-      const cnpjRaiz = targetEmp.cnpj_raiz || cnpjClean.substring(0, 8);
-      const isSupergasbras = cnpjRaiz === '19791896' || (targetEmp.razao_social || '').toUpperCase().includes('SUPERGASBRAS');
-
-      if (isSupergasbras) {
-        db.prepare(`
-          INSERT INTO apuracao_credenciais_cgibs (
-            id, empresa_id, client_id, client_secret, token_contrib, flag_webhook, flag_consulta_demanda, status
-          ) VALUES (?, ?, ?, ?, ?, 1, 1, 'habilitado')
-          ON CONFLICT(empresa_id) DO UPDATE SET
-            client_id = excluded.client_id,
-            client_secret = excluded.client_secret,
-            updated_at = datetime('now')
-        `).run(
-          `cred-${targetEmp.id}`,
-          targetEmp.id,
-          '5c37db2e924740449c621b2d95afeef2',
-          '7349128e1c60405bbe50dbf3e3fa7afe',
-          'radar_fiscal_token_seguro'
-        );
-        mensagens.push('🔐 Credenciais do Piloto CGIBS vinculadas exclusivamente para a Supergasbras (CNPJ8 19791896).');
-      } else {
-        mensagens.push(`ℹ️ Empresa com CNPJ8 ${cnpjRaiz} mantida em modo isolado. Credenciais do piloto permanecem restritas à Supergasbras.`);
-      }
+    const cred = db.prepare('SELECT id, client_id FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(empresaId);
+    if (cred) {
+      mensagens.push('🔐 Credenciais da empresa verificadas e ativas no motor CGIBS.');
+    } else {
+      mensagens.push('ℹ️ Cenários carregados no ledger. Credenciais oficiais de transmissão podem ser configuradas na Ficha Cadastral da Empresa.');
     }
   } catch (err: any) {
     mensagens.push(`⚠️ Aviso ao verificar credenciais CGIBS: ${err.message}`);

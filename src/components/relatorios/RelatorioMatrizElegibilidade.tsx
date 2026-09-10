@@ -52,19 +52,19 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/80">
-        <table className="w-full text-left text-xs border-collapse min-w-[1600px]">
-          <thead>
-            <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
-              <th className="p-3">Doc / Item</th>
-              <th className="p-3">CFOP / cClassTrib</th>
-              <th className="p-3">Indicador Onerosidade</th>
-              <th className="p-3">Tipo Aquisição / Destinação</th>
-              <th className="p-3">Regra Aplicada ID</th>
-              <th className="p-3 text-center">Resultado Elegibilidade</th>
-              <th className="p-3">Motivo Padronizado</th>
-              <th className="p-3">Evidência Vinculada</th>
-              <th className="p-3 text-center">Ações</th>
+      <div className="overflow-x-auto overflow-y-auto max-h-[640px] rounded-xl border border-slate-800 bg-slate-950/80 custom-scrollbar shadow-inner relative">
+        <table className="w-full text-left text-xs border-collapse min-w-[1180px]">
+          <thead className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur shadow-sm">
+            <tr className="border-b border-slate-800 text-slate-400 font-semibold uppercase text-[10px] tracking-wider font-mono">
+              <th className="py-2.5 px-3">Doc / Item</th>
+              <th className="py-2.5 px-3">CFOP / cClassTrib</th>
+              <th className="py-2.5 px-3">Indicador Onerosidade</th>
+              <th className="py-2.5 px-3">Tipo Aquisição / Destinação</th>
+              <th className="py-2.5 px-3">Regra Aplicada ID</th>
+              <th className="py-2.5 px-3 text-center">Resultado Elegibilidade</th>
+              <th className="py-2.5 px-3">Motivo Padronizado</th>
+              <th className="py-2.5 px-3">Evidência Vinculada</th>
+              <th className="py-2.5 px-3 text-center">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-mono">
@@ -72,7 +72,7 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
               <tr key={it.id} className="hover:bg-slate-900/50 transition-colors">
                 
                 {/* Doc / Item */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <div className="font-bold text-white">
                     {it.tipoDoc} {it.numeroSerie} (Item {it.itemNro})
                   </div>
@@ -82,7 +82,7 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
                 </td>
 
                 {/* CFOP / cClassTrib */}
-                <td className="p-3">
+                <td className="py-2 px-3">
                   <div className="flex items-center gap-1">
                     <span className="px-1.5 py-0.5 bg-slate-900 text-cyan-300 rounded font-bold border border-slate-700">
                       CFOP {it.cfop}
@@ -94,7 +94,7 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
                 </td>
 
                 {/* Onerosidade */}
-                <td className="p-3 font-sans">
+                <td className="py-2 px-3 font-sans">
                   <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
                     it.indicadorOnerosidade === 'Oneroso'
                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
@@ -110,7 +110,7 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
                 </td>
 
                 {/* Tipo Aquisição / Destinação */}
-                <td className="p-3 font-sans">
+                <td className="py-2 px-3 font-sans">
                   <div className="font-bold text-slate-200 capitalize">
                     {it.tipoAquisicao}
                   </div>
@@ -120,14 +120,14 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
                 </td>
 
                 {/* Regra ID */}
-                <td className="p-3 font-mono">
+                <td className="py-2 px-3 font-mono">
                   <span className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 font-bold text-[11px]">
                     {it.regraAplicadaId}
                   </span>
                 </td>
 
                 {/* Resultado Elegibilidade */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {it.resultadoElegibilidade === 'Elegível' ? (
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs font-bold">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Elegível
@@ -144,17 +144,17 @@ export const RelatorioMatrizElegibilidade: React.FC<RelatorioMatrizElegibilidade
                 </td>
 
                 {/* Motivo Padronizado */}
-                <td className="p-3 font-sans text-slate-300">
+                <td className="py-2 px-3 font-sans text-slate-300">
                   {it.motivoPadronizado}
                 </td>
 
                 {/* Evidência */}
-                <td className="p-3 font-sans text-xs text-slate-400">
+                <td className="py-2 px-3 font-sans text-xs text-slate-400">
                   {it.evidencia}
                 </td>
 
                 {/* Ações */}
-                <td className="p-3 text-center font-sans">
+                <td className="py-2 px-3 text-center font-sans">
                   {onOpenDetail && (
                     <button
                       onClick={() => onOpenDetail(it)}
