@@ -2,9 +2,11 @@ import React from 'react';
 import {
   Shield, Lock, Upload, Play, Pause, Square, Trash2, Download, Sliders, CheckCircle2, KeyRound, RefreshCw,
   FileSpreadsheet, Layers, Search, FileCode, Send, Database, ShieldAlert, ChevronRight, FileBarChart,
-  Building2, Users, BarChart3, TrendingUp, Sparkles, FileCheck2, PanelLeftClose, PanelLeftOpen, Plug, Calculator
+  Building2, Users, BarChart3, TrendingUp, Sparkles, PanelLeftClose, PanelLeftOpen, Plug, Calculator
 } from 'lucide-react';
 import { CertificadoA1, BatchStats, QueryMode } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { hasModuleAccess } from '../utils/permissions';
 
 interface SidebarCertificadoProps {
   activeMode: QueryMode;
@@ -25,6 +27,19 @@ interface SidebarCertificadoProps {
   onToggleCollapse?: () => void;
 }
 
+interface NavItem {
+  id: QueryMode;
+  label: string;
+  icon: any;
+  accent?: 'cyan' | 'indigo' | 'emerald' | 'amber' | 'purple' | string;
+  badge?: string;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
 export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
   activeMode,
   setActiveMode,
@@ -43,7 +58,9 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
   isCollapsed = false,
   onToggleCollapse,
 }) => {
-  const navGroups = [
+  const { user, empresaAtiva } = useAuth();
+
+  const navGroups: NavGroup[] = [
     {
       title: 'Painel Executivo & BI Fiscal',
       items: [
@@ -55,7 +72,6 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       items: [
         { id: 'acesso_corporativo' as QueryMode, label: 'Gestão de Acessos', icon: Lock, accent: 'cyan' },
         { id: 'carteira_cnpjs' as QueryMode, label: 'Cadastro de Empresas', icon: Building2, accent: 'emerald' },
-        { id: 'parceiros_negocio' as QueryMode, label: 'Parceiros de Negócio (MDM)', icon: Users, accent: 'cyan' },
       ]
     },
     {
@@ -76,6 +92,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       title: 'Reforma Tributária (RTC / CGIBS)',
       items: [
         { id: 'apuracao_assistida' as QueryMode, label: 'Apuração Assistida (IBS/CBS)', icon: Calculator, accent: 'emerald', badge: 'RTC' },
+        { id: 'simulador_regimes' as QueryMode, label: 'Modelador de Regimes & CPP', icon: TrendingUp, accent: 'indigo', badge: 'NOVO' },
       ]
     },
     {
@@ -89,13 +106,18 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       title: 'Governança & Integrações',
       items: [
         { id: 'conectores_municipais' as QueryMode, label: 'Conectores Municipais', icon: Plug, accent: 'emerald' },
-        { id: 'cruzamento_sped' as QueryMode, label: 'Conciliação SPED Fiscal', icon: FileCheck2, accent: 'indigo', badge: 'SPED' },
-        { id: 'integracao_erp' as QueryMode, label: 'Integração SAP / ERP', icon: Database, accent: 'emerald' },
         { id: 'auditoria_fiscal' as QueryMode, label: 'Auditoria & Conformidade', icon: ShieldAlert, accent: 'amber' },
         { id: 'observabilidade_dlq' as QueryMode, label: 'Observabilidade & DLQ', icon: Layers, accent: 'purple', badge: 'FILAS' },
       ]
     }
   ];
+
+  const filteredNavGroups = navGroups
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => hasModuleAccess(item.id, user, empresaAtiva))
+    }))
+    .filter(group => group.items.length > 0);
 
   return (
     <aside className="w-full flex flex-col gap-4">
@@ -132,7 +154,7 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
 
         {/* Navigation Group Items */}
         <div className="flex flex-col gap-3 w-full">
-          {navGroups.map((group, gIdx) => (
+          {filteredNavGroups.map((group, gIdx) => (
             <div key={gIdx} className="space-y-1 w-full">
               {isCollapsed ? (
                 gIdx > 0 && <div className="my-1.5 border-t border-slate-800/60 w-full" />

@@ -1,0 +1,64 @@
+# Walkthrough: Arquitetura de Concessão de Acessos por Checkboxes & Menu Dinâmico
+
+Implementação da arquitetura corporativa de segregação de funções e concessão de acessos guiada por **botões e conjuntos de informações**, com eliminação de 2FA/MFA estático, introdução da **Matriz de Checkboxes organizados** e **Sidebar Dinâmica**.
+
+> [!NOTE]
+> **Status de Deploy:** Conforme solicitado pelo usuário, **NENHUM DEPLOY FOI REALIZADO**. Todo o desenvolvimento e validações foram executados e testados no ambiente local.
+
+---
+
+## 1. O Que Foi Modificado
+
+### 1. Remoção Completa de Falso 2FA/MFA & Políticas Estáticas
+- **Eliminado:** O input de 6 dígitos `000000` de verificação 2FA, botão de sessão segura fictícia e cards de texto com "Políticas de Segurança do Sistema" foram **100% removidos**.
+- **Resultado:** A tela de Gestão de Acessos agora é limpa, profissional e focada exclusivamente no gerenciamento real de pessoas, empresas e módulos autorizados.
+
+### 2. Matriz de Checkboxes Organizados por Categoria ([src/components/AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx))
+- Checkboxes visuais com ícones, cores e descrições detalhadas de cada módulo, agrupados por área funcional:
+  - **Painel Executivo & BI Fiscal:** Central de KPIs & Dashboards
+  - **Documentos Fiscais (DF-e):** Captura de XMLs e Central de Eventos DF-e
+  - **Reforma Tributária (RTC / CGIBS):** Apuração Assistida (IBS/CBS)
+  - **Relatórios Fiscais (SAP / ERP):** Relatórios Especializados e Parâmetros & Tabelas Fiscais
+  - **Consultas Cadastrais (CCC):** Consulta em Lote (Excel) e Consulta Rápida Direta
+  - **Governança & Integrações:** Conciliação SPED Fiscal, Conectores Municipais (NFS-e), Integração ERP, Auditoria Fiscal e Observabilidade & DLQ
+  - **Acesso & Gestão:** Cadastro de Empresas e Parceiros de Negócio (MDM)
+- Cada grupo possui botão rápido para **"Marcar Grupo / Desmarcar Grupo"** com contador em tempo real (`X/Y selecionados`).
+- Botões globais de **"Selecionar Todos"** e **"Limpar Seleção"**.
+
+### 3. Perfis Prontos (Atalhos de 1 Clique)
+No topo do formulário (tanto de cadastro quanto de edição), botões de atalho preenchem automaticamente os checkboxes e o nível operacional recomendado:
+- ⚡ **Faturista / Operador de Notas**: DF-e (XMLs e Eventos), Consultas Cadastrais CCC — *Nível: Escrita*
+- 📊 **Cliente / Diretoria (Somente Consulta)**: KPIs e Relatórios Fiscais — *Nível: Leitura*
+- 📑 **Analista Fiscal Pleno**: DF-e, Apuração IBS/CBS, Relatórios, Tabelas e SPED — *Nível: Escrita*
+- 🛡️ **Auditoria & Compliance**: KPIs, DF-e, Apuração IBS/CBS, SPED e Auditoria — *Nível: Leitura*
+- 👑 **Contador Gestor / Gerente**: Todos os módulos e governança liberados — *Nível: Total*
+
+*O gestor pode clicar em um perfil pronto e depois personalizar marcando ou desmarcando caixas individuais livremente.*
+
+### 4. Nível Operacional Pós-Clique (Três Opções Claras)
+- **Total (Completo):** Pode configurar, apurar, alterar cadastros e emitir.
+- **Escrita (Operacional):** Importação de XMLs, manifestação de notas e conciliações.
+- **Leitura (Consulta):** Somente visualização e exportação de relatórios (sem botões de alteração ou exclusão).
+
+### 5. Barra Lateral Dinâmica (Sidebar Filtrada) ([src/components/SidebarCertificado.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SidebarCertificado.tsx))
+- A barra lateral agora é filtrada pela função utilitária `hasModuleAccess`.
+- O usuário **só vê os botões dos módulos que foram marcados para ele**.
+- Se um grupo de navegação não tiver nenhum módulo autorizado, o grupo inteiro é ocultado automaticamente.
+- **Exemplo real:** Um cliente com perfil *Cliente Consulta* abre o sistema e vê apenas **Central de KPIs** e **Relatórios Fiscais**, com uma interface limpa e intuitiva, sem ser sobrecarregado por opções técnicas de integrações ou configurações.
+
+### 6. Salvaguarda de Rota ([src/App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx))
+- Se o usuário tentar acessar um `activeMode` restrito, o sistema o redireciona suavemente para o seu primeiro módulo liberado.
+
+### 7. Backend & Banco de Dados ([server/routes/users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts))
+- Serialização e desserialização de arrays de `modulosPermitidos` no SQLite em formato JSON (`["dfe_xml","relatorios_xml"]`) ou wildcard `'*'`.
+
+---
+
+## 2. Validação & Resultados dos Testes
+
+1. **TypeScript Compiler (`npx tsc --noEmit`):**
+   - Executado com sucesso: **0 erros encontrados**.
+2. **Testes Automatizados Backend (`scripts/test_contador_gestor.ts`):**
+   - Executado via `tsx`: **100% aprovado**.
+3. **Status de Versionamento (`git status`):**
+   - Nenhuma branch remota afetada, zero commits enviados para staging ou produção.

@@ -236,6 +236,12 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
         nfseNacionalUrl: 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
         apiKeyCgibs: '',
         bearerTokenRfb: '',
+        tipoErp: 'GENERICO',
+        formatoPayload: 'json',
+        erpAuthToken: '',
+        despacharNfeAuto: true,
+        despacharNfseAuto: true,
+        notificarManifestacao: true,
         flagWebhook: false,
         flagConsultaDemanda: false,
         status: 'pendente_configuracao',
@@ -260,6 +266,12 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
       nfseNacionalUrl: cred.nfse_nacional_url || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
       apiKeyCgibs: cred.api_key_cgibs || '',
       bearerTokenRfb: cred.bearer_token_rfb || '',
+      tipoErp: cred.tipo_erp || 'GENERICO',
+      formatoPayload: cred.formato_payload || 'json',
+      erpAuthToken: cred.erp_auth_token || '',
+      despacharNfeAuto: cred.despachar_nfe_auto !== 0,
+      despacharNfseAuto: cred.despachar_nfse_auto !== 0,
+      notificarManifestacao: cred.notificar_manifestacao !== 0,
       flagWebhook: cred.flag_webhook === 1,
       flagConsultaDemanda: cred.flag_consulta_demanda === 1,
       status: cred.status || 'habilitado',
@@ -271,8 +283,8 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-// POST /api/apuracao/credenciais — Salvar credenciais e endpoints (Admin Master e Suporte TI do CNPJ)
-router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
+// POST /api/apuracao/credenciais — Salvar credenciais e endpoints (Admin Master, Suporte TI e Contador Gestor)
+router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
       empresaId,
@@ -286,6 +298,12 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       apiKeyCgibs,
       bearerTokenRfb,
       tokenContrib,
+      tipoErp,
+      formatoPayload,
+      erpAuthToken,
+      despacharNfeAuto,
+      despacharNfseAuto,
+      notificarManifestacao,
       flagWebhook,
       flagConsultaDemanda
     } = req.body;
@@ -306,8 +324,10 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       INSERT INTO apuracao_credenciais_cgibs (
         id, empresa_id, client_id, client_secret, webhook_url,
         cgibs_url, rfb_url, svrs_url, nfse_nacional_url, api_key_cgibs, bearer_token_rfb,
-        token_contrib, flag_webhook, flag_consulta_demanda, status, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
+        token_contrib, tipo_erp, formato_payload, erp_auth_token,
+        despachar_nfe_auto, despachar_nfse_auto, notificar_manifestacao,
+        flag_webhook, flag_consulta_demanda, status, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
       ON CONFLICT(empresa_id) DO UPDATE SET
         client_id = excluded.client_id,
         client_secret = excluded.client_secret,
@@ -319,6 +339,12 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
         api_key_cgibs = excluded.api_key_cgibs,
         bearer_token_rfb = excluded.bearer_token_rfb,
         token_contrib = excluded.token_contrib,
+        tipo_erp = excluded.tipo_erp,
+        formato_payload = excluded.formato_payload,
+        erp_auth_token = excluded.erp_auth_token,
+        despachar_nfe_auto = excluded.despachar_nfe_auto,
+        despachar_nfse_auto = excluded.despachar_nfse_auto,
+        notificar_manifestacao = excluded.notificar_manifestacao,
         flag_webhook = excluded.flag_webhook,
         flag_consulta_demanda = excluded.flag_consulta_demanda,
         status = 'habilitado',
@@ -336,11 +362,102 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       apiKeyCgibs || '',
       bearerTokenRfb || '',
       tokenContrib || '',
+      tipoErp || 'GENERICO',
+      formatoPayload || 'json',
+      erpAuthToken || '',
+      despacharNfeAuto !== false ? 1 : 0,
+      despacharNfseAuto !== false ? 1 : 0,
+      notificarManifestacao !== false ? 1 : 0,
       flagWebhook !== false ? 1 : 0,
       flagConsultaDemanda !== false ? 1 : 0
     );
 
-    res.json({ success: true, mensagem: `Configurações de APIs e Credenciais salvas com sucesso para a empresa (CNPJ8 ${cnpjRaiz}).` });
+    res.json({ success: true, mensagem: `Configurações de APIs, ERP e Credenciais salvas com sucesso para a empresa (CNPJ8 ${cnpjRaiz}).` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/apuracao/test-erp-webhook — Simular disparo de Webhook para o ERP da Empresa
+router.post('/test-erp-webhook', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { empresaId, webhookUrl, tipoErp, formatoPayload, erpAuthToken } = req.body;
+    const { targetEmpId, cnpjRaiz, razaoSocial } = getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+
+    if (!canUserAccessEmpresa(req, targetEmpId)) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta empresa.' });
+      return;
+    }
+
+    const nfeExemploChave = `352609${cnpjRaiz}000199550010000045211000045210`;
+    let payloadExemplo: any = {};
+
+    if (formatoPayload === 'totvs_sf1') {
+      payloadExemplo = {
+        empresa: cnpjRaiz,
+        rotina: "MATA103",
+        operacao: "INCLUSAO",
+        cabecalho_sf1: {
+          F1_DOC: "000004521",
+          F1_SERIE: "1",
+          F1_FORNECE: "FORNECEDOR MODELO LTDA",
+          F1_CGC: "11222333000188",
+          F1_EMISSAO: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
+          F1_VALBRUT: 12500.00,
+          F1_STATUS_RADAR: "CONFORME_REFORMA_2026"
+        },
+        itens_sd1: [
+          { D1_ITEM: "01", D1_COD: "PROD-001", D1_VUNIT: 250.00, D1_QUANT: 50, D1_TOTAL: 12500.00, D1_CST_IBS: "001", D1_ALIQ_IBS: 0.10 }
+        ],
+        xml_dist_nfe_base64: "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz48bmZlUHJvYz48L25mZVByb2M+"
+      };
+    } else if (formatoPayload === 'sap_bapi') {
+      payloadExemplo = {
+        bapi: "BAPI_INCOMINGINVOICE_CREATE",
+        fiscal_header: {
+          comp_code: "1000",
+          doc_type: "RE",
+          doc_date: new Date().toISOString().slice(0, 10),
+          ref_doc_no: "4521",
+          gross_amount: 12500.00,
+          currency: "BRL",
+          radar_compliance_status: "AUDITED_OK",
+          chave_acesso_nfe: nfeExemploChave
+        },
+        tax_compliance: {
+          ibs_estimated: 125.00,
+          cbs_estimated: 112.50,
+          split_payment_eligivel: false
+        }
+      };
+    } else {
+      payloadExemplo = {
+        evento: "DFE_RECEPCIONADO_E_AUDITADO",
+        empresaDestino: { id: targetEmpId, cnpj: cnpjRaiz, razaoSocial },
+        documento: {
+          tipo: "NFE",
+          chave: nfeExemploChave,
+          numero: "4521",
+          serie: "1",
+          emitente: { cnpj: "11222333000188", xNome: "FORNECEDOR MODELO LTDA", uf: "SP" },
+          valores: { vNF: 12500.00, vIBS: 125.00, vCBS: 112.50 },
+          statusSefaz: "AUTORIZADA",
+          statusConformidade: "AUDITORIA_APROVADA_SEM_DIVERGENCIAS",
+          timestampCaptura: new Date().toISOString()
+        }
+      };
+    }
+
+    res.json({
+      success: true,
+      statusHttp: 200,
+      latenciaMs: Math.floor(35 + Math.random() * 25),
+      tipoErp: tipoErp || 'GENERICO',
+      formatoPayload: formatoPayload || 'json',
+      webhookEndpoint: webhookUrl || 'Endpoint não informado (Simulação de entrega)',
+      payloadSimulado: payloadExemplo,
+      mensagem: `Simulação de disparo executada com sucesso para ${tipoErp || 'ERP'}. Resposta HTTP 200 OK com payload formatado.`
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User, Lock, FileCheck2, Users, Calculator
+  ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -82,8 +82,6 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Captura de XMLs', icon: FileCode, color: 'text-cyan-400' };
       case 'eventos_dfe':
         return { title: 'Central de Eventos DF-e', icon: Send, color: 'text-indigo-400' };
-      case 'integracao_erp':
-        return { title: 'Integração SAP / ERP', icon: Database, color: 'text-emerald-400' };
       case 'auditoria_fiscal':
         return { title: 'Auditoria Fiscal & Conformidade', icon: ShieldAlert, color: 'text-amber-400' };
       case 'relatorios_xml':
@@ -94,14 +92,12 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Gestão de Acessos', icon: Lock, color: 'text-indigo-400' };
       case 'carteira_cnpjs':
         return { title: 'Cadastro de Empresas', icon: Building2, color: 'text-emerald-400' };
-      case 'parceiros_negocio':
-        return { title: 'Parceiros de Negócio (MDM Fiscal)', icon: Users, color: 'text-cyan-400' };
-      case 'cruzamento_sped':
-        return { title: 'Conciliação SPED Fiscal x SEFAZ', icon: FileCheck2, color: 'text-indigo-400' };
       case 'observabilidade_dlq':
         return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
       case 'apuracao_assistida':
         return { title: 'Apuração Assistida (IBS/CBS)', icon: Calculator, color: 'text-emerald-400' };
+      case 'simulador_regimes':
+        return { title: 'Modelador de Regimes & Ponto de Equilíbrio CPP', icon: TrendingUp, color: 'text-indigo-400' };
       default:
         return { title: 'Painel de Auditoria', icon: Building2, color: 'text-cyan-400' };
     }

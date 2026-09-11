@@ -24,7 +24,8 @@ coverage/
 !.env.example
 
 # Local SQLite & Databases
-data/
+/data/
+!src/data/
 *.sqlite
 *.sqlite3
 *.db

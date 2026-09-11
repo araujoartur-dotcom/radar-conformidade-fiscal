@@ -1,0 +1,217 @@
+Kkkk, você tem toda a razão! Se colocar o dono de uma pequena empresa ou o faturista para abrir Google Authenticator no celular toda vez que for emitir ou consultar uma nota, ele enlouquece e sobra para todo mundo! No mundo real de pequenas e médias empresas e escritórios contábeis, **simplicidade, rapidez e foco no trabalho** são prioridade absoluta. O 2FA/MFA está completamente descartado.
+
+---
+
+## Desenho da Arquitetura de Concessão de Acessos (Baseada em Botões e Conjuntos de Informações)
+
+A arquitetura que resolve isso com elegância e padrão corporativo funciona em **3 Camadas Naturais**, inspirada na segregação de funções que você mencionou da sua empresa:
+
+```mermaid
+graph TD
+    USER["Usuário Loga (Email + Senha)"] --> C1["CAMADA 1: Menu de Botões (O que eu vejo?)"]
+    
+    subgraph "Camada 1 - Sidebar Dinâmica"
+        C1 -->|"Filtra a Sidebar"| BOTAO1["Botão: Captura de XMLs"]
+        C1 -->|"Filtra a Sidebar"| BOTAO2["Botão: Relatórios Fiscais"]
+        C1 -->|"Filtra a Sidebar"| BOTAO3["Botão: Apuração IBS/CBS"]
+        C1 -.->|"Sem Acesso (Oculto)"| OCULTO["Gestão de Acessos / APIs"]
+    end
+
+    subgraph "Camada 2 - Escopo de Dados"
+        BOTAO1 --> C2["CAMADA 2: Empresas Autorizadas (Onde posso ver?)"]
+        C2 -->|"Seletor no Topo"| EMP1["Apenas CNPJs Vinculados"]
+    end
+
+    subgraph "Camada 3 - Ação Pós-Clique"
+        EMP1 --> C3["CAMADA 3: O que posso fazer dentro da tela?"]
+        C3 -->|"Permissão Leitura"| A1["Visualizar, Filtrar, Exportar (Sem botões de salvar/excluir)"]
+        C3 -->|"Permissão Escrita"| A2["Manifestar, Importar, Processar e Gravar"]
+    end
+```
+
+---
+
+### Camada 1: Menu de Botões Dinâmicos (O que o usuário vê na Sidebar)
+Em vez de jogar 15 botões na cara de todo mundo:
+- O sistema olha os **módulos autorizados** do usuário logado.
+- Se o usuário tem acesso a **"Captura de XMLs"** e **"Relatórios Fiscais"**, a barra lateral dele carrega **apenas esses 2 botões**. 
+- O botão **"Gestão de Acessos"** só existe para quem for `admin_master` ou `contador_gestor`. Para o analista ou cliente, esse botão nem existe.
+- **Resultado imediato:** A tela fica limpa, profissional e intuitiva. O colaborador não se perde e nem clica onde não deve.
+
+---
+
+### Camada 2: Escopo de Empresas (Onde a informação é carregada)
+Quando o usuário clica em qualquer botão liberado (ex: "Relatórios Fiscais"):
+- O seletor de **Empresa Ativa** (no topo da tela) **só mostra as empresas às quais ele foi vinculado**.
+- Se ele só cuida da empresa "Padaria do Zé", ele nunca vai ver as notas ou os relatórios da "Transportadora Silva". O banco de dados filtra os dados automaticamente pelo `empresa_id`.
+
+---
+
+### Camada 3: Nível de Ação Pós-Clique (O que ele pode operar)
+Quando a tela carrega após o clique, ela obedece ao nível de autorização:
+- **Leitura (`leitura`):**
+  - O usuário consegue consultar notas, rodar relatórios, emitir espelhos e exportar Excel/PDF.
+  - **Botões bloqueados/ocultos:** botões de "Excluir", "Salvar Parâmetros", "Cadastrar Certificado A1" ou "Alterar Dados".
+- **Operacional / Escrita (`escrita`):**
+  - O usuário pode subir XMLs, manifestar notas, rodar cruzamento SPED e validar regras.
+- **Total (`total`):**
+  - Pode alterar cadastros, vincular certificados e configurar parâmetros fiscais.
+
+---
+
+### Como fica a Nova Tela de "Gestão de Acessos" para o Contador:
+
+Adeus formulário falso de 2FA e caixas de texto genéricas. Ao abrir **Gestão de Acessos**, o Contador/Admin vê um painel simples e direto:
+
+1. **Lista de Colaboradores:**
+   - Nome, e-mail, perfil e status (Ativo/Inativo).
+   - Botão para criar novo colaborador (apenas Nome, E-mail, Senha provisória).
+2. **Ao Selecionar ou Editar o Colaborador (Drawer / Painel Lateral):**
+   - **Passo A - Empresas:** Caixas de seleção das empresas da carteira do contador para liberar o acesso.
+   - **Passo B - Conjunto de Botões / Módulos:** Checkboxes organizados exatamente como os botões da barra lateral:
+     - [ ] Painel de Dashboards & KPIs
+     - [ ] Captura de XMLs (DF-e)
+     - [ ] Central de Eventos DF-e
+     - [ ] Relatórios Fiscais
+     - [ ] Apuração Reforma Tributária (IBS/CBS)
+     - [ ] Conciliação SPED Fiscal
+     - [ ] Consultas Cadastrais (CCC / CNPJ)
+   - **Passo C - Nível de Ação:** Seletor simples: `[ Leitura (Consulta) ]` | `[ Escrita (Operacional) ]` | `[ Total (Completo) ]`.
+3. **Botão de Atalho "Perfis Prontos" (Para o contador não ter trabalho):**
+   - **"Faturista / Operador de Notas"** -> já marca automaticamente Captura de XMLs e Consultas.
+   - **"Analista Fiscal"** -> já marca XMLs, Relatórios, Apuração IBS/CBS e SPED.
+   - **"Cliente Consulta"** -> já marca Dashboards e Relatórios em modo Leitura.
+   - *O contador pode clicar no perfil pronto ou marcar/desmarcar as caixas individualmente se quiser customizar.*
+
+---
+
+### O que você acha desse modelo?
+Ele elimina 100% da burocracia, protege os dados entre as empresas, oculta botões desnecessários para cada função e entrega exatamente o conceito de **"autorização por conjunto de informações carregadas no clique"** que você pontuou.
+
+Podemos seguir com essa implementação?
+
+Searched for "modulos_permitidos"
+Viewed auth.ts:230-265
+Viewed AuthContext.tsx:1-60
+Created implementation_plan.md
+Viewed users.ts:355-430
+Viewed users.ts:565-645
+Viewed users.ts:170-210
+Viewed types.ts:130-180
+Searched for "QueryMode"
+Searched for "type QueryMode"
+Viewed types.ts:50-90
+Viewed types.ts:91-130
+Searched for "UsuarioCorporativo"
+Searched for "interface UsuarioCorporativo"
+Viewed types.ts:1-45
+Viewed SidebarCertificado.tsx:100-180
+Viewed AcessoCorporativoModal.tsx:1-75
+Viewed AcessoCorporativoModal.tsx:76-160
+Viewed App.tsx:430-480
+Listed directory utils
+Viewed types.ts:1-35
+Edited types.ts
+Created permissions.ts
+Viewed SidebarCertificado.tsx:30-110
+Edited SidebarCertificado.tsx
+Viewed SidebarCertificado.tsx:95-145
+Edited SidebarCertificado.tsx
+Viewed App.tsx:200-240
+Viewed App.tsx:50-90
+Viewed App.tsx:35-50
+Viewed App.tsx:1-35
+Edited App.tsx
+Viewed users.ts:405-425
+Viewed users.ts:190-215
+Edited users.ts
+Viewed AcessoCorporativoModal.tsx:150-250
+Viewed AcessoCorporativoModal.tsx:250-380
+Viewed AcessoCorporativoModal.tsx:480-570
+Viewed AcessoCorporativoModal.tsx:600-750
+Viewed AcessoCorporativoModal.tsx:751-850
+Viewed AcessoCorporativoModal.tsx:851-938
+Created AcessoCorporativoModal.tsx
+Ran command: `npx tsc --noEmit`
+
+Executando a checagem de integridade TypeScript (`npx tsc --noEmit`) em segundo plano...
+
+Used tool: manage_task
+Viewed SidebarCertificado.tsx:165-195
+Viewed SidebarCertificado.tsx:45-105
+Edited SidebarCertificado.tsx
+Ran command: `npx tsc --noEmit`
+
+Validando a compilação com `npx tsc --noEmit`...
+
+Used tool: manage_task
+
+Aguardando o encerramento da compilação...
+
+Ran command: `npx tsx scripts/test_contador_gestor.ts`
+Ran command: `git status`
+Created walkthrough.md
+
+Implementação finalizada com sucesso no ambiente local, **sem deploy**!
+
+Aquele card de 2FA/MFA simulado (com input `000000` e textos estáticos) foi **completamente eliminado**. No lugar dele, agora temos a **Matriz de Concessão de Acessos por Checkboxes Organizados** e a **Barra Lateral Dinâmica**.
+
+---
+
+### O Que Foi Implementado:
+
+#### 1. Fim do 2FA / MFA Fictício
+- A tela de autenticação em dois fatores e as caixas de "Políticas de Segurança do Sistema" foram **100% removidas**.
+- O módulo **Gestão de Acessos** agora é direto ao ponto: lista colaboradores, empresas vinculadas e os botões autorizados.
+
+#### 2. Matriz de Checkboxes Organizados por Grupo
+Na criação ou edição de qualquer colaborador, você encontra a matriz com caixas de seleção interativas, organizadas por categorias:
+- 📊 **Painel Executivo & BI:** *Central de KPIs & Dashboards*
+- 📄 **Documentos Fiscais (DF-e):** *Captura de XMLs* e *Central de Eventos DF-e*
+- ⚖️ **Reforma Tributária (RTC):** *Apuração Assistida (IBS/CBS)*
+- 📑 **Relatórios Fiscais (SAP / ERP):** *Relatórios Especializados* e *Tabelas Fiscais*
+- 🔍 **Consultas Cadastrais (CCC):** *Consulta em Lote (Excel)* e *Consulta Rápida Direta*
+- 🛡️ **Governança & Integrações:** *Conciliação SPED*, *Conectores Municipais*, *Integração ERP*, *Auditoria* e *DLQ*
+- 🏢 **Acesso & Cadastros:** *Cadastro de Empresas* e *Parceiros de Negócio (MDM)*
+
+*Cada grupo tem botão de **"Marcar Grupo / Desmarcar Grupo"** com contador de itens selecionados em tempo real (`X/Y selecionados`), além dos botões globais **"Selecionar Todos"** e **"Limpar Seleção"**.*
+
+#### 3. Perfis Prontos (Atalhos de 1 Clique)
+No topo do formulário, há botões de preenchimento automático para não precisar marcar caixinha por caixinha se não quiser:
+- ⚡ **Faturista / Operador de Notas**: marca DF-e (XMLs/Eventos) e Consultas CCC • *Escrita*
+- 📊 **Cliente / Diretoria (Somente Consulta)**: marca KPIs e Relatórios Fiscais • *Leitura*
+- 📑 **Analista Fiscal Pleno**: marca DF-e, Apuração IBS/CBS, Relatórios, Tabelas e SPED • *Escrita*
+- 🛡️ **Auditoria & Compliance**: marca KPIs, DF-e, Apuração, SPED e Auditoria • *Leitura*
+- 👑 **Contador Gestor / Gerente**: marca todos os módulos e governança • *Total*
+
+*(Você pode clicar no perfil pronto e, se quiser, desmarcar ou marcar caixas adicionais livremente!)*
+
+#### 4. Barra Lateral Dinâmica (Sidebar Filtrada)
+- O sistema agora verifica os botões permitidos do usuário logado.
+- Se um usuário só tem autorização para **DF-e** e **Relatórios**, a barra lateral dele carrega **apenas esses 2 botões**. 
+- Os outros 14 botões e as categorias vazias desaparecem da tela dele. O colaborador entra e só vê aquilo que ele realmente utiliza.
+
+#### 5. Níveis de Operação Claros
+- **Total:** Configurações, apuração e alterações completas.
+- **Escrita (Operacional):** Importação de XMLs, manifestações e lançamentos.
+- **Leitura (Consulta):** Visualização e exportação de relatórios (sem botões de alteração/exclusão).
+
+---
+
+### Status dos Testes Locais:
+- **Compilação:** `npx tsc --noEmit` executado com **0 erros**.
+- **Backend & SQLite:** Script de testes de banco [`scripts/test_contador_gestor.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/test_contador_gestor.ts) executado com **100% de sucesso**.
+- **Deploy:** **Nenhum deploy realizado**, código 100% local pronto para seus testes!
+
+Para conferir o detalhamento técnico completo, consulte o [walkthrough.md](file:///C:/Users/artur/.gemini/antigravity-ide/brain/1c628667-ef14-4ad6-930b-020e8647ad33/walkthrough.md).
+
+Todas as etapas foram executadas e validadas:
+
+1. **2FA/MFA Removido:** A tela de autenticação em dois fatores e as caixas de políticas estáticas foram completamente eliminadas.
+2. **Matriz de Checkboxes:** Implementada em [AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx) com agrupamento temático de módulos, botões de atalho ("Perfis Prontos") e ações de seleção em lote.
+3. **Menu Dinâmico na Sidebar:** Atualizado em [SidebarCertificado.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SidebarCertificado.tsx) via [permissions.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/permissions.ts), garantindo que cada usuário só visualize os botões que tem autorização para clicar.
+4. **Proteção de Rotas & Ações:** Configurada em [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx) com redirecionamento automático caso o modo ativo não seja permitido.
+5. **Validação:** Compilação TypeScript (`npx tsc --noEmit`) sem nenhum erro (0 erros) e testes de banco/rotas 100% aprovados.
+6. **Deploy:** Conforme sua diretriz, **nenhum deploy foi efetuado**.
+
+O sistema está pronto para você navegar e testar localmente no seu ambiente de desenvolvimento. Se precisar de qualquer ajuste fino nos módulos ou perfis, estou à disposição!

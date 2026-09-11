@@ -1,0 +1,93 @@
+# Plano de Implementação: Gestão de Colaboradores e Empresas pelo Contador Gestor
+
+## Visão Geral
+Atualmente, apenas os perfis `admin_master` e `suporte_ti` possuem acesso às rotas e telas de gestão de usuários. Além disso, a criação de novos usuários exige a amarração obrigatória de CNPJs no momento do cadastro.
+
+Este plano introduz a **autonomia do Contador Gestor (`contador_gestor`)** para:
+1. **Criar e gerenciar seus próprios colaboradores** (ex: Analistas Fiscais, Auditores e Operadores).
+2. **Vincular e desvincular empresas da sua carteira** aos seus colaboradores com escopo estrito (o contador só pode atribuir empresas que ele próprio administra).
+3. **Gerenciar níveis de permissão** (`total`, `escrita`, `leitura`) e módulos permitidos por empresa.
+4. **Desacoplar Usuário de Empresa**: Permitir que usuários sejam criados sem empresa inicial obrigatória (ficando pendentes de atribuição).
+5. **Gestão Bidirecional**:
+   - **Visão Usuário:** Na aba de Gestão de Usuários, o gestor escolhe quais empresas o usuário acessa.
+   - **Visão Empresa:** No painel da Carteira de Empresas, o gestor vê e gerencia quais colaboradores atendem cada empresa.
+
+> [!IMPORTANT]
+> **Restrição de Deploy:** Conforme solicitado, nenhuma ação de deploy em produção/staging será realizada. Todas as alterações serão validadas e testadas localmente.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Regras de Escopo e Segurança para o Contador Gestor:**
+> - Um `contador_gestor` **NUNCA** poderá criar ou editar perfis privilegiados (`admin_master` ou `suporte_ti`).
+> - Um `contador_gestor` **NUNCA** poderá visualizar, vincular ou desvincular empresas que estejam fora da sua própria carteira.
+> - Se o usuário for criado sem empresas vinculadas, ele poderá autenticar normalmente, mas o sistema apresentará estado informativo de boas-vindas: *"Você não possui empresas vinculadas no momento. Aguarde a liberação do seu gestor contábil."*
+
+---
+
+## Proposta de Alterações
+
+### Backend (Node / Express / SQLite / Supabase)
+
+#### [MODIFY] [users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)
+- **Ampliar perfis de gestão**: Incluir `contador_gestor` em `PERFIS_GESTAO_USUARIOS = ['admin_master', 'suporte_ti', 'contador_gestor']`.
+- **Habilitar rotas CRUD para Contador**:
+  - `POST /api/users`: Permitir que `contador_gestor` crie usuários com perfis operacionais (`analista_fiscal`, `auditor_externo`, `operador_leitura`).
+  - `PUT /api/users/:id`: Permitir que `contador_gestor` edite usuários do seu escopo e altere os CNPJs vinculados (desde que pertençam à sua carteira).
+  - `DELETE /api/users/:id`: Permitir que `contador_gestor` remova colaboradores do seu escopo.
+- **Tornar `cnpjsAutorizados` opcional**:
+  - Se `cnpjsAutorizados` for vazio `[]`, o usuário é cadastrado sem registros em `usuario_empresa`.
+- **Rotas de Gestão de Membros por Empresa (Visão Centrada na Empresa)**:
+  - `GET /api/users/empresa/:empresaId/membros`: Retorna a lista de colaboradores que possuem acesso a uma empresa específica, com seu nível de permissão (`permissao`) e status.
+  - `POST /api/users/empresa/:empresaId/vincular`: Vincula um colaborador à empresa com permissão definida (`total`, `escrita`, `leitura`).
+  - `DELETE /api/users/empresa/:empresaId/desvincular/:usuarioId`: Remove o vínculo do colaborador com aquela empresa.
+
+---
+
+### Frontend (React / TypeScript / Tailwind)
+
+#### [MODIFY] [AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx)
+- **Habilitar aba de usuários para `contador_gestor`**:
+  - Exibir a aba com título contextual: *"Gestão da Minha Equipe & Colaboradores"*.
+- **Formulário de Cadastro/Edição de Colaborador**:
+  - Permitir salvar sem selecionar CNPJ (tornar a seleção opcional com legenda explicativa).
+  - Limitar o dropdown de perfis para o Contador (exibir apenas: Analista Fiscal, Auditor Externo, Operador).
+  - Listar apenas as empresas da carteira do Contador logado no multiselect.
+  - Adicionar controle de permissão por empresa (`Total`, `Escrita`, `Somente Leitura`).
+
+#### [MODIFY] [CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- **Ação "Equipe / Colaboradores" nos Cards e Linhas da Carteira**:
+  - Adicionar um botão discreto de membros (`Users`) em cada card/linha de empresa.
+  - Abrir um modal/gaveta rápida para:
+    - Ver quais colaboradores atendem aquele CNPJ.
+    - Adicionar um novo colaborador àquela empresa em 1 clique.
+    - Alterar a permissão do colaborador na empresa (`Leitura`, `Operação`, `Total`).
+    - Desvincular um colaborador da empresa.
+
+#### [MODIFY] [Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx) ou [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx)
+- Exibir aviso amigável quando um colaborador recém-criado sem empresas fizer login, orientando que o gestor precisa atribuir sua primeira carteira.
+
+---
+
+## Verification Plan
+
+### Testes Automatizados / Script de Validação
+- Criar e executar um script de teste em Node/TS (`server/scripts/test_contador_gestao.ts` ou via fetch API) validando:
+  1. Login como `contador_gestor`.
+  2. Cadastro de um colaborador `analista_fiscal` sem nenhum CNPJ vinculado (deve ter sucesso e retornar lista vazia de CNPJs).
+  3. Tentativa do `contador_gestor` de vincular um CNPJ fora da sua carteira (deve ser bloqueado com HTTP 403).
+  4. Vinculação de uma empresa da carteira do contador ao colaborador (sucesso).
+  5. Edição do nível de permissão do colaborador na empresa (de `leitura` para `total`).
+  6. Desvinculação da empresa do colaborador.
+  7. Tentativa de criar um usuário `admin_master` sendo `contador_gestor` (deve ser bloqueado com HTTP 403).
+
+### Testes Manuais
+1. **Perfil Contador Gestor:**
+   - Abrir o modal de Acesso Corporativo -> Conferir que a aba de usuários está liberada para gestão de colaboradores.
+   - Criar um novo usuário "João Analista" sem marcar CNPJ -> Verificar criação com sucesso e badge "Pendente de Atribuição".
+   - Abrir o painel da Carteira de Empresas -> Clicar no botão "Equipe com Acesso" de uma empresa -> Vincular "João Analista" à empresa com perfil "Escrita".
+   - Abrir novamente a tela de Usuários e verificar que a empresa aparece atribuída a João.
+2. **Perfil Colaborador (Analista):**
+   - Logar com a conta do "João Analista" e confirmar que ele enxerga estritamente a empresa que o Contador liberou para ele.

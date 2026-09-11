@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'integracao_erp' | 'cruzamento_sped' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'parceiros_negocio' | 'conectores_municipais' | 'apuracao_assistida';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'conectores_municipais' | 'apuracao_assistida' | 'simulador_regimes';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -6,16 +6,27 @@ export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_
 
 export type PerfilUsuario = 'admin_master' | 'suporte_ti' | 'contador_gestor' | 'analista_fiscal' | 'auditor_externo' | 'operador_leitura';
 
+export interface EmpresaVinculadaInfo {
+  empresaId: string;
+  cnpjCompleto: string;
+  razaoSocial: string;
+  permissao: 'total' | 'escrita' | 'leitura';
+  modulosPermitidos: string;
+}
+
 export interface UsuarioCorporativo {
   id: string;
   nome: string;
   email: string;
   perfil: PerfilUsuario;
-  mfaHabilitado: boolean;
-  mfaMetodo: 'authenticator_app' | 'sms' | 'email';
-  status: 'ativo' | 'bloqueado' | 'pendente_mfa';
+  status: 'ativo' | 'bloqueado';
   cnpjsAutorizados: string[]; // Lista de CNPJs aos quais o usuário tem acesso ("*" para todos)
+  modulosPermitidos?: string[] | string;
+  empresasVinculadas?: EmpresaVinculadaInfo[];
+  criadoPor?: string | null;
   ultimoAcesso?: string;
+  createdAt?: string;
+  mfaHabilitado?: boolean;
 }
 
 export interface ContadorSped {

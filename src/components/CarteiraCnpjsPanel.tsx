@@ -4,12 +4,25 @@ import {
   CheckCircle2, AlertTriangle, Lock, RefreshCw, Upload, Sparkles, Filter,
   Users, Trash2, ArrowUpRight, Database, FolderCheck, Check, Edit3, Eye, EyeOff,
   FileText, MapPin, UserCheck, FileCode, Copy, Download, Zap, Grid, List,
-  Shield, Activity, ExternalLink, ArrowRight, Globe, Server, Radio, Cpu
+  Shield, Activity, ExternalLink, ArrowRight, Globe, Server, Radio, Cpu,
+  UserPlus, UserMinus, Workflow, Send, Code
 } from 'lucide-react';
-import { ClienteEmpresaTenant, CertificadoA1 } from '../types';
+import { ClienteEmpresaTenant, CertificadoA1, UsuarioCorporativo } from '../types';
 import { useApi } from '../hooks/useApi';
 import { useAuth } from '../contexts/AuthContext';
 import { lookupCnpj, formatCNPJ } from '../utils/cnpj';
+
+export interface MembroEmpresa {
+  id: string;
+  nome: string;
+  email: string;
+  papel: string;
+  departamento?: string;
+  ativo: boolean;
+  permissao: 'total' | 'escrita' | 'leitura';
+  modulosPermitidos: string[];
+  vinculadoEm: string;
+}
 
 interface CarteiraCnpjsPanelProps {
   selectedTenantCnpj: string;
@@ -57,8 +70,98 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [quickSearchError, setQuickSearchError] = useState<string | null>(null);
 
   // Modal State
-  const [modalTab, setModalTab] = useState<'identificacao' | 'endereco' | 'contador' | 'sped' | 'integracoes'>('identificacao');
-  const [copiedSped, setCopiedSped] = useState<string | null>(null);
+  const [modalTab, setModalTab] = useState<'identificacao' | 'endereco' | 'contador' | 'integracoes' | 'equipe'>('identificacao');
+
+  // Equipe & Permissões da Empresa em Edição
+  const [membrosEmpresa, setMembrosEmpresa] = useState<MembroEmpresa[]>([]);
+  const [membrosLoading, setMembrosLoading] = useState(false);
+  const [todosUsuarios, setTodosUsuarios] = useState<UsuarioCorporativo[]>([]);
+  const [selectedUserToLink, setSelectedUserToLink] = useState('');
+  const [selectedPermissaoToLink, setSelectedPermissaoToLink] = useState<'total' | 'escrita' | 'leitura'>('escrita');
+  const [linkingLoading, setLinkingLoading] = useState(false);
+  const [equipeFeedback, setEquipeFeedback] = useState<{ tipo: 'sucesso' | 'erro'; msg: string } | null>(null);
+
+  const loadEmpresaMembros = async (empId: string) => {
+    setMembrosLoading(true);
+    setEquipeFeedback(null);
+    try {
+      const [resMembros, resUsers] = await Promise.all([
+        get<{ success: boolean; data: MembroEmpresa[] }>(`/users/empresa/${empId}/membros`),
+        get<{ success: boolean; data: UsuarioCorporativo[] }>('/users')
+      ]);
+
+      if (resMembros.ok && resMembros.data?.data) {
+        setMembrosEmpresa(resMembros.data.data);
+      }
+      if (resUsers.ok && resUsers.data?.data) {
+        setTodosUsuarios(resUsers.data.data);
+      }
+    } catch (err: any) {
+      console.error('Erro ao carregar equipe da empresa:', err);
+    } finally {
+      setMembrosLoading(false);
+    }
+  };
+
+  const handleVincularMembro = async (empId: string) => {
+    if (!selectedUserToLink) return;
+    setLinkingLoading(true);
+    setEquipeFeedback(null);
+    try {
+      const res = await post<{ success: boolean; message?: string; error?: string }>(`/users/empresa/${empId}/vincular`, {
+        usuarioId: selectedUserToLink,
+        permissao: selectedPermissaoToLink,
+        modulosPermitidos: ['*']
+      });
+
+      if (res.ok) {
+        setEquipeFeedback({ tipo: 'sucesso', msg: 'Colaborador vinculado com sucesso!' });
+        setSelectedUserToLink('');
+        await loadEmpresaMembros(empId);
+        setTimeout(() => setEquipeFeedback(null), 3000);
+      } else {
+        setEquipeFeedback({ tipo: 'erro', msg: res.error || res.data?.error || 'Erro ao vincular colaborador' });
+      }
+    } catch (err: any) {
+      setEquipeFeedback({ tipo: 'erro', msg: err.message || 'Erro ao vincular colaborador' });
+    } finally {
+      setLinkingLoading(false);
+    }
+  };
+
+  const handleDesvincularMembro = async (empId: string, usuarioId: string, nomeUsuario: string) => {
+    if (!confirm(`Deseja revogar o acesso de "${nomeUsuario}" a esta empresa?`)) return;
+    setEquipeFeedback(null);
+    try {
+      const res = await del<{ success: boolean; message?: string; error?: string }>(`/users/empresa/${empId}/desvincular/${usuarioId}`);
+      if (res.ok) {
+        setEquipeFeedback({ tipo: 'sucesso', msg: `Acesso de ${nomeUsuario} revogado com sucesso!` });
+        await loadEmpresaMembros(empId);
+        setTimeout(() => setEquipeFeedback(null), 3000);
+      } else {
+        setEquipeFeedback({ tipo: 'erro', msg: res.error || res.data?.error || 'Erro ao revogar acesso' });
+      }
+    } catch (err: any) {
+      setEquipeFeedback({ tipo: 'erro', msg: err.message || 'Erro ao revogar acesso' });
+    }
+  };
+
+  const handleAlterarPermissaoMembro = async (empId: string, usuarioId: string, novaPermissao: 'total' | 'escrita' | 'leitura') => {
+    try {
+      const res = await put<{ success: boolean; message?: string; error?: string }>(`/users/empresa/${empId}/permissao/${usuarioId}`, {
+        permissao: novaPermissao
+      });
+      if (res.ok) {
+        setEquipeFeedback({ tipo: 'sucesso', msg: 'Nível de permissão atualizado com sucesso!' });
+        await loadEmpresaMembros(empId);
+        setTimeout(() => setEquipeFeedback(null), 3000);
+      } else {
+        setEquipeFeedback({ tipo: 'erro', msg: res.error || res.data?.error || 'Erro ao alterar permissão' });
+      }
+    } catch (err: any) {
+      setEquipeFeedback({ tipo: 'erro', msg: err.message || 'Erro ao alterar permissão' });
+    }
+  };
 
   // Integrações & APIs da Empresa em Edição
   const [integracoesLoading, setIntegracoesLoading] = useState(false);
@@ -78,6 +181,26 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
 
+  // Integrações ERP específicas da Empresa
+  const [tenantTipoErp, setTenantTipoErp] = useState<'TOTVS' | 'SAP' | 'SENIOR' | 'LINX' | 'OMIE' | 'GENERICO'>('GENERICO');
+  const [tenantFormatoPayload, setTenantFormatoPayload] = useState<'json' | 'totvs_sf1' | 'sap_bapi'>('json');
+  const [tenantErpAuthToken, setTenantErpAuthToken] = useState('');
+  const [showErpAuthToken, setShowErpAuthToken] = useState(false);
+  const [tenantDespacharNfeAuto, setTenantDespacharNfeAuto] = useState(true);
+  const [tenantDespacharNfseAuto, setTenantDespacharNfseAuto] = useState(true);
+  const [tenantNotificarManifestacao, setTenantNotificarManifestacao] = useState(true);
+  const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{
+    statusHttp: number;
+    latenciaMs: number;
+    tipoErp: string;
+    formatoPayload: string;
+    webhookEndpoint: string;
+    mensagem: string;
+    payloadSimulado: any;
+  } | null>(null);
+  const [showWebhookPayloadPreview, setShowWebhookPayloadPreview] = useState(false);
+
   const handleTestApiConnection = () => {
     setIsTestingApi(true);
     setPingStatus(null);
@@ -87,10 +210,36 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     }, 900);
   };
 
+  const handleTestWebhook = async () => {
+    if (!editingTenant) return;
+    setIsTestingWebhook(true);
+    setWebhookTestResult(null);
+    try {
+      const res = await post<any>('/apuracao/test-erp-webhook', {
+        empresaId: editingTenant.id,
+        webhookUrl: tenantWebhookUrl,
+        tipoErp: tenantTipoErp,
+        formatoPayload: tenantFormatoPayload,
+        erpAuthToken: tenantErpAuthToken
+      });
+      if (res.ok && res.data) {
+        setWebhookTestResult(res.data);
+      } else {
+        alert('Erro ao testar webhook do ERP: ' + (res.error || res.data?.error || 'Erro desconhecido'));
+      }
+    } catch (err: any) {
+      alert('Erro ao testar webhook do ERP: ' + err.message);
+    } finally {
+      setIsTestingWebhook(false);
+    }
+  };
+
   const loadTenantIntegracoes = async (empId: string) => {
     setIntegracoesLoading(true);
     setIntegracoesSalvo(false);
     setPingStatus(null);
+    setWebhookTestResult(null);
+    setShowWebhookPayloadPreview(false);
     try {
       const res = await get<any>(`/apuracao/credenciais?empresaId=${empId}`);
       if (res.ok && res.data) {
@@ -105,6 +254,13 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setTenantBearerTokenRfb(res.data.bearerTokenRfb || '');
         setTenantFlagWebhook(res.data.flagWebhook !== false);
         setTenantFlagConsultaDemanda(res.data.flagConsultaDemanda !== false);
+
+        setTenantTipoErp(res.data.tipoErp || 'GENERICO');
+        setTenantFormatoPayload(res.data.formatoPayload || 'json');
+        setTenantErpAuthToken(res.data.erpAuthToken || '');
+        setTenantDespacharNfeAuto(res.data.despacharNfeAuto !== false);
+        setTenantDespacharNfseAuto(res.data.despacharNfseAuto !== false);
+        setTenantNotificarManifestacao(res.data.notificarManifestacao !== false);
       }
     } catch {
       // ignore
@@ -129,7 +285,13 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         apiKeyCgibs: tenantApiKeyCgibs,
         bearerTokenRfb: tenantBearerTokenRfb,
         flagWebhook: tenantFlagWebhook,
-        flagConsultaDemanda: tenantFlagConsultaDemanda
+        flagConsultaDemanda: tenantFlagConsultaDemanda,
+        tipoErp: tenantTipoErp,
+        formatoPayload: tenantFormatoPayload,
+        erpAuthToken: tenantErpAuthToken,
+        despacharNfeAuto: tenantDespacharNfeAuto,
+        despacharNfseAuto: tenantDespacharNfseAuto,
+        notificarManifestacao: tenantNotificarManifestacao
       });
       if (res.ok) {
         setIntegracoesSalvo(true);
@@ -193,13 +355,17 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   // Modal Editar CNPJ
   const [editingTenant, setEditingTenant] = useState<ClienteEmpresaTenant | null>(null);
 
-  const handleOpenEdit = (tenant: ClienteEmpresaTenant) => {
+  const handleOpenEdit = (
+    tenant: ClienteEmpresaTenant,
+    tab: 'identificacao' | 'endereco' | 'contador' | 'integracoes' | 'equipe' = 'identificacao'
+  ) => {
     setEditingTenant({
       ...tenant,
       manifestarCienciaAutomatica: tenant.manifestarCienciaAutomatica !== false
     });
-    setModalTab('identificacao');
+    setModalTab(tab);
     loadTenantIntegracoes(tenant.id);
+    loadEmpresaMembros(tenant.id);
   };
 
   // Modal Ativar Certificado A1 (.PFX)
@@ -458,61 +624,6 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     }
   };
 
-  const generateSpedLines = (t: Partial<ClienteEmpresaTenant>) => {
-    const dataIni = '01082026';
-    const dataFim = '31082026';
-    const cleanCnpj = (t.cnpjCompleto || '').replace(/\D/g, '');
-    const cleanIe = (t.ie || '').replace(/\D/g, '') || '';
-    const codMun = t.codMunicipioIbge || t.endereco?.codMunicipioIbge || '3550308';
-    const im = t.im || '';
-    const suframa = t.suframa || '';
-    const perfil = t.perfilSped || 'A';
-    const indAtiv = t.indAtiv || '0';
-
-    // |0000|017|0|DT_INI|DT_FIN|NOME|CNPJ|UF|IE|COD_MUN|IM|SUFRAMA|IND_PERFIL|IND_ATIV|
-    const r0000 = `|0000|017|0|${dataIni}|${dataFim}|${t.razaoSocial || 'EMPRESA EXEMPLO LTDA'}|${cleanCnpj}|${t.uf || 'SP'}|${cleanIe}|${codMun}|${im}|${suframa}|${perfil}|${indAtiv}|`;
-
-    // |0005|FANTASIA|CEP|END|NUM|COMPL|BAIRRO|FONE|FAX|EMAIL|
-    const end: any = t.endereco || {};
-    const cleanCep = (end.cep || '').replace(/\D/g, '');
-    const fone = (end.telefone || '').replace(/\D/g, '');
-    const r0005 = `|0005|${t.nomeFantasia || t.razaoSocial || ''}|${cleanCep}|${end.logradouro || ''}|${end.numero || 'S/N'}|${end.complemento || ''}|${end.bairro || ''}|${fone}||${end.email || ''}|`;
-
-    // |0100|NOME|CPF|CRC|CNPJ|CEP|END|NUM|COMPL|BAIRRO|FONE|FAX|EMAIL|COD_MUN|
-    const cont: any = t.contador || {};
-    const cleanCpf = (cont.cpf || '').replace(/\D/g, '');
-    const crc = cont.crc || (cont.ufCrc ? `${cont.ufCrc}-${cont.crc || '000000'}` : 'SP-000000/O-0');
-    const cnpjEsc = (cont.cnpjEscritorio || '').replace(/\D/g, '');
-    const cleanCepCont = (cont.cep || '').replace(/\D/g, '');
-    const foneCont = (cont.telefone || '').replace(/\D/g, '');
-    const codMunCont = cont.codMunicipioIbge || codMun;
-    const r0100 = `|0100|${cont.nome || 'CONTADOR RESPONSAVEL'}|${cleanCpf}|${crc}|${cnpjEsc}|${cleanCepCont}|${cont.logradouro || ''}|${cont.numero || 'S/N'}|${cont.complemento || ''}|${cont.bairro || ''}|${foneCont}||${cont.email || ''}|${codMunCont}|`;
-
-    // Registro |0150| Participantes
-    const r0150Exemplo = `|0150|PART-001|FORNECEDOR MATERIA PRIMA S/A|1058|33000167000101||81281882|3304557||AV BRASIL|1000||CENTRO|\n|0150|PART-002|DISTRIBUIDORA LOGISTICA LTDA|1058|12ABC345000130|||3106200||AV AFONSO PENA|2000||FUNCIONARIOS|`;
-
-    const bloco0Completo = `${r0000}\n${r0005}\n${r0100}\n${r0150Exemplo}`;
-
-    return { r0000, r0005, r0100, r0150Exemplo, bloco0Completo };
-  };
-
-  const handleCopySped = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedSped(id);
-    setTimeout(() => setCopiedSped(null), 2000);
-  };
-
-  const handleExportSpedTxt = (t: Partial<ClienteEmpresaTenant>) => {
-    const { bloco0Completo } = generateSpedLines(t);
-    const blob = new Blob([bloco0Completo], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `SPED_BLOCO_0_${(t.cnpjCompleto || 'EMPRESA').replace(/\D/g, '')}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
   // ── EDITAR EMPRESA (Backend) ────────────────────────────
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -583,7 +694,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const totalEmpresas = tenants.length;
   const certificadosValidos = tenants.filter(t => t.certificadoA1?.status === 'valido' || t.certificadoA1?.status === 'ok').length;
   const certificadosPendentes = tenants.filter(t => !t.certificadoA1).length;
-  const spedConfigurados = tenants.filter(t => t.cnaePrincipal || t.ie || t.endereco).length;
+  const cadastrosCompletos = tenants.filter(t => t.cnaePrincipal || t.ie || t.endereco).length;
 
   return (
     <div className="space-y-6">
@@ -622,11 +733,11 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex items-center gap-3.5 shadow-lg">
           <div className="w-11 h-11 rounded-xl bg-indigo-950/80 border border-indigo-800 flex items-center justify-center text-indigo-400 shrink-0">
-            <FileCode className="w-5 h-5" />
+            <FolderCheck className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">SPED Bloco 0 Pronto</div>
-            <div className="text-xl font-extrabold text-indigo-300 font-mono">{spedConfigurados}</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Cadastros Completos</div>
+            <div className="text-xl font-extrabold text-indigo-300 font-mono">{cadastrosCompletos}</div>
           </div>
         </div>
       </div>
@@ -906,7 +1017,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     )}
 
                     <button
-                      onClick={() => handleOpenEdit(tenant)}
+                      onClick={() => handleOpenEdit(tenant, 'equipe')}
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 text-slate-400 hover:text-white transition-all cursor-pointer"
+                      title="Equipe & Permissões Desta Empresa"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => handleOpenEdit(tenant, 'identificacao')}
                       className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition-all cursor-pointer"
                       title="Editar dados cadastrais & SPED Bloco 0"
                     >
@@ -1088,7 +1207,16 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                           <button
                             type="button"
-                            onClick={() => handleOpenEdit(tenant)}
+                            onClick={() => handleOpenEdit(tenant, 'equipe')}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-600 text-slate-400 hover:text-white cursor-pointer"
+                            title="Equipe & Permissões Desta Empresa"
+                          >
+                            <Users className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(tenant, 'identificacao')}
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white cursor-pointer"
                             title="Editar Dados & SPED"
                           >
@@ -1168,7 +1296,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <Building2 className="w-4 h-4 text-blue-400" />
-                1. Identificação & Fisco (0000)
+                1. Identificação da Empresa
               </button>
 
               <button
@@ -1181,7 +1309,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <MapPin className="w-4 h-4 text-emerald-400" />
-                2. Endereço & Contato (0005)
+                2. Endereço & Contato
               </button>
 
               <button
@@ -1194,20 +1322,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <UserCheck className="w-4 h-4 text-indigo-400" />
-                3. Contador Responsável (0100)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModalTab('sped')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'sped'
-                    ? 'bg-cyan-950 text-cyan-200 border border-cyan-700 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <FileCode className="w-4 h-4 text-cyan-400" />
-                4. Automatismo SPED Bloco 0
+                3. Contador Responsável
               </button>
             </div>
 
@@ -1691,130 +1806,6 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 4: AUTOMATISMO SPED BLOCO 0 */}
-              {modalTab === 'sped' && (
-                <div className="space-y-4">
-                  {(() => {
-                    const tempTenant: Partial<ClienteEmpresaTenant> = {
-                      cnpjCompleto: newCnpj,
-                      razaoSocial: newRazaoSocial,
-                      nomeFantasia: newNomeFantasia,
-                      uf: newUf,
-                      ie: newIe,
-                      im: newIm,
-                      cnaePrincipal: newCnae,
-                      codMunicipioIbge: newCodMunIbge,
-                      perfilSped: newPerfilSped,
-                      indAtiv: newIndAtiv,
-                      endereco: {
-                        cep: newCep,
-                        logradouro: newLogradouro,
-                        numero: newNumero,
-                        complemento: newComplemento,
-                        bairro: newBairro,
-                        municipio: newMunicipio,
-                        uf: newUf,
-                        codMunicipioIbge: newCodMunIbge,
-                        telefone: newTelefone,
-                        email: newEmail
-                      },
-                      contador: {
-                        nome: newContadorNome,
-                        cpf: newContadorCpf,
-                        crc: newContadorCrc,
-                        ufCrc: newContadorUfCrc,
-                        cnpjEscritorio: newContadorCnpjEscritorio,
-                        cep: newContadorCep,
-                        logradouro: newContadorLogradouro,
-                        numero: newContadorNumero,
-                        complemento: newContadorComplemento,
-                        bairro: newContadorBairro,
-                        codMunicipioIbge: newContadorCodMun,
-                        municipio: newMunicipio,
-                        uf: newUf,
-                        telefone: newContadorTelefone,
-                        email: newContadorEmail
-                      }
-                    };
-                    const sped = generateSpedLines(tempTenant);
-                    return (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between p-3 bg-cyan-950/40 border border-cyan-800/60 rounded-xl">
-                          <div>
-                            <h4 className="font-bold text-cyan-300 text-xs">
-                              Pré-visualização do Bloco 0 da Empresa
-                            </h4>
-                            <p className="text-[11px] text-slate-400">
-                              Layout oficial pronto para ser emitido e validado no PVA da Receita Federal.
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleExportSpedTxt(tempTenant)}
-                            className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
-                          >
-                            <Download className="w-3.5 h-3.5" />
-                            Baixar BLOCO_0.TXT
-                          </button>
-                        </div>
-
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-cyan-400 text-xs">|0000| Abertura e Identificação</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0000, '0000_new')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0000_new' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0000}
-                          </pre>
-                        </div>
-
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-emerald-400 text-xs">|0005| Dados Complementares de Endereço</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0005, '0005_new')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0005_new' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0005}
-                          </pre>
-                        </div>
-
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-indigo-400 text-xs">|0100| Contabilista Responsável</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0100, '0100_new')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0100_new' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-amber-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0100}
-                          </pre>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
               {/* Footer Actions */}
               <div className="pt-3 flex items-center justify-between border-t border-slate-800">
                 <div className="text-slate-400 text-[11px]">
@@ -1854,7 +1845,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-white">
-                    Ficha Cadastral & Configuração SPED Bloco 0
+                    Ficha Cadastral da Empresa
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">
                     {editingTenant.razaoSocial} ({editingTenant.cnpjCompleto})
@@ -1882,7 +1873,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <Building2 className="w-4 h-4 text-blue-400" />
-                1. Identificação & Fisco (0000)
+                1. Identificação da Empresa
               </button>
 
               <button
@@ -1895,7 +1886,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <MapPin className="w-4 h-4 text-emerald-400" />
-                2. Endereço & Contato (0005)
+                2. Endereço & Contato
               </button>
 
               <button
@@ -1908,20 +1899,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <UserCheck className="w-4 h-4 text-indigo-400" />
-                3. Contador Responsável (0100)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModalTab('sped')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'sped'
-                    ? 'bg-cyan-950 text-cyan-200 border border-cyan-700 shadow-md'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <FileCode className="w-4 h-4 text-cyan-400" />
-                4. Automatismo SPED Bloco 0
+                3. Contador Responsável
               </button>
 
               <button
@@ -1934,7 +1912,25 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 }`}
               >
                 <Globe className="w-4 h-4 text-purple-400" />
-                5. APIs, Webhooks & Integrações (CGIBS / RFB / ERP)
+                4. APIs Governamentais & Integrações ERP
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalTab('equipe')}
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                  modalTab === 'equipe'
+                    ? 'bg-emerald-950 text-emerald-200 border border-emerald-700 shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Users className="w-4 h-4 text-emerald-400" />
+                5. Equipe & Permissões Desta Empresa
+                {membrosEmpresa.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-800/90 text-[10px] text-emerald-200 font-mono">
+                    {membrosEmpresa.length}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -2415,121 +2411,17 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 4: AUTOMATISMO SPED BLOCO 0 */}
-              {modalTab === 'sped' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-3 bg-cyan-950/40 border border-cyan-800/60 rounded-xl">
-                    <div>
-                      <h4 className="font-bold text-cyan-300 text-xs">
-                        Estrutura do Bloco 0 (Abertura, Identificação, Contador e Participantes)
-                      </h4>
-                      <p className="text-[11px] text-slate-400">
-                        Linhas geradas no layout oficial do Guia Prático da EFD ICMS/IPI e EFD Contribuições.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleExportSpedTxt(editingTenant)}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      Baixar BLOCO_0.TXT
-                    </button>
-                  </div>
-
-                  {(() => {
-                    const sped = generateSpedLines(editingTenant);
-                    return (
-                      <div className="space-y-3">
-                        {/* Registro 0000 */}
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-cyan-400 text-xs">|0000| Abertura e Identificação da Entidade</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0000, '0000')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0000' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0000}
-                          </pre>
-                        </div>
-
-                        {/* Registro 0005 */}
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-emerald-400 text-xs">|0005| Dados Complementares da Entidade</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0005, '0005')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0005' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-cyan-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0005}
-                          </pre>
-                        </div>
-
-                        {/* Registro 0100 */}
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-indigo-400 text-xs">|0100| Dados do Contabilista / Contador</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0100, '0100')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0100' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-amber-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0100}
-                          </pre>
-                        </div>
-
-                        {/* Registro 0150 */}
-                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-purple-400 text-xs">|0150| Tabela de Cadastro do Participante (Clientes / Fornecedores)</span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopySped(sped.r0150Exemplo, '0150')}
-                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copiedSped === '0150' ? 'Copiado!' : 'Copiar'}
-                            </button>
-                          </div>
-                          <pre className="p-2 bg-slate-900 rounded-lg font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap">
-                            {sped.r0150Exemplo}
-                          </pre>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* TAB 5: APIS, WEBHOOKS & INTEGRAÇÕES (CGIBS / RFB / ERP) */}
+              {/* TAB 4: APIS GOVERNAMENTAIS & INTEGRAÇÕES ERP */}
               {modalTab === 'integracoes' && (
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-purple-950/40 border border-purple-800/60 rounded-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-gradient-to-r from-purple-950/60 via-slate-900 to-indigo-950/60 border border-purple-800/60 rounded-xl">
                     <div>
                       <h4 className="font-bold text-purple-300 text-xs flex items-center gap-1.5">
                         <Globe className="w-4 h-4 text-purple-400" />
-                        Conectividade, Endpoints Oficiais & Webhooks
+                        Conectividade Fisco & Integrações ERP
                       </h4>
-                      <p className="text-[11px] text-slate-400">
-                        Credenciais e configurações de integração vinculadas exclusivamente a esta empresa ({editingTenant.cnpjCompleto}).
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Configurações exclusivas para <strong className="text-white">{editingTenant.razaoSocial}</strong> ({editingTenant.cnpjCompleto}): APIs Oficiais (CGIBS / RFB) e despacho automatizado para o ERP da empresa.
                       </p>
                     </div>
 
@@ -2538,20 +2430,21 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         type="button"
                         onClick={handleTestApiConnection}
                         disabled={isTestingApi}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                        className="px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                        title="Testa a conectividade com os servidores da SEFAZ, RFB e CGIBS"
                       >
                         {isTestingApi ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Radio className="w-3.5 h-3.5" />}
-                        <span>{isTestingApi ? 'Testando...' : 'Testar Conexão'}</span>
+                        <span>{isTestingApi ? 'Testando Fisco...' : 'Ping Fisco / CGIBS'}</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={handleSaveIntegracoes}
                         disabled={integracoesLoading}
-                        className="px-4 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                        className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-purple-600/20 disabled:opacity-50"
                       >
                         {integracoesLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                        <span>Salvar APIs Desta Empresa</span>
+                        <span>Salvar Configurações</span>
                       </button>
                     </div>
                   </div>
@@ -2566,18 +2459,255 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                   {integracoesSalvo && (
                     <div className="p-3 rounded-xl bg-purple-950/80 border border-purple-700/60 text-xs text-purple-300 font-mono flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0" />
-                      <span>Configurações de APIs e Webhooks salvas com sucesso para este CNPJ!</span>
+                      <span>Configurações de APIs e ERP salvas com sucesso para este CNPJ!</span>
                     </div>
                   )}
 
-                  {/* Grid de Configurações */}
+                  {/* Banner Explicativo de Negócio: Fluxo de Integração com ERP */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-purple-950/80 border border-purple-700/60 flex items-center justify-center text-purple-400 shrink-0 mt-0.5">
+                        <Workflow className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1 text-xs">
+                        <h5 className="font-bold text-white flex items-center gap-2">
+                          Como funciona a Integração do Radar Fiscal com o ERP da sua Empresa?
+                          <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300 border border-purple-700/50">Automatismo 100% Zero-Touch</span>
+                        </h5>
+                        <p className="text-slate-400 leading-relaxed">
+                          O Radar Fiscal atua como um <strong>hub inteligente entre o Fisco e o seu sistema de gestão (ERP)</strong>. 
+                          Assim que um fornecedor emite uma NF-e/NFC-e/CT-e/NFS-e contra este CNPJ, o Radar captura o XML na SEFAZ via Certificado A1, audita preventivamente as regras tributárias e alíquotas da Reforma 2026, e <strong className="text-purple-300">despacha automaticamente os dados e o XML para o seu ERP</strong>.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Fluxo Visual em 4 Etapas */}
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-900">
+                      <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-center space-y-1">
+                        <div className="text-[10px] uppercase font-bold text-amber-400 tracking-wide">1. Captura SEFAZ</div>
+                        <div className="text-[11px] text-slate-300 font-medium">Captura automática via Certificado A1</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-center space-y-1">
+                        <div className="text-[10px] uppercase font-bold text-cyan-400 tracking-wide">2. Auditoria Fiscal</div>
+                        <div className="text-[11px] text-slate-300 font-medium">Validação de NCM, CFOP, IBS/CBS e débitos</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-center space-y-1">
+                        <div className="text-[10px] uppercase font-bold text-purple-400 tracking-wide">3. Webhook / API</div>
+                        <div className="text-[11px] text-slate-300 font-medium">Disparo seguro em tempo real via REST JSON</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-center space-y-1">
+                        <div className="text-[10px] uppercase font-bold text-emerald-400 tracking-wide">4. Seu ERP ({tenantTipoErp})</div>
+                        <div className="text-[11px] text-slate-300 font-medium">Lançamento pré-escriturado sem digitação manual</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Principal: Integrações ERP (Sincronização com o Sistema da Empresa) */}
+                  <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Radio className="w-4 h-4 text-emerald-400" />
+                        <span className="font-bold text-white text-xs">Integrações ERP — Sincronização com o Sistema da Empresa ({editingTenant.razaoSocial})</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400">
+                        Configuração individual por CNPJ
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {/* Seleção do ERP */}
+                      <div>
+                        <label className="font-bold text-slate-300 text-xs block mb-1">
+                          Sistema ERP Utilizado pela Empresa
+                        </label>
+                        <select
+                          value={tenantTipoErp}
+                          onChange={(e) => {
+                            const val = e.target.value as any;
+                            setTenantTipoErp(val);
+                            if (val === 'TOTVS') setTenantFormatoPayload('totvs_sf1');
+                            else if (val === 'SAP') setTenantFormatoPayload('sap_bapi');
+                            else setTenantFormatoPayload('json');
+                          }}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="GENERICO">Webhook REST API / JSON Genérico</option>
+                          <option value="TOTVS">TOTVS (Protheus / RM / Datasul)</option>
+                          <option value="SAP">SAP (S/4HANA / Business One)</option>
+                          <option value="SENIOR">Senior Sistemas</option>
+                          <option value="LINX">Linx ERP</option>
+                          <option value="OMIE">Omie / ContaAzul / Bling</option>
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Define o conector de comunicação e tratamento de payloads compatíveis.
+                        </p>
+                      </div>
+
+                      {/* Formato do Payload */}
+                      <div>
+                        <label className="font-bold text-slate-300 text-xs block mb-1">
+                          Formato do Pacote de Dados (Payload)
+                        </label>
+                        <select
+                          value={tenantFormatoPayload}
+                          onChange={(e) => setTenantFormatoPayload(e.target.value as any)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500 cursor-pointer"
+                        >
+                          <option value="json">JSON Completo (Metadados Estruturados + XML Base64 + Auditoria)</option>
+                          <option value="totvs_sf1">TOTVS Protheus (MATA103: SF1 Cabeçalho + SD1 Itens)</option>
+                          <option value="sap_bapi">SAP RFC/BAPI (BAPI_INCOMINGINVOICE_CREATE)</option>
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Estrutura dos campos enviados na requisição HTTP POST para o seu ERP.
+                        </p>
+                      </div>
+
+                      {/* URL do Webhook do ERP */}
+                      <div className="sm:col-span-2">
+                        <label className="font-bold text-slate-300 text-xs block mb-1 flex items-center justify-between">
+                          <span>URL do Webhook no ERP (Endpoint de Recepção de Documentos)</span>
+                          <span className="text-[10px] text-slate-500 font-normal">Ex: https://erp.empresa.com.br/api/fiscal/receber-xml</span>
+                        </label>
+                        <input
+                          type="url"
+                          placeholder="https://erp.empresa.com.br/api/fiscal/webhook-dfe"
+                          value={tenantWebhookUrl}
+                          onChange={(e) => setTenantWebhookUrl(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+
+                      {/* Token de Autenticação no ERP */}
+                      <div className="sm:col-span-2">
+                        <label className="font-bold text-slate-300 text-xs block mb-1 flex items-center justify-between">
+                          <span>Token de Autenticação / Bearer Token do ERP (Opcional)</span>
+                          <button
+                            type="button"
+                            onClick={() => setShowErpAuthToken(!showErpAuthToken)}
+                            className="text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer text-[10px]"
+                          >
+                            {showErpAuthToken ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            <span>{showErpAuthToken ? 'Ocultar' : 'Exibir'}</span>
+                          </button>
+                        </label>
+                        <input
+                          type={showErpAuthToken ? 'text' : 'password'}
+                          placeholder="Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... ou chave API do ERP"
+                          value={tenantErpAuthToken}
+                          onChange={(e) => setTenantErpAuthToken(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono text-xs focus:outline-none focus:border-emerald-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Se preenchido, será enviado no cabeçalho <code className="font-mono text-emerald-400">Authorization: Bearer [token]</code> da requisição.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Gatilhos de Disparo Automático */}
+                    <div className="p-3.5 bg-slate-900/60 rounded-xl border border-slate-800/80 space-y-2.5">
+                      <div className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">
+                        Gatilhos de Disparo Automático para o ERP:
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tenantDespacharNfeAuto}
+                            onChange={(e) => setTenantDespacharNfeAuto(e.target.checked)}
+                            className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+                          />
+                          <span className="text-slate-300 text-[11px]">Despachar NF-e / NFC-e de entrada</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tenantDespacharNfseAuto}
+                            onChange={(e) => setTenantDespacharNfseAuto(e.target.checked)}
+                            className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+                          />
+                          <span className="text-slate-300 text-[11px]">Despachar NFS-e Nacional</span>
+                        </label>
+
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tenantNotificarManifestacao}
+                            onChange={(e) => setTenantNotificarManifestacao(e.target.checked)}
+                            className="rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-0"
+                          />
+                          <span className="text-slate-300 text-[11px]">Notificar Manifestação Destinatário</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Botão de Teste de Disparo Webhook */}
+                    <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-slate-800">
+                      <div className="text-[11px] text-slate-400">
+                        💡 Teste o envio de um documento fiscal simulado para verificar a recepção e a resposta do seu ERP.
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleTestWebhook}
+                        disabled={isTestingWebhook}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-emerald-600/20 disabled:opacity-50 shrink-0"
+                      >
+                        {isTestingWebhook ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                        <span>{isTestingWebhook ? 'Enviando Teste ao ERP...' : 'Testar Disparo Webhook (Simular NF-e)'}</span>
+                      </button>
+                    </div>
+
+                    {/* Feedback do Teste de Webhook */}
+                    {webhookTestResult && (
+                      <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-700/60 space-y-3 animate-in fade-in duration-200">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span className="text-xs font-bold text-emerald-300">{webhookTestResult.mensagem}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-[11px] font-mono">
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 font-bold">
+                              Status: {webhookTestResult.statusHttp} OK
+                            </span>
+                            <span className="text-slate-400">
+                              Latência: <strong className="text-white">{webhookTestResult.latenciaMs}ms</strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-emerald-900/40">
+                          <span className="text-[10px] text-slate-400">
+                            ERP: <strong className="text-slate-200">{webhookTestResult.tipoErp}</strong> | Formato: <strong className="text-slate-200">{webhookTestResult.formatoPayload}</strong> | Destino: <span className="font-mono text-slate-300">{webhookTestResult.webhookEndpoint}</span>
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={() => setShowWebhookPayloadPreview(!showWebhookPayloadPreview)}
+                            className="text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Code className="w-3.5 h-3.5" />
+                            <span>{showWebhookPayloadPreview ? 'Ocultar JSON Enviado' : 'Ver JSON Enviado'}</span>
+                          </button>
+                        </div>
+
+                        {showWebhookPayloadPreview && (
+                          <pre className="p-3 bg-slate-950 rounded-lg border border-slate-800 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-48 whitespace-pre-wrap">
+                            {JSON.stringify(webhookTestResult.payloadSimulado, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Grid de Configurações Governamentais */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                     {/* Card 1: CGIBS / Apuração Assistida */}
                     <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
                       <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2">
                         <Server className="w-4 h-4 text-cyan-400" />
-                        <span className="font-bold text-white text-xs">Comitê Gestor do IBS (CGIBS)</span>
+                        <span className="font-bold text-white text-xs">Comitê Gestor do IBS (CGIBS / SEFIN)</span>
                       </div>
 
                       <div className="space-y-2">
@@ -2698,31 +2828,239 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       </div>
                     </div>
 
-                    {/* Card 3: Webhook do ERP do Cliente (Notificações) */}
-                    <div className="md:col-span-2 p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
-                      <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2">
-                        <Radio className="w-4 h-4 text-emerald-400" />
-                        <span className="font-bold text-white text-xs">Webhook de Integração com o ERP da Empresa</span>
-                      </div>
+                  </div>
+                </div>
+              )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                        <div className="sm:col-span-2">
-                          <label className="font-bold text-slate-300 block mb-1">URL de Retorno Webhook (ERP / SAP / TOTVS)</label>
-                          <input
-                            type="url"
-                            placeholder="https://erp.empresa.com.br/api/webhooks/fiscal-events"
-                            value={tenantWebhookUrl}
-                            onChange={(e) => setTenantWebhookUrl(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500 text-[11px]"
-                          />
-                        </div>
-
-                        <div className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400">
-                          O sistema despacha eventos DF-e e deltas do CGIBS automaticamente para este endpoint em JSON assinado.
-                        </div>
-                      </div>
+              {/* TAB 5: EQUIPE & PERMISSÕES DESTA EMPRESA */}
+              {modalTab === 'equipe' && (
+                <div className="space-y-4">
+                  {/* Header info */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl">
+                    <div>
+                      <h4 className="font-bold text-emerald-300 text-xs flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-emerald-400" />
+                        Gestão de Equipe & Controle de Acesso por Empresa
+                      </h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Defina quais colaboradores têm acesso à <strong className="text-white">{editingTenant.razaoSocial}</strong> ({editingTenant.cnpjCompleto}) e seus respectivos níveis de permissão operacional.
+                      </p>
                     </div>
 
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-900/60 border border-emerald-700/60 text-emerald-300 font-bold text-[11px] flex items-center gap-1">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        Multi-tenant Ativo
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Feedback Message */}
+                  {equipeFeedback && (
+                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 animate-in fade-in duration-200 ${
+                      equipeFeedback.tipo === 'sucesso'
+                        ? 'bg-emerald-950/80 border-emerald-700/60 text-emerald-300'
+                        : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
+                    }`}>
+                      {equipeFeedback.tipo === 'sucesso' ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                      )}
+                      <span>{equipeFeedback.msg}</span>
+                    </div>
+                  )}
+
+                  {/* Card 1: Vincular Novo Colaborador */}
+                  <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <UserPlus className="w-4 h-4 text-emerald-400" />
+                        <span className="font-bold text-white text-xs">Vincular Colaborador a esta Empresa</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400">
+                        Atribua permissões operacionais específicas
+                      </span>
+                    </div>
+
+                    {(() => {
+                      const usuariosDisponiveis = todosUsuarios.filter(
+                        u => !membrosEmpresa.some(m => m.id === u.id)
+                      );
+
+                      if (usuariosDisponiveis.length === 0) {
+                        return (
+                          <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800 text-[11px] text-slate-400 flex items-center gap-2">
+                            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span>Todos os colaboradores da sua carteira já possuem acesso vinculado a esta empresa ou não há outros usuários cadastrados.</span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                          <div className="sm:col-span-6">
+                            <label className="font-bold text-slate-300 block mb-1 text-[11px]">
+                              Selecionar Colaborador
+                            </label>
+                            <select
+                              value={selectedUserToLink}
+                              onChange={(e) => setSelectedUserToLink(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-emerald-500"
+                            >
+                              <option value="">-- Selecione o colaborador --</option>
+                              {usuariosDisponiveis.map(u => (
+                                <option key={u.id} value={u.id}>
+                                  {u.nome} ({u.email}) - {u.papel.replace('_', ' ').toUpperCase()}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-4">
+                            <label className="font-bold text-slate-300 block mb-1 text-[11px]">
+                              Nível de Permissão nesta Empresa
+                            </label>
+                            <select
+                              value={selectedPermissaoToLink}
+                              onChange={(e) => setSelectedPermissaoToLink(e.target.value as any)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-emerald-500"
+                            >
+                              <option value="total">Total (Configurações, Apuração e Edição)</option>
+                              <option value="escrita">Escrita (Operacional, Lançamentos e Validação)</option>
+                              <option value="leitura">Leitura (Apenas Visualização e Auditoria)</option>
+                            </select>
+                          </div>
+
+                          <div className="sm:col-span-2">
+                            <button
+                              type="button"
+                              onClick={() => handleVincularMembro(editingTenant.id)}
+                              disabled={!selectedUserToLink || linkingLoading}
+                              className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                            >
+                              {linkingLoading ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <UserPlus className="w-3.5 h-3.5" />
+                              )}
+                              <span>Vincular</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Card 2: Lista de Membros Atuais */}
+                  <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-cyan-400" />
+                        <span className="font-bold text-white text-xs">Colaboradores com Acesso a esta Empresa</span>
+                        <span className="px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono text-[10px]">
+                          {membrosEmpresa.length} {membrosEmpresa.length === 1 ? 'membro' : 'membros'}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => loadEmpresaMembros(editingTenant.id)}
+                        disabled={membrosLoading}
+                        className="text-slate-400 hover:text-white flex items-center gap-1 text-[11px] cursor-pointer"
+                        title="Atualizar lista de membros"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${membrosLoading ? 'animate-spin text-cyan-400' : ''}`} />
+                        <span>Atualizar</span>
+                      </button>
+                    </div>
+
+                    {membrosLoading ? (
+                      <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                        <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                        <span>Carregando equipe desta empresa...</span>
+                      </div>
+                    ) : membrosEmpresa.length === 0 ? (
+                      <div className="py-8 text-center space-y-2">
+                        <Users className="w-8 h-8 text-slate-600 mx-auto" />
+                        <p className="text-slate-400 text-xs">Nenhum colaborador vinculado a esta empresa ainda.</p>
+                        <p className="text-slate-500 text-[11px]">
+                          Utilize o formulário acima para vincular membros da sua equipe a este CNPJ.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                              <th className="pb-2.5">Colaborador</th>
+                              <th className="pb-2.5">Perfil</th>
+                              <th className="pb-2.5">Nível de Permissão nesta Empresa</th>
+                              <th className="pb-2.5">Vinculado Em</th>
+                              <th className="pb-2.5 text-right">Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/60">
+                            {membrosEmpresa.map((m) => (
+                              <tr key={m.id} className="hover:bg-slate-900/40 transition-colors">
+                                <td className="py-3 pr-3">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs uppercase shrink-0">
+                                      {m.nome.charAt(0)}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-white truncate">{m.nome}</div>
+                                      <div className="text-[10px] text-slate-400 truncate">{m.email}</div>
+                                    </div>
+                                  </div>
+                                </td>
+
+                                <td className="py-3 pr-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                                    {m.papel.replace('_', ' ').toUpperCase()}
+                                  </span>
+                                </td>
+
+                                <td className="py-3 pr-3">
+                                  <div className="flex items-center gap-2">
+                                    <select
+                                      value={m.permissao}
+                                      onChange={(e) => handleAlterarPermissaoMembro(editingTenant.id, m.id, e.target.value as any)}
+                                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-[11px] focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
+                                    >
+                                      <option value="total">Total (Config. & Edição)</option>
+                                      <option value="escrita">Escrita (Operacional)</option>
+                                      <option value="leitura">Leitura (Consulta)</option>
+                                    </select>
+                                    
+                                    <span className={`w-2 h-2 rounded-full ${
+                                      m.permissao === 'total' ? 'bg-emerald-400' :
+                                      m.permissao === 'escrita' ? 'bg-cyan-400' : 'bg-amber-400'
+                                    }`} title={`Permissão: ${m.permissao}`} />
+                                  </div>
+                                </td>
+
+                                <td className="py-3 pr-3 text-[11px] text-slate-400 font-mono">
+                                  {m.vinculadoEm ? new Date(m.vinculadoEm).toLocaleDateString('pt-BR') : '—'}
+                                </td>
+
+                                <td className="py-3 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDesvincularMembro(editingTenant.id, m.id, m.nome)}
+                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition-all cursor-pointer inline-flex items-center gap-1 text-[10px]"
+                                    title="Revogar acesso a esta empresa"
+                                  >
+                                    <UserMinus className="w-3.5 h-3.5 text-rose-400" />
+                                    <span className="hidden sm:inline">Desvincular</span>
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

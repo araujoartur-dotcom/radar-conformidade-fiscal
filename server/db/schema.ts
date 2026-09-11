@@ -58,6 +58,7 @@ export function initializeSchema(): void {
       ip_ultimo_acesso      TEXT DEFAULT NULL,
       tentativas_falhas     INTEGER NOT NULL DEFAULT 0,
       bloqueado_ate         TEXT DEFAULT NULL,
+      criado_por            TEXT DEFAULT NULL,
       created_at            TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -515,6 +516,12 @@ export function initializeSchema(): void {
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'nfse_nacional_url', "TEXT DEFAULT 'https://www.nfse.gov.br/dnfse/api/v1/eventos'");
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'api_key_cgibs', "TEXT DEFAULT ''");
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'bearer_token_rfb', "TEXT DEFAULT ''");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'tipo_erp', "TEXT DEFAULT 'GENERICO'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'formato_payload', "TEXT DEFAULT 'json'");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'erp_auth_token', "TEXT DEFAULT ''");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'despachar_nfe_auto', "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'despachar_nfse_auto', "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'notificar_manifestacao', "INTEGER NOT NULL DEFAULT 1");
 
   // Migrações em empresas
   addColumnIfNotExists('empresas', 'manifestar_ciencia_automatica', 'INTEGER NOT NULL DEFAULT 1');
@@ -662,6 +669,11 @@ export function initializeSchema(): void {
   } catch (err: any) {
     console.warn('Aviso no seed de conectores municipais:', err.message);
   }
+
+  // Migrações seguras de colunas incrementais
+  try {
+    db.prepare("ALTER TABLE usuarios ADD COLUMN criado_por TEXT DEFAULT NULL").run();
+  } catch {}
 
   console.log(`✅ Schema do banco de dados inicializado com sucesso em Horário Oficial de Brasília [${getBrasiliaTimestamp()}].`);
 }

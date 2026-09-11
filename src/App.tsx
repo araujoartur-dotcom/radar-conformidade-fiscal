@@ -7,19 +7,17 @@ import { DetalhesModal } from './components/DetalhesModal';
 import { StatusBar } from './components/StatusBar';
 import { DfeManagerPanel } from './components/DfeManagerPanel';
 import { EventosDfePanel } from './components/EventosDfePanel';
-import { ErpIntegrationPanel } from './components/ErpIntegrationPanel';
 import { AuditoriaFiscalPanel } from './components/AuditoriaFiscalPanel';
 import { RelatoriosXmlPanel } from './components/RelatoriosXmlPanel';
 import { AcessoCorporativoModal } from './components/AcessoCorporativoModal';
 import { CarteiraCnpjsPanel, INITIAL_TENANTS } from './components/CarteiraCnpjsPanel';
-import { ParceirosNegocioPanel } from './components/ParceirosNegocioPanel';
 import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
-import { SpedCruzamentoPanel } from './components/SpedCruzamentoPanel';
 import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
+import { SimuladorRegimesPanel } from './components/SimuladorRegimesPanel';
 import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, AmbienteSefaz, UsuarioCorporativo } from './types';
 import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { parseExcelFile, exportToExcel } from './utils/excel';
@@ -28,6 +26,7 @@ import { Search, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { useApi } from './hooks/useApi';
 import { Login } from './components/Login';
+import { hasModuleAccess } from './utils/permissions';
 
 export default function App() {
   const { user, empresaAtiva } = useAuth();
@@ -46,6 +45,17 @@ export default function App() {
       loadDocumentos();
     }
   }, [activeMode]);
+
+  // Safeguard: if activeMode is restricted for current user, redirect to first permitted module
+  useEffect(() => {
+    if (user && !hasModuleAccess(activeMode, user, empresaAtiva)) {
+      const fallbackModes: QueryMode[] = [
+        'central_kpis', 'dfe_xml', 'relatorios_xml', 'lote', 'apuracao_assistida', 'detalhada'
+      ];
+      const allowedFallback = fallbackModes.find(m => hasModuleAccess(m, user, empresaAtiva)) || 'central_kpis';
+      setActiveMode(allowedFallback);
+    }
+  }, [user?.id, user?.perfil, empresaAtiva?.id, empresaAtiva?.modulosPermitidos, activeMode]);
 
   // Persistent Sidebar Collapse State
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
@@ -488,9 +498,6 @@ export default function App() {
                   setSelectedDfeForEvents(item);
                   setActiveMode('eventos_dfe');
                 }}
-                onSyncErp={(item) => {
-                  setActiveMode('integracao_erp');
-                }}
                 certificado={certificado}
                 ambienteSefaz={ambienteSefaz}
               />
@@ -507,19 +514,10 @@ export default function App() {
               />
             )}
 
-            {/* Mode 6: Integração ERP (SAP, Webhooks) */}
-            {activeMode === 'integracao_erp' && (
-              <ErpIntegrationPanel dfeList={dfeList} />
-            )}
 
             {/* Mode: Conectores Municipais (Prefeituras) */}
             {activeMode === 'conectores_municipais' && (
               <ConectoresMunicipaisPanel />
-            )}
-
-            {/* Mode: Conciliação e Cruzamento SPED Fiscal x SEFAZ */}
-            {activeMode === 'cruzamento_sped' && (
-              <SpedCruzamentoPanel dfeList={dfeList} />
             )}
 
             {/* Mode 0: Central de KPIs & Dashboards Executivos (BI Fiscal) */}
@@ -551,6 +549,11 @@ export default function App() {
               <ApuracaoAssistidaPanel empresaAtiva={empresaAtiva} />
             )}
 
+            {/* Mode: Modelador Estratégico de Regimes & Ponto de Equilíbrio CPP */}
+            {activeMode === 'simulador_regimes' && (
+              <SimuladorRegimesPanel empresaAtiva={empresaAtiva} />
+            )}
+
             {/* Mode 12: Parâmetros & Tabelas Fiscais */}
             {activeMode === 'tabelas_fiscais' && (
               <TabelasFiscaisPanel />
@@ -579,10 +582,6 @@ export default function App() {
               />
             )}
 
-            {/* Mode: Dados Mestres & Cadastro Fiscal de Parceiros de Negócio (MDM) */}
-            {activeMode === 'parceiros_negocio' && (
-              <ParceirosNegocioPanel />
-            )}
 
             {/* Mode 3: Quick Single Search Bar */}
             {activeMode === 'detalhada' && (

@@ -1,0 +1,120 @@
+# Walkthrough: Gestão de Equipe e Empresas pelo Contador Gestor
+
+Implementação completa do regramento desacoplado entre **Identidade (Usuários)** e **Tenants (Empresas)**, capacitando o perfil `contador_gestor` a gerenciar colaboradores e controlar permissões granulares (`total`, `escrita`, `leitura`) tanto pela visão do usuário quanto pela visão da empresa.
+
+> [!NOTE]
+> **Status de Deploy:** Conforme solicitado, **NENHUM DEPLOY FOI REALIZADO**. Todas as alterações foram testadas e validadas exclusivamente no ambiente local.
+
+---
+
+## 1. Arquitetura Implementada
+
+```mermaid
+graph TD
+    subgraph "Identidade Desacoplada"
+        CG["Contador Gestor"] -->|Cria colaborador| COLAB["Colaborador (criado_por)"]
+        ADMIN["Admin Master"] -->|Cria usuários| ANY["Qualquer Usuário"]
+    end
+
+    subgraph "Carteira de Empresas"
+        EMP1["Empresa A (CNPJ 1)"]
+        EMP2["Empresa B (CNPJ 2)"]
+    end
+
+    subgraph "Vínculo & Permissões Granulares"
+        COLAB -.->|"Total / Escrita / Leitura"| EMP1
+        COLAB -.->|"Leitura"| EMP2
+    end
+```
+
+### Princípios do Regramento:
+1. **Quem nasce primeiro?**
+   - Usuários e Empresas agora nascem de forma independente.
+   - O Contador Gestor ou o Admin podem cadastrar empresas na carteira sem exigir usuários vinculados.
+   - Podem cadastrar colaboradores (ex: Analistas, Auditores) sem vincular empresas de imediato (CNPJs opcionais), ficando sob a gestão de quem os criou (`criado_por`).
+2. **Segregação e Governança:**
+   - O `contador_gestor` enxerga e gerencia apenas colaboradores vinculados às suas empresas ou criados por ele.
+   - O Contador Gestor **não pode** atribuir perfis com privilégios de sistema (`admin_master`, `suporte_ti`).
+   - O Contador Gestor **não pode** vincular empresas fora de sua carteira contábil.
+3. **Controle Bidirecional:**
+   - **Visão do Usuário:** No modal de Gestão de Acessos (`AcessoCorporativoModal`), seleciona-se o usuário e marca-se as empresas da carteira com o nível de acesso desejado.
+   - **Visão da Empresa:** No painel de Carteira (`CarteiraCnpjsPanel`), cada empresa possui uma aba dedicada (Aba 6: "Equipe & Permissões Desta Empresa"), permitindo ver todos os membros com acesso, alterar o nível (`total`, `escrita`, `leitura`) em tempo real ou revogar o acesso.
+
+---
+
+## 2. Modificações no Backend & Banco de Dados
+
+### 1. [server/db/schema.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/db/schema.ts)
+- Adicionado campo `criado_por TEXT DEFAULT NULL` na tabela `usuarios`.
+- Adicionada migração idempotente com `ALTER TABLE usuarios ADD COLUMN criado_por TEXT DEFAULT NULL`.
+
+### 2. [server/routes/users.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/users.ts)
+- Atualizado `PERFIS_GESTAO_USUARIOS` para incluir `'contador_gestor'`.
+- Ajustado o escopo de isolamento multitenant (`applyTenantIsolation` e `hasUserScopeAccess`) para permitir que o Contador Gestor gerencie colaboradores criados por ele ou que compartilham suas empresas.
+- **POST `/api/users`**:
+  - `cnpjsAutorizados` agora é opcional (pode ser array vazio `[]`).
+  - Grava automaticamente `criado_por = req.user.id`.
+  - Valida permissões e bloqueia perfis restritos.
+  - Suporta permissão inicial (`permissaoInicial: 'total' | 'escrita' | 'leitura'`).
+- **PUT `/api/users/:id`**:
+  - Permite que o Contador Gestor edite nome, email, departamento, ativo e atualize as empresas autorizadas dentro do seu escopo.
+- **DELETE `/api/users/:id`**:
+  - Permite que o Contador Gestor remova colaboradores sob seu escopo.
+- **Novos Endpoints Centrados na Empresa:**
+  - `GET /api/users/empresa/:empresaId/membros`: Lista todos os membros vinculados àquela empresa com seus respectivos níveis de permissão e data de vínculo.
+  - `POST /api/users/empresa/:empresaId/vincular`: Vincula um colaborador à empresa com nível de permissão (`total`, `escrita` ou `leitura`).
+  - `DELETE /api/users/empresa/:empresaId/desvincular/:usuarioId`: Revoga o acesso do colaborador àquela empresa específica.
+  - `PUT /api/users/empresa/:empresaId/permissao/:usuarioId`: Atualiza o nível de permissão (`total`, `escrita`, `leitura`) do colaborador naquela empresa.
+
+---
+
+## 3. Modificações no Frontend
+
+### 1. Tipagem: [src/types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)
+- Adicionada interface `EmpresaVinculadaInfo` com `id`, `cnpjRaiz`, `cnpjCompleto`, `razaoSocial`, `permissao`, `modulosPermitidos`.
+- Atualizado `UsuarioCorporativo` com `criadoPor?: string` e `empresasVinculadas?: EmpresaVinculadaInfo[]`.
+
+### 2. Modal de Usuários: [src/components/AcessoCorporativoModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/AcessoCorporativoModal.tsx)
+- O perfil `contador_gestor` agora possui acesso à gestão de equipe:
+  - Título e descritivos contextualizados ("Gestão de Equipe & Colaboradores").
+  - Criação de usuários sem obrigar vínculo imediato de empresas (com nota informativa de cadastro pendente).
+  - Seletor de `Nível de Permissão na Carteira` (`Total`, `Escrita`, `Leitura`).
+  - Atualização da matriz RBAC refletindo a delegação da equipe pelo Contador Gestor.
+
+### 3. Painel de Carteira & Empresas: [src/components/CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)
+- **Botões Rápidos "Equipe"**:
+  - Adicionado botão com ícone de `Users` nos cards da visão em grade (Grid View) e nas linhas da visão tabular (Table View), permitindo abrir diretamente a gestão de equipe da empresa com um clique.
+- **Aba 6: "Equipe & Permissões Desta Empresa" no Modal de Edição**:
+  - Exibe o total de membros vinculados em um badge.
+  - **Card de Vinculação**: Permite escolher qualquer colaborador da equipe disponível e selecionar seu nível de permissão (`total`, `escrita`, `leitura`), adicionando-o com feedback visual.
+  - **Tabela de Membros Ativos**: Exibe nome, e-mail, perfil, data de vínculo, seletor de permissão em tempo real e botão de revogação de acesso (desvincular com confirmação).
+
+---
+
+## 4. Verificação e Testes
+
+### 1. Testes Automatizados no Backend
+Executado o script [`scripts/test_contador_gestor.ts`](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/scripts/test_contador_gestor.ts):
+```
+◇ injected env (31) from .env
+🧪 Iniciando testes de Gestão pelo Contador Gestor...
+✅ Banco SQLite conectado: ./data/radar_fiscal.db
+✅ Schema do banco de dados inicializado com sucesso em Horário Oficial de Brasília.
+✅ Contador Gestor e Empresas de teste criadas.
+✅ Analista criado sem CNPJs vinculado com sucesso via criado_por!
+✅ Vínculo granular (escrita, módulos restritos) verificado com sucesso!
+✅ Membros vinculados à empresa: 2
+✅ Desvinculação executada com sucesso!
+🎉 Todos os testes de banco e regras de gestão contábil passaram com sucesso!
+```
+
+### 2. Verificação de Tipagem TypeScript
+Executado `npx tsc --noEmit`:
+```
+The command exited with code 0.
+0 erros encontrados.
+```
+
+### 3. Git Status
+Verificado que nenhum arquivo foi submetido a deploy ou enviado remotamente (`git push` não executado):
+- Alterações presentes apenas no working tree local para validação pelo usuário.
