@@ -51,19 +51,60 @@ function hasCnpjIntersection(setA: Set<string>, setB: Set<string>): boolean {
  * - Se o alvo foi criado pelo solicitante (criado_por);
  * - Ou se compartilham pelo menos 1 CNPJ.
  */
-function hasUserScopeAccess(req: AuthenticatedRequest, targetUserId: string): boolean {
+/**
+ * Localiza usuário no SQLite ou no Supabase (se configurado) e garante sincronização
+ */
+async function getTargetUser(db: any, id: string): Promise<any> {
+  let targetUser: any = null;
+  try {
+    targetUser = db.prepare('SELECT id, nome, email, perfil, status, criado_por FROM usuarios WHERE id = ?').get(id);
+  } catch {
+    targetUser = db.prepare('SELECT id, nome, email, perfil, status FROM usuarios WHERE id = ?').get(id);
+  }
+
+  if (!targetUser && isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      try {
+        const { data: supaUser } = await supabase
+          .from('usuarios')
+          .select('id, nome, email, perfil, status, criado_por')
+          .eq('id', id)
+          .maybeSingle();
+
+        if (supaUser) {
+          targetUser = supaUser;
+          try {
+            db.prepare(`
+              INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, perfil, status, criado_por)
+              VALUES (?, ?, ?, 'SYNC_SUPABASE', ?, ?, ?)
+            `).run(
+              supaUser.id,
+              supaUser.nome || supaUser.email.split('@')[0],
+              supaUser.email,
+              supaUser.perfil || 'analista_fiscal',
+              supaUser.status || 'ativo',
+              supaUser.criado_por || null
+            );
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('⚠️ Falha ao buscar usuário no Supabase:', err);
+      }
+    }
+  }
+
+  return targetUser;
+}
+
+async function hasUserScopeAccess(req: AuthenticatedRequest, targetUserId: string, preloadedUser?: any): Promise<boolean> {
   if (!req.user) return false;
   if (req.user.perfil === 'admin_master') return true;
   if (req.user.userId === targetUserId) return true;
   if (!PERFIS_GESTAO_USUARIOS.includes(req.user.perfil)) return false;
 
   const db = getDatabase();
-  let targetUser: any = null;
-  try {
-    targetUser = db.prepare('SELECT id, perfil, criado_por FROM usuarios WHERE id = ?').get(targetUserId);
-  } catch {
-    targetUser = db.prepare('SELECT id, perfil FROM usuarios WHERE id = ?').get(targetUserId);
-  }
+  const targetUser = preloadedUser || await getTargetUser(db, targetUserId);
   if (!targetUser) return false;
 
   // Nunca permite suporte_ti ou contador_gestor alterarem admin_master
@@ -109,7 +150,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           if (!uErr && supaUsers && supaUsers.length > 0) {
             const { data: supaVinculos } = await supabase
               .from('usuario_empresa')
-              .select('usuario_id, empresa_id');
+              .select('usuario_id, empresa_id, permissao, modulos_permitidos');
 
             const { data: supaEmpresas } = await supabase
               .from('empresas')
@@ -120,6 +161,17 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             formatted = supaUsers.map(u => {
               const uVincs = (supaVinculos || []).filter(v => v.usuario_id === u.id);
               let cnpjsAutorizados: string[] = [];
+
+              const empresasVinculadas = uVincs.map(v => {
+                const emp = (supaEmpresas || []).find(e => e.id === v.empresa_id);
+                return {
+                  empresaId: v.empresa_id,
+                  cnpjCompleto: emp?.cnpj_completo || v.empresa_id,
+                  razaoSocial: emp?.razao_social || 'Empresa',
+                  permissao: v.permissao || 'total',
+                  modulosPermitidos: v.modulos_permitidos || '*'
+                };
+              });
 
               if (u.perfil === 'admin_master' && uVincs.length === 0) {
                 cnpjsAutorizados = ['*'];
@@ -132,6 +184,21 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
                 cnpjsAutorizados = u.perfil === 'admin_master' ? ['*'] : [];
               }
 
+              // Auto-sincronizar usuário ao SQLite local para consistência híbrida
+              try {
+                db.prepare(`
+                  INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, perfil, status, criado_por)
+                  VALUES (?, ?, ?, 'SYNC_SUPABASE', ?, ?, ?)
+                `).run(
+                  u.id,
+                  u.nome || u.email.split('@')[0],
+                  u.email,
+                  u.perfil || 'analista_fiscal',
+                  u.status || 'ativo',
+                  u.criado_por || null
+                );
+              } catch {}
+
               return {
                 id: u.id,
                 nome: u.nome,
@@ -139,6 +206,9 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
                 perfil: u.perfil,
                 grupoContabil: 'Carteira Geral',
                 cnpjsAutorizados,
+                empresasVinculadas,
+                modulosPermitidos: uVincs[0]?.modulos_permitidos || '*',
+                permissao: uVincs[0]?.permissao || 'total',
                 mfaHabilitado: Boolean(u.mfa_habilitado),
                 status: u.status || 'ativo',
                 ultimoAcesso: u.ultimo_acesso || 'Nunca',
@@ -452,15 +522,13 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
     const callerPerfil = req.user?.perfil;
 
     const db = getDatabase();
-    let targetUser: any = null;
-    try {
-      targetUser = db.prepare('SELECT id, email, perfil, criado_por FROM usuarios WHERE id = ?').get(id);
-    } catch {
-      targetUser = db.prepare('SELECT id, email, perfil FROM usuarios WHERE id = ?').get(id);
-    }
+    const targetUser = await getTargetUser(db, id);
 
     if (!targetUser) {
-      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+      return res.status(404).json({
+        success: false,
+        message: `Usuário com identificador "${id}" não foi localizado no sistema (SQLite/Supabase). Verifique se o colaborador foi excluído ou se pertence a outro ambiente.`
+      });
     }
 
     // ── TRAVA: admin_master não pode ser editado por ninguém exceto ele mesmo ──
@@ -486,7 +554,7 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
       }
 
       // Deve ter acesso de escopo sobre o alvo
-      if (req.user?.userId !== id && !hasUserScopeAccess(req, id)) {
+      if (req.user?.userId !== id && !(await hasUserScopeAccess(req, id, targetUser))) {
         return res.status(403).json({ success: false, message: 'Você não tem permissão para editar este usuário (fora do escopo da sua carteira).' });
       }
 
@@ -659,10 +727,16 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
     return res.json({ success: true, message: 'Usuário atualizado com sucesso.' });
   } catch (err: any) {
     if (err.message === 'USER_NOT_FOUND') {
-      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+      return res.status(404).json({
+        success: false,
+        message: `O colaborador solicitado (ID: "${req.params?.id}") não foi localizado nem no banco local nem na nuvem Supabase. Verifique se o registro foi removido recentemente ou atualize a página.`
+      });
     }
     console.error('❌ Erro ao atualizar usuário:', err.message);
-    return res.status(500).json({ success: false, message: 'Erro ao atualizar usuário: ' + err.message });
+    return res.status(500).json({
+      success: false,
+      message: `Falha técnica ao atualizar colaborador (${err.message}). Por favor, verifique se você possui os privilégios necessários e tente novamente.`
+    });
   }
 });
 
@@ -680,10 +754,10 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', '
     }
 
     const db = getDatabase();
-    const targetUser = db.prepare('SELECT id, email, perfil FROM usuarios WHERE id = ?').get(id) as any;
+    const targetUser = await getTargetUser(db, id);
 
     if (!targetUser) {
-      return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+      return res.status(404).json({ success: false, message: `Usuário com identificador "${id}" não foi localizado no sistema.` });
     }
 
     // Conta admin_master NUNCA pode ser excluída
@@ -702,7 +776,7 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', '
       }
 
       // Deve compartilhar CNPJ ou ser criador do alvo
-      if (!hasUserScopeAccess(req, id)) {
+      if (!(await hasUserScopeAccess(req, id, targetUser))) {
         return res.status(403).json({ success: false, message: 'Você não tem permissão para excluir este usuário (fora do escopo da sua carteira).' });
       }
     }
@@ -722,11 +796,7 @@ router.delete('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', '
     db.transaction(() => {
       db.prepare('DELETE FROM sessoes WHERE usuario_id = ?').run(id);
       db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ?').run(id);
-      const result = db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
-
-      if (result.changes === 0) {
-        throw new Error('USER_NOT_FOUND');
-      }
+      db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
     })();
 
     logAuditAction(req, 'USUARIO_EXCLUIR', `Usuário ${id} removido do sistema`, 'WARN');
@@ -837,13 +907,31 @@ router.post('/empresa/:empresaId/vincular', requireAuth, requirePerfil('admin_ma
 
     let targetUser: any = null;
     if (usuarioId) {
-      targetUser = db.prepare('SELECT id, nome, email, perfil FROM usuarios WHERE id = ?').get(usuarioId);
+      targetUser = await getTargetUser(db, usuarioId);
     } else if (email) {
-      targetUser = db.prepare('SELECT id, nome, email, perfil FROM usuarios WHERE email = ?').get(email.toLowerCase().trim());
+      const cleanTargetEmail = email.toLowerCase().trim();
+      targetUser = db.prepare('SELECT id, nome, email, perfil FROM usuarios WHERE email = ?').get(cleanTargetEmail);
+      if (!targetUser && isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data: supaU } = await supabase.from('usuarios').select('id, nome, email, perfil, status, criado_por').eq('email', cleanTargetEmail).maybeSingle();
+            if (supaU) {
+              targetUser = supaU;
+              try {
+                db.prepare(`
+                  INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, perfil, status, criado_por)
+                  VALUES (?, ?, ?, 'SYNC_SUPABASE', ?, ?, ?)
+                `).run(supaU.id, supaU.nome || supaU.email.split('@')[0], supaU.email, supaU.perfil || 'analista_fiscal', supaU.status || 'ativo', supaU.criado_por || null);
+              } catch {}
+            }
+          } catch {}
+        }
+      }
     }
 
     if (!targetUser) {
-      return res.status(404).json({ success: false, message: 'Colaborador não encontrado com os dados informados.' });
+      return res.status(404).json({ success: false, message: 'Colaborador não encontrado com os dados informados (ID/E-mail).' });
     }
 
     if (callerPerfil === 'contador_gestor' && PERFIS_PRIVILEGIADOS.includes(targetUser.perfil)) {
@@ -852,20 +940,38 @@ router.post('/empresa/:empresaId/vincular', requireAuth, requirePerfil('admin_ma
 
     const nivelPermissao = permissao || 'total';
     const modulos = modulosPermitidos || '*';
+    const modulosStr = typeof modulos === 'object' ? JSON.stringify(modulos) : String(modulos);
 
-    // Inserir ou atualizar na usuario_empresa
+    // Inserir ou atualizar no Supabase se configurado
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase.from('usuario_empresa').upsert({
+            usuario_id: targetUser.id,
+            empresa_id: empresaId,
+            permissao: nivelPermissao,
+            modulos_permitidos: modulosStr
+          });
+        } catch (supaErr: any) {
+          console.warn('⚠️ Erro ao vincular empresa no Supabase:', supaErr.message);
+        }
+      }
+    }
+
+    // Inserir ou atualizar na usuario_empresa local SQLite
     const existingVinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(targetUser.id, empresaId) as any;
     if (existingVinculo) {
       db.prepare(`
         UPDATE usuario_empresa 
         SET permissao = ?, modulos_permitidos = ? 
         WHERE id = ?
-      `).run(nivelPermissao, modulos, existingVinculo.id);
+      `).run(nivelPermissao, modulosStr, existingVinculo.id);
     } else {
       db.prepare(`
         INSERT INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos, created_at)
         VALUES (?, ?, ?, ?, ?, datetime('now'))
-      `).run(uuid(), targetUser.id, empresaId, nivelPermissao, modulos);
+      `).run(uuid(), targetUser.id, empresaId, nivelPermissao, modulosStr);
     }
 
     logAuditAction(req, 'USUARIO_VINCULAR_EMPRESA', `Colaborador ${targetUser.email} vinculado à empresa ${empresa.razao_social} com permissão ${nivelPermissao}`);
@@ -911,13 +1017,24 @@ router.delete('/empresa/:empresaId/desvincular/:usuarioId', requireAuth, require
       }
     }
 
-    const targetUser = db.prepare('SELECT id, nome, email, perfil FROM usuarios WHERE id = ?').get(usuarioId) as any;
+    const targetUser = await getTargetUser(db, usuarioId);
     if (!targetUser) {
       return res.status(404).json({ success: false, message: 'Colaborador não encontrado.' });
     }
 
     if (callerPerfil === 'contador_gestor' && PERFIS_PRIVILEGIADOS.includes(targetUser.perfil)) {
       return res.status(403).json({ success: false, message: 'Não é possível desvincular contas de perfil privilegiado.' });
+    }
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          await supabase.from('usuario_empresa').delete().eq('usuario_id', usuarioId).eq('empresa_id', empresaId);
+        } catch (supaErr: any) {
+          console.warn('⚠️ Erro ao desvincular empresa no Supabase:', supaErr.message);
+        }
+      }
     }
 
     db.prepare('DELETE FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').run(usuarioId, empresaId);
@@ -956,6 +1073,22 @@ router.put('/empresa/:empresaId/permissao/:usuarioId', requireAuth, requirePerfi
       }
     }
 
+    const modulosStr = modulosPermitidos ? (typeof modulosPermitidos === 'object' ? JSON.stringify(modulosPermitidos) : String(modulosPermitidos)) : null;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        try {
+          const supaUpdate: any = {};
+          if (permissao) supaUpdate.permissao = permissao;
+          if (modulosStr) supaUpdate.modulos_permitidos = modulosStr;
+          await supabase.from('usuario_empresa').update(supaUpdate).eq('usuario_id', usuarioId).eq('empresa_id', empresaId);
+        } catch (supaErr: any) {
+          console.warn('⚠️ Erro ao atualizar permissão no Supabase:', supaErr.message);
+        }
+      }
+    }
+
     const vinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(usuarioId, empresaId) as any;
     if (!vinculo) {
       return res.status(404).json({ success: false, message: 'Vínculo do colaborador com esta empresa não encontrado.' });
@@ -966,7 +1099,7 @@ router.put('/empresa/:empresaId/permissao/:usuarioId', requireAuth, requirePerfi
       SET permissao = COALESCE(?, permissao),
           modulos_permitidos = COALESCE(?, modulos_permitidos)
       WHERE id = ?
-    `).run(permissao || null, modulosPermitidos || null, vinculo.id);
+    `).run(permissao || null, modulosStr, vinculo.id);
 
     return res.json({ success: true, message: 'Permissões atualizadas com sucesso.' });
   } catch (err: any) {

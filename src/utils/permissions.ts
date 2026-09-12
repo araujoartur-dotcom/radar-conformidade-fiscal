@@ -251,32 +251,28 @@ export function hasModuleAccess(
     return ['admin_master', 'suporte_ti', 'contador_gestor'].includes(user.perfil);
   }
 
-  // 3. Módulo de Cadastro de Empresas (carteira) também é exclusivo de perfis de gestão
+  // 3. Módulo de Cadastro de Empresas & Certificados (carteira_cnpjs):
+  // Permitido para perfis de gestão OU para qualquer colaborador que tenha acesso via modulosPermitidos
   if (moduleId === 'carteira_cnpjs') {
-    return ['admin_master', 'suporte_ti', 'contador_gestor'].includes(user.perfil);
+    if (['admin_master', 'suporte_ti', 'contador_gestor'].includes(user.perfil)) {
+      return true;
+    }
+    const rawMods = (user as any).modulosPermitidos || empresaAtiva?.modulosPermitidos;
+    if (!rawMods || rawMods === '*' || rawMods === '["*"]') {
+      return true;
+    }
+    const list = parseModulosList(rawMods);
+    return list.includes('carteira_cnpjs');
   }
 
-  // 4. Se a empresa ativa possui lista específica de módulos permitidos
-  const rawModulos = empresaAtiva?.modulosPermitidos;
+  // 4. Se o usuário ou a empresa ativa possui lista específica de módulos permitidos
+  const rawModulos = (user as any).modulosPermitidos || empresaAtiva?.modulosPermitidos;
   if (!rawModulos || rawModulos === '*' || rawModulos === '["*"]') {
     return true;
   }
 
-  try {
-    const parsed = typeof rawModulos === 'string' ? JSON.parse(rawModulos) : rawModulos;
-    if (Array.isArray(parsed)) {
-      if (parsed.includes('*')) return true;
-      return parsed.includes(moduleId);
-    }
-  } catch {
-    if (typeof rawModulos === 'string') {
-      const parts = rawModulos.split(',').map(s => s.trim());
-      if (parts.includes('*')) return true;
-      return parts.includes(moduleId);
-    }
-  }
-
-  return true;
+  const allowedList = parseModulosList(rawModulos);
+  return allowedList.includes(moduleId);
 }
 
 /**

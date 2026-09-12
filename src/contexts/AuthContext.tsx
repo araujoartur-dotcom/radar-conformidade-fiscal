@@ -5,6 +5,7 @@ export interface User {
   nome: string;
   email: string;
   perfil: string;
+  modulosPermitidos?: string | string[];
 }
 
 export interface Empresa {

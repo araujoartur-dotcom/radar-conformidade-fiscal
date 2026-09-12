@@ -70,6 +70,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
   const [editPermissao, setEditPermissao] = useState<'total' | 'escrita' | 'leitura'>('escrita');
   const [editModulos, setEditModulos] = useState<QueryMode[]>([]);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const loadUsers = async () => {
     if (!isGestorUsuarios) return;
@@ -192,7 +193,9 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
         setNewPermissao('escrita');
         setNewModulos(['central_kpis', 'dfe_xml', 'eventos_dfe', 'apuracao_assistida', 'relatorios_xml', 'tabelas_fiscais']);
       } else {
-        alert('Erro ao criar colaborador: ' + (res.error || res.data?.message));
+        const errorMsg = (res.data as any)?.message || res.error || 'Erro desconhecido ao cadastrar colaborador.';
+        showNotification('erro', errorMsg);
+        alert(`Erro ao cadastrar colaborador:\n\n${errorMsg}\n\nVerifique os dados preenchidos ou suas permissões.`);
       }
     } finally {
       setIsCreatingUser(false);
@@ -203,6 +206,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
     e.preventDefault();
     if (!editingUser) return;
 
+    setEditError(null);
     setIsUpdatingUser(true);
     try {
       const res = await put(`/users/${editingUser.id}`, {
@@ -217,13 +221,20 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
       });
 
       if (res.ok) {
-        showNotification('sucesso', `Dados de ${editingUser.nome} atualizados com sucesso!`);
+        showNotification('sucesso', `Dados e acessos de "${editingUser.nome}" atualizados com sucesso!`);
         await loadUsers();
         setEditingUser(null);
         setEditSenha('');
+        setEditError(null);
       } else {
-        alert('Erro ao atualizar usuário: ' + (res.error || res.data?.message));
+        const errorMsg = (res.data as any)?.message || res.error || 'Erro inesperado ao atualizar usuário.';
+        setEditError(errorMsg);
+        showNotification('erro', errorMsg);
       }
+    } catch (err: any) {
+      const errorMsg = err.message || 'Falha de comunicação com o servidor ao salvar alterações.';
+      setEditError(errorMsg);
+      showNotification('erro', errorMsg);
     } finally {
       setIsUpdatingUser(false);
     }
@@ -233,10 +244,12 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
     if (!confirm(`Tem certeza que deseja remover o colaborador "${nome}"?`)) return;
     const res = await del(`/users/${id}`);
     if (res.ok) {
-      showNotification('sucesso', `Colaborador "${nome}" removido.`);
+      showNotification('sucesso', `Colaborador "${nome}" removido com sucesso.`);
       await loadUsers();
     } else {
-      alert('Erro ao excluir usuário: ' + (res.error || res.data?.message));
+      const errorMsg = (res.data as any)?.message || res.error || 'Erro inesperado ao excluir usuário.';
+      showNotification('erro', errorMsg);
+      alert(`Erro ao excluir colaborador:\n\n${errorMsg}`);
     }
   };
 
@@ -816,6 +829,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                                     setEditPermissao(usr.empresasVinculadas?.[0]?.permissao || 'escrita');
                                     setEditModulos(parseModulosList(usr.modulosPermitidos));
                                     setEditSenha('');
+                                    setEditError(null);
                                   }}
                                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-cyan-600 text-slate-400 hover:text-white transition-all cursor-pointer"
                                   title="Editar Acessos & Módulos"
@@ -925,6 +939,20 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
                 ✕
               </button>
             </div>
+
+            {/* Banner de Erro Descritivo Local */}
+            {editError && (
+              <div className="p-3.5 rounded-xl bg-rose-950/90 border border-rose-700/80 text-rose-200 text-xs flex items-start gap-2.5 animate-in fade-in duration-200">
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-rose-300">Não foi possível salvar as alterações:</div>
+                  <p className="text-rose-200 leading-relaxed font-sans">{editError}</p>
+                  <div className="text-[11px] text-rose-300/80 font-sans mt-1">
+                    💡 <strong>Como resolver:</strong> Verifique se você possui permissão sobre este colaborador e suas empresas vinculadas. Se o cadastro foi modificado recentemente, recarregue a listagem de usuários e tente novamente.
+                  </div>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleUpdateUser} className="space-y-4 text-xs">
               {/* Dados Básicos */}

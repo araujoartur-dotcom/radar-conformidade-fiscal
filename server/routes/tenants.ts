@@ -40,8 +40,24 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         const { data: rows, error } = await query;
         if (error) throw error;
 
+        const db = getDatabase();
         const formatted = (rows || []).map((r: any) => {
-          const cert = Array.isArray(r.certificados) ? r.certificados[0] : r.certificados;
+          const certList = Array.isArray(r.certificados) ? r.certificados : (r.certificados ? [r.certificados] : []);
+          // Prioriza o certificado ativo com status_alerta === 'ok', ou o mais recente cadastrado
+          const cert = certList.find((c: any) => c.status_alerta === 'ok') ||
+                       certList.slice().sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
+          
+          const isValido = cert && (cert.status_alerta === 'ok' || (cert.validade && new Date(cert.validade) >= new Date()));
+
+          if (cert) {
+            try {
+              db.prepare(`
+                INSERT OR REPLACE INTO certificados (id, empresa_id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+              `).run(cert.id, r.id, cert.arquivo_nome, cert.validade, cert.status_alerta || 'ok', cert.emissor || 'AC Certificadora A1', cert.impressao_digital || '');
+            } catch {}
+          }
+
           return {
             id: r.id,
             cnpjRaiz: r.cnpj_raiz,
@@ -59,13 +75,13 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             certificadoA1: cert ? {
               fileName: cert.arquivo_nome,
               validade: cert.validade,
-              status: cert.status_alerta === 'ok' ? 'valido' : (cert.status_alerta === 'expirado' ? 'expirado' : 'pendente'),
+              status: isValido ? 'valido' : (cert.status_alerta === 'expirado' ? 'expirado' : 'pendente'),
               emissor: cert.emissor || 'AC Certificadora A1',
               impressaoDigital: cert.impressao_digital || ''
             } : undefined,
             totalDocumentosCapturados: 0,
-            statusConexaoSefaz: cert ? 'ativo' : 'sem_certificado',
-            ultimaSincronizacao: cert ? 'Certificado Ativo' : 'Sem Certificado'
+            statusConexaoSefaz: isValido ? 'ativo' : (cert ? 'pendente' : 'sem_certificado'),
+            ultimaSincronizacao: isValido ? 'Certificado Ativo' : (cert ? 'Certificado Pendente' : 'Sem Certificado')
           };
         });
 
@@ -87,7 +103,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           c.emissor as cert_emissor,
           c.impressao_digital as cert_fingerprint
         FROM empresas e
-        LEFT JOIN certificados c ON c.empresa_id = e.id
+        LEFT JOIN certificados c ON c.empresa_id = e.id AND (c.status_alerta = 'ok' OR c.status_alerta IS NULL)
         ORDER BY e.created_at DESC
       `).all() as any[];
     } else {
@@ -101,7 +117,7 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           c.impressao_digital as cert_fingerprint
         FROM empresas e
         INNER JOIN usuario_empresa ue ON ue.empresa_id = e.id
-        LEFT JOIN certificados c ON c.empresa_id = e.id
+        LEFT JOIN certificados c ON c.empresa_id = e.id AND (c.status_alerta = 'ok' OR c.status_alerta IS NULL)
         WHERE ue.usuario_id = ?
         ORDER BY e.created_at DESC
       `).all(userId) as any[];

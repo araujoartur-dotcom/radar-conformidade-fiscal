@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp
+  ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp, Key
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,6 +20,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   activeMode,
+  setActiveMode,
   certificado,
   totalItems,
   onOpenExportFiscal,
@@ -31,6 +32,19 @@ export const Header: React.FC<HeaderProps> = ({
   const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const dropdownRef = React.useRef<HTMLDivElement>(null);
+
+  /**
+   * Extrai First Name e Last Name do colaborador conectado para exibição compacta
+   */
+  const getUserDisplayName = (fullName?: string, email?: string) => {
+    if (!fullName) {
+      if (!email) return 'Usuário Conectado';
+      return email.split('@')[0];
+    }
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 2) return fullName.trim();
+    return `${parts[0]} ${parts[parts.length - 1]}`;
+  };
 
   // Outside click listener for tenant dropdown
   React.useEffect(() => {
@@ -146,9 +160,18 @@ export const Header: React.FC<HeaderProps> = ({
               <div className={`w-2 h-2 rounded-full ${empresaAtiva ? 'bg-emerald-400' : 'bg-amber-400'}`} />
               <div className="text-left">
                 <div className="text-[10px] text-slate-400 font-medium leading-none">Empresa Ativa:</div>
-                <div className="font-bold text-white truncate max-w-[160px] sm:max-w-[220px]">
+                <div className="font-bold text-white truncate max-w-[160px] sm:max-w-[220px]" title={empresaAtiva?.razaoSocial}>
                   {empresaAtiva ? empresaAtiva.razaoSocial : 'Nenhuma selecionada'}
                 </div>
+                {user && (
+                  <div 
+                    className="text-[10px] text-cyan-400 font-medium leading-tight truncate max-w-[160px] sm:max-w-[220px] flex items-center gap-1 mt-0.5 tracking-tight"
+                    title={`Colaborador conectado: ${user.nome || user.email} (${user.email})`}
+                  >
+                    <span className="opacity-75 text-[9px]">👤</span>
+                    <span>{getUserDisplayName(user.nome, user.email)}</span>
+                  </div>
+                )}
               </div>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
@@ -230,6 +253,26 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
           </div>
+
+          {/* Certificate Status Badge & Shortcut */}
+          <button
+            onClick={() => setActiveMode('carteira_cnpjs')}
+            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+              certificado?.valido
+                ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60'
+                : 'bg-amber-950/40 border-amber-700/60 text-amber-300 hover:bg-amber-900/60'
+            }`}
+            title={
+              certificado?.valido
+                ? `Certificado Digital A1 Ativo: Válido até ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Período Ativo'} (${certificado.emissor || 'AC'}) — Clique para gerenciar carteira`
+                : 'Certificado Digital Pendente — Clique para configurar e vincular'
+            }
+          >
+            <Key className={`w-3.5 h-3.5 ${certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}`} />
+            <span className="hidden xl:inline text-[11px] font-bold">
+              {certificado?.valido ? 'Certificado A1 Ativo' : 'Vincular Certificado A1'}
+            </span>
+          </button>
 
           {onOpenExportFiscal && (
             <button
