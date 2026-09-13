@@ -13,11 +13,13 @@ import { RelatorioMapaCfop } from './relatorios/RelatorioMapaCfop';
 import { RelatorioMapaCClassTrib } from './relatorios/RelatorioMapaCClassTrib';
 import { RelatorioOnerosidade } from './relatorios/RelatorioOnerosidade';
 import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
+import { RelatorioConsolidadoMercadorias } from './relatorios/RelatorioConsolidadoMercadorias';
+import { RelatorioConsolidadoServicos } from './relatorios/RelatorioConsolidadoServicos';
 import { 
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
   RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, Receipt,
-  Sparkles, Clock, ChevronDown, ChevronUp
+  Sparkles, Clock, ChevronDown, ChevronUp, ExternalLink, Check, Copy
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -27,13 +29,20 @@ interface RelatoriosXmlPanelProps {
 export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList = [] }) => {
   const { token, empresaAtiva } = useAuth();
   const { kpis: globalKpis, totalGeral: globalTotalGeral, totalFiltrado: globalTotalFiltrado } = useKpis();
-  const [activeTab, setActiveTab] = useState<ReportTabType>('razao_entradas');
+  const [activeTab, setActiveTab] = useState<ReportTabType>('consolidado_mercadorias');
   const [items, setItems] = useState<XmlItemDetailReport[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
   const [dbKpis, setDbKpis] = useState<any>(null);
   const [totalDbCount, setTotalDbCount] = useState<number>(0);
+
+  // Estados de Integração em Tempo Real com Apuração Assistida & Modal do Ledger CGIBS
+  const [syncingApuracao, setSyncingApuracao] = useState<boolean>(false);
+  const [syncResult, setSyncResult] = useState<any>(null);
+  const [selectedChaveLedger, setSelectedChaveLedger] = useState<string | null>(null);
+  const [ledgerData, setLedgerData] = useState<any>(null);
+  const [loadingLedger, setLoadingLedger] = useState<boolean>(false);
 
   const activeKpis = dbKpis?.totalFiltrado || globalTotalFiltrado || globalTotalGeral || globalKpis;
   const activeTotalGeral = dbKpis?.totalGeral || globalTotalGeral || activeKpis;
@@ -95,11 +104,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (activeF.dataFim) query.append('dataFim', activeF.dataFim);
       if (activeF.uf && activeF.uf !== 'TODAS') query.append('uf', activeF.uf);
 
-      // No Relatório #9 (Retenções na Fonte / Serviços), se o usuário não escolheu outro tipo manual restritivo,
-      // filtra estritamente por NFS-e para nunca carregar ou exibir CT-e
-      if (currentTab === 'retencoes_fonte' && (!activeF.tipoDoc || activeF.tipoDoc === 'TODOS')) {
+      // Filtros inteligentes por aba
+      if ((currentTab === 'retencoes_fonte' || currentTab === 'consolidado_servicos') && (!activeF.tipoDoc || activeF.tipoDoc === 'TODOS')) {
         query.append('tipoDoc', 'NFSe');
         query.append('relatorio', 'retencoes_fonte');
+      } else if (currentTab === 'consolidado_mercadorias' && (!activeF.tipoDoc || activeF.tipoDoc === 'TODOS')) {
+        query.append('relatorio', 'consolidado_mercadorias');
       } else if (activeF.tipoDoc && activeF.tipoDoc !== 'TODOS') {
         query.append('tipoDoc', activeF.tipoDoc);
       }
@@ -127,6 +137,14 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         if (typeof data.total === 'number' && data.total > 0) {
           setTotalDbCount(data.total);
         }
+        if (data.totaisBanco) {
+          setDbKpis((prev: any) => ({
+            ...prev,
+            success: true,
+            totalGeral: data.totaisBanco,
+            totalFiltrado: data.totaisFiltrados || data.totaisBanco
+          }));
+        }
       }
 
       // Busca simultânea de KPIs agregados no banco (Total Geral + Filtrado)
@@ -147,85 +165,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         console.warn('⚠️ Erro ao carregar KPIs agregados:', kpiErr);
       }
       
-      // Fallback em memória caso a API ainda não tenha retornado itens mas dfeList esteja populada
-      if (fetchedItems.length === 0 && dfeList && dfeList.length > 0) {
-        fetchedItems = dfeList.map((doc, idx) => {
-          const docTotal = Number(doc.valorTotal) || 0;
-          const valIbs = Number(doc.valorIbs) || 0;
-          const valCbs = Number(doc.valorCbs) || 0;
-          return {
-            id: `mem-${doc.chaveAcesso}-${idx}`,
-            empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
-            empresaCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
-            tipoDoc: (doc.tipo || 'NFe') as any,
-            chaveAcesso: doc.chaveAcesso,
-            numeroSerie: `${doc.numero || '1'} / ${doc.serie || '1'}`,
-            dataEmissao: doc.dataEmissao || new Date().toISOString(),
-            dataEntrada: doc.dataEmissao || new Date().toISOString(),
-            competencia: doc.dataEmissao ? doc.dataEmissao.substring(0, 7) : '2026-08',
-            fornecedorCnpj: doc.emitenteCnpj || '00.000.000/0000-00',
-            fornecedorRazao: doc.emitenteNome || 'FORNECEDOR REGISTRADO',
-            fornecedorUf: doc.emitenteUf || 'SP',
-            fornecedorMunicipio: 'São Paulo',
-            clienteCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
-            clienteUf: doc.destinatarioUf || 'SP',
-            situacaoDoc: 'autorizado',
-            situacaoManifestacao: doc.isResumoApenas ? 'sem_manifestacao' : 'confirmada',
-            eventoUltimo: doc.eventoUltimo || 'Autorizado o uso do DF-e',
-            alertaFraude: false,
-            itemNro: 1,
-            descricaoItem: 'Item Principal / Operação Global',
-            ncm: '2711.19.10',
-            cest: '',
-            cfop: '1102',
-            cClassTrib: '000001',
-            cstCsosn: '000',
-            naturezaOperacao: 'Operação Fiscal',
-            quantidade: 1,
-            unidade: 'UN',
-            valorUnitario: docTotal,
-            valorBrutoItem: docTotal,
-            descontoIncondicional: 0,
-            freteSeguroRateado: 0,
-            valorLiquidoItem: docTotal,
-            valorIcms: Number(doc.valorIcms) || 0,
-            valorIpi: Number(doc.valorIpi) || 0,
-            valorPis: Number(doc.valorPis) || 0,
-            valorCofins: Number(doc.valorCofins) || 0,
-            baseIbs: valIbs > 0 ? docTotal : 0,
-            aliquotaIbs: valIbs > 0 ? (doc.aliquotaIbs || 0) : 0,
-            valorIbs: valIbs,
-            baseCbs: valCbs > 0 ? docTotal : 0,
-            aliquotaCbs: valCbs > 0 ? (doc.aliquotaCbs || 0) : 0,
-            valorCbs: valCbs,
-            valorIs: Number(doc.valorImpostoSeletivo) || 0,
-            creditoEsperadoIbs: valIbs,
-            creditoEsperadoCbs: valCbs,
-            creditoApropriadoIbs: valIbs,
-            creditoApropriadoCbs: valCbs,
-            diferencaCreditoIbs: 0,
-            diferencaCreditoCbs: 0,
-            fonteAliquota: 'documento',
-            indicadorOnerosidade: 'Oneroso',
-            criterioOnerosidade: 'Pagamento Confirmado',
-            evidenciaCobranca: true,
-            tipoAquisicao: 'insumo',
-            destinacao: 'atividade_tributada',
-            regraAplicadaId: 'ELEG_001',
-            resultadoElegibilidade: 'Elegível',
-            motivoPadronizado: 'DF-e registrado no Radar Fiscal',
-            evidencia: 'Documento auditado',
-            usuarioCaptura: 'Processo Automático',
-            rotinaCaptura: 'Robô SEFAZ / Upload',
-            isExcecao: false,
-            temEventoAfetaCredito: false,
-            creditoOriginalTotal: valIbs + valCbs,
-            creditoEstornadoTotal: 0
-          };
-        });
-      }
+      // Se a API retornar 0 itens, mantém a lista vazia factual sem gerar dados sintéticos em memória
 
       if (filters.apenasExcecoes) {
         fetchedItems = fetchedItems.filter(item => item.isExcecao);
@@ -322,6 +262,55 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     exportReportToExcel(filteredItems, `Relatorio_${activeTab}`);
   };
 
+  // Ação de Sincronização em Tempo Real com Apuração Assistida (CGIBS / RTC)
+  const handleSyncApuracao = async () => {
+    setSyncingApuracao(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/relatorios/sincronizar-apuracao`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setSyncResult(json);
+      }
+      await handleSearch();
+    } catch (e) {
+      console.error('Erro ao sincronizar apuração assistida:', e);
+    } finally {
+      setSyncingApuracao(false);
+    }
+  };
+
+  // Ação para abrir o Ledger Oficial da Apuração Assistida por Chave de Acesso
+  const handleOpenLedger = async (chave: string) => {
+    setSelectedChaveLedger(chave);
+    setLoadingLedger(true);
+    setLedgerData(null);
+    try {
+      const empId = empresaAtiva?.id || '';
+      const listRes = await fetch(`${getApiBaseUrl()}/apuracao/operacoes?busca=${encodeURIComponent(chave)}&empresaId=${empId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (listRes.ok) {
+        const listJson = await listRes.json();
+        const found = (listJson.operacoes || []).find((op: any) => op.chave_acesso === chave) || listJson.operacoes?.[0];
+        if (found?.id) {
+          const detailRes = await fetch(`${getApiBaseUrl()}/apuracao/operacao/${found.id}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (detailRes.ok) {
+            const detailJson = await detailRes.json();
+            setLedgerData(detailJson);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar ledger da operação:', err);
+    } finally {
+      setLoadingLedger(false);
+    }
+  };
+
   // Cálculo de filtros ativos para badge visual
   const activeFiltersCount = [
     Boolean(filters.searchTerm),
@@ -340,15 +329,17 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   ].filter(Boolean).length;
 
   const reportTabs = [
-    { id: 'razao_entradas' as ReportTabType, label: '1) Razão de Entradas (#1)', icon: FileText, badge: 'Relatório-Mãe' },
-    { id: 'matriz_elegibilidade' as ReportTabType, label: '2) Matriz Elegibilidade (#2)', icon: ShieldCheck },
-    { id: 'calculo_credito' as ReportTabType, label: '3) Crédito Esperado x Apropriado (#3)', icon: Calculator },
-    { id: 'excecoes_pendencias' as ReportTabType, label: '4) Exceções & Pendências (#4)', icon: AlertTriangle, count: items.filter(i => i.isExcecao).length },
-    { id: 'estornos_ajustes' as ReportTabType, label: '5) Estornos / Ajustes (#5)', icon: RotateCcw },
-    { id: 'mapa_cfop' as ReportTabType, label: '6) Mapa CFOP (#6)', icon: BookOpen },
-    { id: 'mapa_cclasstrib' as ReportTabType, label: '7) Mapa cClassTrib (#7)', icon: Tag },
-    { id: 'onerosidade_auditoria' as ReportTabType, label: '8) Onerosidade Auditoria (#8)', icon: Scale },
-    { id: 'retencoes_fonte' as ReportTabType, label: '9) Retenções na Fonte (#9)', icon: Receipt, badge: 'NFS-e / Serviços' },
+    { id: 'consolidado_mercadorias' as ReportTabType, label: '1) Mercadorias & Fretes (NF-e 55 & CT-e)', icon: FileText, badge: 'Consolidado Mestre' },
+    { id: 'consolidado_servicos' as ReportTabType, label: '2) Serviços & Retenções (NFS-e ADN/Mun.)', icon: Receipt, badge: 'Consolidado Mestre' },
+    { id: 'mapa_cfop' as ReportTabType, label: '3) Mapa CFOP', icon: BookOpen, badge: 'Apoio' },
+    { id: 'mapa_cclasstrib' as ReportTabType, label: '4) Mapa cClassTrib', icon: Tag, badge: 'Apoio' },
+    { id: 'razao_entradas' as ReportTabType, label: 'Razão de Entradas (#1)', icon: Layers, badge: 'Legado' },
+    { id: 'matriz_elegibilidade' as ReportTabType, label: 'Matriz Elegibilidade (#2)', icon: ShieldCheck, badge: 'Legado' },
+    { id: 'calculo_credito' as ReportTabType, label: 'Crédito Esperado x Apropriado (#3)', icon: Calculator, badge: 'Legado' },
+    { id: 'excecoes_pendencias' as ReportTabType, label: 'Exceções & Pendências (#4)', icon: AlertTriangle, count: items.filter(i => i.isExcecao).length, badge: 'Legado' },
+    { id: 'estornos_ajustes' as ReportTabType, label: 'Estornos / Ajustes (#5)', icon: RotateCcw, badge: 'Legado' },
+    { id: 'onerosidade_auditoria' as ReportTabType, label: 'Onerosidade Auditoria (#8)', icon: Scale, badge: 'Legado' },
+    { id: 'retencoes_fonte' as ReportTabType, label: 'Retenções Fonte Legado (#9)', icon: Receipt, badge: 'Legado' },
   ];
 
   return (
@@ -488,7 +479,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             
             {/* Filter: Search Keyword */}
             <div className="sm:col-span-2 md:col-span-2 xl:col-span-2 min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5">
                 Busca Textual (Razão Social, Item, Chave, NCM, Pedido):
               </label>
               <div className="relative">
@@ -506,12 +497,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
             {/* Filter: Fornecedor CNPJ */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 CNPJ Emitente / Fornecedor:
               </label>
               <input
                 type="text"
-                placeholder="Ex: 17.213.071/0001-75"
+                placeholder="Ex: 01.001.001/0001-91"
                 value={filters.cnpjEmitente}
                 onChange={(e) => setFilters({ ...filters, cnpjEmitente: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
@@ -521,12 +512,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
             {/* Filter: Cliente / Destinatário CNPJ */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 CNPJ Destinatário / Filial:
               </label>
               <input
                 type="text"
-                placeholder="Ex: 00.000.000/0001-91"
+                placeholder="Ex: 02.002.002/0002-02"
                 value={filters.cnpjDestinatario}
                 onChange={(e) => setFilters({ ...filters, cnpjDestinatario: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
@@ -536,7 +527,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
             {/* Filter: UF */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Estado / UF Emitente / Dest:
               </label>
               <select
@@ -556,7 +547,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
             {/* Filter: Data Início */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Data Inicial Emissão:
               </label>
               <input
@@ -564,13 +555,13 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 value={filters.dataInicio}
                 onChange={(e) => setFilters({ ...filters, dataInicio: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
               />
             </div>
 
             {/* Filter: Data Fim */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Data Final Emissão:
               </label>
               <input
@@ -578,13 +569,13 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 value={filters.dataFim}
                 onChange={(e) => setFilters({ ...filters, dataFim: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
               />
             </div>
 
             {/* Filter: Tipo Documento */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Tipo de Documento:
               </label>
               <select
@@ -601,7 +592,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
             {/* Filter: Situação Doc */}
             <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Situação do Documento:
               </label>
               <select
@@ -776,6 +767,28 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
       {/* Main Report View Content */}
       <div className="space-y-4 w-full min-w-0 max-w-full">
+        {activeTab === 'consolidado_mercadorias' && (
+          <RelatorioConsolidadoMercadorias
+            items={filteredItems}
+            dbKpis={dbKpis}
+            onOpenDetail={(it) => setSelectedItemForModal(it)}
+            onOpenLedger={(chave) => handleOpenLedger(chave)}
+            onSyncApuracao={handleSyncApuracao}
+            syncingApuracao={syncingApuracao}
+          />
+        )}
+
+        {activeTab === 'consolidado_servicos' && (
+          <RelatorioConsolidadoServicos
+            items={filteredItems}
+            dbKpis={dbKpis}
+            onOpenDetail={(it) => setSelectedItemForModal(it)}
+            onOpenLedger={(chave) => handleOpenLedger(chave)}
+            onSyncApuracao={handleSyncApuracao}
+            syncingApuracao={syncingApuracao}
+          />
+        )}
+
         {activeTab === 'razao_entradas' && (
           <RelatorioRazaoEntradas
             items={filteredItems}
@@ -919,12 +932,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 <div>Critério Onerosidade: {selectedItemForModal.criterioOnerosidade}</div>
               </div>
 
-              {/* Seção Conta Corrente Fiscal & CGIBS (Apuração Assistida - LC 215/2025) */}
+              {/* Seção Conta Corrente Fiscal & Apuração Assistida: IBS (CGIBS) & CBS (RFB) */}
               <div className="md:col-span-2 p-3 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 rounded-xl border border-cyan-900/50 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-[11px] text-cyan-400 uppercase font-sans font-bold flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4 text-cyan-400" />
-                    Conta Corrente Fiscal & Homologação CGIBS (Apuração Assistida)
+                    Conta Corrente Fiscal & Apuração Assistida: IBS (CGIBS) & CBS (RFB)
                   </div>
                   {selectedItemForModal.statusCreditoCgibs === 'CONFIRMADO' ? (
                     <span className="px-2.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold">
@@ -940,16 +953,16 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                     </span>
                   ) : (
                     <span className="px-2.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold">
-                      ⚪ Aguardando Lote de Sincronismo CGIBS
+                      ⚪ Aguardando Lote de Sincronismo CGIBS / RFB
                     </span>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] pt-1.5 border-t border-slate-800/80">
                   <div>
-                    <span className="text-slate-500 block text-[10px]">Diagnóstico Oficial:</span>
+                    <span className="text-slate-500 block text-[10px]">Diagnóstico Oficial (CGIBS / RFB):</span>
                     <span className="text-slate-200 font-sans font-medium">
-                      {selectedItemForModal.motivoCreditoCgibs || 'Documento apto para processamento na SEFIN Nacional'}
+                      {selectedItemForModal.motivoCreditoCgibs || 'Documento apto para processamento na SEFIN Nacional / RTC'}
                     </span>
                   </div>
                   <div>
@@ -961,7 +974,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                   <div>
                     <span className="text-slate-500 block text-[10px]">Hash SHA-1 de Integridade:</span>
                     <span className="text-purple-300 font-mono text-[10px] truncate block" title={selectedItemForModal.hashCgibs || 'Aguardando consolidação'}>
-                      {selectedItemForModal.hashCgibs ? `${selectedItemForModal.hashCgibs.substring(0, 18)}...` : 'Gerado no MOC CGIBS'}
+                      {selectedItemForModal.hashCgibs ? `${selectedItemForModal.hashCgibs.substring(0, 18)}...` : 'Gerado no MOC RTC (CGIBS/RFB)'}
                     </span>
                   </div>
                 </div>
@@ -974,6 +987,209 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
               >
                 Fechar Auditoria
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Detalhamento do Ledger / Apuração Assistida (IBS - CGIBS & CBS - RFB) */}
+      {selectedChaveLedger && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0f172a] border border-cyan-800/60 rounded-2xl max-w-4xl w-full p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-cyan-400" />
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    Extrato de Conta-Corrente Fiscal — Apuração Assistida: IBS (CGIBS) & CBS (RFB)
+                  </h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    Chave: {selectedChaveLedger}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setSelectedChaveLedger(null); setLedgerData(null); }}
+                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {loadingLedger ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
+                <span className="text-sm font-semibold text-slate-300">Consultando Conta Corrente Fiscal e Ledger RTC (CGIBS/RFB)...</span>
+              </div>
+            ) : !ledgerData ? (
+              <div className="p-6 bg-slate-950 rounded-xl border border-slate-800 text-center space-y-3">
+                <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
+                <div className="text-sm font-bold text-slate-200">Operação Ainda Não Sincronizada no Ledger Oficial RTC (CGIBS / RFB)</div>
+                <p className="text-xs text-slate-400 max-w-lg mx-auto">
+                  Esta chave de documento não possui lançamentos liquidados no extrato de conta corrente fiscal.
+                  De acordo com a LC 215/2025 Art. 27, o crédito de IBS (CGIBS) e de CBS (RFB) só pode ser apropriado após a liquidação do imposto pelo fornecedor, split payment ou via recolhimento pelo adquirente (RAD).
+                </p>
+                <button
+                  onClick={handleSyncApuracao}
+                  disabled={syncingApuracao}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white text-xs font-bold rounded-xl cursor-pointer shadow-lg shadow-cyan-900/30 inline-flex items-center gap-2"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingApuracao ? 'animate-spin' : ''}`} />
+                  {syncingApuracao ? 'Sincronizando...' : 'Executar Sincronismo Agora'}
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Cabeçalho da Operação & Status RAD */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Fornecedor / Tomador</span>
+                    <span className="text-xs text-white font-bold block truncate">{ledgerData.operacao?.razao_social_contraparte || '—'}</span>
+                    <span className="text-[10px] text-cyan-300 font-mono">{ledgerData.operacao?.cnpj_cpf_contraparte || '—'}</span>
+                  </div>
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Status da Operação</span>
+                    <span className={`text-xs font-bold block ${
+                      ledgerData.operacao?.status === 'LIQUIDADA' ? 'text-emerald-400' :
+                      ledgerData.operacao?.status === 'RETIDA_PARCIAL' ? 'text-amber-400' : 'text-slate-300'
+                    }`}>
+                      {ledgerData.operacao?.status || 'EM PROCESSAMENTO'}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Tipo: {ledgerData.operacao?.tipo_operacao || 'ENTRADA'} | Emissão: {ledgerData.operacao?.dth_emissao ? new Date(ledgerData.operacao.dth_emissao).toLocaleDateString('pt-BR') : '—'}
+                    </span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${
+                    ledgerData.operacao?.recurso_financeiro_disponivel_para_transferencia > 0 || ledgerData.operacao?.credito_nao_utilizado > 0
+                      ? 'bg-emerald-950/40 border-emerald-800/80 text-emerald-300'
+                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] uppercase font-bold block">Diagnóstico Decisório RAD (Recolhimento Adquirente)</span>
+                    <span className="text-xs font-bold block">
+                      {ledgerData.operacao?.recurso_financeiro_disponivel_para_transferencia > 0 || ledgerData.operacao?.credito_nao_utilizado > 0
+                        ? '✅ Crédito Liberado (Débito Liquidado no CGIBS)'
+                        : '⏳ Opção RAD: Débito em Aberto pelo Fornecedor'
+                      }
+                    </span>
+                    <span className="text-[10px]">
+                      {ledgerData.operacao?.recurso_financeiro_disponivel_para_transferencia > 0 || ledgerData.operacao?.credito_nao_utilizado > 0
+                        ? `Disponível para Apropriação: R$ ${Number(ledgerData.operacao?.recurso_financeiro_disponivel_para_transferencia || ledgerData.operacao?.credito_nao_utilizado).toFixed(2)}`
+                        : 'Adquirente pode emitir guia RAD para liquidar o débito e liberar o crédito'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 7 Campos Financeiros Oficiais do MOC RTC: CGIBS (IBS) & RFB (CBS) */}
+                <div className="p-4 bg-slate-950/90 rounded-xl border border-cyan-900/40 space-y-2">
+                  <div className="text-[11px] font-bold uppercase text-cyan-400 flex items-center justify-between">
+                    <span>Saldos Acumulados no RTC — CGIBS (IBS) & RFB (CBS)</span>
+                    <span className="text-[10px] font-mono text-slate-500">MOC Seção 5</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-2 text-center">
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Recurso Disponível">Recurso Disp.</span>
+                      <strong className="text-xs text-emerald-400 font-mono">
+                        R$ {Number(ledgerData.operacao?.recurso_financeiro_disponivel_para_transferencia || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Recurso a Transferir">A Transferir</span>
+                      <strong className="text-xs text-teal-300 font-mono">
+                        R$ {Number(ledgerData.operacao?.recurso_financeiro_a_transferir || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Crédito a Propriar">Créd. a Propriar</span>
+                      <strong className="text-xs text-amber-300 font-mono">
+                        R$ {Number(ledgerData.operacao?.credito_a_propriar || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Crédito Não Utilizado">Créd. Não Util.</span>
+                      <strong className="text-xs text-cyan-300 font-mono">
+                        R$ {Number(ledgerData.operacao?.credito_nao_utilizado || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Crédito Utilizado">Créd. Utilizado</span>
+                      <strong className="text-xs text-purple-300 font-mono">
+                        R$ {Number(ledgerData.operacao?.credito_utilizado || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Débito em Aberto">Déb. em Aberto</span>
+                      <strong className="text-xs text-rose-400 font-mono">
+                        R$ {Number(ledgerData.operacao?.debito_em_aberto || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                    <div className="p-2 rounded bg-slate-900 border border-slate-800">
+                      <span className="text-[9px] text-slate-400 block truncate" title="Débito Extinto">Déb. Extinto</span>
+                      <strong className="text-xs text-emerald-300 font-mono">
+                        R$ {Number(ledgerData.operacao?.debito_extinto || 0).toFixed(2)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabela Cronológica de Lançamentos no Ledger */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold uppercase text-slate-300">
+                    Histórico Cronológico do Ledger ({ledgerData.extrato?.length || 0} lançamentos)
+                  </div>
+                  <div className="border border-slate-800 rounded-xl overflow-x-auto max-h-56">
+                    <table className="w-full text-[11px] text-left border-collapse">
+                      <thead className="bg-slate-900 text-slate-400 font-semibold sticky top-0">
+                        <tr>
+                          <th className="p-2 border-b border-slate-800">Data/Hora</th>
+                          <th className="p-2 border-b border-slate-800">Movimentação</th>
+                          <th className="p-2 border-b border-slate-800 text-right">Créd. Propriar</th>
+                          <th className="p-2 border-b border-slate-800 text-right">Créd. Não Util.</th>
+                          <th className="p-2 border-b border-slate-800 text-right">Déb. Extinto</th>
+                          <th className="p-2 border-b border-slate-800 text-right">Saldo Disp.</th>
+                          <th className="p-2 border-b border-slate-800">Origem</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono text-[10px]">
+                        {(ledgerData.extrato || []).map((lancto: any, idx: number) => (
+                          <tr key={lancto.id || idx} className="hover:bg-slate-900/40">
+                            <td className="p-2 text-slate-300 whitespace-nowrap">
+                              {lancto.dth_lancto ? new Date(lancto.dth_lancto).toLocaleString('pt-BR') : '—'}
+                            </td>
+                            <td className="p-2 text-white font-sans font-medium whitespace-nowrap">
+                              {lancto.mov}
+                            </td>
+                            <td className="p-2 text-right text-amber-300">
+                              {lancto.credito_a_propriar ? `R$ ${lancto.credito_a_propriar.toFixed(2)}` : '—'}
+                            </td>
+                            <td className="p-2 text-right text-cyan-300">
+                              {lancto.credito_nao_utilizado ? `R$ ${lancto.credito_nao_utilizado.toFixed(2)}` : '—'}
+                            </td>
+                            <td className="p-2 text-right text-emerald-400">
+                              {lancto.debito_extinto ? `R$ ${lancto.debito_extinto.toFixed(2)}` : '—'}
+                            </td>
+                            <td className="p-2 text-right text-emerald-300 font-bold">
+                              R$ {(lancto.saldo_acumulado?.recurso_financeiro_disponivel_para_transferencia ?? 0).toFixed(2)}
+                            </td>
+                            <td className="p-2 text-slate-500 truncate max-w-[120px]" title={lancto.arquivo_origem}>
+                              {lancto.arquivo_origem || 'CGIBS MOC'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <button
+                onClick={() => { setSelectedChaveLedger(null); setLedgerData(null); }}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+              >
+                Fechar Ledger
               </button>
             </div>
           </div>

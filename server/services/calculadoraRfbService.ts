@@ -34,6 +34,8 @@ export interface ResultadoCalculoRtc {
   valorTotalTributos: number;
   memoriaCalculo: string;
   baseLegal: string;
+  erro?: string;
+  avisoParametrizacao?: string;
   divergenciaDetectada?: {
     valorXmlCbs?: number;
     valorXmlIbs?: number;
@@ -158,41 +160,129 @@ async function consultarCalculadoraRfbLocal(
 }
 
 /**
- * Motor de Cálculo Local baseado no banco de dados do Radar Fiscal (fallback oficial)
+ * Motor de Cálculo Local baseado estritamente no banco de dados do Radar Fiscal (SEM FALLBACK)
  */
 function calcularViaMotorLocal(params: ParametrosCalculoRtc): ResultadoCalculoRtc {
   const db = getDatabase();
-
-  // Buscar tabela de alíquotas para a data da operação
   const dataFato = params.dataFatoGerador || new Date().toISOString().split('T')[0];
+
+  // 1. Buscar regra de redução por NCM / cClassTrib
+  let percentualReducao = 0.0;
+  let tipoTratamento = 'padrao';
+  let baseLegal = 'LC 214/2025';
+  let regra: any = null;
+
+  if (params.ncm || params.cClassTrib) {
+    const rawNcm = (params.ncm || '').trim();
+    const cleanNcm = rawNcm.replace(/\D/g, '');
+    regra = db.prepare(`
+      SELECT * FROM ncm_regras_anexos 
+      WHERE (REPLACE(REPLACE(ncm, '.', ''), '-', '') = ? OR ncm = ? OR (cclasstrib = ? AND cclasstrib != '')) AND ativo = 1
+      LIMIT 1
+    `).get(cleanNcm, rawNcm, params.cClassTrib || '') as any;
+
+    if (regra) {
+      tipoTratamento = regra.tipo_tratamento || 'padrao';
+      percentualReducao = Number(regra.percentual_reducao || 0);
+      baseLegal = `${regra.base_legal || 'LC 214/2025'} — ${regra.anexo_lei || ''} (${regra.descricao || ''})`;
+    }
+  }
+
+  // 2. Operação sob modalidade Ad Rem (R$ por Unidade)
+  if (tipoTratamento === 'ad_rem') {
+    const tabelaAdRem = db.prepare(`
+      SELECT * FROM aliquotas_tabelas 
+      WHERE inicio_vigencia <= ? AND final_vigencia >= ? AND modalidade = 'ad_rem'
+      ORDER BY inicio_vigencia DESC LIMIT 1
+    `).get(dataFato, dataFato) as any;
+
+    if (!tabelaAdRem) {
+      return {
+        sucesso: false,
+        origem: 'motor_local_radar',
+        baseCalculo: params.baseCalculo,
+        aliquotaCbs: 0,
+        percentualReducaoCbs: 0,
+        valorCbs: 0,
+        aliquotaIbsEstadual: 0,
+        percentualReducaoIbsEstadual: 0,
+        valorIbsEstadual: 0,
+        aliquotaIbsMunicipal: 0,
+        percentualReducaoIbsMunicipal: 0,
+        valorIbsMunicipal: 0,
+        valorTotalIbs: 0,
+        valorTotalTributos: 0,
+        memoriaCalculo: `CÁLCULO SUSPENSO: Operação sujeita a alíquota Ad Rem, porém nenhuma alíquota Ad Rem está parametrizada para ${dataFato}.`,
+        baseLegal,
+        erro: 'SEM_ALIQUOTA_AD_REM',
+        avisoParametrizacao: `Nenhuma alíquota Ad Rem (R$/unidade) cadastrada para o período de ${dataFato}. Acesse 'Parâmetros & Tabelas Fiscais' > aba 'Alíquota Ad Rem (Valor R$)' para cadastrar os valores.`
+      };
+    }
+
+    const qtd = Number(params.quantidade || 0);
+    const aliqCbs = Number(tabelaAdRem.cbs_federal || 0);
+    const aliqIbsEst = Number(tabelaAdRem.ibs_estadual || 0);
+    const aliqIbsMun = Number(tabelaAdRem.ibs_municipal || 0);
+    const valCbs = Number((qtd * aliqCbs).toFixed(2));
+    const valIbsEst = Number((qtd * aliqIbsEst).toFixed(2));
+    const valIbsMun = Number((qtd * aliqIbsMun).toFixed(2));
+    const totalIbs = Number((valIbsEst + valIbsMun).toFixed(2));
+    const totalTributos = Number((valCbs + totalIbs).toFixed(2));
+
+    return {
+      sucesso: true,
+      origem: 'motor_local_radar',
+      baseCalculo: params.baseCalculo,
+      aliquotaCbs: aliqCbs,
+      percentualReducaoCbs: 0,
+      valorCbs: valCbs,
+      aliquotaIbsEstadual: aliqIbsEst,
+      percentualReducaoIbsEstadual: 0,
+      valorIbsEstadual: valIbsEst,
+      aliquotaIbsMunicipal: aliqIbsMun,
+      percentualReducaoIbsMunicipal: 0,
+      valorIbsMunicipal: valIbsMun,
+      valorTotalIbs: totalIbs,
+      valorTotalTributos: totalTributos,
+      memoriaCalculo: `Ad Rem: ${qtd} ${tabelaAdRem.unidade_medida || 'un'} | CBS (R$ ${aliqCbs}/un) = R$ ${valCbs.toFixed(2)} | IBS (R$ ${(aliqIbsEst + aliqIbsMun)}/un) = R$ ${totalIbs.toFixed(2)}`,
+      baseLegal
+    };
+  }
+
+  // 3. Operação sob modalidade Ad Valorem (%)
   const tabela = db.prepare(`
     SELECT * FROM aliquotas_tabelas 
     WHERE inicio_vigencia <= ? AND final_vigencia >= ? AND modalidade = 'ad_valorem'
     ORDER BY inicio_vigencia DESC LIMIT 1
   `).get(dataFato, dataFato) as any;
 
-  // Alíquotas padrão (Ano de teste 2026: CBS 0.9%, IBS 0.1%)
-  let aliqCbs = tabela ? tabela.cbs_federal : 0.90;
-  let aliqIbsEst = tabela ? tabela.ibs_estadual : 0.10;
-  let aliqIbsMun = tabela ? tabela.ibs_municipal : 0.00;
-
-  // Buscar regra de redução por NCM / cClassTrib
-  let percentualReducao = 0.0;
-  let baseLegal = 'LC 214/2025, Art. 342 (Período de Teste 2026)';
-
-  if (params.ncm || params.cClassTrib) {
-    const cleanNcm = (params.ncm || '').replace(/\D/g, '');
-    const regra = db.prepare(`
-      SELECT * FROM ncm_regras_anexos 
-      WHERE (ncm = ? OR cclasstrib = ?) AND ativo = 1
-      LIMIT 1
-    `).get(cleanNcm, params.cClassTrib || '') as any;
-
-    if (regra) {
-      percentualReducao = regra.percentual_reducao || 0;
-      baseLegal = regra.base_legal || 'LC 214/2025';
-    }
+  // SEM FALLBACK: Se não houver linha cadastrada para a data, retorna erro explícito
+  if (!tabela) {
+    return {
+      sucesso: false,
+      origem: 'motor_local_radar',
+      baseCalculo: params.baseCalculo,
+      aliquotaCbs: 0,
+      percentualReducaoCbs: 0,
+      valorCbs: 0,
+      aliquotaIbsEstadual: 0,
+      percentualReducaoIbsEstadual: 0,
+      valorIbsEstadual: 0,
+      aliquotaIbsMunicipal: 0,
+      percentualReducaoIbsMunicipal: 0,
+      valorIbsMunicipal: 0,
+      valorTotalIbs: 0,
+      valorTotalTributos: 0,
+      memoriaCalculo: `CÁLCULO SUSPENSO: Alíquota Ad Valorem não parametrizada para a data do fato gerador (${dataFato}).`,
+      baseLegal: 'LC 214/2025',
+      erro: 'SEM_ALIQUOTA_AD_VALOREM',
+      avisoParametrizacao: `Nenhuma alíquota Ad Valorem cadastrada para o período de ${dataFato}. Acesse o módulo 'Parâmetros & Tabelas Fiscais' > aba 'Alíquota Ad Valorem (%)' para parametrizar esta vigência.`
+    };
   }
+
+  const aliqCbs = Number(tabela.cbs_federal || 0);
+  const aliqIbsEst = Number(tabela.ibs_estadual || 0);
+  const aliqIbsMun = Number(tabela.ibs_municipal || 0);
 
   const fatorReducao = 1 - (percentualReducao / 100);
   const valCbs = Number((params.baseCalculo * (aliqCbs / 100) * fatorReducao).toFixed(2));
@@ -201,7 +291,7 @@ function calcularViaMotorLocal(params: ParametrosCalculoRtc): ResultadoCalculoRt
   const totalIbs = Number((valIbsEst + valIbsMun).toFixed(2));
   const totalTributos = Number((valCbs + totalIbs).toFixed(2));
 
-  const memoriaCalculo = `Base R$ ${params.baseCalculo.toFixed(2)} | CBS (${aliqCbs}% - Red. ${percentualReducao}%) = R$ ${valCbs.toFixed(2)} | IBS (${aliqIbsEst}% - Red. ${percentualReducao}%) = R$ ${totalIbs.toFixed(2)}`;
+  const memoriaCalculo = `Base R$ ${params.baseCalculo.toFixed(2)} | CBS (${aliqCbs}% - Red. ${percentualReducao}%) = R$ ${valCbs.toFixed(2)} | IBS (${(aliqIbsEst + aliqIbsMun).toFixed(2)}% - Red. ${percentualReducao}%) = R$ ${totalIbs.toFixed(2)}`;
 
   return {
     sucesso: true,

@@ -30,6 +30,10 @@ export interface KpiTotals {
   nfceCount: number;
   cteCount: number;
   nfseCount: number;
+  nfeValor: number;
+  nfceValor: number;
+  cteValor: number;
+  nfseValor: number;
   totalIcms: number;
   totalPis: number;
   totalCofins: number;
@@ -76,17 +80,27 @@ interface ParamInferenciaItem {
   iss: number;
 }
 
-interface ParametrosInferenciaMap {
+interface ParametrosInferenciaConfig {
   sn: ParamInferenciaItem;
   cte: ParamInferenciaItem;
   nfse: ParamInferenciaItem;
+  aliqTesteCbs: number;
+  aliqTesteIbs: number;
+  configuradoSn: boolean;
+  configuradoCte: boolean;
+  configuradoReforma2026: boolean;
 }
 
-function loadParametrosInferencia(): ParametrosInferenciaMap {
-  const result: ParametrosInferenciaMap = {
-    sn: { icms: 3.50, pis: 0.55, cofins: 2.56, ipi: 0.00, iss: 3.50 },
-    cte: { icms: 0.00, pis: 1.65, cofins: 7.60, ipi: 0.00, iss: 0.00 },
-    nfse: { icms: 0.00, pis: 0.65, cofins: 3.00, ipi: 0.00, iss: 5.00 },
+function loadParametrosInferencia(): ParametrosInferenciaConfig {
+  const result: ParametrosInferenciaConfig = {
+    sn: { icms: 0.0, pis: 0.0, cofins: 0.0, ipi: 0.0, iss: 0.0 },
+    cte: { icms: 0.0, pis: 0.0, cofins: 0.0, ipi: 0.0, iss: 0.0 },
+    nfse: { icms: 0.0, pis: 0.0, cofins: 0.0, ipi: 0.0, iss: 0.0 },
+    aliqTesteCbs: 0.0,
+    aliqTesteIbs: 0.0,
+    configuradoSn: false,
+    configuradoCte: false,
+    configuradoReforma2026: false
   };
 
   try {
@@ -94,23 +108,38 @@ function loadParametrosInferencia(): ParametrosInferenciaMap {
     const rows = db.prepare('SELECT * FROM parametros_inferencia').all() as any[];
     for (const r of rows) {
       if (r.aplica_simples_nac) {
-        result.sn.icms = Number(r.icms_medio) || result.sn.icms;
-        result.sn.pis = Number(r.pis_medio) || result.sn.pis;
-        result.sn.cofins = Number(r.cofins_medio) || result.sn.cofins;
-        result.sn.iss = Number(r.iss_medio) || result.sn.iss;
+        result.sn.icms = Number(r.icms_medio) || 0;
+        result.sn.pis = Number(r.pis_medio) || 0;
+        result.sn.cofins = Number(r.cofins_medio) || 0;
+        result.sn.iss = Number(r.iss_medio) || 0;
+        result.configuradoSn = true;
       }
       if (r.aplica_cte) {
-        result.cte.pis = Number(r.pis_medio) || result.cte.pis;
-        result.cte.cofins = Number(r.cofins_medio) || result.cte.cofins;
+        result.cte.pis = Number(r.pis_medio) || 0;
+        result.cte.cofins = Number(r.cofins_medio) || 0;
+        result.configuradoCte = true;
       }
       if (r.aplica_nfse) {
-        result.nfse.pis = Number(r.pis_medio) || result.nfse.pis;
-        result.nfse.cofins = Number(r.cofins_medio) || result.nfse.cofins;
-        result.nfse.iss = Number(r.iss_medio) || result.nfse.iss;
+        result.nfse.pis = Number(r.pis_medio) || 0;
+        result.nfse.cofins = Number(r.cofins_medio) || 0;
+        result.nfse.iss = Number(r.iss_medio) || 0;
       }
     }
+
+    // Carregar alíquotas oficiais da Reforma 2026 da tabela de parâmetros (SEM FALLBACK)
+    const tab2026 = db.prepare(`
+      SELECT cbs_federal, ibs_estadual, ibs_municipal FROM aliquotas_tabelas
+      WHERE inicio_vigencia <= '2026-12-31' AND final_vigencia >= '2026-01-01' AND modalidade = 'ad_valorem'
+      LIMIT 1
+    `).get() as any;
+
+    if (tab2026) {
+      result.aliqTesteCbs = Number(tab2026.cbs_federal) || 0;
+      result.aliqTesteIbs = Number(tab2026.ibs_estadual || 0) + Number(tab2026.ibs_municipal || 0);
+      result.configuradoReforma2026 = result.aliqTesteCbs > 0 || result.aliqTesteIbs > 0;
+    }
   } catch (err: any) {
-    // fallback padrão já definido
+    console.warn('⚠️ Erro ao carregar parametros_inferencia e aliquotas_tabelas:', err.message);
   }
 
   return result;
@@ -131,6 +160,10 @@ function emptyTotals(): KpiTotals {
     nfceCount: 0,
     cteCount: 0,
     nfseCount: 0,
+    nfeValor: 0,
+    nfceValor: 0,
+    cteValor: 0,
+    nfseValor: 0,
     totalIcms: 0,
     totalPis: 0,
     totalCofins: 0,
@@ -152,7 +185,7 @@ function emptyTotals(): KpiTotals {
   };
 }
 
-function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferenciaMap) {
+function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferenciaConfig) {
   const vTotal = Number(doc.valor_total) || 0;
   totals.totalDocs += 1;
   totals.totalValor += vTotal;
@@ -172,18 +205,29 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
 
   // Base de Cálculo IBS / CBS (<vBC> estritamente constante nos grupos IBS/CBS do XML)
   // Se o campo base_cbs/base_ibs estiver preenchido, usa ele.
-  // Caso a coluna ainda não exista na tabela do Supabase, reconstrói fielmente a partir da alíquota teste do XML (0.9% CBS / 0.1% IBS)
-  const baseCbs = Number(doc.base_cbs) > 0 ? Number(doc.base_cbs) : (vCbs > 0 ? Number((vCbs / 0.009).toFixed(2)) : 0);
-  const baseIbs = Number(doc.base_ibs) > 0 ? Number(doc.base_ibs) : (totalIbsDoc > 0 ? Number((totalIbsDoc / 0.001).toFixed(2)) : 0);
+  // Caso ausente, utiliza estritamente as alíquotas oficiais de teste cadastradas em Parâmetros (SEM FALLBACK)
+  const divisorCbs = paramsInf.aliqTesteCbs > 0 ? (paramsInf.aliqTesteCbs / 100) : 0;
+  const divisorIbs = paramsInf.aliqTesteIbs > 0 ? (paramsInf.aliqTesteIbs / 100) : 0;
+  const baseCbs = Number(doc.base_cbs) > 0 ? Number(doc.base_cbs) : (vCbs > 0 && divisorCbs > 0 ? Number((vCbs / divisorCbs).toFixed(2)) : 0);
+  const baseIbs = Number(doc.base_ibs) > 0 ? Number(doc.base_ibs) : (totalIbsDoc > 0 && divisorIbs > 0 ? Number((totalIbsDoc / divisorIbs).toFixed(2)) : 0);
   totals.totalBaseCbs += baseCbs;
   totals.totalBaseIbs += baseIbs;
 
-  // Modelos de Documento
+  // Modelos de Documento e Valores Segregados
   const tipo = (doc.tipo_doc || '').toString().toUpperCase();
-  if (tipo === 'NFE' || tipo === 'NF-E' || tipo === '55') totals.nfeCount += 1;
-  else if (tipo === 'NFCE' || tipo === 'NFC-E' || tipo === '65') totals.nfceCount += 1;
-  else if (tipo === 'CTE' || tipo === 'CT-E' || tipo === '57') totals.cteCount += 1;
-  else if (tipo === 'NFSE' || tipo === 'NFS-E' || tipo === 'NFS') totals.nfseCount += 1;
+  if (tipo === 'NFE' || tipo === 'NF-E' || tipo === '55') {
+    totals.nfeCount += 1;
+    totals.nfeValor += vTotal;
+  } else if (tipo === 'NFCE' || tipo === 'NFC-E' || tipo === '65') {
+    totals.nfceCount += 1;
+    totals.nfceValor += vTotal;
+  } else if (tipo === 'CTE' || tipo === 'CT-E' || tipo === '57' || tipo === '67') {
+    totals.cteCount += 1;
+    totals.cteValor += vTotal;
+  } else if (tipo === 'NFSE' || tipo === 'NFS-E' || tipo === 'NFS') {
+    totals.nfseCount += 1;
+    totals.nfseValor += vTotal;
+  }
 
   // Tributos do Regime Atual Destacados no XML
   const icmsReal = Number(doc.valor_icms) || 0;
@@ -215,12 +259,12 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
   let issCalc = issReal;
 
   if (isSimples && icmsReal === 0 && pisReal === 0 && cofinsReal === 0) {
-    // Simples Nacional: inferir alíquotas médias configuradas nos Parâmetros
+    // Simples Nacional: inferir alíquotas médias configuradas nos Parâmetros (SEM FALLBACK)
     totals.simplesNacDocsCount += 1;
-    const icmsInf = (vTotal * paramsInf.sn.icms) / 100;
-    const pisInf = (vTotal * paramsInf.sn.pis) / 100;
-    const cofinsInf = (vTotal * paramsInf.sn.cofins) / 100;
-    const issInf = (tipo === 'NFSE') ? (vTotal * paramsInf.sn.iss) / 100 : 0;
+    const icmsInf = paramsInf.configuradoSn ? (vTotal * paramsInf.sn.icms) / 100 : 0;
+    const pisInf = paramsInf.configuradoSn ? (vTotal * paramsInf.sn.pis) / 100 : 0;
+    const cofinsInf = paramsInf.configuradoSn ? (vTotal * paramsInf.sn.cofins) / 100 : 0;
+    const issInf = (tipo === 'NFSE' && paramsInf.configuradoSn) ? (vTotal * paramsInf.sn.iss) / 100 : 0;
 
     totals.icmsInferido += icmsInf;
     totals.pisInferido += pisInf;
@@ -232,10 +276,10 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
     cofinsCalc = cofinsInf;
     issCalc = issInf;
   } else if (isCte && pisReal === 0 && cofinsReal === 0) {
-    // CT-e: Não destaca PIS/COFINS. Inferir alíquota média de frete configurada nos Parâmetros
+    // CT-e: Não destaca PIS/COFINS. Inferir alíquota média de frete configurada nos Parâmetros (SEM FALLBACK)
     totals.cteInferidosCount += 1;
-    const pisInf = (vTotal * paramsInf.cte.pis) / 100;
-    const cofinsInf = (vTotal * paramsInf.cte.cofins) / 100;
+    const pisInf = paramsInf.configuradoCte ? (vTotal * paramsInf.cte.pis) / 100 : 0;
+    const cofinsInf = paramsInf.configuradoCte ? (vTotal * paramsInf.cte.cofins) / 100 : 0;
 
     totals.pisInferido += pisInf;
     totals.cofinsInferido += cofinsInf;
@@ -250,9 +294,9 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
   totals.totalBaseLiquida += baseLiquida;
   totals.totalRegimeAtual += tribTotal;
 
-  // CBS e IBS simulados preliminarmente na alíquota de teste 2026 (0.9% CBS + 0.1% IBS)
-  const cbsSimulada = (baseLiquida * 0.9) / 100;
-  const ibsSimulada = (baseLiquida * 0.1) / 100;
+  // CBS e IBS simulados preliminarmente na alíquota oficial cadastrada na tabela de 2026 (SEM FALLBACK)
+  const cbsSimulada = paramsInf.aliqTesteCbs > 0 ? (baseLiquida * paramsInf.aliqTesteCbs) / 100 : 0;
+  const ibsSimulada = paramsInf.aliqTesteIbs > 0 ? (baseLiquida * paramsInf.aliqTesteIbs) / 100 : 0;
   totals.totalRegimeReforma += (cbsSimulada + ibsSimulada);
   totals.deltaTransicao = totals.totalRegimeReforma - totals.totalRegimeAtual;
 }
@@ -306,9 +350,13 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
             const to = from + CHUNK_SIZE - 1;
             let chunkQuery = supabase
               .from('dfe_documentos')
-              .select(selectFields)
-              .range(from, to);
+              .select(selectFields);
 
+            if (filters.empresaId && !filters.isSuperadmin) {
+              chunkQuery = chunkQuery.eq('empresa_id', filters.empresaId);
+            }
+
+            chunkQuery = chunkQuery.range(from, to);
             chunkPromises.push(Promise.resolve(chunkQuery));
           }
 
@@ -333,11 +381,15 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
                 if (dataFim && docDate && docDate > dataFim) pass = false;
                 if (tipoDoc) {
                   const dTipo = (doc.tipo_doc || '').toString().toUpperCase();
+                  const isMercadorias = (tipoDoc === 'MERCADORIAS' || tipoDoc === 'CONSOLIDADO_MERCADORIAS') &&
+                    (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55' || dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57' || dTipo === '67' || dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
+                  const isServicos = (tipoDoc === 'SERVICOS' || tipoDoc === 'CONSOLIDADO_SERVICOS' || tipoDoc === 'RETENCOES_FONTE') &&
+                    (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
                   const isNfeMatch = (tipoDoc === 'NFE' || tipoDoc === 'NF-E') && (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55');
                   const isNfceMatch = (tipoDoc === 'NFCE' || tipoDoc === 'NFC-E') && (dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
-                  const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57');
+                  const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57' || dTipo === '67');
                   const isNfseMatch = (tipoDoc === 'NFSE' || tipoDoc === 'NFS-E' || tipoDoc === 'NFS') && (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
-                  if (!isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
+                  if (!isMercadorias && !isServicos && !isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
                     pass = false;
                   }
                 }
@@ -406,11 +458,15 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
       if (dataFim && docDate && docDate > dataFim) pass = false;
       if (tipoDoc) {
         const dTipo = (doc.tipo_doc || '').toString().toUpperCase();
+        const isMercadorias = (tipoDoc === 'MERCADORIAS' || tipoDoc === 'CONSOLIDADO_MERCADORIAS') &&
+          (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55' || dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57' || dTipo === '67' || dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
+        const isServicos = (tipoDoc === 'SERVICOS' || tipoDoc === 'CONSOLIDADO_SERVICOS' || tipoDoc === 'RETENCOES_FONTE') &&
+          (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
         const isNfeMatch = (tipoDoc === 'NFE' || tipoDoc === 'NF-E') && (dTipo === 'NFE' || dTipo === 'NF-E' || dTipo === '55');
         const isNfceMatch = (tipoDoc === 'NFCE' || tipoDoc === 'NFC-E') && (dTipo === 'NFCE' || dTipo === 'NFC-E' || dTipo === '65');
-        const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57');
+        const isCteMatch = (tipoDoc === 'CTE' || tipoDoc === 'CT-E') && (dTipo === 'CTE' || dTipo === 'CT-E' || dTipo === '57' || dTipo === '67');
         const isNfseMatch = (tipoDoc === 'NFSE' || tipoDoc === 'NFS-E' || tipoDoc === 'NFS') && (dTipo === 'NFSE' || dTipo === 'NFS-E' || dTipo === 'NFS');
-        if (!isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
+        if (!isMercadorias && !isServicos && !isNfeMatch && !isNfceMatch && !isCteMatch && !isNfseMatch && dTipo !== tipoDoc) {
           pass = false;
         }
       }

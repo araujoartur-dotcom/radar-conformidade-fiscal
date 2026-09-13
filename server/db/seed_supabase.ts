@@ -59,7 +59,7 @@ export async function seedSupabaseDatabase(): Promise<void> {
     const { data: empresas } = await supabase
       .from('empresas')
       .select('id')
-      .eq('cnpj_completo', '19.791.896/0001-00');
+      .eq('cnpj_completo', '01.001.001/0001-91');
 
     let empresaId: string;
 
@@ -67,10 +67,10 @@ export async function seedSupabaseDatabase(): Promise<void> {
       const { data: newEmpresa, error: insertEmpErr } = await supabase
         .from('empresas')
         .insert({
-          cnpj_raiz: '19791896',
-          cnpj_completo: '19.791.896/0001-00',
-          razao_social: 'SUPERGASBRAS ENERGIA LTDA',
-          nome_fantasia: 'SUPERGASBRAS ENERGIA LTDA',
+          cnpj_raiz: '01001001',
+          cnpj_completo: '01.001.001/0001-91',
+          razao_social: 'EMPRESA MATRIZ EXEMPLO LTDA',
+          nome_fantasia: 'EMPRESA MATRIZ EXEMPLO',
           uf: 'SP',
           regime_tributario: 'Lucro Real',
           status: 'ativo'

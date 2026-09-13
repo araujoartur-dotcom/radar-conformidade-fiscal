@@ -87,7 +87,7 @@ export const INITIAL_MAPA_CCLASSTRIB: MapaCClassTribItem[] = [
     descricaoInterna: 'Alíquota Reduzida de Cesta Básica / Saúde',
     tratamentoEsperado: 'aliquota_reduzida',
     permiteCredito: 'Sim',
-    aliquotaEsperada: '10.6% (60% de Redução IBS/CBS)',
+    aliquotaEsperada: 'Reduzida Conforme Regulamento (Anexos da Lei)',
     alertas: 'Conferir enquadramento NCM na lista anexa do regulamento.'
   },
   {
@@ -219,7 +219,7 @@ export function filterReportItems(
  */
 export function exportReportToExcel(
   items: XmlItemDetailReport[],
-  reportTitle: string = 'Relatorio_Razao_Entradas'
+  reportTitle: string = 'Relatorio_Consolidado_Mercadorias'
 ) {
   const isRetencoesReport = reportTitle.toLowerCase().includes('retenc') || reportTitle.toLowerCase().includes('servico');
 
@@ -245,80 +245,129 @@ export function exportReportToExcel(
           'CNPJ Prestador': it.fornecedorCnpj,
           'Razão Social Prestador': it.fornecedorRazao,
           'UF Prestador': it.fornecedorUf,
+          'Município Prestador': it.fornecedorMunicipio || '—',
           'CNPJ Tomador': it.clienteCnpj,
           'Razão Social Tomador': it.clienteRazao,
-          'Código Serviço (LC 116/03)': it.codigoServicoLc116 || '17.01',
-          'Discriminação do Serviço': it.discriminacaoServico || it.descricaoItem,
+          'Código Serviço (LC 116/03)': it.codigoServicoLc116 || '— (Não informado)',
+          'Discriminação do Serviço': it.discriminacaoServico || it.descricaoItem || '— (Não informada)',
           'Valor Bruto Serviços (R$)': valorBruto,
+          // Regime Atual - Retenções
+          'Base IRRF (R$)': irrf > 0 ? valorBruto : 0,
+          'Alíquota IRRF (%)': it.aliquotaIrrf !== undefined && it.aliquotaIrrf !== null ? it.aliquotaIrrf : (irrf > 0 ? '—' : 0),
           'IRRF Retido (R$)': irrf,
-          'Alíquota IRRF (%)': it.aliquotaIrrf || (irrf > 0 ? 1.5 : 0),
-          'PIS Retido (R$)': pis,
-          'COFINS Retida (R$)': cofins,
-          'CSLL Retida (R$)': csll,
+          'PIS Retido 0,65% (R$)': pis,
+          'COFINS Retida 3,00% (R$)': cofins,
+          'CSLL Retida 1,00% (R$)': csll,
           'Total CRF / PCC 4,65% (R$)': crf,
+          'Base INSS (R$)': inss > 0 ? valorBruto : 0,
+          'Alíquota INSS (%)': it.aliquotaInss !== undefined && it.aliquotaInss !== null ? it.aliquotaInss : (inss > 0 ? '—' : 0),
           'INSS Retido (R$)': inss,
-          'Alíquota INSS (%)': it.aliquotaInss || (inss > 0 ? 11.0 : 0),
+          'Base ISSQN (R$)': iss > 0 ? valorBruto : 0,
+          'Alíquota ISS (%)': it.aliquotaIssRetido !== undefined && it.aliquotaIssRetido !== null ? it.aliquotaIssRetido : (iss > 0 ? '—' : 0),
           'ISSQN Retido (R$)': iss,
-          'Alíquota ISS (%)': it.aliquotaIssRetido || (iss > 0 ? 5.0 : 0),
           'Total Retenções Fonte (R$)': totalRet,
           'Valor Líquido a Pagar (R$)': valorLiq,
+          // Reforma sobre Serviços
+          'Base IBS/CBS Serviços (R$)': it.baseIbs || valorBruto,
+          'Valor IBS Serviços (R$)': it.valorIbs || 0,
+          'Valor CBS Serviços (R$)': it.valorCbs || 0,
+          'Retenção Split Payment (R$)': (it.valorIbs || 0) + (it.valorCbs || 0),
+          // Diagnóstico Matriz
           'Diagnóstico Matriz Fiscal': it.diagnosticoRetencao || 'CONFORME',
           'Motivo Diagnóstico': it.motivoDiagnosticoRetencao || 'Retenções em conformidade legal',
-          'Base Legal': 'Lei 10.833/03, RIR/2018 e LC 116/03'
+          'Fundamento Legal': it.regraRetencaoAplicada?.fundamentos_legais || 'Lei 10.833/03, RIR/2018 e LC 116/03',
+          // Apuração Assistida: IBS (CGIBS) & CBS (RFB) - RAD
+          'Status Apuração (CGIBS/RFB)': it.statusLiquidacaoApuracao || 'NAO_CONCILIADO',
+          'Crédito Real Liquidado (R$)': typeof it.valorCreditoLiquidadoReal === 'number' ? it.valorCreditoLiquidadoReal : '— (Pendente de Sincronismo CGIBS)',
+          'Saldo Retido no Fornecedor (R$)': it.valorCreditoRetido || 0,
+          'Decisão RAD (Recolhimento Adquirente)': it.impactoDecisorioRad || 'NAO_CONCILIADO',
+          'Motivo Decisão RAD': it.motivoDecisaoRad || 'Operação pendente de conciliação com a conta corrente fiscal'
         };
       })
-    : items.map(it => ({
-        'Empresa (CNPJ/Filial)': it.empresaCnpj,
-        'Razão Social Empresa': it.empresaNome,
-        'Tipo Doc': it.tipoDoc,
-        'Chave de Acesso': it.chaveAcesso,
-        'Número / Série': it.numeroSerie,
-        'Data Emissão': it.dataEmissao,
-        'Data Entrada': it.dataEntrada,
-        'Competência': it.competencia,
-        'CNPJ Fornecedor': it.fornecedorCnpj,
-        'Razão Fornecedor': it.fornecedorRazao,
-        'UF Fornecedor': it.fornecedorUf,
-        'Situação Doc': it.situacaoDoc.toUpperCase(),
-        'Item Nro': it.itemNro,
-        'Descrição Item': it.descricaoItem,
-        'NCM / NBS': it.ncm,
-        'CFOP': it.cfop,
-        'cClassTrib': it.cClassTrib,
-        'CST/CSOSN': it.cstCsosn,
-        'Natureza Operação': it.naturezaOperacao,
-        'Quantidade': it.quantidade,
-        'Unid': it.unidade,
-        'Valor Bruto (R$)': it.valorBrutoItem,
-        'Desconto Incondicional (R$)': it.descontoIncondicional,
-        'Frete/Seguro (R$)': it.freteSeguroRateado,
-        'Valor Líquido Item (R$)': it.valorLiquidoItem,
-        'Base IBS (R$)': it.baseIbs,
-        'Alíquota IBS (%)': it.aliquotaIbs,
-        'Valor IBS (R$)': it.valorIbs,
-        'Base CBS (R$)': it.baseCbs,
-        'Alíquota CBS (%)': it.aliquotaCbs,
-        'Valor CBS (R$)': it.valorCbs,
-        'Crédito Esperado IBS (R$)': it.creditoEsperadoIbs,
-        'Crédito Esperado CBS (R$)': it.creditoEsperadoCbs,
-        'Crédito Apropriado IBS (R$)': it.creditoApropriadoIbs,
-        'Crédito Apropriado CBS (R$)': it.creditoApropriadoCbs,
-        'Diferença Crédito IBS (R$)': it.diferencaCreditoIbs,
-        'Diferença Crédito CBS (R$)': it.diferencaCreditoCbs,
-        'Indicador Onerosidade': it.indicadorOnerosidade,
-        'Critério Onerosidade': it.criterioOnerosidade,
-        'Resultado Elegibilidade': it.resultadoElegibilidade,
-        'Regra Aplicada': it.regraAplicadaId,
-        'Motivo Elegibilidade': it.motivoPadronizado,
-        'Exceção / Pendência': it.isExcecao ? 'SIM' : 'NÃO',
-        'Tipo Exceção': it.tipoExcecao || '-',
-        'Pedido / Contrato': it.pedidoContrato || '-',
-        'Lançamento Contábil ERP': it.lancamentoContabil || '-'
-      }));
+    : items.map(it => {
+        const totalAtual = (it.valorIcms || 0) + (it.valorIpi || 0) + (it.valorPis || 0) + (it.valorCofins || 0);
+        const totalRef = (it.valorIbs || 0) + (it.valorCbs || 0) + (it.valorIs || 0);
+
+        return {
+          'Empresa (CNPJ/Filial)': it.empresaCnpj,
+          'Razão Social Empresa': it.empresaNome,
+          'Tipo Doc': it.tipoDoc,
+          'Chave de Acesso': it.chaveAcesso,
+          'Número / Série': it.numeroSerie,
+          'Data Emissão': it.dataEmissao,
+          'Data Entrada': it.dataEntrada,
+          'Competência': it.competencia,
+          'CNPJ Fornecedor': it.fornecedorCnpj,
+          'Razão Fornecedor': it.fornecedorRazao,
+          'UF Fornecedor': it.fornecedorUf,
+          'Município Fornecedor': it.fornecedorMunicipio || '—',
+          'Situação Doc': (it.situacaoDoc || 'AUTORIZADO').toUpperCase(),
+          'Item Nro': it.itemNro,
+          'Descrição Item': it.descricaoItem,
+          'NCM / NBS': it.ncm,
+          'CFOP': it.cfop,
+          'cClassTrib': it.cClassTrib,
+          'CST/CSOSN': it.cstCsosn,
+          'Natureza Operação': it.naturezaOperacao,
+          'Quantidade': it.quantidade,
+          'Unidade': it.unidade,
+          'Valor Bruto (R$)': it.valorBrutoItem,
+          'Desconto Incondicional (R$)': it.descontoIncondicional,
+          'Frete/Seguro (R$)': it.freteSeguroRateado,
+          'Valor Líquido Item (R$)': it.valorLiquidoItem,
+          // Regime Atual
+          'Base ICMS (R$)': it.baseIcms || (it.valorIcms ? it.valorLiquidoItem : 0),
+          'Alíquota ICMS (%)': it.aliquotaIcms || 0,
+          'Valor ICMS (R$)': it.valorIcms || 0,
+          'Base IPI (R$)': it.baseIpi || (it.valorIpi ? it.valorLiquidoItem : 0),
+          'Alíquota IPI (%)': it.aliquotaIpi || 0,
+          'Valor IPI (R$)': it.valorIpi || 0,
+          'Base PIS (R$)': it.basePis || (it.valorPis ? it.valorLiquidoItem : 0),
+          'Alíquota PIS (%)': it.aliquotaPis || 0,
+          'Valor PIS (R$)': it.valorPis || 0,
+          'Base COFINS (R$)': it.baseCofins || (it.valorCofins ? it.valorLiquidoItem : 0),
+          'Alíquota COFINS (%)': it.aliquotaCofins || 0,
+          'Valor COFINS (R$)': it.valorCofins || 0,
+          'Total Tributos Atuais (R$)': totalAtual,
+          'Carga Tributária Atual (%)': it.valorLiquidoItem > 0 ? Number(((totalAtual / it.valorLiquidoItem) * 100).toFixed(2)) : 0,
+          // Regime Reforma
+          'Base IBS (R$)': it.baseIbs || it.valorLiquidoItem,
+          'Alíquota IBS (%)': it.aliquotaIbs || 0,
+          'Valor IBS (R$)': it.valorIbs || 0,
+          'Base CBS (R$)': it.baseCbs || it.valorLiquidoItem,
+          'Alíquota CBS (%)': it.aliquotaCbs || 0,
+          'Valor CBS (R$)': it.valorCbs || 0,
+          'Valor Imposto Seletivo (R$)': it.valorIs || 0,
+          'Total Tributos Reforma (R$)': totalRef,
+          'Carga Tributária Reforma (%)': it.valorLiquidoItem > 0 ? Number(((totalRef / it.valorLiquidoItem) * 100).toFixed(2)) : 0,
+          'Delta Carga (Reforma - Atual R$)': Number((totalRef - totalAtual).toFixed(2)),
+          // Governança & Créditos
+          'Crédito Esperado IBS (R$)': it.creditoEsperadoIbs,
+          'Crédito Esperado CBS (R$)': it.creditoEsperadoCbs,
+          'Crédito Apropriado IBS (R$)': it.creditoApropriadoIbs,
+          'Crédito Apropriado CBS (R$)': it.creditoApropriadoCbs,
+          'Diferença Crédito IBS (R$)': it.diferencaCreditoIbs,
+          'Diferença Crédito CBS (R$)': it.diferencaCreditoCbs,
+          'Indicador Onerosidade': it.indicadorOnerosidade,
+          'Critério Onerosidade': it.criterioOnerosidade,
+          'Resultado Elegibilidade': it.resultadoElegibilidade,
+          'Regra Aplicada': it.regraAplicadaId,
+          'Motivo Elegibilidade': it.motivoPadronizado,
+          'Exceção / Pendência': it.isExcecao ? 'SIM' : 'NÃO',
+          'Tipo Exceção': it.tipoExcecao || '-',
+          // Apuração Assistida: IBS (CGIBS) & CBS (RFB) - RAD
+          'Status Apuração (CGIBS/RFB)': it.statusLiquidacaoApuracao || 'NAO_CONCILIADO',
+          'Crédito Real Liquidado (R$)': typeof it.valorCreditoLiquidadoReal === 'number' ? it.valorCreditoLiquidadoReal : '— (Pendente de Sincronismo CGIBS)',
+          'Saldo Retido no Fornecedor (R$)': it.valorCreditoRetido || 0,
+          'Taxa Liquidação (%)': it.taxaLiquidacaoItem || 0,
+          'Decisão RAD (Recolhimento Adquirente)': it.impactoDecisorioRad || 'NAO_CONCILIADO',
+          'Motivo Decisão RAD': it.motivoDecisaoRad || 'Operação pendente de conciliação com a conta corrente fiscal'
+        };
+      });
 
   const worksheet = XLSX.utils.json_to_sheet(exportRows);
   const workbook = XLSX.utils.book_new();
-  const sheetName = isRetencoesReport ? 'Retencoes_Fonte_NFSe' : 'Relatorio_Fiscal_SEFAZ';
+  const sheetName = isRetencoesReport ? 'Servicos_Retencoes_NFSe' : 'Mercadorias_Fretes_NFe_CTe';
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
   // Auto column widths

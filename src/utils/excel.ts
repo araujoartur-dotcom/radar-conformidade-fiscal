@@ -162,14 +162,14 @@ export function exportToJSON(items: CnpjLookupItem[], filename: string = 'Consul
 /** Download a ready-to-use Excel sample template file */
 export function downloadSampleExcel() {
   const sampleRows = [
-    { CNPJ: '00.000.000/0001-91', UF: 'DF', Obs: 'Banco do Brasil S/A' },
-    { CNPJ: '33.000.167/0001-01', UF: 'RJ', Obs: 'Petrobras S/A' },
-    { CNPJ: '60.701.190/0001-04', UF: 'SP', Obs: 'Itaú Unibanco S/A' },
-    { CNPJ: '06.057.223/0001-71', UF: 'SP', Obs: 'Nubank Nu Pagamentos' },
-    { CNPJ: '02.558.157/0001-62', UF: 'PR', Obs: 'Magazine Luiza' },
-    { CNPJ: '11.815.121/0001-40', UF: 'SP', Obs: 'Mercado Livre' },
-    { CNPJ: '00.360.305/0001-04', UF: 'DF', Obs: 'Caixa Econômica Federal' },
-    { CNPJ: '01.590.728/0001-08', UF: 'MG', Obs: 'Localiza Rent a Car' }
+    { CNPJ: '01.001.001/0001-91', UF: 'DF', Obs: 'Empresa Exemplo 1 S/A' },
+    { CNPJ: '02.002.002/0002-02', UF: 'RJ', Obs: 'Empresa Exemplo 2 S/A' },
+    { CNPJ: '03.003.003/0003-03', UF: 'SP', Obs: 'Empresa Exemplo 3 S/A' },
+    { CNPJ: '04.004.004/0004-04', UF: 'SP', Obs: 'Empresa Exemplo 4 Pagamentos' },
+    { CNPJ: '05.005.005/0005-05', UF: 'PR', Obs: 'Empresa Exemplo 5 Varejo' },
+    { CNPJ: '06.006.006/0006-06', UF: 'SP', Obs: 'Empresa Exemplo 6 Comercio' },
+    { CNPJ: '07.007.007/0007-07', UF: 'DF', Obs: 'Empresa Exemplo 7 Servicos' },
+    { CNPJ: '08.008.008/0008-08', UF: 'MG', Obs: 'Empresa Exemplo 8 Locacoes' }
   ];
 
   const worksheet = XLSX.utils.json_to_sheet(sampleRows);

@@ -8,7 +8,8 @@ import {
   CheckCircle2,
   Package,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  Info
 } from 'lucide-react';
 import { DfeXmlItem, ItemDfeDetail } from '../types';
 
@@ -158,37 +159,15 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
           aliquotaIbs: pIbsItem || 0,
           aliquotaIcms: pIcms,
           aliquotaIpi: pIpi,
-          cClassTrib: cClassTrib || cest || '410999',
+          cClassTrib: cClassTrib || cest || '—',
         });
       }
     }
 
-    // Se não encontrou itens no XML, usa item.itens ou fallback limpo
+    // Se não encontrou itens no XML, usa item.itens se houver, ou lista vazia legítima
     const finalItens = itensExtraidos.length > 0 
       ? itensExtraidos 
-      : (item.itens && item.itens.length > 0 ? item.itens : [
-          {
-            numeroItem: 1,
-            codigo: item.tipo === 'NFSe' ? 'SRV-01' : item.tipo === 'CTe' ? 'FRETE-01' : '0001',
-            descricao: item.tipo === 'NFSe'
-              ? (getTag(xmlDoc, 'xTribNac') || getTag(xmlDoc, 'Discriminacao') || 'PRESTAÇÃO DE SERVIÇOS TÉCNICOS ESPECIALIZADOS')
-              : item.tipo === 'CTe'
-              ? `TRANSPORTE RODOVIÁRIO DE CARGAS (${item.emitenteUf} -> ${item.destinatarioUf})`
-              : 'MERCADORIA / PRODUTO CONFORME NOTA FISCAL ELETRÔNICA',
-            ncmCts: item.tipo === 'NFSe' ? '17.01' : '2711.19.10',
-            cfop: item.tipo === 'CTe' ? '6352' : item.tipo === 'NFSe' ? '0000' : '5102',
-            unidade: item.tipo === 'CTe' ? 'UN' : 'UN',
-            quantidade: 1,
-            valorUnitario: item.valorTotal,
-            valorTotal: item.valorTotal,
-            valorIcms: item.valorIcms,
-            valorIpi: item.valorIpi,
-            valorPis: item.valorPis,
-            valorCofins: item.valorCofins,
-            valorCbs: item.valorCbs,
-            valorIbs: item.valorIbs,
-          }
-        ]);
+      : (item.itens && item.itens.length > 0 ? item.itens : []);
 
     // 6. Informações Complementares
     const infCpl = xmlDoc ? (getTag(xmlDoc, 'infCpl') || getTag(xmlDoc, 'infAdFisco') || '') : '';
@@ -209,9 +188,9 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
     const cteUfFim = xmlDoc ? (getTag(xmlDoc, 'UFFim') || item.destinatarioUf) : item.destinatarioUf;
     const cteChaveNFe = xmlDoc ? (getTag(xmlDoc, 'chave') || '') : '';
 
-    // 9. NFS-e específico
-    const nfseCodServ = xmlDoc ? (getTag(xmlDoc, 'cTribNac') || getTag(xmlDoc, 'ItemListaServico') || '17.01') : '17.01';
-    const nfseDisc = xmlDoc ? (getTag(xmlDoc, 'xTribNac') || getTag(xmlDoc, 'Discriminacao') || getTag(xmlDoc, 'xDescServ') || 'PRESTAÇÃO DE SERVIÇOS') : 'PRESTAÇÃO DE SERVIÇOS';
+    // 9. NFS-e específico (SEM FALLBACK: não supõe 17.01 quando ausente)
+    const nfseCodServ = xmlDoc ? (getTag(xmlDoc, 'cTribNac') || getTag(xmlDoc, 'ItemListaServico') || '—') : '—';
+    const nfseDisc = xmlDoc ? (getTag(xmlDoc, 'xTribNac') || getTag(xmlDoc, 'Discriminacao') || getTag(xmlDoc, 'xDescServ') || 'Discriminação não informada no XML') : 'Discriminação não informada no XML';
     const nfseLocPrest = xmlDoc ? (getTag(xmlDoc, 'xLocPrestacao') || getTag(xmlDoc, 'xLocIncid') || emitMun) : emitMun;
     const nfseInss = xmlDoc ? parseFloat(getTag(xmlDoc, 'vINSS') || getTag(xmlDoc, 'vRetINSS') || '0') : (item.valorInssRetido || 0);
     const nfseIrrf = xmlDoc ? parseFloat(getTag(xmlDoc, 'vIRRF') || getTag(xmlDoc, 'vRetIRRF') || '0') : (item.valorIrrf || 0);
@@ -860,22 +839,30 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                         </tr>
                       </thead>
                       <tbody>
-                        {parsed.itens.map((it) => (
-                          <tr key={it.numeroItem} className="border-b border-slate-200 text-slate-900 text-center hover:bg-slate-50">
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.numeroItem}</td>
-                            <td className="p-1 border-r border-slate-200 font-mono text-[7.5px]">{it.codigo}</td>
-                            <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium leading-tight">{it.descricao}</td>
-                            <td className="p-1 border-r border-slate-200 font-mono">{it.ncmCts}</td>
-                            <td className="p-1 border-r border-slate-200">{it.cfop}</td>
-                            <td className="p-1 border-r border-slate-200">{it.unidade}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold">{it.quantidade}</td>
-                            <td className="p-1 border-r border-slate-200">{it.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200 font-bold text-slate-950">{it.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200">{it.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{it.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                            <td className="p-1 text-indigo-900 font-semibold">{it.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                        {parsed.itens.length === 0 ? (
+                          <tr>
+                            <td colSpan={12} className="p-4 text-center text-slate-500 font-sans italic text-[9.5px]">
+                              Nenhum item individual discriminado no XML desta nota fiscal.
+                            </td>
                           </tr>
-                        ))}
+                        ) : (
+                          parsed.itens.map((it) => (
+                            <tr key={it.numeroItem} className="border-b border-slate-200 text-slate-900 text-center hover:bg-slate-50">
+                              <td className="p-1 border-r border-slate-200 font-bold">{it.numeroItem}</td>
+                              <td className="p-1 border-r border-slate-200 font-mono text-[7.5px]">{it.codigo}</td>
+                              <td className="p-1 border-r border-slate-200 text-left font-sans text-[8.5px] font-medium leading-tight">{it.descricao}</td>
+                              <td className="p-1 border-r border-slate-200 font-mono">{it.ncmCts}</td>
+                              <td className="p-1 border-r border-slate-200">{it.cfop}</td>
+                              <td className="p-1 border-r border-slate-200">{it.unidade}</td>
+                              <td className="p-1 border-r border-slate-200 font-bold">{it.quantidade}</td>
+                              <td className="p-1 border-r border-slate-200">{it.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="p-1 border-r border-slate-200 font-bold text-slate-950">{it.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="p-1 border-r border-slate-200">{it.valorIcms.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="p-1 border-r border-slate-200 text-blue-900 font-semibold">{it.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                              <td className="p-1 text-indigo-900 font-semibold">{it.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -919,6 +906,14 @@ export const DanfeModal: React.FC<DanfeModalProps> = ({ item, onClose }) => {
                     </div>
                   </div>
                 )}
+
+                {/* NOTA DE GOVERNANÇA FISCAL (CATEGORIA C) */}
+                <div className="p-2 bg-slate-100 rounded border border-slate-300 text-[8px] text-slate-600 leading-normal flex items-start gap-2 mt-2">
+                  <Info className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Nota de Governança Fiscal (Categoria C - Visualização Documental):</strong> As alíquotas e valores discriminados neste DANFE refletem a transcrição literal dos nós do arquivo XML original autorizado pela SEFAZ. O Radar Fiscal não assume alíquotas fictícias ou presunções tácitas nesta visualização documental.
+                  </span>
+                </div>
               </>
             )}
 

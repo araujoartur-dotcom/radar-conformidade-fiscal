@@ -14,6 +14,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'destinatario',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Manifestação'
   },
   {
@@ -24,6 +25,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'destinatario',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Manifestação'
   },
   {
@@ -34,6 +36,13 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'destinatario',
     requerJustificativa: false,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Operação comercial e emissão de documento fiscal totalmente desconhecidas pelo destinatário.',
+      'Uso indevido e não autorizado da Inscrição Estadual e do CNPJ da empresa por terceiros emitentes.',
+      'Inexistência de qualquer relação comercial, negociação ou solicitação de fornecimento junto ao emitente.',
+      'Mercadoria faturada para este CNPJ sem existência de pedido de compra ou contrato de fornecimento vigente.'
+    ],
     badge: 'Segurança'
   },
   {
@@ -45,6 +54,14 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'destinatario',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Mercadoria devolvida integralmente ao transportador no ato da entrega por desacordo comercial com o pedido de compra.',
+      'Mercadoria avariada e danificada durante o transporte; recebimento recusado pelo destinatário.',
+      'Carga não entregue no estabelecimento destinatário até a presente data, descumprindo o prazo pactuado.',
+      'Divergência de preço unitário, quantidade faturada ou condição de pagamento em relação ao pedido aprovado.',
+      'Operação comercial cancelada previamente de comum acordo entre emitente e destinatário antes da expedição.'
+    ],
     badge: 'Recusa'
   },
   {
@@ -56,17 +73,26 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Emissão em duplicidade para a mesma operação comercial e mesmo destinatário.',
+      'Desistência da compra e cancelamento formal da operação comercial a pedido do cliente.',
+      'Erro cadastral ou tributário impeditivo que não pode ser sanado por Carta de Correção Eletrônica (CC-e).',
+      'Divergência insanável nas condições comerciais, itens faturados ou valores de impostos apurados.',
+      'Cancelamento da venda antes da saída física da mercadoria do estabelecimento emitente.'
+    ],
     badge: 'Anulação'
   },
   {
     id: 'nfe-110110',
     codigoEvento: '110110',
     nome: 'Carta de Correção Eletrônica (CC-e)',
-    descricao: 'Sanar erros em campos específicos da NF-e (que não afetem valores, impostos, dados de emitente/destinatário).',
+    descricao: 'Sanar erros em campos específicos da NF-e (que não afetem valores, impostos, dados de emitente/destinatário conforme Art. 58-B SINIEF).',
     tipoDfe: 'NFe',
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'texto_livre',
     badge: 'Retificação'
   },
   {
@@ -77,17 +103,24 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'emitente',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Logística'
   },
   {
     id: 'nfe-110140',
     codigoEvento: '110140',
-    nome: 'EPEC (Contingência Prevista)',
+    nome: 'EPEC (Contingência Prévia)',
     descricao: 'Emissão Prévia em Contingência transmitida ao WebService da EPEC em caso de indisponibilidade SEFAZ.',
     tipoDfe: 'NFe',
     categoria: 'contingencia',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Indisponibilidade temporária de conexão com os servidores do WebService da SEFAZ de origem.',
+      'Falha técnica no link de comunicação e internet local do estabelecimento emissor.',
+      'Instabilidade severa com tempo de resposta excedido nos serviços autorizadores da SEFAZ.'
+    ],
     badge: 'Offline'
   },
 
@@ -100,6 +133,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -110,8 +144,9 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Informa que a tributação na importação em Área de Livre Comércio / Zona Franca de Manaus não se converteu em isenção por descumprimento de requisitos legais.',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'importacao_alc_zfm',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -122,8 +157,9 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Emitente/Fornecedor comunica perda, sinistro ou furto de mercadoria durante o frete contratado pelo fornecedor (CIF) antes da entrega.',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'perecimento',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -134,8 +170,9 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Emitente da nota de débito de pagamento antecipado informa a não realização da entrega e cancelamento/restituição.',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'nao_fornecido',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -143,10 +180,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     id: 'nfe-112150',
     codigoEvento: '112150',
     nome: 'Atualização da Data de Previsão de Entrega',
-    descricao: 'Fornecedor atualiza a data prevista de disponibilização/entrega do bem para ajustar o mês do fato gerador do débito IBS/CBS.',
+    descricao: 'Fornecedor atualiza a data prevista de disponibilização/entrega do bem para ajustar o mês do fato gerador do débito IBS/CBS (tag dPrevEntrega).',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'data_entrega',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -156,10 +195,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     id: 'nfe-211110',
     codigoEvento: '211110',
     nome: 'Solicitação de Apropriação de Crédito Presumido',
-    descricao: 'Destinatário/Adquirente solicita formalmente à RFB/CGIBS o aproveitamento de crédito presumido de IBS/CBS sobre aquisições de terceiros.',
+    descricao: 'Destinatário/Adquirente solicita formalmente à RFB/CGIBS o aproveitamento de crédito presumido de IBS/CBS sobre aquisições de terceiros (Anexo IV cCredPres).',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'credito_presumido',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -170,8 +211,9 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Adquirente informa sinistro, roubo ou perecimento em trânsito em compras com frete sob sua responsabilidade (FOB).',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'perecimento',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -183,6 +225,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -194,6 +237,8 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'imobilizacao',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -205,6 +250,8 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'combustivel',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -216,6 +263,8 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'campos_estruturados',
+    tipoCamposEstruturados: 'credito_presumido',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -229,6 +278,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -240,6 +290,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -250,8 +301,8 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Decisão do Fisco Estadual/Comitê Gestor homologando ou indeferindo transferência de saldo credor de IBS.',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'Fisco / CGIBS',
     isReformaTributaria: true
   },
@@ -262,8 +313,8 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     descricao: 'Decisão do Fisco Federal / Receita Federal homologando ou indeferindo transferência de saldo credor de CBS.',
     tipoDfe: 'NFe',
     categoria: 'reforma_tributaria',
-    requerJustificativa: true,
-    minCaracteresJustificativa: 15,
+    requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'Fisco / RFB',
     isReformaTributaria: true
   },
@@ -276,6 +327,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'reforma_tributaria',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Cancelamento de evento homologado indevidamente por retificação de dados da apuração assistida.',
+      'Ajuste cadastral de crédito presumido após conciliação contábil e patrimonial da empresa.',
+      'Cancelamento solicitado após conferência física de estoque e desembaraço de mercadorias.'
+    ],
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -292,6 +349,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Cancelamento da venda no PDV por desistência do consumidor antes da retirada do produto.',
+      'Erro na digitação de itens, quantidades ou forma de pagamento selecionada no caixa.',
+      'Emissão duplicada de cupom fiscal para a mesma operação no ponto de venda.'
+    ],
     badge: 'Varejo'
   },
   {
@@ -302,6 +365,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFCe',
     categoria: 'contingencia',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'PDV Offline'
   },
   {
@@ -312,6 +376,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFCe',
     categoria: 'emitente',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Consumidor'
   },
   {
@@ -322,6 +387,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFCe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Cashback Cidadão',
     isReformaTributaria: true
   },
@@ -334,6 +400,11 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'reforma_tributaria',
     requerJustificativa: true,
     minCaracteresJustificativa: 10,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Estorno integral de cashback em decorrência da devolução total de mercadoria pelo consumidor.',
+      'Estorno proporcional de benefício tributário por troca parcial de itens adquiridos no cupom fiscal.'
+    ],
     badge: 'NT 2025.002-RTC',
     isReformaTributaria: true
   },
@@ -350,6 +421,14 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'tomador',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Valor do frete cobrado em desacordo com a tabela tarifária e proposta comercial formalizada.',
+      'Tomador do serviço de transporte indicado incorretamente no Conhecimento de Transporte Eletrônico.',
+      'Divergência de endereço de coleta, trajeto ou município de encerramento da prestação do frete.',
+      'Cobrança indevida de taxas acessórias de estadia, pedágio ou seguro não contratadas previamente.',
+      'Carga transportada em condições inadequadas com avarias físicas relatadas no destino.'
+    ],
     badge: 'NT 2025.001-RTC'
   },
   {
@@ -360,6 +439,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'CTe',
     categoria: 'tomador',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'NT 2025.001-RTC'
   },
   {
@@ -371,17 +451,24 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Cancelamento da prestação de serviço de transporte por desistência formal do embarcador antes do início da viagem.',
+      'Erro no preenchimento de dados do tomador do serviço ou nos valores da prestação que impedem a emissão de CC-e.',
+      'Emissão incorreta do modal ou tipo de serviço de transporte.'
+    ],
     badge: 'Transporte'
   },
   {
     id: 'cte-110110',
     codigoEvento: '110110',
     nome: 'Carta de Correção Eletrônica do CT-e (CC-e CT-e)',
-    descricao: 'Correção de dados secundários da prestação de serviço de transporte multimodal/rodoviário.',
+    descricao: 'Correção de dados secundários da prestação de serviço de transporte multimodal/rodoviário (sem alterar tomador, valores ou tributos).',
     tipoDfe: 'CTe',
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'texto_livre',
     badge: 'Retificação'
   },
   {
@@ -392,6 +479,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'CTe',
     categoria: 'emitente',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'Logística'
   },
   {
@@ -403,6 +491,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'reforma_tributaria',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Adequação de alíquota efetiva para fornecimento a órgão governamental conforme Art. 472 da LC 214/2025.',
+      'Apontamento de fornecimento de transporte com pagamento posterior ao ente público (tpOperGov=1).',
+      'Rateio do IBS de acordo com o município de término da prestação do serviço de frete interestadual.'
+    ],
     badge: 'NT 2025.001-RTC',
     isReformaTributaria: true
   },
@@ -414,6 +508,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'CTe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'NT 2025.001-RTC',
     isReformaTributaria: true
   },
@@ -429,6 +524,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFSe',
     categoria: 'tomador',
     requerJustificativa: false,
+    tipoPreenchimento: 'aceite_booleano',
     badge: 'NT 009 NFS-e'
   },
   {
@@ -440,6 +536,13 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'tomador',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Serviço não executado ou medição técnica reprovada pela fiscalização do contrato.',
+      'Divergência no enquadramento de alíquotas ou valor de retenção na fonte de ISS, IBS ou CBS.',
+      'Faturamento emitido sem a prévia autorização de medição, ordem de serviço ou contrato vigente.',
+      'Cobrança em duplicidade referente a serviço já faturado em nota fiscal anterior.'
+    ],
     badge: 'NT 009 NFS-e'
   },
   {
@@ -451,17 +554,24 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Substituição de NFS-e para retificação de dados cadastrais do tomador e enquadramento tributário municipal.',
+      'Emissão de nova NFS-e substituta para ajuste de competência e retenções na fonte de IBS/CBS.',
+      'Substituição da nota fiscal por acordo mútuo entre as partes para alteração de itens de serviço contratados.'
+    ],
     badge: 'NT 009 NFS-e'
   },
   {
     id: 'nfse-100110',
     codigoEvento: '100110',
     nome: 'Carta de Correção de NFS-e (CC-e NFS-e)',
-    descricao: 'Retificação da descrição do serviço ou dados cadastrais sem alteração do valor do ISS/IBS/CBS.',
+    descricao: 'Retificação da descrição complementar do serviço ou dados cadastrais sem alteração da base de cálculo do ISS/IBS/CBS.',
     tipoDfe: 'NFSe',
     categoria: 'emitente',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'texto_livre',
     badge: 'Retificação'
   },
   {
@@ -472,6 +582,7 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     tipoDfe: 'NFSe',
     categoria: 'reforma_tributaria',
     requerJustificativa: false,
+    tipoPreenchimento: 'nenhum',
     badge: 'NT 009 NFS-e',
     isReformaTributaria: true
   },
@@ -484,6 +595,12 @@ export const CATALOGO_EVENTOS_DFE: EventoDfeDefinition[] = [
     categoria: 'reforma_tributaria',
     requerJustificativa: true,
     minCaracteresJustificativa: 15,
+    tipoPreenchimento: 'justificativa',
+    justificativasPadrao: [
+      'Enquadramento da prestação de serviço de saúde humana em alíquota reduzida de 60% conforme LC 214/2025.',
+      'Enquadramento de serviços de educação regular e superior em regime de redução de alíquota de IBS/CBS.',
+      'Sociedade de profissionais regulamentados conforme regimes favorecidos da Reforma Tributária.'
+    ],
     badge: 'NT 009 NFS-e',
     isReformaTributaria: true
   }

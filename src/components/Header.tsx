@@ -16,6 +16,7 @@ interface HeaderProps {
   onOpenExportFiscal?: () => void;
   ambienteSefaz: AmbienteSefaz;
   setAmbienteSefaz: (amb: AmbienteSefaz) => void;
+  onOpenCertModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -26,8 +27,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExportFiscal,
   ambienteSefaz,
   setAmbienteSefaz,
+  onOpenCertModal,
 }) => {
-  const { user, empresaAtiva, empresasDisponiveis, logout, switchEmpresa } = useAuth();
+  const { user, empresaAtiva, empresasDisponiveis, logout, switchEmpresa, token } = useAuth();
   const { post } = useApi();
   const [isTenantDropdownOpen, setIsTenantDropdownOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
@@ -62,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isTenantDropdownOpen]);
 
   const handleSelectEmpresa = async (empresa: any) => {
-    if (empresa.id === empresaAtiva?.id) {
+    if (empresa.id === empresaAtiva?.id || empresa.cnpjCompleto === empresaAtiva?.cnpjCompleto) {
       setIsTenantDropdownOpen(false);
       return;
     }
@@ -75,9 +77,13 @@ export const Header: React.FC<HeaderProps> = ({
 
       if (res.ok && res.data?.accessToken && res.data?.empresaAtiva) {
         switchEmpresa(res.data.empresaAtiva, res.data.accessToken);
+      } else {
+        const errorMsg = res.error || (res.data as any)?.error || 'Não foi possível alternar para esta empresa no servidor.';
+        alert(`Não foi possível alternar de empresa: ${errorMsg}`);
       }
-    } catch (err) {
-      console.error('Falha ao alternar empresa:', err);
+    } catch (err: any) {
+      console.error('Falha ao alternar empresa no backend:', err);
+      alert(`Falha de conexão com o servidor ao alternar empresa: ${err.message || 'Erro de rede'}`);
     } finally {
       setIsSwitching(false);
       setIsTenantDropdownOpen(false);
@@ -190,7 +196,7 @@ export const Header: React.FC<HeaderProps> = ({
                     </div>
                   ) : (
                     empresasDisponiveis.map(emp => {
-                      const isCurrent = emp.id === empresaAtiva?.id;
+                      const isCurrent = emp.id === empresaAtiva?.id || emp.cnpjCompleto === empresaAtiva?.cnpjCompleto;
                       return (
                         <button
                           key={emp.id}
@@ -215,84 +221,108 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* SEFAZ Environment Switcher (Homologação x Produção) */}
-          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shadow-inner">
+          {/* SEFAZ Environment Toggle (Compact Icon Button with Hover Tooltip) */}
+          <div className="relative group">
             <button
-              onClick={() => setAmbienteSefaz('homologacao')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                ambienteSefaz === 'homologacao'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
+              onClick={() => setAmbienteSefaz(ambienteSefaz === 'producao' ? 'homologacao' : 'producao')}
+              className={`p-2 rounded-xl border text-xs font-bold transition-all flex items-center justify-center cursor-pointer shadow-sm ${
+                ambienteSefaz === 'producao'
+                  ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-400 hover:bg-emerald-900/60'
+                  : 'bg-amber-950/40 border-amber-700/60 text-amber-400 hover:bg-amber-900/60'
               }`}
-              title="Ambiente de Testes / Homologação (tpAmb = 2) — Sem Valor Fiscal"
+              title={`Ambiente SEFAZ: ${ambienteSefaz === 'producao' ? 'Produção (tpAmb = 1)' : 'Homologação (tpAmb = 2)'} — Clique para alternar`}
+              aria-label="Alternar Ambiente SEFAZ"
             >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Homologação</span>
-              {ambienteSefaz === 'homologacao' && (
-                <span className="text-[9px] font-mono bg-slate-950/40 text-slate-950 px-1 rounded font-bold">
-                  tpAmb=2
-                </span>
+              {ambienteSefaz === 'producao' ? (
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              ) : (
+                <Globe className="w-4 h-4 text-amber-400" />
               )}
             </button>
 
-            <button
-              onClick={() => setAmbienteSefaz('producao')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                ambienteSefaz === 'producao'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md font-extrabold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Ambiente Oficial de Produção (tpAmb = 1) — Com Validade Jurídica / Fiscal"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Produção</span>
-              {ambienteSefaz === 'producao' && (
-                <span className="text-[9px] font-mono bg-slate-950/40 text-slate-950 px-1 rounded font-bold">
-                  tpAmb=1
-                </span>
-              )}
-            </button>
+            {/* Hover Tooltip */}
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-slate-700 text-[11px] font-bold text-white whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1.5">
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-slate-700" />
+              <span>{ambienteSefaz === 'producao' ? 'SEFAZ: Produção (tpAmb=1)' : 'SEFAZ: Homologação (tpAmb=2)'}</span>
+              <span className="text-[9px] text-slate-400 font-normal">(Clique p/ alternar)</span>
+            </div>
           </div>
 
-          {/* Certificate Status Badge & Shortcut */}
-          <button
-            onClick={() => setActiveMode('carteira_cnpjs')}
-            className={`px-2.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
-              certificado?.valido
-                ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60'
-                : 'bg-amber-950/40 border-amber-700/60 text-amber-300 hover:bg-amber-900/60'
-            }`}
-            title={
-              certificado?.valido
-                ? `Certificado Digital A1 Ativo: Válido até ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Período Ativo'} (${certificado.emissor || 'AC'}) — Clique para gerenciar carteira`
-                : 'Certificado Digital Pendente — Clique para configurar e vincular'
-            }
-          >
-            <Key className={`w-3.5 h-3.5 ${certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}`} />
-            <span className="hidden xl:inline text-[11px] font-bold">
-              {certificado?.valido ? 'Certificado A1 Ativo' : 'Vincular Certificado A1'}
-            </span>
-          </button>
-
-          {onOpenExportFiscal && (
+          {/* Certificate Status (Compact Icon Button with Hover Tooltip) */}
+          <div className="relative group">
             <button
-              onClick={onOpenExportFiscal}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-900/60 via-indigo-900/60 to-cyan-900/60 hover:from-blue-800 hover:to-cyan-800 text-cyan-200 border border-cyan-500/50 hover:border-cyan-400 text-xs font-bold flex items-center gap-2 shadow-md shadow-cyan-500/15 transition-all cursor-pointer"
-              title="Baixar pacote completo de XMLs em .ZIP para Fiscalização ou Auditoria"
+              onClick={() => {
+                if (onOpenCertModal) {
+                  onOpenCertModal();
+                } else {
+                  setActiveMode('carteira_cnpjs');
+                }
+              }}
+              className={`p-2 rounded-xl border text-xs font-semibold flex items-center justify-center transition-all cursor-pointer shadow-sm relative ${
+                certificado?.valido
+                  ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60'
+                  : 'bg-amber-950/40 border-amber-700/60 text-amber-300 hover:bg-amber-900/60'
+              }`}
+              title={
+                certificado?.valido
+                  ? `Certificado Digital A1 Ativo: Válido até ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Período Ativo'} (${certificado.emissor || 'AC'}) — Clique para gerenciar`
+                  : 'Certificado Digital Pendente — Clique para vincular arquivo .PFX'
+              }
+              aria-label="Certificado Digital A1"
             >
-              <FolderArchive className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>Baixar XMLs (.ZIP)</span>
+              <Key className={`w-4 h-4 ${certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <span className={`absolute -top-1 -right-1 w-2 h-2 rounded-full ${
+                certificado?.valido ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`} />
             </button>
+
+            {/* Hover Tooltip */}
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-slate-700 text-[11px] font-bold text-white whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1.5">
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-slate-700" />
+              <span className={certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}>
+                {certificado?.valido ? 'Certificado Digital A1 (Ativo)' : 'Certificado Digital A1 (Pendente)'}
+              </span>
+              <span className="text-[9px] text-slate-400 font-normal">(Clique p/ gerenciar)</span>
+            </div>
+          </div>
+
+          {/* Export Fiscal (Compact Icon Button with Hover Tooltip) */}
+          {onOpenExportFiscal && (
+            <div className="relative group">
+              <button
+                onClick={onOpenExportFiscal}
+                className="p-2 rounded-xl bg-gradient-to-r from-blue-900/60 via-indigo-900/60 to-cyan-900/60 hover:from-blue-800 hover:to-cyan-800 text-cyan-200 border border-cyan-500/50 hover:border-cyan-400 text-xs font-bold flex items-center justify-center shadow-md shadow-cyan-500/15 transition-all cursor-pointer"
+                title="Baixar pacote completo de XMLs em .ZIP para Fiscalização ou Auditoria"
+                aria-label="Baixar XMLs (.ZIP)"
+              >
+                <FolderArchive className="w-4 h-4 text-cyan-300" />
+              </button>
+
+              {/* Hover Tooltip */}
+              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-cyan-700/60 text-[11px] font-bold text-cyan-200 whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1">
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-cyan-700/60" />
+                <span>Baixar XMLs (.ZIP)</span>
+              </div>
+            </div>
           )}
 
-          {/* User badge and Logout */}
-          <button
-            onClick={logout}
-            className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer shadow-sm ml-1"
-            title="Sair do Sistema"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          {/* Sair do Sistema (Compact Icon Button with Hover Tooltip) */}
+          <div className="relative group shrink-0">
+            <button
+              onClick={logout}
+              className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all cursor-pointer shadow-sm"
+              title="Sair do Sistema"
+              aria-label="Sair do Sistema"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+
+            {/* Hover Tooltip */}
+            <div className="absolute -bottom-10 right-0 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-rose-800 text-[11px] font-bold text-rose-300 whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1">
+              <div className="absolute -top-1 right-3 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-rose-800" />
+              <span>Sair do Sistema</span>
+            </div>
+          </div>
         </div>
 
       </div>

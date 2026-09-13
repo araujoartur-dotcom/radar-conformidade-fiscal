@@ -3,12 +3,18 @@ import {
   SlidersHorizontal, Table, Plus, Edit3, Trash2, CheckCircle2,
   AlertTriangle, FileText, Scale, Save, Percent, ShieldCheck, Search, Filter, X,
   Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt,
-  Pencil, Calculator
+  Pencil, Calculator, Building2, Briefcase, TrendingUp, Users, ChevronDown, ChevronUp
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
-import { getSupabaseFrontend } from '../utils/supabaseFrontend';
-import { AliquotaTabelaItem, NcmRegraAnexoItem } from '../types';
+import {
+  AliquotaTabelaItem,
+  NcmRegraAnexoItem,
+  SimplesNacionalFaixaItem,
+  SimplesNacionalPartilhaItem,
+  LucroPresumidoParamItem,
+  EncargoPatronalParamItem
+} from '../types';
 
 interface CClassRule {
   id: string;
@@ -64,9 +70,11 @@ export interface InferenciaParamItem {
 
 export const TabelasFiscaisPanel: React.FC = () => {
   const { get, post, put, del, uploadFile } = useApi();
-  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'cclasstrib' | 'cfop' | 'regras' | 'inferencia'>('ad_valorem');
+  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'simples_nacional' | 'lucro_presumido' | 'cclasstrib' | 'cfop' | 'regras' | 'inferencia'>('ad_valorem');
+
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
+  const [showCategoriasGuide, setShowCategoriasGuide] = useState(false);
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -90,6 +98,64 @@ export const TabelasFiscaisPanel: React.FC = () => {
     aplica_nfse: 0,
     inicio_vigencia: '2026-01-01',
     final_vigencia: '2099-12-31'
+  });
+
+  // ── TAB: SIMPLES NACIONAL (LC 123/2006) ───────────────────
+  const [faixasSimples, setFaixasSimples] = useState<SimplesNacionalFaixaItem[]>([]);
+  const [partilhasSimples, setPartilhasSimples] = useState<SimplesNacionalPartilhaItem[]>([]);
+  const [selectedAnexoSimples, setSelectedAnexoSimples] = useState<string>('anexo1');
+  const [showPartilhaReforma, setShowPartilhaReforma] = useState(false);
+  const [showModalFaixaSimples, setShowModalFaixaSimples] = useState(false);
+  const [editingFaixaSimples, setEditingFaixaSimples] = useState<SimplesNacionalFaixaItem | null>(null);
+  const [faixaSimplesForm, setFaixaSimplesForm] = useState({
+    id: '',
+    anexo: 'anexo1',
+    nome_anexo: 'Anexo I - Comércio',
+    faixa: 1,
+    limite_superior: 180000,
+    aliq_nominal: 0.040,
+    deducao: 0,
+    reparticao_irpj: 0.055,
+    reparticao_csll: 0.035,
+    reparticao_cofins: 0.1274,
+    reparticao_pis: 0.0276,
+    reparticao_cpp: 0.4150,
+    reparticao_icms: 0.3400,
+    reparticao_iss: 0.0,
+    reparticao_ipi: 0.0
+  });
+
+  // ── TAB: LUCRO PRESUMIDO & ENCARGOS (LEI 9.249 & 8.212) ──
+  const [lucroPresumidoList, setLucroPresumidoList] = useState<LucroPresumidoParamItem[]>([]);
+  const [encargosList, setEncargosList] = useState<EncargoPatronalParamItem[]>([]);
+  const [showModalLucroPresumido, setShowModalLucroPresumido] = useState(false);
+  const [editingLucroPresumido, setEditingLucroPresumido] = useState<LucroPresumidoParamItem | null>(null);
+  const [lucroPresumidoForm, setLucroPresumidoForm] = useState({
+    id: '',
+    codigo_atividade: '',
+    nome_atividade: '',
+    presuncao_irpj: 0.08,
+    presuncao_csll: 0.12,
+    aliq_irpj_basico: 0.15,
+    aliq_irpj_adicional: 0.10,
+    limite_mensal_adicional: 20000,
+    aliq_csll: 0.09,
+    artigo_legal: '',
+    detalhe: '',
+    categoria: 'comercio',
+    anexo_simples_padrao: 'anexo1'
+  });
+
+  const [showModalEncargo, setShowModalEncargo] = useState(false);
+  const [editingEncargo, setEditingEncargo] = useState<EncargoPatronalParamItem | null>(null);
+  const [encargoForm, setEncargoForm] = useState({
+    id: '',
+    codigo_atividade: '',
+    nome_ramo: '',
+    inss_patronal: 0.20,
+    rat_fap: 0.03,
+    sistema_s: 0.052,
+    entidades_descricao: ''
   });
 
   // ── TAB 1: AD VALOREM STATE ──────────────────────────────
@@ -156,7 +222,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const [newDesc, setNewDesc] = useState('');
   const [newTratamento, setNewTratamento] = useState<CClassRule['tratamento_esperado']>('tributado');
   const [newCredito, setNewCredito] = useState<CClassRule['permite_credito']>('Sim');
-  const [newAliquota, setNewAliquota] = useState('26.5%');
+  const [newAliquota, setNewAliquota] = useState('');
 
   const [cfopRules, setCfopRules] = useState<CfopRule[]>([]);
   const [showAddCfop, setShowAddCfop] = useState(false);
@@ -190,31 +256,16 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const loadRetencoes = async () => {
     setLoadingRetencoes(true);
     try {
-      // Tenta via API backend primeiro
       const res = await get<{ success: boolean; data: any[] }>('/tables/regras-retencao-servicos');
       if (res?.ok && res?.data?.data && Array.isArray(res.data.data)) {
         setRegrasRetencao(res.data.data);
       } else if (res?.ok && Array.isArray(res?.data)) {
         setRegrasRetencao(res.data as any);
       } else {
-        // Fallback: buscar direto do Supabase
-        const sb = getSupabaseFrontend();
-        if (sb) {
-          const { data, error } = await sb.from('regras_retencao_servicos').select('*').order('item_lc116');
-          if (!error && data) setRegrasRetencao(data);
-          else console.warn('Supabase fallback falhou:', error?.message);
-        }
+        console.warn('Não foi possível carregar regras de retenção:', res?.error);
       }
     } catch (e) {
-      console.error('Erro ao carregar retenções:', e);
-      // Fallback direto Supabase em caso de falha total da API
-      try {
-        const sb = getSupabaseFrontend();
-        if (sb) {
-          const { data, error } = await sb.from('regras_retencao_servicos').select('*').order('item_lc116');
-          if (!error && data) setRegrasRetencao(data);
-        }
-      } catch (_) {}
+      console.error('Erro ao carregar retenções do servidor:', e);
     }
     setLoadingRetencoes(false);
   };
@@ -292,54 +343,16 @@ export const TabelasFiscaisPanel: React.FC = () => {
         return;
       }
 
-      // 3. Tentar gravar via API backend primeiro
-      let success = false;
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const res = await uploadFile<{ success: boolean; message: string }>('/tables/regras-retencao-servicos/upload', formData);
-        if (res.ok && res.data?.success) {
-          success = true;
-          showSuccess(res.data.message || `Importadas ${records.length} regras via API!`);
-        }
-      } catch (_) { /* API indisponível, tentará Supabase */ }
-
-      // 4. Se a API falhou, gravar direto no Supabase
-      if (!success) {
-        const sb = getSupabaseFrontend();
-        if (!sb) {
-          alert('Erro: Supabase não está configurado no frontend. Verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
-          setIsUploadingCSV(false);
-          return;
-        }
-
-        // Limpar tabela antiga
-        const { error: delErr } = await sb.from('regras_retencao_servicos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-        if (delErr) {
-          console.error('Erro ao limpar tabela no Supabase:', delErr);
-          alert(`Erro ao limpar tabela antiga no Supabase: ${delErr.message}`);
-          setIsUploadingCSV(false);
-          return;
-        }
-
-        // Inserir em lotes de 500 (limite do Supabase)
-        const BATCH_SIZE = 500;
-        let totalInseridos = 0;
-        for (let i = 0; i < records.length; i += BATCH_SIZE) {
-          const batch = records.slice(i, i + BATCH_SIZE);
-          const { error: insErr } = await sb.from('regras_retencao_servicos').insert(batch);
-          if (insErr) {
-            console.error(`Erro ao inserir lote ${i}-${i + batch.length}:`, insErr);
-            alert(`Erro ao inserir lote no Supabase: ${insErr.message}`);
-            setIsUploadingCSV(false);
-            return;
-          }
-          totalInseridos += batch.length;
-        }
-        showSuccess(`Importadas ${totalInseridos} regras diretamente no Supabase!`);
+      // 3. Gravar via API backend com validação completa
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await uploadFile<{ success: boolean; message: string }>('/tables/regras-retencao-servicos/upload', formData);
+      if (res.ok && res.data?.success) {
+        showSuccess(res.data.message || `Importadas ${records.length} regras via API com sucesso!`);
+        loadRetencoes();
+      } else {
+        alert(res.error || (res.data as any)?.message || 'Erro ao importar arquivo no servidor.');
       }
-
-      loadRetencoes();
     } catch (err: any) {
       console.error('Falha crítica ao processar arquivo:', err);
       alert(`Falha ao processar o arquivo:\n${err.message || 'Erro desconhecido.'}`);
@@ -386,25 +399,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
       setShowModalRegraRetencao(false);
       loadRetencoes();
     } else {
-      // Fallback de resiliência: tentar direto no Supabase caso o backend Express não esteja respondendo
-      const sb = getSupabaseFrontend();
-      if (sb) {
-        let sbError = null;
-        if (payload.id) {
-          const { error } = await sb.from('regras_retencao_servicos').update(payload).eq('id', payload.id);
-          sbError = error;
-        } else {
-          const { error } = await sb.from('regras_retencao_servicos').insert([payload]);
-          sbError = error;
-        }
-        if (!sbError) {
-          showSuccess(payload.id ? 'Regra atualizada via Supabase!' : 'Regra criada via Supabase!');
-          setShowModalRegraRetencao(false);
-          loadRetencoes();
-          return;
-        }
-      }
-      alert(res?.error || res?.data?.message || 'Erro ao salvar regra');
+      alert(res?.error || res?.data?.message || 'Erro ao salvar regra no servidor.');
     }
   };
 
@@ -415,17 +410,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
         showSuccess('Regra excluída com sucesso!');
         loadRetencoes();
       } else {
-        // Fallback Supabase
-        const sb = getSupabaseFrontend();
-        if (sb) {
-          const { error } = await sb.from('regras_retencao_servicos').delete().eq('id', id);
-          if (!error) {
-            showSuccess('Regra excluída via Supabase!');
-            loadRetencoes();
-            return;
-          }
-        }
-        alert(res?.error || res?.data?.message || 'Erro ao excluir regra');
+        alert(res?.error || res?.data?.message || 'Erro ao excluir regra no servidor.');
       }
     }
   };
@@ -434,14 +419,17 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const reloadData = async () => {
     setLoading(true);
     try {
-      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras, resInfer] = await Promise.all([
+      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras, resInfer, resSimples, resPresumido, resEncargos] = await Promise.all([
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem'),
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-rem'),
         get<{ success: boolean; data: NcmRegraAnexoItem[] }>('/tables/anexos-ncm'),
         get<{ success: boolean; data: CClassRule[] }>('/tables/cclasstrib'),
         get<{ success: boolean; data: CfopRule[] }>('/tables/cfop'),
         get<{ success: boolean; data: RegraElegibilidade[] }>('/tables/regras'),
-        get<{ success: boolean; data: InferenciaParamItem[] }>('/tables/inferencia')
+        get<{ success: boolean; data: InferenciaParamItem[] }>('/tables/inferencia'),
+        get<{ success: boolean; faixas: SimplesNacionalFaixaItem[]; partilhas: SimplesNacionalPartilhaItem[] }>('/tables/simples-nacional'),
+        get<{ success: boolean; data: LucroPresumidoParamItem[] }>('/tables/lucro-presumido'),
+        get<{ success: boolean; data: EncargoPatronalParamItem[] }>('/tables/encargos-patronais')
       ]);
 
       if (resAdVal.ok && resAdVal.data?.data) setAdValoremList(resAdVal.data.data);
@@ -451,10 +439,110 @@ export const TabelasFiscaisPanel: React.FC = () => {
       if (resCfop.ok && resCfop.data?.data) setCfopRules(resCfop.data.data);
       if (resRegras.ok && resRegras.data?.data) setRegras(resRegras.data.data);
       if (resInfer.ok && resInfer.data?.data) setInferenciaList(resInfer.data.data);
+      if (resSimples.ok && resSimples.data) {
+        if (resSimples.data.faixas) setFaixasSimples(resSimples.data.faixas);
+        if (resSimples.data.partilhas) setPartilhasSimples(resSimples.data.partilhas);
+      }
+      if (resPresumido.ok && resPresumido.data?.data) setLucroPresumidoList(resPresumido.data.data);
+      if (resEncargos.ok && resEncargos.data?.data) setEncargosList(resEncargos.data.data);
     } catch (err) {
       console.error('Erro ao recarregar tabelas fiscais:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── SIMPLES NACIONAL HANDLERS ────────────────────────────
+  const handleEditFaixaSimples = (item: SimplesNacionalFaixaItem) => {
+    setEditingFaixaSimples(item);
+    setFaixaSimplesForm({
+      id: item.id || '',
+      anexo: item.anexo,
+      nome_anexo: item.nome_anexo,
+      faixa: item.faixa,
+      limite_superior: Number(item.limite_superior),
+      aliq_nominal: Number(item.aliq_nominal),
+      deducao: Number(item.deducao),
+      reparticao_irpj: Number(item.reparticao_irpj),
+      reparticao_csll: Number(item.reparticao_csll),
+      reparticao_cofins: Number(item.reparticao_cofins),
+      reparticao_pis: Number(item.reparticao_pis),
+      reparticao_cpp: Number(item.reparticao_cpp),
+      reparticao_icms: Number(item.reparticao_icms),
+      reparticao_iss: Number(item.reparticao_iss),
+      reparticao_ipi: Number(item.reparticao_ipi)
+    });
+    setShowModalFaixaSimples(true);
+  };
+
+  const handleSaveFaixaSimples = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await post('/tables/simples-nacional/faixa', faixaSimplesForm);
+    if (res.ok) {
+      showSuccess(`Faixa ${faixaSimplesForm.faixa} (${faixaSimplesForm.nome_anexo}) atualizada com sucesso!`);
+      setShowModalFaixaSimples(false);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao gravar faixa do Simples Nacional');
+    }
+  };
+
+  // ── LUCRO PRESUMIDO & ENCARGOS HANDLERS ──────────────────
+  const handleEditLucroPresumido = (item: LucroPresumidoParamItem) => {
+    setEditingLucroPresumido(item);
+    setLucroPresumidoForm({
+      id: item.id || '',
+      codigo_atividade: item.codigo_atividade,
+      nome_atividade: item.nome_atividade,
+      presuncao_irpj: Number(item.presuncao_irpj),
+      presuncao_csll: Number(item.presuncao_csll),
+      aliq_irpj_basico: Number(item.aliq_irpj_basico),
+      aliq_irpj_adicional: Number(item.aliq_irpj_adicional),
+      limite_mensal_adicional: Number(item.limite_mensal_adicional),
+      aliq_csll: Number(item.aliq_csll),
+      artigo_legal: item.artigo_legal || '',
+      detalhe: item.detalhe || '',
+      categoria: item.categoria || 'servicos',
+      anexo_simples_padrao: item.anexo_simples_padrao || 'anexo1'
+    });
+    setShowModalLucroPresumido(true);
+  };
+
+  const handleSaveLucroPresumido = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await post('/tables/lucro-presumido', lucroPresumidoForm);
+    if (res.ok) {
+      showSuccess(`Parâmetros de Lucro Presumido para "${lucroPresumidoForm.nome_atividade}" salvos com sucesso!`);
+      setShowModalLucroPresumido(false);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao gravar parâmetros do Lucro Presumido');
+    }
+  };
+
+  const handleEditEncargo = (item: EncargoPatronalParamItem) => {
+    setEditingEncargo(item);
+    setEncargoForm({
+      id: item.id || '',
+      codigo_atividade: item.codigo_atividade,
+      nome_ramo: item.nome_ramo,
+      inss_patronal: Number(item.inss_patronal),
+      rat_fap: Number(item.rat_fap),
+      sistema_s: Number(item.sistema_s),
+      entidades_descricao: item.entidades_descricao || ''
+    });
+    setShowModalEncargo(true);
+  };
+
+  const handleSaveEncargo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await post('/tables/encargos-patronais', encargoForm);
+    if (res.ok) {
+      showSuccess(`Encargos patronais para "${encargoForm.nome_ramo}" salvos com sucesso!`);
+      setShowModalEncargo(false);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao gravar encargos patronais');
     }
   };
 
@@ -807,11 +895,89 @@ export const TabelasFiscaisPanel: React.FC = () => {
         </div>
       )}
 
+      {/* PAINEL DE GOVERNANÇA E CLASSIFICAÇÃO DE ALÍQUOTAS (CATEGORIAS A, B E C) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/70 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                Governança & Parâmetros Fiscais
+              </span>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Regra Sem Fallback Ativa
+              </span>
+            </div>
+            <h2 className="text-base font-bold text-white mt-1.5 flex items-center gap-2">
+              <Scale className="w-5 h-5 text-indigo-400" />
+              Matriz Parametrizada de Alíquotas & Governança Fiscal
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-4xl">
+              Central única de parametrização fiscal do sistema. As alíquotas oficiais e parâmetros operacionais estão segregados em três categorias transparentes: <strong>Categoria A</strong> (Tabelas Oficiais da Lei/RFB), <strong>Categoria B</strong> (Parâmetros Operacionais de Cálculo) e <strong>Categoria C</strong> (Informativas, Rótulos e Colunas Visuais).
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowCategoriasGuide(!showCategoriasGuide)}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition shrink-0 self-start md:self-center cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-indigo-400" />
+            <span>{showCategoriasGuide ? 'Ocultar Classificação' : 'Entenda as Categorias (A, B e C)'}</span>
+            {showCategoriasGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {showCategoriasGuide && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 mt-4 border-t border-slate-800 animate-in fade-in duration-200">
+            {/* Categoria A */}
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-blue-900/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  Categoria A
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Oficiais RFB</span>
+              </div>
+              <h4 className="text-xs font-bold text-white">Tabelas Oficiais da Lei / RFB</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Tabelas de alíquotas de referência Ad Valorem e Ad Rem da Reforma Tributária (LC 214/2025, EC 132/2023) por ano de transição (2026 a 2033), além dos Anexos Oficiais de NCMs com alíquota zero (Cesta Básica Nacional) ou redução de 60%.
+              </p>
+            </div>
+
+            {/* Categoria B */}
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-emerald-900/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Categoria B
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Motores de Cálculo</span>
+              </div>
+              <h4 className="text-xs font-bold text-white">Parâmetros Operacionais e Equações</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Tabelas editáveis que governam os cálculos: faixas e partilhas do Simples Nacional (LC 123/06), presunções e limites do Lucro Presumido (Lei 9.249/95), encargos patronais (Lei 8.212/91), regras de elegibilidade e inferência de alíquotas médias. Operam <strong>sem fallback</strong>.
+              </p>
+            </div>
+
+            {/* Categoria C */}
+            <div className="bg-slate-950/70 p-4 rounded-xl border border-purple-900/40 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Categoria C
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">Informativas & Rótulos</span>
+              </div>
+              <h4 className="text-xs font-bold text-white">Tabelas Informativas, Rótulos e Colunas</h4>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Matriz de Retenções de Serviços (NFS-e), Enquadramentos cClassTrib (6D) e Matriz CFOP. Servem para classificação visual, auditoria e conciliação em relatórios e DANFE, sem embutir alíquotas fixas no código.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Module Tabs Selector */}
       <div className="flex flex-wrap items-center bg-slate-900/90 p-1.5 rounded-2xl border border-slate-800 gap-1.5 shadow-xl">
         <button
           onClick={() => setActiveTab('ad_valorem')}
-          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'ad_valorem'
               ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/30'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -819,11 +985,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <Percent className="w-4 h-4 text-cyan-400" />
           <span>Alíquota Ad Valorem (%)</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono">Cat. A & B</span>
         </button>
 
         <button
           onClick={() => setActiveTab('ad_rem')}
-          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'ad_rem'
               ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-600/30'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -831,11 +998,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <Scale className="w-4 h-4 text-amber-300" />
           <span>Alíquota Ad Rem (Valor R$)</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">Cat. A & B</span>
         </button>
 
         <button
           onClick={() => setActiveTab('anexos_ncm')}
-          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'anexos_ncm'
               ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-600/30'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -843,11 +1011,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <Layers className="w-4 h-4 text-emerald-300" />
           <span>Anexos da Lei & NCMs ({ncmList.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">Cat. A & B</span>
         </button>
 
         <button
           onClick={() => setActiveTab('retencoes_servicos')}
-          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[180px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'retencoes_servicos'
               ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-600/30'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -855,11 +1024,38 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <Receipt className="w-4 h-4 text-amber-300" />
           <span>Retenções de Serviços (NFS-e)</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">Cat. C</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('simples_nacional')}
+          className={`flex-1 min-w-[180px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'simples_nacional'
+              ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-lg shadow-emerald-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <Building2 className="w-4 h-4 text-emerald-300" />
+          <span>Simples Nacional (LC 123)</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">Cat. B</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('lucro_presumido')}
+          className={`flex-1 min-w-[190px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'lucro_presumido'
+              ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <Briefcase className="w-4 h-4 text-cyan-300" />
+          <span>Lucro Presumido & Encargos</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">Cat. B</span>
         </button>
 
         <button
           onClick={() => setActiveTab('cclasstrib')}
-          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'cclasstrib'
               ? 'bg-purple-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -867,11 +1063,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <Table className="w-4 h-4" />
           <span>cClassTrib (6D)</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">Cat. C</span>
         </button>
 
         <button
           onClick={() => setActiveTab('cfop')}
-          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'cfop'
               ? 'bg-indigo-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -879,11 +1076,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <FileText className="w-4 h-4" />
           <span>Matriz CFOP ({cfopRules.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Cat. C</span>
         </button>
 
         <button
           onClick={() => setActiveTab('regras')}
-          className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'regras'
               ? 'bg-teal-600 text-white shadow-md'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -891,11 +1089,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <ShieldCheck className="w-4 h-4" />
           <span>Regras Elegibilidade ({regras.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono">Cat. B</span>
         </button>
 
         <button
           onClick={() => setActiveTab('inferencia')}
-          className={`flex-1 min-w-[170px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`flex-1 min-w-[180px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
             activeTab === 'inferencia'
               ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-600/30'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -903,6 +1102,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
         >
           <SlidersHorizontal className="w-4 h-4 text-violet-400" />
           <span>Inferência Simulador ({inferenciaList.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 border border-violet-500/30 font-mono">Cat. B</span>
         </button>
       </div>
 
@@ -1272,10 +1472,15 @@ export const TabelasFiscaisPanel: React.FC = () => {
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
-              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-amber-400" />
-                Matriz de Retenções na Fonte em Serviços (NFS-e) & Fundamentação Legal
-              </h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <Receipt className="w-5 h-5 text-amber-400" />
+                  Matriz de Retenções na Fonte em Serviços (NFS-e) & Fundamentação Legal
+                </h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Categoria C — Informativa & Auditoria
+                </span>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 Regras tributárias importadas via arquivo CSV para auditoria automática (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme LC 116/03, LC 214 e normativos federais.
               </p>
@@ -1382,6 +1587,22 @@ export const TabelasFiscaisPanel: React.FC = () => {
       ═══════════════════════════════════════════════════════ */}
       {activeTab === 'cclasstrib' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
+          {/* Header Informativo Categoria C */}
+          <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/50 flex items-start gap-3">
+            <Table className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
+            <div className="text-xs space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-purple-300 text-sm">Classificação Tributária cClassTrib (6 Dígitos)</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  Categoria C — Informativa & Referência
+                </span>
+              </div>
+              <p className="text-slate-300">
+                Esta tabela padroniza a interpretação da tag <code>&lt;cClassTrib&gt;</code> exigida pela Reforma Tributária (LC 214/25) para orientação em relatórios analíticos, DANFE e painéis fiscais. A alíquota informada serve como <strong>referência cadastral</strong> e não substitui os cálculos oficiais realizados pelos motores da Reforma.
+              </p>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="relative w-full sm:w-96">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1650,6 +1871,367 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TAB: SIMPLES NACIONAL (LC 123/2006 & REFORMA LC 214)
+      ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'simples_nacional' && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-5 shadow-xl animate-fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div>
+              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-emerald-400" />
+                Tabelas Oficiais do Simples Nacional (LC nº 123/2006 & LC nº 214/2025)
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Alíquotas nominais, parcelas a deduzir e repartição dos tributos (IRPJ, CSLL, PIS, COFINS, CPP, ICMS, ISS e IPI). Parâmetros vivos que alimentam o Simulador de Regimes sem fallbacks ocultos.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowPartilhaReforma(!showPartilhaReforma)}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                showPartilhaReforma
+                  ? 'bg-purple-600 text-white border-purple-500 shadow-lg shadow-purple-600/30'
+                  : 'bg-slate-950 text-slate-300 border-slate-700 hover:border-slate-500'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-purple-300" />
+              <span>{showPartilhaReforma ? 'Ocultar Transição LC 214' : 'Ver Transição LC 214 (2027-2033)'}</span>
+            </button>
+          </div>
+
+          {/* Anexo Pills Selector */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {[
+              { id: 'anexo1', label: 'Anexo I • Comércio' },
+              { id: 'anexo2', label: 'Anexo II • Indústria' },
+              { id: 'anexo3', label: 'Anexo III • Serviços Gerais' },
+              { id: 'anexo4', label: 'Anexo IV • Construção/Limpeza (Sem CPP)' },
+              { id: 'anexo5', label: 'Anexo V • Serviços (Fator R)' },
+              { id: 'transporte_cargas', label: 'Transporte de Cargas (Art. 18 § 5º-E)' }
+            ].map(anx => (
+              <button
+                key={anx.id}
+                onClick={() => setSelectedAnexoSimples(anx.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedAnexoSimples === anx.id
+                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 ring-2 ring-emerald-400/40'
+                    : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                }`}
+              >
+                {anx.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tabela de Faixas */}
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-3 text-center">Faixa</th>
+                  <th className="py-3 px-3">Limite RBT12</th>
+                  <th className="py-3 px-3 text-right">Alíquota Nominal</th>
+                  <th className="py-3 px-3 text-right">Parcela a Deduzir</th>
+                  <th className="py-3 px-2 text-right">IRPJ</th>
+                  <th className="py-3 px-2 text-right">CSLL</th>
+                  <th className="py-3 px-2 text-right">COFINS</th>
+                  <th className="py-3 px-2 text-right">PIS</th>
+                  <th className="py-3 px-2 text-right">CPP</th>
+                  <th className="py-3 px-2 text-right">ICMS</th>
+                  <th className="py-3 px-2 text-right">ISS</th>
+                  <th className="py-3 px-2 text-right">IPI</th>
+                  <th className="py-3 px-3 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {faixasSimples.filter(f => f.anexo === selectedAnexoSimples).length === 0 ? (
+                  <tr>
+                    <td colSpan={13} className="py-8 text-center text-slate-500 font-sans">
+                      Nenhuma faixa cadastrada para este anexo.
+                    </td>
+                  </tr>
+                ) : (
+                  faixasSimples
+                    .filter(f => f.anexo === selectedAnexoSimples)
+                    .sort((a, b) => a.faixa - b.faixa)
+                    .map((item) => (
+                      <tr key={item.id || `${item.anexo}-${item.faixa}`} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3 text-center font-bold text-emerald-400">
+                          {item.faixa}ª Faixa
+                        </td>
+                        <td className="py-3 px-3 font-bold text-slate-200">
+                          R$ {Number(item.limite_superior).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-cyan-300">
+                          {(Number(item.aliq_nominal) * 100).toFixed(2)}%
+                        </td>
+                        <td className="py-3 px-3 text-right text-amber-300 font-bold">
+                          R$ {Number(item.deducao).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-300">
+                          {(Number(item.reparticao_irpj) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-300">
+                          {(Number(item.reparticao_csll) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-300">
+                          {(Number(item.reparticao_cofins) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-2 text-right text-slate-300">
+                          {(Number(item.reparticao_pis) * 100).toFixed(1)}%
+                        </td>
+                        <td className={`py-3 px-2 text-right font-bold ${Number(item.reparticao_cpp) > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
+                          {(Number(item.reparticao_cpp) * 100).toFixed(1)}%
+                        </td>
+                        <td className={`py-3 px-2 text-right font-bold ${Number(item.reparticao_icms) > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
+                          {(Number(item.reparticao_icms) * 100).toFixed(1)}%
+                        </td>
+                        <td className={`py-3 px-2 text-right font-bold ${Number(item.reparticao_iss) > 0 ? 'text-purple-400' : 'text-slate-600'}`}>
+                          {(Number(item.reparticao_iss) * 100).toFixed(1)}%
+                        </td>
+                        <td className={`py-3 px-2 text-right font-bold ${Number(item.reparticao_ipi) > 0 ? 'text-amber-400' : 'text-slate-600'}`}>
+                          {(Number(item.reparticao_ipi) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-3 text-center font-sans">
+                          <button
+                            onClick={() => handleEditFaixaSimples(item)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Editar Parâmetros da Faixa"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Sub-tabela: Partilha Reforma 2027 a 2033 */}
+          {showPartilhaReforma && (
+            <div className="p-4 rounded-xl bg-slate-950 border border-purple-900/40 space-y-3 animate-fade-in">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Fração de Desoneração IBS & CBS no Simples Híbrido (LC nº 214/2025)
+                </h4>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Percentual do valor do DAS que é remanejado/desonerado quando a optante pelo Simples Nacional decide recolher IBS e CBS no regime regular (Não-Cumulativo) para transferir créditos integrais a clientes PJ.
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-left text-xs text-slate-300 font-mono">
+                  <thead className="bg-slate-900 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-800">
+                    <tr>
+                      <th className="py-2.5 px-3">Ano Transição</th>
+                      <th className="py-2.5 px-3 text-right">1ª Faixa</th>
+                      <th className="py-2.5 px-3 text-right">2ª Faixa</th>
+                      <th className="py-2.5 px-3 text-right">3ª Faixa</th>
+                      <th className="py-2.5 px-3 text-right">4ª Faixa</th>
+                      <th className="py-2.5 px-3 text-right">5ª Faixa</th>
+                      <th className="py-2.5 px-3 text-right">6ª Faixa</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800 text-[11px]">
+                    {[2027, 2029, 2030, 2031, 2032, 2033].map(ano => {
+                      const parts = partilhasSimples.filter(p => p.anexo === selectedAnexoSimples && Number(p.ano_transicao) === ano).sort((a, b) => a.faixa - b.faixa);
+                      return (
+                        <tr key={ano} className="hover:bg-slate-800/30">
+                          <td className="py-2 px-3 font-bold text-purple-400 font-sans">{ano}</td>
+                          {[1, 2, 3, 4, 5, 6].map(fNum => {
+                            const found = parts.find(p => p.faixa === fNum);
+                            const val = found ? Number(found.perc_remanejado) : 0;
+                            return (
+                              <td key={fNum} className="py-2 px-3 text-right text-slate-200">
+                                {(val * 100).toFixed(2)}%
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TAB: LUCRO PRESUMIDO & ENCARGOS PATRONAIS
+      ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'lucro_presumido' && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-6 shadow-xl animate-fade-in">
+          {/* Header */}
+          <div className="border-b border-slate-800 pb-4">
+            <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-cyan-400" />
+              Lucro Presumido (Lei nº 9.249/1995) & Encargos Patronais (Lei nº 8.212/1991)
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Coeficientes legais de presunção de lucro para IRPJ e CSLL por atividade econômica, limites do adicional e alíquotas de encargos previdenciários patronais (INSS 20%, RAT e Sistema S).
+            </p>
+          </div>
+
+          {/* Seção 1: Atividades e Presunções */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <Scale className="w-4 h-4 text-cyan-400" />
+                1. Coeficientes de Presunção de Lucro (IRPJ & CSLL)
+              </h4>
+              <span className="text-[11px] text-slate-400 font-mono">{lucroPresumidoList.length} Atividades Cadastradas</span>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-3">Atividade Econômica</th>
+                    <th className="py-3 px-3">Categoria</th>
+                    <th className="py-3 px-3 text-right">Presunção IRPJ</th>
+                    <th className="py-3 px-3 text-right">Presunção CSLL</th>
+                    <th className="py-3 px-3 text-right">IRPJ Básico</th>
+                    <th className="py-3 px-3 text-right">IRPJ Adicional</th>
+                    <th className="py-3 px-3 text-right">CSLL Geral</th>
+                    <th className="py-3 px-3">Base Legal</th>
+                    <th className="py-3 px-3 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono text-[11px]">
+                  {lucroPresumidoList.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-500 font-sans">
+                        Nenhum parâmetro de Lucro Presumido cadastrado.
+                      </td>
+                    </tr>
+                  ) : (
+                    lucroPresumidoList.map(item => (
+                      <tr key={item.id || item.codigo_atividade} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="py-3 px-3 font-sans font-bold text-slate-200">
+                          {item.nome_atividade}
+                          {item.detalhe && (
+                            <span className="block text-[10px] text-slate-500 font-normal">{item.detalhe}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 font-sans">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                            {item.categoria}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-amber-300">
+                          {(Number(item.presuncao_irpj) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-3 text-right font-bold text-cyan-300">
+                          {(Number(item.presuncao_csll) * 100).toFixed(1)}%
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-200">
+                          {(Number(item.aliq_irpj_basico) * 100).toFixed(0)}%
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-200">
+                          {(Number(item.aliq_irpj_adicional) * 100).toFixed(0)}%
+                          <span className="block text-[9px] text-slate-500">&gt; R$20k/mês</span>
+                        </td>
+                        <td className="py-3 px-3 text-right text-slate-200">
+                          {(Number(item.aliq_csll) * 100).toFixed(0)}%
+                        </td>
+                        <td className="py-3 px-3 font-sans text-slate-400 text-[10px] max-w-[150px] truncate" title={item.artigo_legal}>
+                          {item.artigo_legal}
+                        </td>
+                        <td className="py-3 px-3 text-center font-sans">
+                          <button
+                            onClick={() => handleEditLucroPresumido(item)}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Seção 2: Encargos Patronais */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-400" />
+                2. Encargos Previdenciários Patronais sobre a Folha (Lei nº 8.212/1991)
+              </h4>
+              <span className="text-[11px] text-slate-400 font-mono">{encargosList.length} Ramos Parametrizados</span>
+            </div>
+
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-3 px-3">Ramo / Setor de Atividade</th>
+                    <th className="py-3 px-3 text-right">INSS Patronal</th>
+                    <th className="py-3 px-3 text-right">RAT / FAP</th>
+                    <th className="py-3 px-3 text-right">Sistema S (Terceiros)</th>
+                    <th className="py-3 px-3 text-right">Carga Total Patronal</th>
+                    <th className="py-3 px-3">Entidades / Fundamentação</th>
+                    <th className="py-3 px-3 text-center">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-mono text-[11px]">
+                  {encargosList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-500 font-sans">
+                        Nenhum encargo cadastrado.
+                      </td>
+                    </tr>
+                  ) : (
+                    encargosList.map(item => {
+                      const totalPatronal = Number(item.inss_patronal) + Number(item.rat_fap) + Number(item.sistema_s);
+                      return (
+                        <tr key={item.id || item.codigo_atividade} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-3 px-3 font-sans font-bold text-slate-200">
+                            {item.nome_ramo}
+                          </td>
+                          <td className="py-3 px-3 text-right text-slate-200">
+                            {(Number(item.inss_patronal) * 100).toFixed(2)}%
+                          </td>
+                          <td className="py-3 px-3 text-right text-amber-300">
+                            {(Number(item.rat_fap) * 100).toFixed(2)}%
+                          </td>
+                          <td className="py-3 px-3 text-right text-cyan-300">
+                            {(Number(item.sistema_s) * 100).toFixed(2)}%
+                          </td>
+                          <td className="py-3 px-3 text-right font-black text-emerald-400">
+                            {(totalPatronal * 100).toFixed(2)}%
+                          </td>
+                          <td className="py-3 px-3 font-sans text-slate-400 text-[10px]">
+                            {item.entidades_descricao || 'INSS Patronal + RAT + Terceiros'}
+                          </td>
+                          <td className="py-3 px-3 text-center font-sans">
+                            <button
+                              onClick={() => handleEditEncargo(item)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-emerald-400 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              Editar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -2412,6 +2994,404 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 >
                   <Save className="w-4 h-4" />
                   {editingRegraRetencao ? 'Salvar Alterações' : 'Criar Regra'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: EDITAR FAIXA SIMPLES NACIONAL
+      ═══════════════════════════════════════════════════════ */}
+      {showModalFaixaSimples && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-emerald-400" />
+                Editar Parâmetros: {faixaSimplesForm.faixa}ª Faixa • {faixaSimplesForm.nome_anexo}
+              </h3>
+              <button onClick={() => setShowModalFaixaSimples(false)} className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveFaixaSimples} className="space-y-4 text-xs">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
+                <div className="text-slate-400 font-bold uppercase text-[10px]">Identificação da Tabela</div>
+                <div className="text-slate-200 font-medium">
+                  {faixaSimplesForm.nome_anexo} • Faixa {faixaSimplesForm.faixa} de 6
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Limite Superior RBT12 (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={faixaSimplesForm.limite_superior}
+                    onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, limite_superior: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Alíquota Nominal (decimal, ex: 0.04) *</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    value={faixaSimplesForm.aliq_nominal}
+                    onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, aliq_nominal: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                  <span className="text-[10px] text-cyan-400 mt-0.5 block">Equivale a {(faixaSimplesForm.aliq_nominal * 100).toFixed(2)}%</span>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Parcela a Deduzir (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={faixaSimplesForm.deducao}
+                    onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, deducao: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Repartição dos Tributos */}
+              <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 uppercase tracking-wider text-[11px]">
+                    Repartição dos Tributos na Faixa (Decimais, soma = 1.0)
+                  </span>
+                  {(() => {
+                    const soma = faixaSimplesForm.reparticao_irpj + faixaSimplesForm.reparticao_csll +
+                      faixaSimplesForm.reparticao_cofins + faixaSimplesForm.reparticao_pis +
+                      faixaSimplesForm.reparticao_cpp + faixaSimplesForm.reparticao_icms +
+                      faixaSimplesForm.reparticao_iss + faixaSimplesForm.reparticao_ipi;
+                    const somaPct = (soma * 100).toFixed(2);
+                    const isOk = Math.abs(soma - 1.0) < 0.005;
+                    return (
+                      <span className={`font-mono text-xs font-bold ${isOk ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        Soma: {somaPct}% {isOk ? '✓' : '(Atenção: Deve totalizar 100%)'}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">IRPJ</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_irpj}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_irpj: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">CSLL</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_csll}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_csll: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">COFINS</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_cofins}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_cofins: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">PIS</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_pis}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_pis: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-emerald-400 font-bold block mb-0.5">CPP</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_cpp}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_cpp: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-emerald-300 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-blue-400 font-bold block mb-0.5">ICMS</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_icms}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_icms: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-blue-300 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-purple-400 font-bold block mb-0.5">ISS</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_iss}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_iss: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-purple-300 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-amber-400 font-bold block mb-0.5">IPI</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      value={faixaSimplesForm.reparticao_ipi}
+                      onChange={(e) => setFaixaSimplesForm({ ...faixaSimplesForm, reparticao_ipi: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-amber-300 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalFaixaSimples(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar Faixa
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: EDITAR LUCRO PRESUMIDO
+      ═══════════════════════════════════════════════════════ */}
+      {showModalLucroPresumido && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-cyan-400" />
+                Editar Parâmetros: {lucroPresumidoForm.nome_atividade}
+              </h3>
+              <button onClick={() => setShowModalLucroPresumido(false)} className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveLucroPresumido} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Presunção IRPJ (decimal, ex: 0.08) *</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={lucroPresumidoForm.presuncao_irpj}
+                    onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, presuncao_irpj: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                    required
+                  />
+                  <span className="text-[10px] text-amber-300 mt-0.5 block">Equivale a {(lucroPresumidoForm.presuncao_irpj * 100).toFixed(1)}%</span>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Presunção CSLL (decimal, ex: 0.12) *</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={lucroPresumidoForm.presuncao_csll}
+                    onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, presuncao_csll: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                    required
+                  />
+                  <span className="text-[10px] text-cyan-300 mt-0.5 block">Equivale a {(lucroPresumidoForm.presuncao_csll * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">IRPJ Básico (decimal) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={lucroPresumidoForm.aliq_irpj_basico}
+                    onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, aliq_irpj_basico: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">IRPJ Adicional (decimal) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={lucroPresumidoForm.aliq_irpj_adicional}
+                    onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, aliq_irpj_adicional: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Limite Mensal Adicional (R$) *</label>
+                  <input
+                    type="number"
+                    step="1000"
+                    value={lucroPresumidoForm.limite_mensal_adicional}
+                    onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, limite_mensal_adicional: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Alíquota CSLL Geral (decimal) *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={lucroPresumidoForm.aliq_csll}
+                  onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, aliq_csll: Number(e.target.value) })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Base Legal / Artigo Normativo</label>
+                <input
+                  type="text"
+                  value={lucroPresumidoForm.artigo_legal}
+                  onChange={(e) => setLucroPresumidoForm({ ...lucroPresumidoForm, artigo_legal: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalLucroPresumido(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar Parâmetros
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: EDITAR ENCARGO PATRONAL
+      ═══════════════════════════════════════════════════════ */}
+      {showModalEncargo && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-emerald-400" />
+                Editar Encargos: {encargoForm.nome_ramo}
+              </h3>
+              <button onClick={() => setShowModalEncargo(false)} className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveEncargo} className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">INSS Patronal (ex: 0.20) *</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={encargoForm.inss_patronal}
+                    onChange={(e) => setEncargoForm({ ...encargoForm, inss_patronal: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                  <span className="text-[10px] text-emerald-300 mt-0.5 block">{(encargoForm.inss_patronal * 100).toFixed(1)}%</span>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">RAT / FAP (ex: 0.03) *</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={encargoForm.rat_fap}
+                    onChange={(e) => setEncargoForm({ ...encargoForm, rat_fap: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                  <span className="text-[10px] text-amber-300 mt-0.5 block">{(encargoForm.rat_fap * 100).toFixed(1)}%</span>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Sistema S (ex: 0.052) *</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    value={encargoForm.sistema_s}
+                    onChange={(e) => setEncargoForm({ ...encargoForm, sistema_s: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    required
+                  />
+                  <span className="text-[10px] text-cyan-300 mt-0.5 block">{(encargoForm.sistema_s * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center">
+                <span className="text-slate-400 font-bold">Total Carga Patronal:</span>
+                <span className="font-mono text-sm font-black text-emerald-400">
+                  {((encargoForm.inss_patronal + encargoForm.rat_fap + encargoForm.sistema_s) * 100).toFixed(2)}%
+                </span>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Entidades / Descrição Normativa</label>
+                <input
+                  type="text"
+                  value={encargoForm.entidades_descricao}
+                  onChange={(e) => setEncargoForm({ ...encargoForm, entidades_descricao: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowModalEncargo(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar Encargos
                 </button>
               </div>
             </form>

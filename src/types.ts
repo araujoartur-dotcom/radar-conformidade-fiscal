@@ -108,7 +108,10 @@ export interface CertificadoA1 {
   razãoSocial: string;
   tipo: string; // e-CNPJ A1
   validade: string; // YYYY-MM-DD
-  status: 'valido' | 'expirado' | 'nenhum';
+  status: 'valido' | 'expirado' | 'nenhum' | 'pendente';
+  valido?: boolean;
+  emissor?: string;
+  impressaoDigital?: string;
 }
 
 export interface CnpjLookupItem {
@@ -238,6 +241,17 @@ export interface DfeXmlItem {
   downloadAt?: string;
 }
 
+export type TipoPreenchimentoEvento = 'justificativa' | 'texto_livre' | 'campos_estruturados' | 'aceite_booleano' | 'nenhum';
+
+export type TipoCamposEstruturados = 
+  | 'data_entrega' 
+  | 'imobilizacao' 
+  | 'combustivel' 
+  | 'credito_presumido' 
+  | 'perecimento' 
+  | 'nao_fornecido' 
+  | 'importacao_alc_zfm';
+
 export interface EventoDfeDefinition {
   id: string;
   codigoEvento: string;
@@ -249,9 +263,36 @@ export interface EventoDfeDefinition {
   minCaracteresJustificativa?: number;
   badge?: string;
   isReformaTributaria?: boolean;
+  tipoPreenchimento?: TipoPreenchimentoEvento;
+  justificativasPadrao?: string[];
+  tipoCamposEstruturados?: TipoCamposEstruturados;
 }
 
 export type EventoCatalogoItem = EventoDfeDefinition;
+
+export interface DadosEventoEstruturado {
+  dPrevEntrega?: string;
+  nItem?: number;
+  qImobilizado?: number;
+  uImobilizado?: string;
+  qComb?: number;
+  uComb?: string;
+  qPerecimento?: number;
+  uPerecimento?: string;
+  qNaoFornecida?: number;
+  uNaoFornecida?: string;
+  qtdeNaoIsenta?: number;
+  unidadeNaoIsenta?: string;
+  vIBS?: number;
+  vCBS?: number;
+  cCredPres?: string;
+  vBCCredPres?: number;
+  pCredPres?: number;
+  vCredPres?: number;
+  indAceitacao?: 0 | 1;
+  tpEventoAut?: string;
+  nProtEvento?: string;
+}
 
 export interface EventoDfeRequest {
   id: string;
@@ -264,6 +305,7 @@ export interface EventoDfeRequest {
   origemEvento?: 'proprio' | 'terceiro_destinatario' | 'sefaz';
   autorCnpj?: string;
   justificativa?: string;
+  dadosEstruturados?: DadosEventoEstruturado;
   dataHora: string;
   protocoloSeFaz?: string;
   status: 'processado' | 'pendente' | 'rejeitado';
@@ -325,6 +367,8 @@ export type EstadoUF = typeof ESTADOS_BRASIL[number];
 // ==========================================
 
 export type ReportTabType = 
+  | 'consolidado_mercadorias' // Relatório Consolidado 1: NF-e (55) e CT-e (57/67) - Mercadorias e Fretes
+  | 'consolidado_servicos'    // Relatório Consolidado 2: NFS-e Nacional ADN e Conectores - Serviços e Retenções
   | 'razao_entradas'        // #1 Razão de Entradas Item a Item
   | 'matriz_elegibilidade'  // #2 Matriz de Elegibilidade
   | 'calculo_credito'       // #3 Cálculo do Crédito Esperado x Apropriado
@@ -385,14 +429,40 @@ export interface XmlItemDetailReport {
   descontoIncondicional: number;
   freteSeguroRateado: number;
   valorLiquidoItem: number;
-  
-  // Tributos e Crédito (Reforma Tributária IBS / CBS)
+
+  // Tributos do Regime Atual (ICMS, IPI, PIS, COFINS)
+  baseIcms?: number;
+  aliquotaIcms?: number;
+  valorIcms?: number;
+  cstIcms?: string;
+  baseIpi?: number;
+  aliquotaIpi?: number;
+  valorIpi?: number;
+  cstIpi?: string;
+  basePis?: number;
+  aliquotaPis?: number;
+  valorPis?: number;
+  cstPis?: string;
+  baseCofins?: number;
+  aliquotaCofins?: number;
+  valorCofins?: number;
+  cstCofins?: string;
+  totalTributosAtuais?: number;
+  cargaTributariaAtual?: number; // % sobre valor líquido
+
+  // Tributos e Crédito (Reforma Tributária IBS / CBS / IS)
   baseIbs: number;
   aliquotaIbs: number;
   valorIbs: number;
   baseCbs: number;
   aliquotaCbs: number;
   valorCbs: number;
+  valorIs?: number;
+  aliquotaIs?: number;
+  totalTributosReforma?: number;
+  cargaTributariaReforma?: number; // % sobre valor líquido
+  deltaCargaTributaria?: number; // Reforma - Atual (R$)
+  deltaCargaPercentual?: number; // Variação em %
   creditoEsperadoIbs: number;
   creditoEsperadoCbs: number;
   creditoApropriadoIbs: number;
@@ -455,7 +525,7 @@ export interface XmlItemDetailReport {
   valorLiquidoServico?: number;
   codigoServicoLc116?: string;
   discriminacaoServico?: string;
-  diagnosticoRetencao?: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL';
+  diagnosticoRetencao?: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL' | 'SEM_REGRA_PARAMETRIZADA';
   motivoDiagnosticoRetencao?: string;
   regraRetencaoAplicada?: {
     id?: string;
@@ -475,6 +545,14 @@ export interface XmlItemDetailReport {
   statusCreditoCgibs?: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO';
   motivoCreditoCgibs?: string;
   hashCgibs?: string;
+
+  // Integração com Apuração Assistida & Decisão do RAD (Recolhimento pelo Adquirente — Art. 27 LC 215/2025)
+  statusLiquidacaoApuracao?: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO';
+  valorCreditoLiquidadoReal?: number | null; // Crédito efetivo com débito do fornecedor extinto (Sem Fallback)
+  valorCreditoRetido?: number | null;        // Saldo a apropriar retido no fornecedor
+  taxaLiquidacaoItem?: number;               // % de crédito liquidado
+  impactoDecisorioRad?: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO';
+  motivoDecisaoRad?: string;
 }
 
 export interface MapaCfopItem {
@@ -720,6 +798,8 @@ export interface RegraTransicaoAno {
   aliquotaIvaTotal: number; // CBS + IBS Total (%)
   percentualReducaoIcmsIss: number; // Redução gradual de ICMS/ISS (%)
   observacoes: string;
+  aliquotaConfigurada?: boolean;
+  avisoConfiguracao?: string;
 }
 
 export type MetodoSplitPayment = 'PIX_DINAMICO' | 'BOLETO_BANCARIO' | 'ARRANJO_CARTAO' | 'TED_DOC';
@@ -816,3 +896,65 @@ export interface MunicipioConector {
   status: 'ativo' | 'inativo' | 'configuracao_pendente' | 'erro_autenticacao';
   credenciaisConfiguradas?: boolean;
 }
+
+// =========================================================
+// REGIMES TRIBUTÁRIOS & PARÂMETROS LEGAIS (LC 123, LEI 9249, LEI 8212)
+// =========================================================
+
+export interface SimplesNacionalFaixaItem {
+  id?: string;
+  anexo: string;
+  nome_anexo: string;
+  faixa: number;
+  limite_superior: number;
+  aliq_nominal: number;
+  deducao: number;
+  reparticao_irpj: number;
+  reparticao_csll: number;
+  reparticao_cofins: number;
+  reparticao_pis: number;
+  reparticao_cpp: number;
+  reparticao_icms: number;
+  reparticao_iss: number;
+  reparticao_ipi: number;
+  ativo?: number | boolean;
+}
+
+export interface SimplesNacionalPartilhaItem {
+  id?: string;
+  anexo: string;
+  ano_transicao: number;
+  faixa: number;
+  perc_cbs: number;
+  perc_ibs: number;
+  perc_remanejado: number;
+}
+
+export interface LucroPresumidoParamItem {
+  id?: string;
+  codigo_atividade: string;
+  nome_atividade: string;
+  presuncao_irpj: number;
+  presuncao_csll: number;
+  aliq_irpj_basico: number;
+  aliq_irpj_adicional: number;
+  limite_mensal_adicional: number;
+  aliq_csll: number;
+  artigo_legal?: string;
+  detalhe?: string;
+  categoria?: string;
+  anexo_simples_padrao?: string;
+  ativo?: number | boolean;
+}
+
+export interface EncargoPatronalParamItem {
+  id?: string;
+  codigo_atividade: string;
+  nome_ramo: string;
+  inss_patronal: number;
+  rat_fap: number;
+  sistema_s: number;
+  entidades_descricao?: string;
+  ativo?: number | boolean;
+}
+

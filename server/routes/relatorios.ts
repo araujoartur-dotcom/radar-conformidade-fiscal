@@ -12,6 +12,7 @@ import { Router, Response } from 'express';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
+import { getDecoupledKpiAggregates } from '../services/kpiAggregationService';
 
 const router = Router();
 
@@ -68,8 +69,11 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
     // Normalização do tipoDoc / relatório
     const relatorioParam = String(req.query.relatorio || req.query.tipoRelatorio || '');
-    const isRelatorioRetencoes = relatorioParam === 'retencoes_fonte';
-    const effectiveTipoDoc = isRelatorioRetencoes && (!tipoDoc || tipoDoc === 'TODOS') ? 'NFSE' : (tipoDoc ? String(tipoDoc) : null);
+    const isRelatorioRetencoes = relatorioParam === 'retencoes_fonte' || relatorioParam === 'consolidado_servicos';
+    const isRelatorioMercadorias = relatorioParam === 'consolidado_mercadorias';
+    const effectiveTipoDoc = isRelatorioRetencoes && (!tipoDoc || tipoDoc === 'TODOS')
+      ? 'NFSE'
+      : (isRelatorioMercadorias && (!tipoDoc || tipoDoc === 'TODOS') ? 'MERCADORIAS' : (tipoDoc ? String(tipoDoc) : null));
 
     let rows: any[] = [];
     let totalCount = 0;
@@ -99,10 +103,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
           if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
             const td = effectiveTipoDoc.toUpperCase();
-            if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+            if (td === 'MERCADORIAS' || td === 'CONSOLIDADO_MERCADORIAS') {
+              supaQuery = supaQuery.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55', 'CTe', 'CT-e', 'CTE', '57', '67', 'NFCE', 'NFC-e', '65']);
+            } else if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
               supaQuery = supaQuery.in('tipo_doc', ['NFSe', 'NFS-e', 'NFSE', 'NFS']);
             } else if (td === 'CTE' || td === 'CT-E') {
-              supaQuery = supaQuery.in('tipo_doc', ['CTe', 'CT-e', 'CTE', '57']);
+              supaQuery = supaQuery.in('tipo_doc', ['CTe', 'CT-e', 'CTE', '57', '67']);
             } else if (td === 'NFE' || td === 'NF-E') {
               supaQuery = supaQuery.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55']);
             } else {
@@ -508,23 +514,47 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       if (cfopInfo.tratamento_padrao === 'Depende') resultadoElegibilidade = 'Pendente';
 
       // ========================================================
-      // CONCILIAÇÃO DINÂMICA COM CONTA CORRENTE FISCAL (CGIBS / RTC)
+      // CONCILIAÇÃO DINÂMICA COM APURAÇÃO ASSISTIDA & DECISÃO RAD
       // Art. 27 LC 215/2025 - Não-cumulatividade vinculada à liquidação
       // ========================================================
       const apOp = apuracaoMap.get(r.chaveAcesso);
       let statusCreditoCgibs: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
       let motivoCreditoCgibs = 'Aguardando sincronismo com CGIBS / RTC';
+      
+      let statusLiquidacaoApuracao: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
+      let valorCreditoLiquidadoReal: number | null = null; // SEM FALLBACK
+      let valorCreditoRetido: number | null = null;
+      let taxaLiquidacaoItem = 0;
+      let impactoDecisorioRad: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
+      let motivoDecisaoRad = 'Operação não localizada na Apuração Assistida do CGIBS. Crédito bloqueado para apropriação até a homologação da liquidação.';
+
+      const creditoTotalDoc = creditoEsperadoIbs + creditoEsperadoCbs;
 
       if (apOp) {
-        if (apOp.tot_credito_utilizado > 0) {
-          statusCreditoCgibs = 'UTILIZADO';
-          motivoCreditoCgibs = 'Crédito já apropriado e utilizado para abater débitos do período';
-        } else if (apOp.tot_credito_nao_utilizado > 0 || (apOp.tot_debito_extinto > 0 && apOp.tot_debito_em_aberto <= 0)) {
-          statusCreditoCgibs = 'CONFIRMADO';
-          motivoCreditoCgibs = 'Débito extinto pelo fornecedor (Split Payment / DARF). Crédito 100% elegível (Art. 27 LC 215/2025)';
-        } else if (apOp.tot_credito_a_propriar > 0 || apOp.tot_debito_em_aberto > 0) {
+        const totExtinto = Number(apOp.tot_debito_extinto) || 0;
+        const totEmAberto = Number(apOp.tot_debito_em_aberto) || 0;
+        const totCredUtilizado = Number(apOp.tot_credito_utilizado) || 0;
+        const totCredNaoUtilizado = Number(apOp.tot_credito_nao_utilizado) || 0;
+        const totCredAPropriar = Number(apOp.tot_credito_a_propriar) || 0;
+
+        if (totCredUtilizado > 0 || totCredNaoUtilizado > 0 || (totExtinto > 0 && totEmAberto <= 0)) {
+          statusCreditoCgibs = totCredUtilizado > 0 ? 'UTILIZADO' : 'CONFIRMADO';
+          statusLiquidacaoApuracao = 'LIQUIDADO';
+          valorCreditoLiquidadoReal = Number((totCredNaoUtilizado + totCredUtilizado > 0 ? totCredNaoUtilizado + totCredUtilizado : Math.min(creditoTotalDoc, totExtinto)).toFixed(2));
+          valorCreditoRetido = 0;
+          taxaLiquidacaoItem = creditoTotalDoc > 0 ? Math.min(100, Number(((valorCreditoLiquidadoReal / creditoTotalDoc) * 100).toFixed(1))) : 100;
+          impactoDecisorioRad = 'APTO_PARA_RAD';
+          motivoDecisaoRad = 'Imposto liquidado pelo Fornecedor ou Split Payment no CGIBS. Crédito 100% liberado para apropriação (Art. 27 LC 215/2025). Desnecessário RAD (Recolhimento pelo Adquirente).';
+          motivoCreditoCgibs = 'Crédito homologado com débito comprovadamente extinto.';
+        } else if (totCredAPropriar > 0 || totEmAberto > 0) {
           statusCreditoCgibs = 'PENDENTE_EXTINCAO';
-          motivoCreditoCgibs = 'Aguardando extinção do débito pelo fornecedor no CGIBS (Art. 27 LC 215/2025)';
+          statusLiquidacaoApuracao = 'PENDENTE_EXTINCAO';
+          valorCreditoLiquidadoReal = 0;
+          valorCreditoRetido = totCredAPropriar > 0 ? totCredAPropriar : creditoTotalDoc;
+          taxaLiquidacaoItem = 0;
+          impactoDecisorioRad = 'AGUARDAR_QUITACAO';
+          motivoDecisaoRad = 'Imposto NÃO liquidado pelo Fornecedor nem pelo Split Payment. Crédito bloqueado para apropriação. O Adquirente pode emitir e recolher via RAD (Recolhimento pelo Adquirente) para liquidar o débito e liberar o crédito, ou aguardar a quitação pelo fornecedor.';
+          motivoCreditoCgibs = 'Aguardando extinção do débito pelo fornecedor ou emissão de RAD pelo adquirente (Art. 27 LC 215/2025)';
         }
       }
 
@@ -543,79 +573,119 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           regraEncontrada = regrasMapLc116.get(candidateCode.trim());
         } else if (r.cClassTrib && regrasMapCClass.has(String(r.cClassTrib).trim())) {
           regraEncontrada = regrasMapCClass.get(String(r.cClassTrib).trim());
-        } else if (regrasRetencao.length > 0) {
-          regraEncontrada = regrasMapLc116.get('1701') || regrasMapLc116.get('17.01') || regrasRetencao[0];
         }
+        // SEM FALLBACK: Não assumir regra genérica ou 17.01 arbitrariamente!
       }
 
-      const expectedIrrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.irrf) : 1.5;
-      const expectedCsrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.csrf) : 4.65;
-      const expectedInssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.inss) : 11.0;
-      const expectedIssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.iss) : 5.0;
+      const expectedIrrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.irrf) : null;
+      const expectedCsrfAliq = regraEncontrada ? parseAliqStr(regraEncontrada.csrf) : null;
+      const expectedInssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.inss) : null;
+      const expectedIssAliq = regraEncontrada ? parseAliqStr(regraEncontrada.iss) : null;
 
       const valorIrrf = Number(r.docValorIrrf) || 0;
       const valorInss = Number(r.docValorInss) || 0;
       const valorIssRetido = Number(r.docValorIss) || 0;
-      const valorCsllRetido = Number(r.docValorCsll) || (isNfse && docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.01).toFixed(2)) : 0);
-      const valorPisRetido = isNfse ? (Number(r.docValorPis) || (docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.0065).toFixed(2)) : 0)) : 0;
-      const valorCofinsRetido = isNfse ? (Number(r.docValorCofins) || (docTotal > 0 && expectedCsrfAliq > 0 ? Number((docTotal * 0.03).toFixed(2)) : 0)) : 0;
+      // SEM FALLBACK: Não deduzir percentuais inventados se ausentes do XML
+      const valorCsllRetido = Number(r.docValorCsll) || 0;
+      const valorPisRetido = isNfse ? (Number(r.docValorPis) || 0) : 0;
+      const valorCofinsRetido = isNfse ? (Number(r.docValorCofins) || 0) : 0;
 
       const totalRetencoes = valorIrrf + valorInss + valorIssRetido + valorCsllRetido + valorPisRetido + valorCofinsRetido;
       const valorLiquidoServico = docTotal > 0 ? Math.max(0, docTotal - totalRetencoes) : docTotal;
 
-      const aliquotaIrrf = docTotal > 0 && valorIrrf > 0 ? Number(((valorIrrf / docTotal) * 100).toFixed(2)) : (isNfse ? expectedIrrfAliq : 0);
-      const aliquotaInss = docTotal > 0 && valorInss > 0 ? Number(((valorInss / docTotal) * 100).toFixed(2)) : (isNfse ? expectedInssAliq : 0);
-      const aliquotaCsllRetido = 1.0;
-      const aliquotaPisRetido = 0.65;
-      const aliquotaCofinsRetido = 3.0;
-      const aliquotaIssRetido = docTotal > 0 && valorIssRetido > 0 ? Number(((valorIssRetido / docTotal) * 100).toFixed(2)) : expectedIssAliq;
+      const aliquotaIrrf = docTotal > 0 && valorIrrf > 0 ? Number(((valorIrrf / docTotal) * 100).toFixed(2)) : (expectedIrrfAliq ?? 0);
+      const aliquotaInss = docTotal > 0 && valorInss > 0 ? Number(((valorInss / docTotal) * 100).toFixed(2)) : (expectedInssAliq ?? 0);
+      const aliquotaCsllRetido = docTotal > 0 && valorCsllRetido > 0 ? Number(((valorCsllRetido / docTotal) * 100).toFixed(2)) : 0;
+      const aliquotaPisRetido = docTotal > 0 && valorPisRetido > 0 ? Number(((valorPisRetido / docTotal) * 100).toFixed(2)) : 0;
+      const aliquotaCofinsRetido = docTotal > 0 && valorCofinsRetido > 0 ? Number(((valorCofinsRetido / docTotal) * 100).toFixed(2)) : 0;
+      const aliquotaIssRetido = docTotal > 0 && valorIssRetido > 0 ? Number(((valorIssRetido / docTotal) * 100).toFixed(2)) : (expectedIssAliq ?? 0);
 
       // Diagnóstico contra a Matriz de Retenções Parametrizada (LC 116 / Lei 10.833 / RIR 2018)
-      let diagnosticoRetencao: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' = 'CONFORME';
+      let diagnosticoRetencao: 'CONFORME' | 'DIVERGENCIA_ALIQUOTA' | 'FALTA_RETENCAO' | 'RETENCAO_INDEVIDA' | 'DISPENSADO_LIMITE' | 'SIMPLES_NACIONAL' | 'SEM_REGRA_PARAMETRIZADA' = 'CONFORME';
       let motivoDiagnosticoRetencao = 'Retenções em conformidade legal';
 
       if (isNfse) {
-        const crfTotal = valorPisRetido + valorCofinsRetido + valorCsllRetido;
-        const crfAliq = docTotal > 0 ? (crfTotal / docTotal) * 100 : 0;
-        const itemCodeDesc = regraEncontrada ? `Item ${regraEncontrada.item_lc116 || ''} (${regraEncontrada.descricao_item || ''})` : 'Serviço';
+        const candidateDisplay = r.ncm || (r.cClassTrib ? `cClass ${r.cClassTrib}` : 'não informado');
+        
+        if (!regraEncontrada) {
+          // SEM FALLBACK: Notificar categoricamente que o serviço não está parametrizado
+          diagnosticoRetencao = 'SEM_REGRA_PARAMETRIZADA';
+          motivoDiagnosticoRetencao = `Código de serviço (${candidateDisplay}) sem regra cadastrada em Parâmetros & Tabelas Fiscais > Retenções de Serviços. Cadastre as alíquotas para auditar este serviço.`;
+        } else {
+          const itemCodeDesc = `Item ${regraEncontrada.item_lc116 || ''} (${regraEncontrada.descricao_item || ''})`;
+          const crfTotal = valorPisRetido + valorCofinsRetido + valorCsllRetido;
+          const crfAliq = docTotal > 0 ? (crfTotal / docTotal) * 100 : 0;
 
-        if (docTotal <= 215.00 && totalRetencoes === 0) {
-          diagnosticoRetencao = 'DISPENSADO_LIMITE';
-          motivoDiagnosticoRetencao = `Dispensa de retenção CRF (imposto <= R$ 10,00 - Art. 31 da Lei 10.833/03) para ${itemCodeDesc}`;
-        } else if (totalRetencoes > 0) {
-          const divergencias: string[] = [];
+          if (docTotal <= 215.00 && totalRetencoes === 0) {
+            diagnosticoRetencao = 'DISPENSADO_LIMITE';
+            motivoDiagnosticoRetencao = `Dispensa de retenção CRF (imposto <= R$ 10,00 - Art. 31 da Lei 10.833/03) para ${itemCodeDesc}`;
+          } else if (totalRetencoes > 0) {
+            const divergencias: string[] = [];
 
-          if (valorIrrf > 0 && expectedIrrfAliq > 0 && Math.abs(aliquotaIrrf - expectedIrrfAliq) > 0.1) {
-            divergencias.push(`IRRF: aplicado ${aliquotaIrrf}% vs previsto ${expectedIrrfAliq}%`);
-          } else if (valorIrrf > 0 && expectedIrrfAliq === 0) {
-            divergencias.push(`IRRF retido indevidamente (regra prevê 0% ou não incidência)`);
+            if (valorIrrf > 0 && expectedIrrfAliq !== null && expectedIrrfAliq > 0 && Math.abs(aliquotaIrrf - expectedIrrfAliq) > 0.1) {
+              divergencias.push(`IRRF: aplicado ${aliquotaIrrf}% vs previsto ${expectedIrrfAliq}%`);
+            } else if (valorIrrf > 0 && expectedIrrfAliq === 0) {
+              divergencias.push(`IRRF retido indevidamente (regra prevê 0% ou não incidência)`);
+            }
+
+            if (crfTotal > 0 && expectedCsrfAliq !== null && expectedCsrfAliq > 0 && Math.abs(crfAliq - expectedCsrfAliq) > 0.25) {
+              divergencias.push(`CRF/PCC: aplicado ${crfAliq.toFixed(2)}% vs previsto ${expectedCsrfAliq}%`);
+            } else if (crfTotal > 0 && expectedCsrfAliq === 0) {
+              divergencias.push(`CRF/PCC retido indevidamente (regra prevê 0%)`);
+            }
+
+            if (valorInss > 0 && expectedInssAliq !== null && expectedInssAliq > 0 && Math.abs(aliquotaInss - expectedInssAliq) > 0.5) {
+              divergencias.push(`INSS: aplicado ${aliquotaInss}% vs previsto ${expectedInssAliq}%`);
+            }
+
+            if (divergencias.length > 0) {
+              diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
+              const baseLegal = regraEncontrada?.fundamentos_legais || regraEncontrada?.dispositivo_legal_lc214 || 'Lei 10.833/03 e RIR/2018';
+              motivoDiagnosticoRetencao = `Divergência de alíquota para ${itemCodeDesc}: ${divergencias.join('; ')} [Base: ${baseLegal}]`;
+            } else {
+              diagnosticoRetencao = 'CONFORME';
+              motivoDiagnosticoRetencao = `Retenções validadas conforme regra cadastrada do ${itemCodeDesc} (IRRF ${expectedIrrfAliq}%, CRF ${expectedCsrfAliq}%, INSS ${expectedInssAliq}%)`;
+            }
+          } else if (docTotal > 5000 && ((expectedIrrfAliq !== null && expectedIrrfAliq > 0) || (expectedCsrfAliq !== null && expectedCsrfAliq > 0))) {
+            diagnosticoRetencao = 'FALTA_RETENCAO';
+            motivoDiagnosticoRetencao = `Serviço (${itemCodeDesc}) acima de R$ 5.000 sem retenção destacada na fonte (previsto IRRF ${expectedIrrfAliq}% / CRF ${expectedCsrfAliq}%). Verificar se optante do Simples Nacional`;
           }
-
-          if (crfTotal > 0 && expectedCsrfAliq > 0 && Math.abs(crfAliq - expectedCsrfAliq) > 0.25) {
-            divergencias.push(`CRF/PCC: aplicado ${crfAliq.toFixed(2)}% vs previsto ${expectedCsrfAliq}%`);
-          } else if (crfTotal > 0 && expectedCsrfAliq === 0) {
-            divergencias.push(`CRF/PCC retido indevidamente (regra prevê 0%)`);
-          }
-
-          if (valorInss > 0 && expectedInssAliq > 0 && Math.abs(aliquotaInss - expectedInssAliq) > 0.5) {
-            divergencias.push(`INSS: aplicado ${aliquotaInss}% vs previsto ${expectedInssAliq}%`);
-          }
-
-          if (divergencias.length > 0) {
-            diagnosticoRetencao = 'DIVERGENCIA_ALIQUOTA';
-            const baseLegal = regraEncontrada?.fundamentos_legais || regraEncontrada?.dispositivo_legal_lc214 || 'Lei 10.833/03 e RIR/2018';
-            motivoDiagnosticoRetencao = `Divergência de alíquota para ${itemCodeDesc}: ${divergencias.join('; ')} [Base: ${baseLegal}]`;
-          } else {
-            diagnosticoRetencao = 'CONFORME';
-            motivoDiagnosticoRetencao = `Retenções validadas conforme regra cadastrada do ${itemCodeDesc} (IRRF ${expectedIrrfAliq}%, CRF ${expectedCsrfAliq}%, INSS ${expectedInssAliq}%)`;
-          }
-        } else if (docTotal > 5000 && (expectedIrrfAliq > 0 || expectedCsrfAliq > 0)) {
-          diagnosticoRetencao = 'FALTA_RETENCAO';
-          motivoDiagnosticoRetencao = `Serviço (${itemCodeDesc}) acima de R$ 5.000 sem retenção destacada na fonte (previsto IRRF ${expectedIrrfAliq}% / CRF ${expectedCsrfAliq}%). Verificar se optante do Simples Nacional`;
         }
       }
 
       const ehPendenteCgibs = statusCreditoCgibs === 'PENDENTE_EXTINCAO';
+
+      // ==========================================
+      // TRIBUTOS DO REGIME ATUAL (ICMS, IPI, PIS, COFINS)
+      // ==========================================
+      const valorIcms = r.valorIcms !== null && r.valorIcms !== undefined ? Number(r.valorIcms) : (Number(r.docValorIcms) || 0);
+      const baseIcms = r.baseIcms !== null && r.baseIcms !== undefined ? Number(r.baseIcms) : (valorIcms > 0 ? docTotal : 0);
+      const aliquotaIcms = r.aliquotaIcms !== null && r.aliquotaIcms !== undefined ? Number(r.aliquotaIcms) : (baseIcms > 0 && valorIcms > 0 ? Number(((valorIcms / baseIcms) * 100).toFixed(2)) : 0);
+
+      const valorIpi = r.valorIpi !== null && r.valorIpi !== undefined ? Number(r.valorIpi) : (Number(r.docValorIpi) || 0);
+      const baseIpi = r.baseIpi !== null && r.baseIpi !== undefined ? Number(r.baseIpi) : (valorIpi > 0 ? docTotal : 0);
+      const aliquotaIpi = r.aliquotaIpi !== null && r.aliquotaIpi !== undefined ? Number(r.aliquotaIpi) : (baseIpi > 0 && valorIpi > 0 ? Number(((valorIpi / baseIpi) * 100).toFixed(2)) : 0);
+
+      const valorPis = isNfse ? valorPisRetido : (r.valorPis !== null && r.valorPis !== undefined ? Number(r.valorPis) : (Number(r.docValorPis) || 0));
+      const basePis = r.basePis !== null && r.basePis !== undefined ? Number(r.basePis) : (valorPis > 0 ? docTotal : 0);
+      const aliquotaPis = r.aliquotaPis !== null && r.aliquotaPis !== undefined ? Number(r.aliquotaPis) : (basePis > 0 && valorPis > 0 ? Number(((valorPis / basePis) * 100).toFixed(2)) : 0);
+
+      const valorCofins = isNfse ? valorCofinsRetido : (r.valorCofins !== null && r.valorCofins !== undefined ? Number(r.valorCofins) : (Number(r.docValorCofins) || 0));
+      const baseCofins = r.baseCofins !== null && r.baseCofins !== undefined ? Number(r.baseCofins) : (valorCofins > 0 ? docTotal : 0);
+      const aliquotaCofins = r.aliquotaCofins !== null && r.aliquotaCofins !== undefined ? Number(r.aliquotaCofins) : (baseCofins > 0 && valorCofins > 0 ? Number(((valorCofins / baseCofins) * 100).toFixed(2)) : 0);
+
+      const totalTributosAtuais = Number((valorIcms + valorIpi + valorPis + valorCofins).toFixed(2));
+      const cargaTributariaAtual = docTotal > 0 ? Number(((totalTributosAtuais / docTotal) * 100).toFixed(2)) : 0;
+
+      // ==========================================
+      // TRIBUTOS DA REFORMA (IBS, CBS, IS)
+      // ==========================================
+      const valorIs = Number(r.valorIs || r.docValorIs || 0);
+      const aliquotaIs = docTotal > 0 && valorIs > 0 ? Number(((valorIs / docTotal) * 100).toFixed(2)) : 0;
+      const totalTributosReforma = Number((itemValIbs + itemValCbs + valorIs).toFixed(2));
+      const cargaTributariaReforma = docTotal > 0 ? Number(((totalTributosReforma / docTotal) * 100).toFixed(2)) : 0;
+      const deltaCargaTributaria = Number((totalTributosReforma - totalTributosAtuais).toFixed(2));
+      const deltaCargaPercentual = Number((cargaTributariaReforma - cargaTributariaAtual).toFixed(2));
 
       return {
         id: r.itemId || `doc-item-${r.chaveAcesso}`,
@@ -656,18 +726,39 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         freteSeguroRateado: r.freteSeguroRateado || 0,
         valorLiquidoItem: r.valorLiquidoItem || docTotal,
         
-        valorIcms: r.valorIcms !== null && r.valorIcms !== undefined ? Number(r.valorIcms) : (Number(r.docValorIcms) || 0),
-        valorIpi: r.valorIpi !== null && r.valorIpi !== undefined ? Number(r.valorIpi) : (Number(r.docValorIpi) || 0),
-        valorPis: r.valorPis !== null && r.valorPis !== undefined ? Number(r.valorPis) : (Number(r.docValorPis) || 0),
-        valorCofins: r.valorCofins !== null && r.valorCofins !== undefined ? Number(r.valorCofins) : (Number(r.docValorCofins) || 0),
-        
+        // Regime Atual
+        baseIcms,
+        aliquotaIcms,
+        valorIcms,
+        cstIcms: r.cstCsosn || '000',
+        baseIpi,
+        aliquotaIpi,
+        valorIpi,
+        cstIpi: '50',
+        basePis,
+        aliquotaPis,
+        valorPis,
+        cstPis: '01',
+        baseCofins,
+        aliquotaCofins,
+        valorCofins,
+        cstCofins: '01',
+        totalTributosAtuais,
+        cargaTributariaAtual,
+
+        // Regime Reforma
         baseIbs: r.baseIbs !== null && r.baseIbs !== undefined ? Number(r.baseIbs) : 0,
         aliquotaIbs: r.aliquotaIbs !== null && r.aliquotaIbs !== undefined ? Number(r.aliquotaIbs) : 0,
         valorIbs: itemValIbs,
         baseCbs: r.baseCbs !== null && r.baseCbs !== undefined ? Number(r.baseCbs) : 0,
         aliquotaCbs: r.aliquotaCbs !== null && r.aliquotaCbs !== undefined ? Number(r.aliquotaCbs) : 0,
         valorCbs: itemValCbs,
-        valorIs: r.valorIs || r.docValorIs || 0,
+        valorIs,
+        aliquotaIs,
+        totalTributosReforma,
+        cargaTributariaReforma,
+        deltaCargaTributaria,
+        deltaCargaPercentual,
         
         creditoEsperadoIbs,
         creditoEsperadoCbs,
@@ -691,7 +782,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         usuarioCaptura: 'Processo Automático',
         rotinaCaptura: 'Robô SEFAZ / Upload',
         
-        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO' || ehPendenteCgibs,
+        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO' || diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA' || ehPendenteCgibs,
         
         temEventoAfetaCredito: Boolean(r.alertaFraude),
         creditoOriginalTotal: creditoEsperadoIbs + creditoEsperadoCbs,
@@ -733,7 +824,15 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         operacaoId: apOp?.operacao_id,
         statusCreditoCgibs,
         motivoCreditoCgibs,
-        hashCgibs: apOp?.hash_acumulado
+        hashCgibs: apOp?.hash_acumulado,
+
+        // Apuração Assistida & Opção RAD (Sem Fallback)
+        statusLiquidacaoApuracao,
+        valorCreditoLiquidadoReal,
+        valorCreditoRetido,
+        taxaLiquidacaoItem,
+        impactoDecisorioRad,
+        motivoDecisaoRad
       };
     });
 
@@ -763,6 +862,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       const tdUpper = effectiveTipoDoc.toUpperCase();
       finalMapped = finalMapped.filter(item => {
         const itemTipo = (item.tipoDoc || '').toUpperCase();
+        if (tdUpper === 'MERCADORIAS' || tdUpper === 'CONSOLIDADO_MERCADORIAS') return !itemTipo.includes('NFS');
         if (tdUpper.includes('NFS')) return itemTipo.includes('NFS');
         if (tdUpper.includes('CTE') || tdUpper.includes('CT-E')) return itemTipo.includes('CT');
         if (tdUpper.includes('NFE') || tdUpper.includes('NF-E')) return itemTipo.includes('NF-E') || itemTipo === 'NFE' || itemTipo === '55';
@@ -836,16 +936,86 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       );
     }
 
+    // Busca os totais consolidados da base para fornecer os quantitativos reais e totais aos relatórios
+    let totaisBanco = null;
+    let totaisFiltrados = null;
+    try {
+      const kpisRes = await getDecoupledKpiAggregates({
+        empresaId: targetEmpresaId,
+        tenantCnpj: tenantCnpjClean,
+        dataInicio: cleanDataInicio,
+        dataFim: cleanDataFim,
+        tipoDoc: effectiveTipoDoc || undefined,
+        isSuperadmin
+      });
+      totaisBanco = kpisRes.totalGeral;
+      totaisFiltrados = kpisRes.totalFiltrado;
+    } catch (kpiErr: any) {
+      console.warn('⚠️ Falha ao obter totais agregados para /api/relatorios/xml:', kpiErr.message);
+    }
+
     res.json({ 
       success: true, 
       data: finalMapped, 
       total: (totalCount && totalCount > finalMapped.length && !cleanDataInicio && !cleanDataFim && !cfop && !cClassTrib && !uf && !situacaoDoc && !searchTerm) ? totalCount : finalMapped.length,
       limit: requestedLimit,
-      offset: requestedOffset
+      offset: requestedOffset,
+      totaisBanco,
+      totaisFiltrados
     });
   } catch (err: any) {
     console.error('❌ Erro no endpoint /api/relatorios/xml:', err);
     res.status(500).json({ success: false, error: 'Erro interno ao gerar relatório: ' + err.message });
+  }
+});
+
+// Endpoint para sincronizar e mensurar crédito real liquidado com o Ledger da Apuração Assistida
+router.get('/sincronizar-apuracao', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const activeEmpresaId = req.user!.empresaAtivaId;
+    const isSuperadmin = req.user!.perfil === 'admin_master';
+
+    let queryOp = `SELECT COUNT(*) as count FROM apuracao_operacoes op WHERE 1=1`;
+    const paramsOp: any[] = [];
+    if (!isSuperadmin && activeEmpresaId) {
+      queryOp += ` AND (op.empresa_id = ? OR op.empresa_id IS NULL)`;
+      paramsOp.push(activeEmpresaId);
+    }
+    const opCount = (db.prepare(queryOp).get(...paramsOp) as any)?.count || 0;
+
+    let queryExtrato = `
+      SELECT 
+        COUNT(cc.id) as count,
+        COALESCE(SUM(cc.debito_extinto), 0) as tot_debito_extinto,
+        COALESCE(SUM(cc.credito_nao_utilizado), 0) as tot_credito_nao_utilizado,
+        COALESCE(SUM(cc.credito_utilizado), 0) as tot_credito_utilizado,
+        COALESCE(SUM(cc.credito_a_propriar), 0) as tot_credito_a_propriar
+      FROM apuracao_extrato_cc cc
+      JOIN apuracao_operacoes op ON op.id = cc.operacao_id
+      WHERE 1=1
+    `;
+    const paramsExtrato: any[] = [];
+    if (!isSuperadmin && activeEmpresaId) {
+      queryExtrato += ` AND (op.empresa_id = ? OR op.empresa_id IS NULL)`;
+      paramsExtrato.push(activeEmpresaId);
+    }
+    const extratoStats = db.prepare(queryExtrato).get(...paramsExtrato) as any;
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      empresaId: activeEmpresaId,
+      totalOperacoes: opCount,
+      totalLancamentos: extratoStats?.count || 0,
+      totDebitoExtinto: extratoStats?.tot_debito_extinto || 0,
+      totCreditoRealLiquidado: (extratoStats?.tot_credito_nao_utilizado || 0) + (extratoStats?.tot_credito_utilizado || 0),
+      totCreditoAPropriar: extratoStats?.tot_credito_a_propriar || 0,
+      mensagem: 'Ledger da Apuração Assistida sincronizado em tempo real com a base individual do cliente.'
+    });
+  } catch (err: any) {
+    console.error('❌ Erro no endpoint /api/relatorios/sincronizar-apuracao:', err);
+    res.status(500).json({ success: false, error: 'Erro ao sincronizar apuração assistida: ' + err.message });
   }
 });
 

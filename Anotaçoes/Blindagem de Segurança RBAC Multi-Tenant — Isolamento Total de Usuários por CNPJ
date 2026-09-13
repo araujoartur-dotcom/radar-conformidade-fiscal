@@ -2,7 +2,7 @@
 
 ## Contexto do Problema
 
-Um Analista Fiscal da Supergasbras (Artur Silveira) consegue **ver, editar e excluir** usuários de outras empresas (Sérgio Araujo do CNPJ 41.740.302/0001-83) e até o Administrador Master. Isso viola os princípios fundamentais de **Isolamento Multi-Tenant** e **Princípio do Menor Privilégio (PoLP)**.
+Um Analista Fiscal da Empresa Matriz (Usuário Analista 1) consegue **ver, editar e excluir** usuários de outras empresas (Usuário Analista 2 do CNPJ 02.002.002/0002-02) e até o Administrador Master. Isso viola os princípios fundamentais de **Isolamento Multi-Tenant** e **Princípio do Menor Privilégio (PoLP)**.
 
 ### Diagnóstico Técnico da Falha
 
@@ -140,7 +140,7 @@ npm run build
 ```
 
 ### Verificação Manual (cenários críticos)
-1. Logar como **Artur Silveira (Analista Fiscal / Supergasbras)** → **não deve ver** a aba de gestão de usuários, nem o Sérgio Araujo, nem o Admin.
+1. Logar como **Analista Fiscal (Empresa Matriz)** → **não deve ver** a aba de gestão de usuários, nem usuários de outros CNPJs, nem o Admin.
 2. Logar como **Admin Master** → deve ver todos os usuários de todas as empresas.
 3. Criar um **Suporte TI para Supergasbras** → deve ver apenas usuários vinculados à Supergasbras e nunca o Admin Master.
 4. Suporte TI **não pode** se auto-promover a Admin Master.

@@ -1,0 +1,158 @@
+# Plano de Ação Categórico: Resolução da Categoria B (Alíquotas Preenchidas Manualmente e Tabelas do Banco)
+
+## Descrição do Objetivo
+
+Resolver de forma categórica, transparente e organizada todas as alíquotas e percentuais da **Categoria B (Alíquotas preenchidas manualmente via inputs da UI e tabelas do banco que afetam esquemas de cálculos)**.
+
+Todas as matrizes serão disponibilizadas e geridas no módulo **"Parâmetros & Tabelas Fiscais"** (`TabelasFiscaisPanel.tsx`), com persistência em banco de dados e segregação por abas especializadas. Em estrita observância à diretriz **"Sem Fallback"**, qualquer rotina de cálculo cuja alíquota não esteja definida no banco não utilizará valores fictícios ou silenciosos, gerando resultado vazio/pendente e avisos detalhados do que precisa ser configurado.
+
+> [!IMPORTANT]
+> **DIRETRIZES FUNDAMENTAIS:**
+> 1. **Zero Deploy:** Nenhuma ação de deploy ou push para repositório remoto será executada.
+> 2. **Sem Fallback Arbitrário:** Fórmulas sem alíquota definida no banco geram estado não preenchido (`—` ou erro) e alertas claros indicando o que ajustar no módulo de Parâmetros.
+> 3. **Gestão 100% Centralizada em Parâmetros & Tabelas Fiscais:** Nenhuma taxa manual isolada ou desconectada das matrizes oficiais.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **1. Alíquotas Ad Valorem Anuais da Reforma (2026 a 2033+):**
+> Atualmente, a tabela `aliquotas_tabelas` possui apenas 1 registro (ano de 2033 com 27,91%). Como consequência, cálculos que consultam anos anteriores (como 2026 a 2032) dependiam de fallbacks silenciosos no código (0,90% e 0,10%).
+> * **Ação Proposta:** Vamos semear no banco todas as alíquotas oficiais anuais da LC 214/2025 (2026: 1,00%; 2027-2028: 8,80% ou 9,21%; 2029: 10,67%; 2030: 12,54%; 2031: 14,41%; 2032: 16,28%; 2033+: 27,91%). Se o usuário remover ou desativar qualquer ano na aba "Alíquota Ad Valorem (%)", o motor fiscal **NÃO** assumirá fallback e emitirá status `SEM_ALIQUOTA_AD_VALOREM`.
+>
+> **2. Catálogo Oficial de NCMs com Redução (`ncm_regras_anexos`):**
+> A tabela `ncm_regras_anexos` está com 0 registros no banco local. Vamos semear os NCMs fundamentais da LC 214/2025 (Cesta Básica 100% de redução, Produtos de Saúde 60%, Educação 30%, GLP Monofásico) para que a aba "Anexos da Lei & NCMs" exiba os percentuais configuráveis pelo usuário e a `calculadoraRfbService.ts` calcule os redutores fielmente.
+>
+> **3. Regras Oficiais de Retenção de Serviços (`regras_retencao_servicos`):**
+> A tabela de retenções está atualmente vazia (0 registros). Vamos semear as regras oficiais dos itens de maior incidência da LC 116/03 (17.01 Consultoria/TI, 07.02 Construção Civil, 11.02 Vigilância, 11.04 Limpeza, 14.01 Manutenção, 17.14 Advocacia, 04.01 Saúde) com as alíquotas de IRRF (1,5% ou 1%), CRF (4,65%), INSS (11%) e ISS (2% a 5%).
+
+---
+
+## Proposta Arquitetural & Componentes da Categoria B
+
+```mermaid
+flowchart TD
+    subgraph "Módulo Parâmetros & Tabelas Fiscais (UI Centralizada)"
+        Tab_AdValorem["Aba 1: Alíquota Ad Valorem (2026–2033+)"]
+        Tab_AdRem["Aba 2: Alíquota Ad Rem (R$/unidade)"]
+        Tab_Ncm["Aba 3: Anexos da Lei & NCMs (Reduções %)"]
+        Tab_Retencoes["Aba 4: Retenções de Serviços NFS-e"]
+        Tab_Inferencia["Aba 5: Inferência Fiscal (Alíquotas Médias)"]
+        Tab_CClassTrib["Aba 6: cClassTrib (6 Dígitos)"]
+    end
+
+    subgraph "Tabelas do Banco de Dados (SQLite)"
+        DB_AdValorem[("aliquotas_tabelas (ad_valorem)")]
+        DB_AdRem[("aliquotas_tabelas (ad_rem)")]
+        DB_Ncm[("ncm_regras_anexos")]
+        DB_Retencoes[("regras_retencao_servicos")]
+        DB_Inferencia[("parametros_inferencia")]
+        DB_CClassTrib[("cclasstrib_regras")]
+    end
+
+    subgraph "Módulos Consumidores e Esquemas de Cálculo"
+        Calc_RFB["Motor Local Reforma (calculadoraRfbService.ts)"]
+        Calc_Simulador["Simulador de Regimes & DRE (SimuladorRegimesPanel.tsx)"]
+        Calc_Transicao["Apuração Assistida & Cronograma (reformaTransicao.ts)"]
+        Calc_KPIs["Agregação Global & Inferência (kpiAggregationService.ts)"]
+        Calc_Retencoes["Auditoria de NFS-e (RelatorioRetencoesFonte.tsx)"]
+        Calc_MapaCClass["Auditoria de cClassTrib (RelatorioMapaCClassTrib.tsx)"]
+    end
+
+    Tab_AdValorem <--> DB_AdValorem
+    Tab_AdRem <--> DB_AdRem
+    Tab_Ncm <--> DB_Ncm
+    Tab_Retencoes <--> DB_Retencoes
+    Tab_Inferencia <--> DB_Inferencia
+    Tab_CClassTrib <--> DB_CClassTrib
+
+    DB_AdValorem -->|Sem Fallback: se ausente, erro SEM_ALIQUOTA| Calc_RFB
+    DB_AdValorem -->|Sincroniza IVA do ano selecionado| Calc_Simulador
+    DB_AdValorem -->|Sem Fallback: se ausente, alerta ano pendente| Calc_Transicao
+    DB_AdRem -->|Sem Fallback: se ausente, erro SEM_AD_REM| Calc_RFB
+    DB_Ncm -->|Aplica percentual de redução configurado| Calc_RFB
+    DB_Inferencia -->|Sem Fallback: se ausente, inferência zerada com aviso| Calc_KPIs
+    DB_Retencoes -->|Sem Fallback: se ausente, flag SEM_REGRA| Calc_Retencoes
+    DB_CClassTrib -->|Compara alíquota esperada com banco| Calc_MapaCClass
+```
+
+---
+
+## Detalhamento das Alterações por Item da Categoria B
+
+### Item B.1: Alíquotas Ad Valorem da Reforma (`aliquotas_tabelas`)
+* **Tabelas Fiscais:** Semear as vigências completas da transição 2026–2033 na tabela `aliquotas_tabelas` e exibi-las na aba "Alíquota Ad Valorem (%)" de [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx).
+* **Motor Local ([calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts)):**
+  * Remover os fallbacks `0.90` e `0.10`.
+  * Se não houver linha de vigência para a data do fato gerador, retornar `sucesso: false`, `status: 'SEM_ALIQUOTA_AD_VALOREM'` e mensagem explicativa.
+* **Cronograma ([reformaTransicao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reformaTransicao.ts)):**
+  * Em `buildCronogramaFromTabelas()`, se um ano de transição não estiver cadastrado em `aliquotas_tabelas`, sinalizar `aliquotaConfigurada: false` sem inventar alíquotas estáticas.
+* **Simulador ([SimuladorRegimesPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SimuladorRegimesPanel.tsx)):**
+  * Sincronizar automaticamente `aliquotaIvaGeral` com a alíquota Ad Valorem do banco correspondente ao `anoTransicao` selecionado.
+  * Se o ano não tiver alíquota cadastrada no banco, exibir alerta orientativo e bloquear cálculo com alíquota nula.
+
+---
+
+### Item B.2: Alíquotas Ad Rem por Unidade (`aliquotas_tabelas` modalidade `ad_rem`)
+* **Tabelas Fiscais:** Cadastrar alíquotas oficiais Ad Rem de referência (combustíveis e GLP) na aba "Alíquota Ad Rem (Valor R$)".
+* **Motor Local ([calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts)):**
+  * Na modalidade `ad_rem`, se não houver taxa por unidade cadastrada em `aliquotas_tabelas`, não inventar valor. Retornar `SEM_ALIQUOTA_AD_REM`.
+
+---
+
+### Item B.3: Catálogo de Reduções por NCM / cClassTrib (`ncm_regras_anexos`)
+* **Tabelas Fiscais:** Semear os NCMs com tratamento diferenciado (Cesta Básica 100%, Produtos de Saúde 60%, Educação 30%, GLP) para visualização e edição na aba "Anexos da Lei & NCMs".
+* **Motor Local ([calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts)):**
+  * Aplicar estritamente o `percentual_reducao` cadastrado na regra.
+  * Se não houver regra para o NCM, aplicar 0% de redução (tributação padrão) com fundamentação informando ausência de redução cadastrada.
+
+---
+
+### Item B.4: Alíquotas Médias de Inferência Fiscal (`parametros_inferencia`)
+* **Backend ([kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)):**
+  * Se `parametros_inferencia` estiver vazio ou inativo, os valores inferidos são estritamente `0.00` e a API retorna aviso de inferência pendente de parametrização.
+* **Frontend ([Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx) e [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx)):**
+  * Exibir indicador/badge informativo quando a inferência fiscal estiver com alíquotas zeradas ou não parametrizadas.
+
+---
+
+### Item B.5: Matriz de Retenções de Serviços NFS-e (`regras_retencao_servicos`)
+* **Tabelas Fiscais:** Semear as regras oficiais dos principais itens da LC 116/03 (17.01, 07.02, 11.02, 11.04, 14.01, 17.14, 04.01).
+* **Auditoria de Retenções ([RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx)):**
+  * Mantido e reforçado: se não houver regra para o item, marca `SEM_REGRA_PARAMETRIZADA` e instrui configuração em Parâmetros.
+
+---
+
+### Item B.6: Matriz cClassTrib (6D) (`cclasstrib_regras`)
+* **Mapeamento ([RelatorioMapaCClassTrib.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioMapaCClassTrib.tsx)):**
+  * Vincular o formulário de inclusão e edição para consumir as alíquotas da tabela `aliquotas_tabelas` do banco em vez de usar string fixa `'26.5%'`.
+  * Se o `cClassTrib` do documento não estiver catalogado na matriz, sinalizar status de divergência cadastral.
+
+---
+
+### Item B.7: Inputs Interativos no Simulador de Regimes (`SimuladorRegimesPanel.tsx`)
+* **Sincronização & Restauração:**
+  * Adicionar botão **"Restaurar Padrão dos Parâmetros Oficiais"** para restabelecer os valores de encargos e presunções do banco para a atividade selecionada.
+  * Alinhar `aliquotaIvaGeral` com a vigência de `aliquotas_tabelas` do ano selecionado.
+  * Validações de consistência: se o usuário zerar uma alíquota sem parâmetro legal, emitir aviso de consistência contábil.
+
+---
+
+## Plano de Verificação
+
+### Testes Automatizados
+* `npx tsc --noEmit`: Verificação estrita de tipagem TypeScript (zero erros).
+* Script de validação do banco de dados: confirmar presença e integridade das tabelas `aliquotas_tabelas`, `ncm_regras_anexos`, `regras_retencao_servicos` e `parametros_inferencia`.
+* Teste do motor de cálculo da Reforma sem alíquota: verificar que emite status `SEM_ALIQUOTA_AD_VALOREM` sem inventar valores.
+
+### Verificação Manual
+* Acessar as abas de "Parâmetros & Tabelas Fiscais":
+  * "Alíquota Ad Valorem (%)": verificar lista dos anos 2026 a 2033.
+  * "Anexos da Lei & NCMs": verificar lista de NCMs com suas respectivas reduções.
+  * "Retenções de Serviços (NFS-e)": verificar itens da LC 116 cadastrados.
+* No "Simulador de Regimes":
+  * Alternar entre 2026, 2027 e 2033 e verificar atualização dinâmica da alíquota do IVA da Reforma a partir do banco de dados.
+  * Testar o botão "Restaurar Padrão dos Parâmetros Oficiais".
+* No "Relatório de Retenções":
+  * Confirmar auditoria precisa de NFS-e sem valores presumidos arbitrários.

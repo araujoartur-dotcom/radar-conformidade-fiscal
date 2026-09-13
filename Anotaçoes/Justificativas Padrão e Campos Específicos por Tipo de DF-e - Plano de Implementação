@@ -1,0 +1,100 @@
+# Plano de Implementação: Justificativas Padrão e Campos Específicos por Tipo de DF-e
+
+Mapeamento exaustivo e implementação na **Central de Eventos de DF-e** das **justificativas padrão pré-definidas** (conforme legislação SEFAZ/CGIBS/ABRASF) para eventos que demandam manifestação textual, bem como segregação e formulários dinâmicos de **campos específicos (itens, quantidades, valores, datas e aceite)** para eventos que não admitem texto prévio conforme a **NT 2025.002-RTC v1.51 (NF-e/NFC-e)**, **NT 2025.001-RTC v1.14a (CT-e)** e **NT 009 v1.0 (NFS-e)**.
+
+---
+
+## 1. Varredura e Mapeamento Completo de Eventos por Tipo de DF-e
+
+### GRUPO A: Eventos que Exigem/Permitem Texto de Justificativa (com Justificativas Padrão Propostas)
+
+| DF-e | Cód. Evento | Nome do Evento | Tag XML | Min Chars | Justificativas Padrão Pré-definidas (Legislação & Prática Fiscal) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **NF-e** | `210240` | **Operação não Realizada** | `xJust` | 15 | 1. *"Mercadoria devolvida integralmente ao transportador no ato da entrega por desacordo comercial com o pedido de compra."*<br>2. *"Mercadoria avariada e danificada durante o transporte; recebimento recusado pelo destinatário."*<br>3. *"Carga não entregue no estabelecimento destinatário até a presente data, descumprindo o prazo pactuado."*<br>4. *"Divergência de preço unitário, quantidade faturada ou condição de pagamento em relação ao pedido aprovado."*<br>5. *"Operação comercial cancelada previamente de comum acordo entre emitente e destinatário antes da expedição."* |
+| **NF-e** | `210220` | **Desconhecimento da Operação** | `xJust` / auditoria interna | 15 | 1. *"Operação comercial e emissão de documento fiscal totalmente desconhecidas pelo destinatário."*<br>2. *"Uso indevido e não autorizado da Inscrição Estadual e do CNPJ da empresa por terceiros emitentes."*<br>3. *"Inexistência de qualquer relação comercial, negociação ou solicitação de fornecimento junto ao emitente."*<br>4. *"Mercadoria faturada para este CNPJ sem existência de pedido de compra ou contrato de fornecimento vigente."* |
+| **NF-e** | `110111` | **Cancelamento de NF-e** | `xJust` | 15 | 1. *"Emissão em duplicidade para a mesma operação comercial e mesmo destinatário."*<br>2. *"Desistência da compra e cancelamento formal da operação comercial a pedido do cliente."*<br>3. *"Erro cadastral ou tributário impeditivo que não pode ser sanado por Carta de Correção Eletrônica (CC-e)."*<br>4. *"Divergência insanável nas condições comerciais, itens faturados ou valores de impostos apurados."*<br>5. *"Cancelamento da venda antes da saída física da mercadoria do estabelecimento emitente."* |
+| **NFC-e** | `110111` | **Cancelamento de NFC-e** | `xJust` | 15 | 1. *"Cancelamento da venda no PDV por desistência do consumidor antes da retirada do produto."*<br>2. *"Erro na digitação de itens, quantidades ou forma de pagamento selecionada no caixa."*<br>3. *"Emissão duplicada de cupom fiscal para a mesma operação no ponto de venda."* |
+| **NF-e** | `110140` | **EPEC (Contingência Prévia)** | `xJust` | 15 | 1. *"Indisponibilidade temporária de conexão com os servidores do WebService da SEFAZ de origem."*<br>2. *"Falha técnica no link de comunicação e internet local do estabelecimento emissor."*<br>3. *"Instabilidade severa com tempo de resposta excedido nos serviços autorizadores da SEFAZ."* |
+| **NF-e** | `110001` | **Cancelamento Genérico de Evento RTC** | `xJust` | 15 | 1. *"Cancelamento de evento homologado indevidamente por retificação de dados da apuração assistida."*<br>2. *"Ajuste cadastral de crédito presumido após conciliação contábil e patrimonial da empresa."*<br>3. *"Cancelamento solicitado após conferência física de estoque e desembaraço de mercadorias."* |
+| **CT-e** | `610110` | **Prestação de Serviço em Desacordo** | `xObs` | 15 | 1. *"Valor do frete cobrado em desacordo com a tabela tarifária e proposta comercial formalizada."*<br>2. *"Tomador do serviço de transporte indicado incorretamente no Conhecimento de Transporte Eletrônico."*<br>3. *"Divergência de endereço de coleta, trajeto ou município de encerramento da prestação do frete."*<br>4. *"Cobrança indevida de taxas acessórias de estadia, pedágio ou seguro não contratadas previamente."*<br>5. *"Carga transportada em condições inadequadas com avarias físicas relatadas no destino."* |
+| **CT-e** | `110111` | **Cancelamento de CT-e** | `xJust` | 15 | 1. *"Cancelamento da prestação de serviço de transporte por desistência formal do embarcador antes do início da viagem."*<br>2. *"Erro no preenchimento de dados do tomador do serviço ou nos valores da prestação que impedem a emissão de CC-e."*<br>3. *"Emissão incorreta do modal ou tipo de serviço de transporte."* |
+| **NFS-e** | `200200` | **Rejeição / Contestação de NFS-e (Tomador)** | `xMotivo` | 15 | 1. *"Serviço não executado ou medição técnica reprovada pela fiscalização do contrato."*<br>2. *"Divergência no enquadramento de alíquotas ou valor de retenção na fonte de ISS, IBS ou CBS."*<br>3. *"Faturamento emitido sem a prévia autorização de medição, ordem de serviço ou contrato vigente."*<br>4. *"Cobrança em duplicidade referente a serviço já faturado em nota fiscal anterior."* |
+| **NFS-e** | `100100` | **Cancelamento por Substituição de NFS-e** | `xMotivo` | 15 | 1. *"Substituição de NFS-e para retificação de dados cadastrais do tomador e enquadramento tributário municipal."*<br>2. *"Emissão de nova NFS-e substituta para ajuste de competência e retenções na fonte de IBS/CBS."*<br>3. *"Substituição da nota fiscal por acordo mútuo entre as partes para alteração de itens de serviço contratados."* |
+
+---
+
+### GRUPO B: Eventos de Texto Livre (Sem texto prévio padrão)
+
+| DF-e | Cód. Evento | Nome do Evento | Motivo para NÃO ter texto padrão |
+| :--- | :--- | :--- | :--- |
+| **NF-e** | `110110` | **Carta de Correção Eletrônica (CC-e)** | Cada retificação é singular e factual (ex.: alterar número de pedido no `infAdProd`, endereço de entrega não essencial, transportadora de redespacho). O texto deve ser redigido livremente pelo usuário, exibindo regras de impedimento (não pode alterar valores, impostos, datas, emitente/destinatário conforme Art. 58-B do Convênio SINIEF s/nº de 1970). |
+| **CT-e** | `110110` | **Carta de Correção de CT-e (CC-e CT-e)** | Texto livre específico para correção de dados secundários do transporte rodoviário/multimodal. |
+| **NFS-e** | `100110` | **Carta de Correção de NFS-e (CC-e NFS-e)** | Texto livre para retificação de descritivo complementar de serviço sem afetar base de cálculo do ISS/IBS/CBS. |
+
+---
+
+### GRUPO C: Eventos com Campos Específicos Estruturados (Sem texto padrão)
+
+Conforme a **NT 2025.002-RTC (NF-e/NFC-e)**, **NT 2025.001-RTC (CT-e)** e **NT 009 (NFS-e)**:
+
+| Cód. Evento | Nome do Evento | Modelo DF-e | Campos Específicos Estruturados Exigidos pela NT |
+| :--- | :--- | :--- | :--- |
+| `112150` | **Atualização da Data de Previsão de Entrega** | NF-e (55) | • `dPrevEntrega`: Data no formato `AAAA-MM-DD` (NT pág. 94).<br>*Regra B10a-20:* Não pode ser superior a 3 meses da data de saída.<br>*Regra B10a-50:* Vedado para frete FOB (`modFrete = 1, 4 ou 9`). |
+| `211130` | **Imobilização de Item (Ativo Imobilizado)** | NF-e (55) | • `nItem`: Número do item na NF-e (1-990)<br>• `qImobilizado`: Quantidade a ser imobilizada (até 4 decimais)<br>• `uImobilizado`: Unidade de medida (1-6 caracteres)<br>• `vIBS`: Valor do IBS relativo à imobilização<br>• `vCBS`: Valor da CBS relativo à imobilização (NT pág. 81). |
+| `211140` | **Solicitação de Apropriação de Crédito de Combustível** | NF-e (55) | • `nItem`: Número do item na NF-e (1-990)<br>• `qComb`: Quantidade de consumo do combustível<br>• `uComb`: Unidade de medida<br>• `vIBS`: Valor do IBS de consumo<br>• `vCBS`: Valor da CBS de consumo (NT pág. 82). |
+| `211110` | **Solicitação de Apropriação de Crédito Presumido** | NF-e (55) | • `nItem`: Número do item<br>• `cCredPres`: Código da classificação do crédito presumido (Anexo IV)<br>• `vBCCredPres`: Base de cálculo<br>• `pCredPres` / `vCredPres`: Alíquota e valor do crédito presumido para IBS e CBS (NT pág. 78). |
+| `112130` / `211124` | **Perecimento, Perda, Roubo/Furto no Transporte (CIF / FOB)** | NF-e (55) | • `nItem`: Número do item<br>• `qPerecimento`: Quantidade perdida/avariada<br>• `uPerecimento`: Unidade de medida<br>• `vIBS`: Valor do IBS correspondente<br>• `vCBS`: Valor da CBS correspondente (NT págs. 91-92). |
+| `112140` | **Fornecimento Não Realizado com Pagamento Antecipado** | NF-e (55) | • `nItem`: Número do item<br>• `qNaoFornecida`: Quantidade não fornecida<br>• `uNaoFornecida`: Unidade de medida<br>• `vIBS`: Valor do IBS a restituir<br>• `vCBS`: Valor da CBS a restituir (NT pág. 93). |
+| `112120` | **Importação ALC/ZFM Não Convertida em Isenção** | NF-e (55) | • `nItem`: Número do item<br>• `qtde`: Quantidade não isenta<br>• `unidade`: Unidade de medida<br>• `vIBS`: Valor do IBS devido<br>• `vCBS`: Valor da CBS devida (NT pág. 90). |
+| `211128` | **Aceite de Débito por Nota de Crédito** | NF-e (55) | • `indAceitacao`: `1 = Aceite` ou `0 = Não Aceite` (NT pág. 80). |
+| `212110` / `212120` | **Manifestação sobre Transferência de Crédito (Sucessão IBS/CBS)** | NF-e (55) | • `indAceitacao`: `1 = Aceite` ou `0 = Não Aceite` (NT págs. 85-86). |
+| `112110` | **Liberação de Crédito Presumido (Pagamento Integral)** | NF-e (55) | • `indQuitacao`: `1 = Efetiva quitação do pagamento integral` (NT pág. 77). |
+
+---
+
+## 2. Modificações Propostas
+
+### A. Tipagem e Modelagem de Dados
+- **[MODIFY] [types.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/types.ts)**:
+  - Adicionar em `EventoDfeDefinition`:
+    - `tipoPreenchimento: 'justificativa' | 'texto_livre' | 'campos_estruturados' | 'aceite_booleano' | 'nenhum'`
+    - `justificativasPadrao?: string[]`
+    - `tipoCamposEstruturados?: 'data_entrega' | 'imobilizacao' | 'combustivel' | 'credito_presumido' | 'perecimento' | 'nao_fornecido' | 'importacao_alc_zfm'`
+  - Adicionar tipagens para os dados estruturados de eventos:
+    - `DadosEventoDataEntrega`, `DadosEventoItemEstruturado`, `DadosEventoCreditoPresumido`, etc.
+
+### B. Catálogo de Eventos Atualizado
+- **[MODIFY] [dfeEventsCatalog.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/dfeEventsCatalog.ts)**:
+  - Enriquecer cada um dos eventos de NF-e, NFC-e, CT-e e NFS-e com o `tipoPreenchimento`, as `justificativasPadrao` (do Grupo A) e os metadados de campos específicos para o Grupo C.
+
+### C. Interface da Central de Eventos
+- **[MODIFY] [EventosDfePanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/EventosDfePanel.tsx)**:
+  - **Para eventos do Grupo A (Justificativa Textual):**
+    - Renderizar seletor de "Justificativas Padrão (Legislação / SEFAZ)" acima do campo de texto com botão de aplicação rápida e chips interativos.
+    - Manter o `textarea` editável permitindo personalização pelo usuário com contador de caracteres mínimos.
+  - **Para eventos do Grupo B (CC-e):**
+    - Renderizar caixa de digitação livre com alertas legais dos limites da Carta de Correção (Art. 58-B SINIEF).
+  - **Para eventos do Grupo C (Campos Estruturados):**
+    - Renderizar formulário especializado e dinâmico:
+      1. Seletor de data para **Previsão de Entrega (112150)** com validação de prazo.
+      2. Tabela/campos de item para **Imobilização (211130)** (`nItem`, `qImobilizado`, `uImobilizado`, `vIBS`, `vCBS`).
+      3. Tabela/campos de item para **Crédito de Combustível (211140)** (`nItem`, `qComb`, `uComb`, `vIBS`, `vCBS`).
+      4. Campos para **Apropriação de Crédito Presumido (211110)** (`nItem`, `cCredPres`, etc.).
+      5. Seletores de **Aceite/Recusa (211128, 212110, 212120)** com rádios/switches estilizados (`Aceitar` / `Recusar`).
+  - **Aba "Gerador de Schemas XML / JSON":**
+    - Atualizar a geração de XML de exemplo para refletir as tags reais de cada evento específico (ex.: `<dPrevEntrega>`, `<gImobilizacao>`, `<gConsumoComb>`, etc.) em vez de um placeholder estático.
+
+---
+
+## 3. Plano de Verificação
+
+### Testes Automatizados & Build
+- `npx tsc --noEmit` para garantir conformidade de tipos TypeScript em todo o projeto.
+- `npm run build` para garantir que os chunks modulares do Vite e estilos CSS compilem com 100% de sucesso.
+
+### Testes Manuais na Interface
+- Alternar entre NF-e, NFC-e, CT-e e NFS-e.
+- Testar seleção de eventos do Grupo A (`210240`, `110111`, `610110`, `200200`): verificar se o combo de justificativas padrão preenche instantaneamente o campo.
+- Testar eventos do Grupo B (CC-e): verificar campo de texto livre e avisos regulatórios.
+- Testar eventos do Grupo C (`112150`, `211130`, `211140`, `211128`): verificar renderização dos inputs de data, itens, quantidades, valores de tributos e botões de aceite.
+- Verificar o gerador de XML/JSON para os novos eventos estruturados.

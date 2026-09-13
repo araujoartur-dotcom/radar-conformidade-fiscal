@@ -16,7 +16,7 @@ interface ExportacaoFiscalModalProps {
 export const ExportacaoFiscalModal: React.FC<ExportacaoFiscalModalProps> = ({
   isOpen,
   onClose,
-  totalDocsAvailable = 21482
+  totalDocsAvailable = 21345
 }) => {
   const { token, empresaAtiva } = useAuth();
   

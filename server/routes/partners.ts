@@ -94,12 +94,12 @@ let inMemoryPartners: any[] = [
     id: 'partner-ind-lucro-real-001',
     tipoPessoa: 'PJ',
     papel: 'fornecedor',
-    cpfCnpj: '02.456.789/0001-30',
-    cnpjRaiz: '02456789',
+    cpfCnpj: '01.001.001/0001-91',
+    cnpjRaiz: '01001001',
     cnpjOrdem: '0001',
-    cnpjDv: '30',
-    razaoSocial: 'METALURGICA BRASIL S/A',
-    nomeFantasia: 'METALBRAS INDUSTRIAL',
+    cnpjDv: '91',
+    razaoSocial: 'INDUSTRIA FORNECEDOR EXEMPLO S/A',
+    nomeFantasia: 'FORNECEDOR EXEMPLO INDUSTRIAL',
     naturezaJuridica: '2054', // S/A Fechada
     regimeTributario: '04', // Lucro Real
     esferaPublica: 'NA',
@@ -145,15 +145,15 @@ let inMemoryPartners: any[] = [
       limiteCredito: 500000,
       dadosBancarios: {
         bancoCodigo: '001',
-        bancoNome: 'Banco do Brasil',
+        bancoNome: 'Banco Exemplo',
         agencia: '3300-1',
         contaCorrente: '45890-2',
-        chavePix: '02456789000130',
+        chavePix: '01001001000191',
         tipoChavePix: 'CNPJ'
       },
       contatoFiscal: {
-        nome: 'Mariana Souza (Contadora)',
-        email: 'fiscal@metalbras.com.br',
+        nome: 'Contador Responsável (Exemplo)',
+        email: 'fiscal@empresa.com.br',
         telefone: '(11) 3456-7890',
         crcContador: 'SP-123456/O-0'
       }
@@ -167,12 +167,12 @@ let inMemoryPartners: any[] = [
     id: 'partner-com-simples-002',
     tipoPessoa: 'PJ',
     papel: 'cliente',
-    cpfCnpj: '14.890.123/0001-45',
-    cnpjRaiz: '14890123',
-    cnpjOrdem: '0001',
-    cnpjDv: '45',
-    razaoSocial: 'MERCADO POPULAR DE ALIMENTOS LTDA',
-    nomeFantasia: 'MERCADINHO DA VILA',
+    cpfCnpj: '02.002.002/0002-02',
+    cnpjRaiz: '02002002',
+    cnpjOrdem: '0002',
+    cnpjDv: '02',
+    razaoSocial: 'COMERCIO CLIENTE EXEMPLO LTDA',
+    nomeFantasia: 'CLIENTE EXEMPLO COMERCIAL',
     naturezaJuridica: '2062', // LTDA
     regimeTributario: '01', // Simples Nacional
     esferaPublica: 'NA',
@@ -221,12 +221,12 @@ let inMemoryPartners: any[] = [
     id: 'partner-orgao-publico-003',
     tipoPessoa: 'PJ',
     papel: 'cliente',
-    cpfCnpj: '46.395.000/0001-39',
-    cnpjRaiz: '46395000',
-    cnpjOrdem: '0001',
-    cnpjDv: '39',
-    razaoSocial: 'MUNICIPIO DE SAO PAULO',
-    nomeFantasia: 'PREFEITURA DE SAO PAULO',
+    cpfCnpj: '03.003.003/0003-03',
+    cnpjRaiz: '03003003',
+    cnpjOrdem: '0003',
+    cnpjDv: '03',
+    razaoSocial: 'ORGAO PUBLICO MUNICIPAL EXEMPLO',
+    nomeFantasia: 'PREFEITURA MUNICIPAL EXEMPLO',
     naturezaJuridica: '1031', // Órgão Público Municipal
     regimeTributario: '05', // Imune/Isento
     esferaPublica: 'MU',

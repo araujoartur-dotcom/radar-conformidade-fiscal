@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { SidebarCertificado } from './components/SidebarCertificado';
 import { ConsultaLotePanel } from './components/ConsultaLotePanel';
@@ -18,19 +18,23 @@ import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
 import { SimuladorRegimesPanel } from './components/SimuladorRegimesPanel';
-import { QueryMode, CertificadoA1, CnpjLookupItem, BatchStats, DfeXmlItem, AmbienteSefaz, UsuarioCorporativo } from './types';
-import { queryCnpjsData, formatCNPJ, onlyNumbers } from './utils/cnpj';
-import { parseExcelFile, exportToExcel } from './utils/excel';
-import { Search, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
+import { CertificadoModal } from './components/CertificadoModal';
+import { QueryMode, CertificadoA1, DfeXmlItem, AmbienteSefaz } from './types';
+import { formatCNPJ, onlyNumbers } from './utils/cnpj';
+import { Search } from 'lucide-react';
 
 import { useAuth } from './contexts/AuthContext';
 import { useApi } from './hooks/useApi';
+import { useKpis } from './contexts/KpiContext';
+import { useBatchProcessing } from './hooks/useBatchProcessing';
 import { Login } from './components/Login';
 import { hasModuleAccess } from './utils/permissions';
 
 export default function App() {
   const { user, empresaAtiva } = useAuth();
   const { get } = useApi();
+  const { kpis, totalGeral } = useKpis();
+  const currentKpis = totalGeral || kpis;
 
   // Initialize activeMode with persistent localStorage state or fallback to central_kpis
   const [activeMode, setActiveMode] = useState<QueryMode>(() => {
@@ -38,11 +42,10 @@ export default function App() {
     return saved || 'central_kpis';
   });
 
-  // Persist activeMode on navigation and reload documents
+  // Persist activeMode on navigation (sem recarregar documentos massivos desnecessariamente)
   useEffect(() => {
     if (activeMode) {
       localStorage.setItem('@RadarFiscal:activeMode', activeMode);
-      loadDocumentos();
     }
   }, [activeMode]);
 
@@ -90,50 +93,106 @@ export default function App() {
   const [dfeList, setDfeList] = useState<DfeXmlItem[]>([]);
   const [selectedDfeForEvents, setSelectedDfeForEvents] = useState<DfeXmlItem | null>(null);
 
+  // Limpa seleção e lista quando a empresa ativa mudar para garantir isolamento multi-tenant
+  useEffect(() => {
+    setDfeList([]);
+    setSelectedDfeForEvents(null);
+  }, [empresaAtiva?.id]);
+
   // Modal State for Turbo Fiscal .ZIP Export
   const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
+
+  // Modal State for Digital Certificate (e-CNPJ A1)
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   // Settings
   const [rateLimit, setRateLimit] = useState<number>(8); // 8 req/s default
 
-  // Batch Items Data State
-  const [items, setItems] = useState<CnpjLookupItem[]>([]);
-  const [selectedFileName, setSelectedFileName] = useState<string>('');
+  // Batch Processing Hook (encapsula motor de lotes, temporizador, estados e consultas instantâneas)
+  const {
+    items,
+    selectedFileName,
+    isProcessing,
+    isPaused,
+    currentProcessingCnpj,
+    elapsedSeconds,
+    selectedItem,
+    setSelectedItem,
+    quickInput,
+    setQuickInput,
+    quickUf,
+    setQuickUf,
+    isQuickLoading,
+    stats,
+    startBatchProcessing,
+    handlePause,
+    handleCancel,
+    handleClear,
+    handleFileUpload,
+    handleExecuteSingleInstant,
+    handleRefreshSingleItem,
+    handleExportToExcel,
+  } = useBatchProcessing({
+    rateLimit,
+    onNavigateToLote: () => setActiveMode('lote'),
+  });
 
-  // Execution Processing Controls
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [currentCnpjIndex, setCurrentCnpjIndex] = useState<number>(0);
-  const [currentProcessingCnpj, setCurrentProcessingCnpj] = useState<string>('');
-
-  // Stopwatch timer
-  const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
-
-  // Selected Item for Detail Modal
-  const [selectedItem, setSelectedItem] = useState<CnpjLookupItem | null>(null);
-
-  // Quick Instant Search Input for Tab 3
-  const [quickInput, setQuickInput] = useState<string>('');
-  const [quickUf, setQuickUf] = useState<string>('');
-  const [isQuickLoading, setIsQuickLoading] = useState<boolean>(false);
-
-  // Ref for timer
-  const timerRef = useRef<any>(null);
-  const processingRef = useRef<boolean>(false);
-  const pausedRef = useRef<boolean>(false);
-
-  // Sync selected tenant with active empresa in context
-  useEffect(() => {
-    if (empresaAtiva?.cnpjCompleto) {
-      setSelectedTenantCnpj(empresaAtiva.cnpjCompleto);
-    } else {
-      setSelectedTenantCnpj('');
+  // Sincronização unificada do certificado da empresa ativa
+  const syncCertificado = useCallback(async () => {
+    if (!empresaAtiva) {
+      setCertificado({
+        fileName: '',
+        cnpj: '',
+        razãoSocial: '',
+        tipo: 'e-CNPJ A1',
+        validade: '',
+        status: 'pendente',
+        valido: false
+      });
+      return;
     }
-  }, [empresaAtiva?.cnpjCompleto]);
 
-  const loadDocumentos = async () => {
+    try {
+      const res = await get<{ success: boolean; data: any[] }>('/tenants');
+      if (res.ok && res.data?.data) {
+        const tenant = res.data.data.find((t: any) =>
+          t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto
+        );
+        if (tenant && tenant.certificadoA1) {
+          const isValido = tenant.certificadoA1.status === 'valido' ||
+            (tenant.certificadoA1.validade && new Date(tenant.certificadoA1.validade) >= new Date());
+          setCertificado({
+            fileName: tenant.certificadoA1.fileName,
+            cnpj: tenant.cnpjCompleto,
+            razãoSocial: tenant.razaoSocial,
+            tipo: 'e-CNPJ A1',
+            validade: tenant.certificadoA1.validade,
+            status: isValido ? 'valido' : 'pendente',
+            valido: isValido,
+            emissor: tenant.certificadoA1.emissor,
+            impressaoDigital: tenant.certificadoA1.impressaoDigital
+          });
+          return;
+        }
+      }
+      setCertificado({
+        fileName: '',
+        cnpj: empresaAtiva.cnpjCompleto || '',
+        razãoSocial: empresaAtiva.razaoSocial || '',
+        tipo: 'e-CNPJ A1',
+        validade: '',
+        status: 'pendente',
+        valido: false
+      });
+    } catch (err) {
+      console.error('Erro ao sincronizar certificado:', err);
+    }
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, get]);
+
+  // Carregamento paginado/otimizado de documentos (limite padrão seguro: 1000)
+  const loadDocumentos = useCallback(async () => {
     if (!empresaAtiva) return;
-    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=25000');
+    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=1000');
     if (res.ok && res.data?.data) {
       const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
         const docTotal = Number(doc.valor_total) || 0;
@@ -185,235 +244,38 @@ export default function App() {
       });
       setDfeList(mappedList);
     }
-  };
+  }, [empresaAtiva, get]);
 
-  const syncEmpresaCertificado = async () => {
-    if (!empresaAtiva) return;
-    const res = await get<{ success: boolean; data: any[] }>('/tenants');
-    if (res.ok && res.data?.data) {
-      const activeTenant = res.data.data.find(
-        (t: any) => t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto
-      );
-      if (activeTenant?.certificadoA1) {
-        setCertificado({
-          fileName: activeTenant.certificadoA1.fileName,
-          cnpj: activeTenant.cnpjCompleto,
-          razãoSocial: activeTenant.razaoSocial,
-          tipo: 'e-CNPJ A1',
-          validade: activeTenant.certificadoA1.validade,
-          status: 'valido',
-          emissor: activeTenant.certificadoA1.emissor,
-          impressaoDigital: activeTenant.certificadoA1.impressaoDigital
-        });
-      } else {
-        setCertificado({
-          fileName: '',
-          cnpj: empresaAtiva.cnpjCompleto || '',
-          razãoSocial: empresaAtiva.razaoSocial || '',
-          tipo: 'e-CNPJ A1',
-          validade: '',
-          status: 'pendente'
-        });
-      }
-    }
-  };
-
+  // Efeito único de sincronização quando a empresa ativa mudar
   useEffect(() => {
-    if (empresaAtiva?.id || empresaAtiva?.cnpjCompleto) {
-      syncEmpresaCertificado();
-      loadDocumentos();
-    }
-  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto]);
-
-  // Stopwatch effect
-  useEffect(() => {
-    if (isProcessing && !isPaused) {
-      timerRef.current = setInterval(() => {
-        setElapsedSeconds(prev => prev + 1);
-      }, 1000);
+    if (empresaAtiva?.cnpjCompleto) {
+      setSelectedTenantCnpj(empresaAtiva.cnpjCompleto);
     } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [isProcessing, isPaused]);
-
-  // Keep refs synced with state
-  useEffect(() => {
-    processingRef.current = isProcessing;
-  }, [isProcessing]);
-
-  useEffect(() => {
-    pausedRef.current = isPaused;
-  }, [isPaused]);
-
-  // Main Batch Processing Engine Loop
-  const startBatchProcessing = async () => {
-    if (items.length === 0) return;
-
-    // Check if there are any non-completed items
-    const hasPending = items.some(it => it.statusConsulta === 'pendente' || it.statusConsulta === 'erro');
-    if (!hasPending) {
-      // If all items were completed, reset pending status to allow re-running
-      setItems(prev => prev.map(it => ({ ...it, statusConsulta: 'pendente' })));
+      setSelectedTenantCnpj('');
     }
 
-    setIsProcessing(true);
-    setIsPaused(false);
-    processingRef.current = true;
-    pausedRef.current = false;
-
-    let idx = 0;
-
-    while (idx < items.length && processingRef.current) {
-      if (pausedRef.current) {
-        await new Promise(res => setTimeout(res, 200));
-        continue;
-      }
-
-      // Re-read current items array length
-      const currentItem = items[idx];
-      if (!currentItem) break;
-
-      if (currentItem.statusConsulta === 'sucesso') {
-        idx++;
-        setCurrentCnpjIndex(idx);
-        continue;
-      }
-
-      setCurrentProcessingCnpj(currentItem.cnpj);
-
-      // Update item state to 'processando'
-      setItems(prev => prev.map((it, i) => i === idx ? { ...it, statusConsulta: 'processando' } : it));
-
-      // Perform lookup query
-      try {
-        const result = await queryCnpjsData(currentItem.cnpj, currentItem.uf);
-
-        // Update item with result
-        setItems(prev => prev.map((it, i) => i === idx ? { ...it, ...result, statusConsulta: 'sucesso' } : it));
-      } catch (err) {
-        setItems(prev => prev.map((it, i) => i === idx ? {
-          ...it,
-          statusConsulta: 'erro',
-          mensagemErro: 'Falha de comunicação com SEFAZ'
-        } : it));
-      }
-
-      idx++;
-      setCurrentCnpjIndex(idx);
-
-      // Respect rate limit delay (e.g. 1000ms / rateLimit)
-      const delayMs = Math.max(40, Math.floor(1000 / rateLimit));
-      await new Promise(res => setTimeout(res, delayMs));
+    if (empresaAtiva?.id || empresaAtiva?.cnpjCompleto) {
+      syncCertificado();
+      loadDocumentos();
+    } else {
+      setCertificado({
+        fileName: '',
+        cnpj: '',
+        razãoSocial: '',
+        tipo: 'e-CNPJ A1',
+        validade: '',
+        status: 'pendente',
+        valido: false
+      });
     }
-
-    setIsProcessing(false);
-    processingRef.current = false;
-    setCurrentProcessingCnpj('');
-  };
-
-  const handlePause = () => {
-    setIsPaused(prev => {
-      const next = !prev;
-      pausedRef.current = next;
-      return next;
-    });
-  };
-
-  const handleCancel = () => {
-    setIsProcessing(false);
-    setIsPaused(false);
-    processingRef.current = false;
-    pausedRef.current = false;
-    setCurrentProcessingCnpj('');
-  };
-
-  const handleClear = () => {
-    handleCancel();
-    setItems([]);
-    setSelectedFileName('');
-    setCurrentCnpjIndex(0);
-    setElapsedSeconds(0);
-  };
-
-  const handleFileUpload = async (file: File) => {
-    try {
-      setSelectedFileName(file.name);
-      const parsed = await parseExcelFile(file);
-
-      const newItems: CnpjLookupItem[] = parsed.map((p, idx) => ({
-        id: `file-${idx + 1}-${Date.now()}`,
-        cnpj: p.cnpj,
-        uf: p.uf,
-        statusConsulta: 'pendente'
-      }));
-
-      setItems(newItems);
-      setCurrentCnpjIndex(0);
-      setElapsedSeconds(0);
-    } catch (err) {
-      alert('Erro ao carregar o arquivo Excel/CSV. Verifique o formato.');
-    }
-  };
-
-  const handleAddItemsFromAvulsa = (newRows: Array<{ cnpj: string; uf: string }>) => {
-    const formattedNewItems: CnpjLookupItem[] = newRows.map((r, idx) => ({
-      id: `avulsa-${idx + 1}-${Date.now()}`,
-      cnpj: r.cnpj,
-      uf: r.uf,
-      statusConsulta: 'pendente'
-    }));
-
-    setItems(prev => [...prev, ...formattedNewItems]);
-    setActiveMode('lote');
-  };
-
-  const handleExecuteSingleInstant = async (cnpj: string, uf: string) => {
-    const clean = onlyNumbers(cnpj);
-    if (clean.length < 14) return;
-
-    setIsQuickLoading(true);
-    const formatted = formatCNPJ(clean);
-    const result = await queryCnpjsData(formatted, uf);
-
-    const fullItem: CnpjLookupItem = {
-      id: `instant-${Date.now()}`,
-      cnpj: formatted,
-      uf,
-      ...result,
-      statusConsulta: 'sucesso'
-    } as CnpjLookupItem;
-
-    // Add to items list if not present
-    setItems(prev => [fullItem, ...prev]);
-    setSelectedItem(fullItem);
-    setIsQuickLoading(false);
-  };
-
-  const handleRefreshSingleItem = async (id: string) => {
-    const target = items.find(it => it.id === id);
-    if (!target) return;
-
-    setItems(prev => prev.map(it => it.id === id ? { ...it, statusConsulta: 'processando' } : it));
-    const result = await queryCnpjsData(target.cnpj, target.uf);
-    setItems(prev => prev.map(it => it.id === id ? { ...it, ...result, statusConsulta: 'sucesso' } : it));
-  };
-
-  // Compute stats
-  const stats: BatchStats = {
-    total: items.length,
-    sucesso: items.filter(i => i.statusConsulta === 'sucesso').length,
-    erro: items.filter(i => i.statusConsulta === 'erro').length,
-    pendente: items.filter(i => i.statusConsulta === 'pendente').length,
-    processando: items.filter(i => i.statusConsulta === 'processando').length
-  };
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, syncCertificado, loadDocumentos]);
 
   if (!user) {
     return <Login />;
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#0a0f18] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen h-dvh w-screen overflow-hidden bg-[#0a0f18] text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500/30 selection:text-cyan-200">
       
       {/* Top Header (Fixed at top) */}
       <Header
@@ -424,6 +286,7 @@ export default function App() {
         onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
+        onOpenCertModal={() => setIsCertModalOpen(true)}
       />
 
       {/* Main Body Workspace Container (fills remaining viewport height) */}
@@ -452,7 +315,7 @@ export default function App() {
               onPause={handlePause}
               onCancel={handleCancel}
               onClear={handleClear}
-              onExport={() => exportToExcel(items)}
+              onExport={handleExportToExcel}
             />
           </div>
 
@@ -474,7 +337,7 @@ export default function App() {
                   onPause={handlePause}
                   onCancel={handleCancel}
                   onClear={handleClear}
-                  onExport={() => exportToExcel(items)}
+                  onExport={handleExportToExcel}
                 />
 
                 {/* Barra de Progresso, Tempo e ETA exclusiva de Consulta em Lote */}
@@ -595,7 +458,7 @@ export default function App() {
                   <div className="flex-1 relative w-full">
                     <input
                       type="text"
-                      placeholder="Digite o CNPJ (ex: 00.000.000/0001-91)"
+                      placeholder="Digite o CNPJ (ex: 01.001.001/0001-91)"
                       value={quickInput}
                       onChange={(e) => setQuickInput(formatCNPJ(e.target.value))}
                       className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-cyan-500 placeholder-slate-600"
@@ -605,7 +468,7 @@ export default function App() {
                   <select
                     value={quickUf}
                     onChange={(e) => setQuickUf(e.target.value)}
-                    className="bg-slate-950 border border-slate-700/80 rounded-xl px-4 py-3 text-sm text-white font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
+                    className="w-full sm:w-24 shrink-0 bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-3 text-sm text-center font-bold text-cyan-300 font-mono focus:outline-none focus:border-cyan-500 cursor-pointer"
                   >
                     <option value="">UF</option>
                     {['SP', 'RJ', 'MG', 'RS', 'PR', 'DF', 'BA', 'SC', 'GO', 'PE', 'CE', 'ES', 'MT', 'MS', 'PA', 'AM', 'MA', 'PB', 'RN', 'AL', 'SE', 'PI', 'RO', 'TO', 'AC', 'AP', 'RR'].map(uf => (
@@ -616,7 +479,7 @@ export default function App() {
                   <button
                     onClick={() => handleExecuteSingleInstant(quickInput, quickUf)}
                     disabled={isQuickLoading || onlyNumbers(quickInput).length < 14}
-                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/30 transition-all cursor-pointer disabled:opacity-40"
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/30 transition-all cursor-pointer disabled:opacity-40 shrink-0"
                   >
                     {isQuickLoading ? 'Consultando...' : 'Consultar Agora'}
                   </button>
@@ -650,7 +513,18 @@ export default function App() {
       <ExportacaoFiscalModal
         isOpen={isExportFiscalModalOpen}
         onClose={() => setIsExportFiscalModalOpen(false)}
-        totalDocsAvailable={dfeList.length || 21482}
+        totalDocsAvailable={currentKpis?.totalDocs || dfeList.length || 21345}
+      />
+
+      {/* Certificado Digital A1 Modal */}
+      <CertificadoModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        empresa={empresaAtiva}
+        certificado={certificado}
+        onCertificadoUpdated={(novoCert) => {
+          setCertificado(novoCert);
+        }}
       />
 
     </div>

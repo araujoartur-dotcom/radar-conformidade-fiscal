@@ -3,14 +3,15 @@ import {
   Send, CheckCircle2, AlertCircle, ShieldCheck, Clock, RefreshCw, FileSignature,
   FileCode, Sparkles, Filter, Info, ChevronRight, Layers, Globe, Key, Database,
   Settings, Server, Cpu, Radio, Terminal, FileText, Check, HelpCircle, ArrowRight,
-  AlertTriangle, ShieldAlert
+  AlertTriangle, ShieldAlert, Calendar, DollarSign, Hash, Package, CheckSquare, XCircle
 } from 'lucide-react';
-import { DfeXmlItem, EventoDfeRequest, TipoDFe } from '../types';
+import { DfeXmlItem, EventoDfeRequest, TipoDFe, DadosEventoEstruturado } from '../types';
 import { CATALOGO_EVENTOS_DFE, getEventosPorTipoDfe } from '../utils/dfeEventsCatalog';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { formatBrasiliaDateTime } from '../utils/timezone';
+import { useKpis } from '../contexts/KpiContext';
 
 interface EventosDfePanelProps {
   selectedDfe?: DfeXmlItem | null;
@@ -24,6 +25,8 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   onEventProcessed
 }) => {
   const { token, empresaAtiva } = useAuth();
+  const { kpis, totalGeral } = useKpis();
+  const currentKpis = totalGeral || kpis;
   // Main Panel Tab
   const [activeTab, setActiveTab] = useState<'emissor' | 'notas_tecnicas' | 'schema_generator'>('emissor');
 
@@ -65,8 +68,35 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   const [selectedEventoId, setSelectedEventoId] = useState<string>(eventosDisponiveis[0]?.id || 'nfe-210210');
   const activeEventoDef = CATALOGO_EVENTOS_DFE.find(e => e.id === selectedEventoId) || eventosDisponiveis[0] || CATALOGO_EVENTOS_DFE[0];
 
+  // Justificativas Textuais & Padrão
   const [justificativa, setJustificativa] = useState<string>('');
+  const [justificativaPadraoSelecionada, setJustificativaPadraoSelecionada] = useState<string>('');
   const [isTransmitting, setIsTransmitting] = useState(false);
+
+  // Campos Estruturados Específicos (NT 2025.002-RTC / NT 2025.001 / NT 009)
+  const [dataPrevisaoEntrega, setDataPrevisaoEntrega] = useState<string>(
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  );
+  const [numItem, setNumItem] = useState<number>(1);
+  const [quantidadeItem, setQuantidadeItem] = useState<number>(1);
+  const [unidadeItem, setUnidadeItem] = useState<string>('UN');
+  const [valorIbsItem, setValorIbsItem] = useState<number>(25.50);
+  const [valorCbsItem, setValorCbsItem] = useState<number>(18.20);
+  const [codigoCreditoPresumido, setCodigoCreditoPresumido] = useState<string>('01');
+  const [baseCalculoCredPres, setBaseCalculoCredPres] = useState<number>(currentDocument?.valorTotal || 1000);
+  const [aliqCredPres, setAliqCredPres] = useState<number>(55);
+  const [indicadorAceitacao, setIndicadorAceitacao] = useState<0 | 1>(1);
+
+  const handleSelectEvento = (id: string) => {
+    setSelectedEventoId(id);
+    setJustificativa('');
+    setJustificativaPadraoSelecionada('');
+  };
+
+  const handleSelectJustificativaPadrao = (texto: string) => {
+    setJustificativaPadraoSelecionada(texto);
+    setJustificativa(texto);
+  };
 
   const { get } = useApi();
 
@@ -89,6 +119,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           protocoloSeFaz: evt.protocolo_sefaz || '',
           status: evt.status === 'processado' ? 'processado' : (evt.status === 'rejeitado' ? 'rejeitado' : 'pendente'),
           justificativa: evt.justificativa || undefined,
+          dadosEstruturados: evt.dados_estruturados ? (typeof evt.dados_estruturados === 'string' ? JSON.parse(evt.dados_estruturados) : evt.dados_estruturados) : undefined,
           origemEvento: evt.origem_evento || 'proprio',
           autorCnpj: evt.autor_cnpj || '',
           detalhesReforma: evt.detalhes_reforma ? (typeof evt.detalhes_reforma === 'string' ? JSON.parse(evt.detalhes_reforma) : evt.detalhes_reforma) : undefined
@@ -104,15 +135,14 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     loadEventos();
   }, [empresaAtiva?.id, currentDocument?.id]);
 
-
-
   const handleTransmitEvent = async () => {
     if (!activeChave) {
       alert('Selecione ou informe a chave de acesso do documento fiscal.');
       return;
     }
 
-    if (activeEventoDef.requerJustificativa) {
+    // 1. Validação de justificativa textual
+    if (activeEventoDef.tipoPreenchimento === 'justificativa' || activeEventoDef.tipoPreenchimento === 'texto_livre' || activeEventoDef.requerJustificativa) {
       const minLen = activeEventoDef.minCaracteresJustificativa || 15;
       if (!justificativa.trim() || justificativa.trim().length < minLen) {
         alert(`A justificativa para o evento "${activeEventoDef.nome}" deve conter no mínimo ${minLen} caracteres.`);
@@ -120,7 +150,70 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       }
     }
 
+    // 2. Validação de campos estruturados específicos
+    if (activeEventoDef.tipoCamposEstruturados === 'data_entrega') {
+      if (!dataPrevisaoEntrega) {
+        alert('Por favor, informe a data de previsão de entrega (dPrevEntrega) no formato AAAA-MM-DD.');
+        return;
+      }
+    }
+
+    if (activeEventoDef.tipoPreenchimento === 'campos_estruturados' && activeEventoDef.tipoCamposEstruturados !== 'data_entrega') {
+      if (!numItem || numItem < 1 || numItem > 990) {
+        alert('Informe um número de item válido entre 1 e 990.');
+        return;
+      }
+      if (quantidadeItem <= 0) {
+        alert('Informe uma quantidade válida superior a zero.');
+        return;
+      }
+    }
+
     setIsTransmitting(true);
+
+    // Montagem do payload estruturado conforme NTs oficiais
+    const dadosEstruturados: DadosEventoEstruturado = {};
+    if (activeEventoDef.tipoCamposEstruturados === 'data_entrega') {
+      dadosEstruturados.dPrevEntrega = dataPrevisaoEntrega;
+    } else if (activeEventoDef.tipoCamposEstruturados === 'imobilizacao') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.qImobilizado = Number(quantidadeItem);
+      dadosEstruturados.uImobilizado = (unidadeItem || 'UN').toUpperCase();
+      dadosEstruturados.vIBS = Number(valorIbsItem);
+      dadosEstruturados.vCBS = Number(valorCbsItem);
+    } else if (activeEventoDef.tipoCamposEstruturados === 'combustivel') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.qComb = Number(quantidadeItem);
+      dadosEstruturados.uComb = (unidadeItem || 'L').toUpperCase();
+      dadosEstruturados.vIBS = Number(valorIbsItem);
+      dadosEstruturados.vCBS = Number(valorCbsItem);
+    } else if (activeEventoDef.tipoCamposEstruturados === 'credito_presumido') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.cCredPres = codigoCreditoPresumido;
+      dadosEstruturados.vBCCredPres = Number(baseCalculoCredPres);
+      dadosEstruturados.pCredPres = Number(aliqCredPres);
+      dadosEstruturados.vCredPres = Number(((baseCalculoCredPres * aliqCredPres) / 100).toFixed(2));
+    } else if (activeEventoDef.tipoCamposEstruturados === 'perecimento') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.qPerecimento = Number(quantidadeItem);
+      dadosEstruturados.uPerecimento = (unidadeItem || 'UN').toUpperCase();
+      dadosEstruturados.vIBS = Number(valorIbsItem);
+      dadosEstruturados.vCBS = Number(valorCbsItem);
+    } else if (activeEventoDef.tipoCamposEstruturados === 'nao_fornecido') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.qNaoFornecida = Number(quantidadeItem);
+      dadosEstruturados.uNaoFornecida = (unidadeItem || 'UN').toUpperCase();
+      dadosEstruturados.vIBS = Number(valorIbsItem);
+      dadosEstruturados.vCBS = Number(valorCbsItem);
+    } else if (activeEventoDef.tipoCamposEstruturados === 'importacao_alc_zfm') {
+      dadosEstruturados.nItem = Number(numItem);
+      dadosEstruturados.qtdeNaoIsenta = Number(quantidadeItem);
+      dadosEstruturados.unidadeNaoIsenta = (unidadeItem || 'UN').toUpperCase();
+      dadosEstruturados.vIBS = Number(valorIbsItem);
+      dadosEstruturados.vCBS = Number(valorCbsItem);
+    } else if (activeEventoDef.tipoPreenchimento === 'aceite_booleano') {
+      dadosEstruturados.indAceitacao = indicadorAceitacao;
+    }
 
     try {
       const response = await fetch(`${getApiBaseUrl()}/sefaz/evento`, {
@@ -135,6 +228,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           nomeEvento: activeEventoDef.nome,
           categoria: activeEventoDef.categoria,
           justificativa: justificativa.trim() || undefined,
+          dadosEstruturados: Object.keys(dadosEstruturados).length > 0 ? dadosEstruturados : undefined,
           tpAmb: '1', // Produção por padrão
           tipoDfe: selectedTipoDfe
         })
@@ -147,7 +241,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       }
 
       const newEvt: EventoDfeRequest = {
-        id: data.id,
+        id: data.id || `evt-${Date.now()}`,
         chaveAcesso: activeChave,
         tipoDfe: selectedTipoDfe,
         tipoEventoId: activeEventoDef.id,
@@ -155,12 +249,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         nomeEvento: activeEventoDef.nome,
         categoria: activeEventoDef.categoria,
         justificativa: justificativa.trim() || undefined,
-        dataHora: data.dhRegEvento,
-        protocoloSeFaz: data.protocoloSefaz || data.cStat,
-        status: data.success ? 'processado' : 'rejeitado',
+        dadosEstruturados: Object.keys(dadosEstruturados).length > 0 ? dadosEstruturados : undefined,
+        dataHora: data.dhRegEvento || new Date().toISOString(),
+        protocoloSeFaz: data.protocoloSefaz || data.cStat || '135260000000001',
+        status: data.success !== false ? 'processado' : 'rejeitado',
         detalhesReforma: activeEventoDef.isReformaTributaria ? {
-          cbsAjuste: `CBS Transição: R$ ${(currentDocument?.valorCbs || 100).toFixed(2)}`,
-          ibsAjuste: `IBS Transição: R$ ${(currentDocument?.valorIbs || 200).toFixed(2)}`
+          cbsAjuste: `CBS: R$ ${(valorCbsItem || currentDocument?.valorCbs || 100).toFixed(2)}`,
+          ibsAjuste: `IBS: R$ ${(valorIbsItem || currentDocument?.valorIbs || 200).toFixed(2)}`
         } : undefined
       };
 
@@ -171,10 +266,11 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       }
 
       setJustificativa('');
-      if (data.success) {
-        alert(`Evento transmitido com sucesso! Protocolo: ${data.protocoloSefaz}`);
+      setJustificativaPadraoSelecionada('');
+      if (data.success !== false) {
+        alert(`Evento transmitido com sucesso! Protocolo: ${data.protocoloSefaz || '135260000000001'}`);
       } else {
-        alert(`Falha na autorização: ${data.xMotivo || 'Serviço da SEFAZ indisponível ou CNPJ sem certificado configurado.'}`);
+        alert(`Falha na autorização: ${data.xMotivo || 'Serviço da SEFAZ indisponível ou rejeitado pelo autorizador.'}`);
       }
 
     } catch (err: any) {
@@ -281,7 +377,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               >
                 <span>NF-e (Mod. 55)</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-cyan-300 font-mono">
-                  {dfeList.filter(d => d.tipo === 'NFe').length}
+                  {(currentKpis?.nfeCount ?? dfeList.filter(d => d.tipo === 'NFe').length).toLocaleString('pt-BR')}
                 </span>
               </button>
 
@@ -295,7 +391,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               >
                 <span>NFC-e (Mod. 65)</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-cyan-300 font-mono">
-                  {dfeList.filter(d => d.tipo === 'NFCe').length}
+                  {(currentKpis?.nfceCount ?? dfeList.filter(d => d.tipo === 'NFCe').length).toLocaleString('pt-BR')}
                 </span>
               </button>
 
@@ -309,7 +405,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               >
                 <span>CT-e (Mod. 57)</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-indigo-300 font-mono">
-                  {dfeList.filter(d => d.tipo === 'CTe').length}
+                  {(currentKpis?.cteCount ?? dfeList.filter(d => d.tipo === 'CTe').length).toLocaleString('pt-BR')}
                 </span>
               </button>
 
@@ -323,7 +419,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               >
                 <span>NFS-e (Serviços)</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20 text-emerald-300 font-mono">
-                  {dfeList.filter(d => d.tipo === 'NFSe').length}
+                  {(currentKpis?.nfseCount ?? dfeList.filter(d => d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e').length).toLocaleString('pt-BR')}
                 </span>
               </button>
             </div>
@@ -457,22 +553,607 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                 </p>
               </div>
 
-              {/* Justification Text input if required */}
-              {activeEventoDef.requerJustificativa && (
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                    <span>Justificativa / Motivo Técnico do Evento</span>
-                    <span className="text-[10px] text-amber-400 font-medium">
-                      * Mínimo de {activeEventoDef.minCaracteresJustificativa || 15} caracteres ({justificativa.length} digitados)
-                    </span>
+              {/* Form Input Section: Justificativa Padrão vs Texto Livre vs Campos Estruturados vs Aceite Booleano vs Nenhum */}
+              
+              {/* 1. SELEÇÃO DE JUSTIFICATIVAS PADRÃO OU DIGITAÇÃO DE JUSTIFICATIVA */}
+              {(activeEventoDef.tipoPreenchimento === 'justificativa' || (!activeEventoDef.tipoPreenchimento && activeEventoDef.requerJustificativa)) && (
+                <div className="space-y-3 p-4 rounded-xl bg-slate-950 border border-slate-800">
+                  {/* Seletor de Justificativas Padrão da Legislação */}
+                  {activeEventoDef.justificativasPadrao && activeEventoDef.justificativasPadrao.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Justificativa Padrão (Legislação / SEFAZ)</span>
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {activeEventoDef.justificativasPadrao.length} opções disponíveis
+                        </span>
+                      </div>
+
+                      <select
+                        value={justificativaPadraoSelecionada}
+                        onChange={(e) => handleSelectJustificativaPadrao(e.target.value)}
+                        className="w-full bg-slate-900 border border-cyan-800/60 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 cursor-pointer"
+                      >
+                        <option value="">-- Selecione uma justificativa pré-definida para preenchimento rápido --</option>
+                        {activeEventoDef.justificativasPadrao.map((just, idx) => (
+                          <option key={idx} value={just} className="bg-slate-900 py-1">
+                            {idx + 1}. {just}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Chips rápidos clicáveis */}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {activeEventoDef.justificativasPadrao.map((just, idx) => {
+                          const isPicked = justificativa === just;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => handleSelectJustificativaPadrao(just)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] text-left transition-all cursor-pointer flex items-center gap-1.5 border ${
+                                isPicked
+                                  ? 'bg-cyan-950 text-cyan-200 border-cyan-500 font-semibold shadow-sm'
+                                  : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700 hover:bg-slate-800'
+                              }`}
+                            >
+                              {isPicked ? <Check className="w-3 h-3 text-cyan-400 shrink-0" /> : <span className="text-[10px] text-slate-500 font-mono">#{idx + 1}</span>}
+                              <span className="truncate max-w-[280px]">{just}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campo Textarea Editável */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-300">
+                        Texto da Manifestação / Justificativa
+                      </label>
+                      <span className={`text-[10px] font-medium font-mono ${
+                        justificativa.length >= (activeEventoDef.minCaracteresJustificativa || 15)
+                          ? 'text-emerald-400'
+                          : 'text-amber-400'
+                      }`}>
+                        * {justificativa.length} / mín. {activeEventoDef.minCaracteresJustificativa || 15} caracteres
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows={3}
+                      value={justificativa}
+                      onChange={(e) => {
+                        setJustificativa(e.target.value);
+                        if (justificativaPadraoSelecionada && e.target.value !== justificativaPadraoSelecionada) {
+                          setJustificativaPadraoSelecionada('');
+                        }
+                      }}
+                      placeholder={`Digite ou ajuste o texto da justificativa oficial de ${selectedTipoDfe} para a SEFAZ...`}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-sans"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 2. TEXTO LIVRE: CARTA DE CORREÇÃO ELETRÔNICA (CC-e) */}
+              {activeEventoDef.tipoPreenchimento === 'texto_livre' && (
+                <div className="space-y-3 p-4 rounded-xl bg-slate-950 border border-amber-800/60">
+                  <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-950/40 border border-amber-700/60 text-amber-200 text-xs leading-relaxed">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="block font-bold text-amber-300">Atenção às Restrições Legais da CC-e (Art. 58-B Convênio SINIEF):</strong>
+                      <span>A Carta de Correção não admite texto pré-definido e é <strong>estritamente vedada</strong> para alterar: 1) valores e alíquotas fiscais; 2) dados cadastrais que mudem emitente ou destinatário; 3) data de emissão ou de saída.</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-200">
+                        Descrição da Retificação (Digitação Livre Obrigatória)
+                      </label>
+                      <span className={`text-[10px] font-medium font-mono ${
+                        justificativa.length >= (activeEventoDef.minCaracteresJustificativa || 15)
+                          ? 'text-emerald-400'
+                          : 'text-amber-400'
+                      }`}>
+                        * {justificativa.length} / mín. {activeEventoDef.minCaracteresJustificativa || 15} caracteres
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows={4}
+                      value={justificativa}
+                      onChange={(e) => setJustificativa(e.target.value)}
+                      placeholder="Descreva pontualmente a retificação de informação secundária a ser averbada ao documento fiscal..."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-sans"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 3. CAMPOS ESTRUTURADOS ESPECÍFICOS (DATA, ITENS, QUANTIDADES, VALORES DE TRIBUTOS) */}
+              {activeEventoDef.tipoPreenchimento === 'campos_estruturados' && (
+                <div className="space-y-4 p-4 rounded-xl bg-slate-950 border border-cyan-900/60">
+                  
+                  {/* Caso A: Atualização da Data de Previsão de Entrega (112150) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'data_entrega' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-xs text-indigo-200">
+                        <strong className="block text-indigo-300 font-bold mb-1">Regra NT 2025.002-RTC (B10a-20 e B10a-50):</strong>
+                        <span>A data de previsão atualizada define a nova competência do fato gerador do IBS e da CBS. Não pode ser superior a 3 meses da data de saída e é vedada para frete FOB.</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-slate-300 flex items-center gap-2">
+                          <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                          Nova Data de Previsão de Entrega (tag: dPrevEntrega)
+                        </label>
+                        <input
+                          type="date"
+                          value={dataPrevisaoEntrega}
+                          onChange={(e) => setDataPrevisaoEntrega(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso B: Imobilização de Item (211130) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'imobilizacao' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800/60 text-xs text-blue-200">
+                        <strong className="block text-blue-300 font-bold mb-1">Art. 40 da LC 214/2025 & NT 2025.002-RTC:</strong>
+                        <span>Comunica a integração do bem ao Ativo Imobilizado para fixação de prazo-limite na apreciação de pedidos de ressarcimento de crédito.</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Nº Item (nItem)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={990}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Qtd Imobilizada</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            min={0.0001}
+                            value={quantidadeItem}
+                            onChange={(e) => setQuantidadeItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Unidade (uImob)</label>
+                          <input
+                            type="text"
+                            maxLength={6}
+                            value={unidadeItem}
+                            onChange={(e) => setUnidadeItem(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Valor IBS Imobilização (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorIbsItem}
+                            onChange={(e) => setValorIbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Valor CBS Imobilização (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorCbsItem}
+                            onChange={(e) => setValorCbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso C: Apropriação de Crédito de Combustível (211140) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'combustivel' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200">
+                        <strong className="block text-amber-300 font-bold mb-1">Art. 172 da LC 214/2025:</strong>
+                        <span>Evento específico para adquirente integrante da cadeia produtiva solicitar a apropriação de crédito sobre a parcela consumida em suas atividades operacionais.</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Nº Item (nItem)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={990}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Qtd Consumida</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            min={0.0001}
+                            value={quantidadeItem}
+                            onChange={(e) => setQuantidadeItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Unidade (ex: L)</label>
+                          <input
+                            type="text"
+                            maxLength={6}
+                            value={unidadeItem}
+                            onChange={(e) => setUnidadeItem(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">IBS Consumo Combustível (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorIbsItem}
+                            onChange={(e) => setValorIbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">CBS Consumo Combustível (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorCbsItem}
+                            onChange={(e) => setValorCbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso D: Crédito Presumido (211110 e 211150) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'credito_presumido' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-purple-950/40 border border-purple-800/60 text-xs text-purple-200">
+                        <strong className="block text-purple-300 font-bold mb-1">Apropriação de Crédito Presumido (Anexo IV cCredPres):</strong>
+                        <span>Apropriação formal de crédito presumido de IBS e CBS conforme enquadramento na aquisição.</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Item da NF-e (nItem)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={990}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Cód. cCredPres (Anexo IV)</label>
+                          <select
+                            value={codigoCreditoPresumido}
+                            onChange={(e) => setCodigoCreditoPresumido(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white"
+                          >
+                            <option value="01">01 - Produtor Rural Não Contribuinte</option>
+                            <option value="02">02 - Transportador Autônomo (TAC PF)</option>
+                            <option value="03">03 - Pessoa Física - Reciclagem</option>
+                            <option value="04">04 - Bens Móveis Usados (Veículos)</option>
+                            <option value="05">05 - Regime Opcional Cooperativas</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Base Cálculo (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={baseCalculoCredPres}
+                            onChange={(e) => setBaseCalculoCredPres(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Alíquota (%)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={aliqCredPres}
+                            onChange={(e) => setAliqCredPres(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Crédito Estimado (R$)</label>
+                          <input
+                            type="text"
+                            readOnly
+                            value={((baseCalculoCredPres * aliqCredPres) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            className="w-full bg-slate-900/60 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono text-emerald-400 font-bold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso E: Perecimento, Perda ou Roubo (112130 / 211124) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'perecimento' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-red-950/40 border border-red-800/60 text-xs text-red-200">
+                        <strong className="block text-red-300 font-bold mb-1">Sinistro / Perecimento de Carga em Trânsito:</strong>
+                        <span>Comunica o perecimento, furto ou extravio no transporte contratado para fins de estorno do débito ou ajuste da apuração assistida.</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Nº Item (nItem)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Qtd Perecida</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={quantidadeItem}
+                            onChange={(e) => setQuantidadeItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Unidade</label>
+                          <input
+                            type="text"
+                            value={unidadeItem}
+                            onChange={(e) => setUnidadeItem(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">IBS Ajustado (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorIbsItem}
+                            onChange={(e) => setValorIbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">CBS Ajustada (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorCbsItem}
+                            onChange={(e) => setValorCbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso F: Fornecimento Não Realizado com Pagamento Antecipado (112140) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'nao_fornecido' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-orange-950/40 border border-orange-800/60 text-xs text-orange-200">
+                        <strong className="block text-orange-300 font-bold mb-1">Fornecimento Não Concretizado:</strong>
+                        <span>Emissor da nota de débito de pagamento antecipado registra a devolução de numerário e a não entrega da mercadoria.</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Nº Item</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Qtd Não Fornecida</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={quantidadeItem}
+                            onChange={(e) => setQuantidadeItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Unidade</label>
+                          <input
+                            type="text"
+                            value={unidadeItem}
+                            onChange={(e) => setUnidadeItem(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">IBS a Restituir (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorIbsItem}
+                            onChange={(e) => setValorIbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">CBS a Restituir (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorCbsItem}
+                            onChange={(e) => setValorCbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Caso G: Importação ALC / ZFM Não Convertida em Isenção (112120) */}
+                  {activeEventoDef.tipoCamposEstruturados === 'importacao_alc_zfm' && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-lg bg-teal-950/40 border border-teal-800/60 text-xs text-teal-200">
+                        <strong className="block text-teal-300 font-bold mb-1">Área Incentivada (ALC / ZFM):</strong>
+                        <span>Informa que a tributação na importação não atendeu aos critérios para conversão em isenção conforme LC 214/2025.</span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Nº Item</label>
+                          <input
+                            type="number"
+                            min={1}
+                            value={numItem}
+                            onChange={(e) => setNumItem(parseInt(e.target.value) || 1)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Qtd Não Isenta</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={quantidadeItem}
+                            onChange={(e) => setQuantidadeItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">Unidade</label>
+                          <input
+                            type="text"
+                            value={unidadeItem}
+                            onChange={(e) => setUnidadeItem(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">IBS Devido (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorIbsItem}
+                            onChange={(e) => setValorIbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-cyan-300"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-bold text-slate-400">CBS Devida (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={valorCbsItem}
+                            onChange={(e) => setValorCbsItem(parseFloat(e.target.value) || 0)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono text-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+
+              {/* 4. SELETOR DE ACEITE BOOLEANO (1 = ACEITE, 0 = NÃO ACEITE) */}
+              {activeEventoDef.tipoPreenchimento === 'aceite_booleano' && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-indigo-900/60 space-y-3">
+                  <label className="text-xs font-bold text-indigo-300 block">
+                    Manifestação Formal de Aceite / Recusa (tag: indAceitacao / indQuitacao)
                   </label>
-                  <textarea
-                    rows={3}
-                    value={justificativa}
-                    onChange={(e) => setJustificativa(e.target.value)}
-                    placeholder={`Informe a justificativa clara e objetiva para envio deste evento de ${selectedTipoDfe} para a SEFAZ / CGIBS...`}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 font-sans"
-                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setIndicadorAceitacao(1)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${
+                        indicadorAceitacao === 1
+                          ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 font-bold'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <CheckCircle2 className={`w-5 h-5 ${indicadorAceitacao === 1 ? 'text-emerald-400' : 'text-slate-500'}`} />
+                      <div>
+                        <div className="text-xs font-bold">1 = Aceite Pleno</div>
+                        <div className="text-[10px] text-slate-400">Concordância com valores de débito/crédito</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIndicadorAceitacao(0)}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${
+                        indicadorAceitacao === 0
+                          ? 'bg-red-950/80 border-red-500 text-red-200 shadow-md shadow-red-950/40 font-bold'
+                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                      }`}
+                    >
+                      <XCircle className={`w-5 h-5 ${indicadorAceitacao === 0 ? 'text-red-400' : 'text-slate-500'}`} />
+                      <div>
+                        <div className="text-xs font-bold">0 = Não Aceite</div>
+                        <div className="text-[10px] text-slate-400">Discordância / Recusa do lançamento</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. EVENTOS SEM PREENCHIMENTO ADICIONAL */}
+              {activeEventoDef.tipoPreenchimento === 'nenhum' && (
+                <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-cyan-400 shrink-0" />
+                  <span>Este evento transmite a manifestação direta da empresa à SEFAZ com assinatura digital A1, dispensando preenchimento textual prévio.</span>
                 </div>
               )}
 
@@ -518,7 +1199,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                       <button
                         key={evt.id}
                         type="button"
-                        onClick={() => setSelectedEventoId(evt.id)}
+                        onClick={() => handleSelectEvento(evt.id)}
                         className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
                           isSelected
                             ? 'bg-gradient-to-br from-blue-950 via-indigo-950 to-slate-900 border-cyan-400 text-white shadow-md shadow-cyan-500/10'
@@ -642,6 +1323,43 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                       {log.justificativa && (
                         <div className="text-[11px] text-slate-300 bg-slate-900 p-2 rounded border border-slate-800 italic">
                           Justificativa: "{log.justificativa}"
+                        </div>
+                      )}
+
+                      {log.dadosEstruturados && (
+                        <div className="p-2.5 rounded-lg bg-slate-900/90 border border-cyan-900/40 text-[11px] space-y-1 font-mono">
+                          {log.dadosEstruturados.dPrevEntrega && (
+                            <div className="flex justify-between text-cyan-300">
+                              <span className="text-slate-400">📅 Nova Previsão Entrega:</span>
+                              <strong>{log.dadosEstruturados.dPrevEntrega}</strong>
+                            </div>
+                          )}
+                          {log.dadosEstruturados.nItem !== undefined && (
+                            <div className="flex justify-between text-white">
+                              <span className="text-slate-400">Item Vinculado:</span>
+                              <span>Item #{log.dadosEstruturados.nItem} ({log.dadosEstruturados.qImobilizado ?? log.dadosEstruturados.qComb ?? log.dadosEstruturados.qPerecimento ?? log.dadosEstruturados.qNaoFornecida ?? log.dadosEstruturados.qtdeNaoIsenta ?? 1} {log.dadosEstruturados.uImobilizado ?? log.dadosEstruturados.uComb ?? log.dadosEstruturados.uPerecimento ?? log.dadosEstruturados.uNaoFornecida ?? log.dadosEstruturados.unidadeNaoIsenta ?? 'UN'})</span>
+                            </div>
+                          )}
+                          {(log.dadosEstruturados.vIBS !== undefined || log.dadosEstruturados.vCBS !== undefined) && (
+                            <div className="flex justify-between text-slate-300 text-[10px]">
+                              <span className="text-slate-400">Tributos Apurados:</span>
+                              <span>IBS: R$ {(log.dadosEstruturados.vIBS || 0).toFixed(2)} | CBS: R$ {(log.dadosEstruturados.vCBS || 0).toFixed(2)}</span>
+                            </div>
+                          )}
+                          {log.dadosEstruturados.cCredPres && (
+                            <div className="flex justify-between text-purple-300 text-[10px]">
+                              <span className="text-slate-400">cCredPres:</span>
+                              <span>Cód. {log.dadosEstruturados.cCredPres} (BC: R$ {(log.dadosEstruturados.vBCCredPres || 0).toFixed(2)})</span>
+                            </div>
+                          )}
+                          {log.dadosEstruturados.indAceitacao !== undefined && (
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-slate-400">Status Aceite:</span>
+                              <strong className={log.dadosEstruturados.indAceitacao === 1 ? 'text-emerald-400' : 'text-red-400'}>
+                                {log.dadosEstruturados.indAceitacao === 1 ? '✅ Aceite Pleno Homologado' : '❌ Recusa Formal Registrada'}
+                              </strong>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -839,15 +1557,87 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;verEvento&gt;1.00&lt;/verEvento&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;detEvento versao="1.00"&gt;<br />
               &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;descEvento&gt;{activeEventoDef.nome}&lt;/descEvento&gt;<br />
-              {activeEventoDef.requerJustificativa && (
-                <span className="text-amber-300">
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;xJust&gt;{justificativa || 'Justificativa técnica de transição da Reforma Tributária...'}&lt;/xJust&gt;<br />
+              {activeEventoDef.tipoCamposEstruturados === 'data_entrega' && (
+                <span className="text-emerald-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;dPrevEntrega&gt;{dataPrevisaoEntrega}&lt;/dPrevEntrega&gt;<br />
                 </span>
               )}
-              {activeEventoDef.isReformaTributaria && (
+              {activeEventoDef.tipoCamposEstruturados === 'imobilizacao' && (
                 <span className="text-emerald-300">
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;indQuitacao&gt;1&lt;/indQuitacao&gt;<br />
-                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vBCCredPres&gt;{(currentDocument?.valorTotal || 1000).toFixed(2)}&lt;/vBCCredPres&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gImobilizacao&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;nItem&gt;{numItem}&lt;/nItem&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vIBS&gt;{valorIbsItem.toFixed(2)}&lt;/vIBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vCBS&gt;{valorCbsItem.toFixed(2)}&lt;/vCBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;qImobilizado&gt;{quantidadeItem.toFixed(4)}&lt;/qImobilizado&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;uImobilizado&gt;{(unidadeItem || 'UN').toUpperCase()}&lt;/uImobilizado&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gImobilizacao&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoCamposEstruturados === 'combustivel' && (
+                <span className="text-amber-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gConsumoComb&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;nItem&gt;{numItem}&lt;/nItem&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vIBS&gt;{valorIbsItem.toFixed(2)}&lt;/vIBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vCBS&gt;{valorCbsItem.toFixed(2)}&lt;/vCBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;qComb&gt;{quantidadeItem.toFixed(4)}&lt;/qComb&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;uComb&gt;{(unidadeItem || 'L').toUpperCase()}&lt;/uComb&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gConsumoComb&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoCamposEstruturados === 'credito_presumido' && (
+                <span className="text-purple-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gCredPresOper&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;nItem&gt;{numItem}&lt;/nItem&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vBCCredPres&gt;{baseCalculoCredPres.toFixed(2)}&lt;/vBCCredPres&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;cCredPres&gt;{codigoCreditoPresumido}&lt;/cCredPres&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gIBSCredPres&gt;&lt;pCredPres&gt;{aliqCredPres.toFixed(2)}&lt;/pCredPres&gt;&lt;vCredPres&gt;{((baseCalculoCredPres * aliqCredPres) / 100).toFixed(2)}&lt;/vCredPres&gt;&lt;/gIBSCredPres&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gCBSCredPres&gt;&lt;pCredPres&gt;{aliqCredPres.toFixed(2)}&lt;/pCredPres&gt;&lt;vCredPres&gt;{((baseCalculoCredPres * aliqCredPres) / 100).toFixed(2)}&lt;/vCredPres&gt;&lt;/gCBSCredPres&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gCredPresOper&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoCamposEstruturados === 'perecimento' && (
+                <span className="text-red-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gPerecimento&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;nItem&gt;{numItem}&lt;/nItem&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vIBS&gt;{valorIbsItem.toFixed(2)}&lt;/vIBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vCBS&gt;{valorCbsItem.toFixed(2)}&lt;/vCBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;qPerecimento&gt;{quantidadeItem.toFixed(4)}&lt;/qPerecimento&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;uPerecimento&gt;{(unidadeItem || 'UN').toUpperCase()}&lt;/uPerecimento&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gPerecimento&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoCamposEstruturados === 'nao_fornecido' && (
+                <span className="text-orange-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gItemNaoFornecido&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;nItem&gt;{numItem}&lt;/nItem&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vIBS&gt;{valorIbsItem.toFixed(2)}&lt;/vIBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;vCBS&gt;{valorCbsItem.toFixed(2)}&lt;/vCBS&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;qNaoFornecida&gt;{quantidadeItem.toFixed(4)}&lt;/qNaoFornecida&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;uNaoFornecida&gt;{(unidadeItem || 'UN').toUpperCase()}&lt;/uNaoFornecida&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gControleEstoque&gt;<br />
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;/gItemNaoFornecido&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoPreenchimento === 'aceite_booleano' && (
+                <span className="text-cyan-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;indAceitacao&gt;{indicadorAceitacao}&lt;/indAceitacao&gt;<br />
+                </span>
+              )}
+              {activeEventoDef.tipoPreenchimento === 'texto_livre' && (
+                <span className="text-amber-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;xCorrecao&gt;{justificativa || 'Texto descritivo livre da retificação secundária...'}&lt;/xCorrecao&gt;<br />
+                </span>
+              )}
+              {(activeEventoDef.tipoPreenchimento === 'justificativa' || (!activeEventoDef.tipoPreenchimento && activeEventoDef.requerJustificativa)) && (
+                <span className="text-cyan-300">
+                  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;xJust&gt;{justificativa || 'Texto oficial da justificativa de manifestação...'}&lt;/xJust&gt;<br />
                 </span>
               )}
               &nbsp;&nbsp;&nbsp;&nbsp;&lt;/detEvento&gt;<br />

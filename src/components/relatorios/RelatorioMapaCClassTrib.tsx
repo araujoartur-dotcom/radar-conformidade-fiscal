@@ -11,14 +11,37 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [defaultAliq, setDefaultAliq] = useState<string>('');
+
   const [newItem, setNewItem] = useState<MapaCClassTribItem>({
     cClassTrib: '',
     descricaoInterna: '',
     tratamentoEsperado: 'tributado',
     permiteCredito: 'Sim',
-    aliquotaEsperada: '26.5%',
+    aliquotaEsperada: '',
     alertas: 'Conferir enquadramento tributário'
   });
+
+  const fetchAdValoremDefault = async () => {
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/tables/aliquotas/ad-valorem`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const rows = data.data || [];
+        const refRow = rows.find((r: any) => r.codigo_cadastro === '00003' || r.inicio_vigencia?.startsWith('2033')) || rows[rows.length - 1];
+        if (refRow) {
+          const tot = (Number(refRow.cbs_federal) + Number(refRow.ibs_estadual) + Number(refRow.ibs_municipal)).toFixed(2);
+          const formatted = `${tot}%`;
+          setDefaultAliq(formatted);
+          setNewItem(prev => ({ ...prev, aliquotaEsperada: formatted }));
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar alíquota padrão Ad Valorem:', err);
+    }
+  };
 
   const fetchMapaList = async () => {
     setLoading(true);
@@ -47,6 +70,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
 
   useEffect(() => {
     fetchMapaList();
+    fetchAdValoremDefault();
   }, [token, config]);
 
   const filtered = mapaList.filter(item => 
@@ -70,7 +94,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
           descricao_interna: newItem.descricaoInterna,
           tratamento_esperado: newItem.tratamentoEsperado,
           permite_credito: newItem.permiteCredito,
-          aliquota_esperada: newItem.aliquotaEsperada,
+          aliquota_esperada: newItem.aliquotaEsperada || defaultAliq,
           alertas: newItem.alertas,
           global: false
         })
@@ -83,7 +107,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
           descricaoInterna: '',
           tratamentoEsperado: 'tributado',
           permiteCredito: 'Sim',
-          aliquotaEsperada: '26.5%',
+          aliquotaEsperada: defaultAliq,
           alertas: 'Conferir enquadramento tributário'
         });
         setIsAdding(false);
@@ -215,7 +239,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
               <label className="text-slate-400 block mb-1">Alíquota Esperada:</label>
               <input
                 type="text"
-                placeholder="Ex: 10.6% ou Origem no Doc"
+                placeholder="Ex: Alíquota Específica ou Anexo LC"
                 value={newItem.aliquotaEsperada}
                 onChange={(e) => setNewItem({ ...newItem, aliquotaEsperada: e.target.value })}
                 className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-white font-mono"
@@ -307,7 +331,9 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
 
                 {/* Aliquota */}
                 <td className="py-2 px-3 text-cyan-300 font-bold">
-                  {item.aliquotaEsperada}
+                  {item.aliquotaEsperada || (
+                    <span className="text-amber-400/80 italic font-normal text-[11px]">— (Pendente de parametrização)</span>
+                  )}
                 </td>
 
                 {/* Alertas */}

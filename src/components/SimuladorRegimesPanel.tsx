@@ -1,25 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calculator, TrendingUp, Users, DollarSign, ShieldAlert, CheckCircle2, AlertTriangle,
   Info, HelpCircle, ArrowRight, ArrowUpRight, ArrowDownRight, Layers, FileText,
   Sliders, ChevronDown, ChevronUp, BarChart3, Building2, Truck, RefreshCw, Sparkles
 } from 'lucide-react';
 import { Empresa } from '../contexts/AuthContext';
+import { useApi } from '../hooks/useApi';
 import {
-  TABELAS_SIMPLES,
-  ATIVIDADES_LUCRO_PRESUMIDO,
-  ENCARGOS_PADRAO_POR_ATIVIDADE,
-  AtividadePresumido,
-  TabelaSimplesAnexo
-} from '../data/parametrosFiscaisRegimes';
+  SimplesNacionalFaixaItem,
+  SimplesNacionalPartilhaItem,
+  LucroPresumidoParamItem,
+  EncargoPatronalParamItem,
+  AliquotaTabelaItem
+} from '../types';
 
 interface SimuladorRegimesPanelProps {
   empresaAtiva?: Empresa | null;
 }
 
 export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ empresaAtiva }) => {
+  const { get } = useApi();
+
   // Aba Ativa: 'comparativo_dre' | 'break_even_cpp'
   const [activeTab, setActiveTab] = useState<'comparativo_dre' | 'break_even_cpp'>('comparativo_dre');
+
+  // Parâmetros Carregados Dinamicamente do Banco de Dados (Módulo Parâmetros & Tabelas Fiscais)
+  const [dbFaixasSimples, setDbFaixasSimples] = useState<SimplesNacionalFaixaItem[]>([]);
+  const [dbPartilhasSimples, setDbPartilhasSimples] = useState<SimplesNacionalPartilhaItem[]>([]);
+  const [dbLucroPresumido, setDbLucroPresumido] = useState<LucroPresumidoParamItem[]>([]);
+  const [dbEncargos, setDbEncargos] = useState<EncargoPatronalParamItem[]>([]);
+  const [dbAdValorem, setDbAdValorem] = useState<AliquotaTabelaItem[]>([]);
+  const [loadingTables, setLoadingTables] = useState<boolean>(true);
 
   // Parâmetros Gerais
   const [atividadeKey, setAtividadeKey] = useState<string>('transporte_cargas');
@@ -50,16 +61,124 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
   // Modal / Drawer de Memória de Cálculo
   const [showMemoriaCalculo, setShowMemoriaCalculo] = useState<boolean>(false);
 
+  // Carregar tabelas oficiais do backend
+  const loadDatabaseTables = async () => {
+    setLoadingTables(true);
+    try {
+      const [resSimples, resPresumido, resEncargos, resAdValorem] = await Promise.all([
+        get<{ success: boolean; faixas: SimplesNacionalFaixaItem[]; partilhas: SimplesNacionalPartilhaItem[] }>('/tables/simples-nacional'),
+        get<{ success: boolean; data: LucroPresumidoParamItem[] }>('/tables/lucro-presumido'),
+        get<{ success: boolean; data: EncargoPatronalParamItem[] }>('/tables/encargos-patronais'),
+        get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem')
+      ]);
+
+      if (resSimples.ok && resSimples.data) {
+        if (resSimples.data.faixas) setDbFaixasSimples(resSimples.data.faixas);
+        if (resSimples.data.partilhas) setDbPartilhasSimples(resSimples.data.partilhas);
+      }
+      if (resPresumido.ok && resPresumido.data?.data) {
+        setDbLucroPresumido(resPresumido.data.data);
+      }
+      if (resEncargos.ok && resEncargos.data?.data) {
+        setDbEncargos(resEncargos.data.data);
+      }
+      if (resAdValorem.ok && resAdValorem.data?.data) {
+        const adVals = resAdValorem.data.data;
+        setDbAdValorem(adVals);
+
+        // Sincronizar alíquota do IVA da Reforma com o ano selecionado
+        const rowAno = adVals.find((t: AliquotaTabelaItem) => {
+          if (t.inicio_vigencia?.startsWith(anoTransicao)) return true;
+          if (anoTransicao === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+          return false;
+        });
+        if (rowAno) {
+          const tot = Number((Number(rowAno.cbs_federal) + Number(rowAno.ibs_estadual) + Number(rowAno.ibs_municipal)).toFixed(2));
+          setAliquotaIvaGeral(tot);
+        } else {
+          setAliquotaIvaGeral(0);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao carregar parâmetros no Simulador:', err);
+    } finally {
+      setLoadingTables(false);
+    }
+  };
+
+  const handleAnoTransicaoChange = (novoAno: string) => {
+    setAnoTransicao(novoAno);
+    const rowAno = dbAdValorem.find(t => {
+      if (t.inicio_vigencia?.startsWith(novoAno)) return true;
+      if (novoAno === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+      return false;
+    });
+    if (rowAno) {
+      const tot = Number((Number(rowAno.cbs_federal) + Number(rowAno.ibs_estadual) + Number(rowAno.ibs_municipal)).toFixed(2));
+      setAliquotaIvaGeral(tot);
+    } else {
+      setAliquotaIvaGeral(0);
+    }
+  };
+
+  const handleRestaurarPadrao = () => {
+    // 1. Restaurar IVA Oficial do ano selecionado a partir do banco
+    const rowAno = dbAdValorem.find(t => {
+      if (t.inicio_vigencia?.startsWith(anoTransicao)) return true;
+      if (anoTransicao === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+      return false;
+    });
+    if (rowAno) {
+      const tot = Number((Number(rowAno.cbs_federal) + Number(rowAno.ibs_estadual) + Number(rowAno.ibs_municipal)).toFixed(2));
+      setAliquotaIvaGeral(tot);
+    } else {
+      setAliquotaIvaGeral(0);
+    }
+
+    // 2. Restaurar atividade, anexos e encargos previdenciários
+    const ativ = dbLucroPresumido.find(a => a.codigo_atividade === atividadeKey);
+    if (ativ?.anexo_simples_padrao) {
+      setAnexoSimplesKey(ativ.anexo_simples_padrao);
+    }
+    const enc = dbEncargos.find(e => e.codigo_atividade === atividadeKey) ||
+                dbEncargos.find(e => e.codigo_atividade === 'padrao');
+    if (enc) {
+      setInssPatronalPct(Number(enc.inss_patronal) * 100);
+      setRatFapPct(Number(enc.rat_fap) * 100);
+      setSistemaSTerceirosPct(Number(enc.sistema_s) * 100);
+    }
+  };
+
+  useEffect(() => {
+    loadDatabaseTables();
+  }, []);
+
+  // Lista única de anexos disponíveis a partir do banco
+  const anexosDisponiveis = useMemo(() => {
+    const map = new Map<string, string>();
+    dbFaixasSimples.forEach(f => {
+      if (!map.has(f.anexo)) {
+        map.set(f.anexo, f.nome_anexo);
+      }
+    });
+    return Array.from(map.entries()).map(([id, nome]) => ({ id, nome }));
+  }, [dbFaixasSimples]);
+
   // Sincronizar atividade ao mudar
   const handleAtividadeChange = (novaAtividadeKey: string) => {
     setAtividadeKey(novaAtividadeKey);
-    const ativ = ATIVIDADES_LUCRO_PRESUMIDO.find(a => a.id === novaAtividadeKey);
+    const ativ = dbLucroPresumido.find(a => a.codigo_atividade === novaAtividadeKey);
     if (ativ) {
-      setAnexoSimplesKey(ativ.anexoSimplesPadrao);
-      const encargos = ENCARGOS_PADRAO_POR_ATIVIDADE[novaAtividadeKey] || ENCARGOS_PADRAO_POR_ATIVIDADE.padrao;
-      setInssPatronalPct(encargos.inssPatronal * 100);
-      setRatFapPct(encargos.ratFap * 100);
-      setSistemaSTerceirosPct(encargos.sistemaSTerceiros * 100);
+      if (ativ.anexo_simples_padrao) {
+        setAnexoSimplesKey(ativ.anexo_simples_padrao);
+      }
+      const enc = dbEncargos.find(e => e.codigo_atividade === novaAtividadeKey) ||
+                  dbEncargos.find(e => e.codigo_atividade === 'padrao');
+      if (enc) {
+        setInssPatronalPct(Number(enc.inss_patronal) * 100);
+        setRatFapPct(Number(enc.rat_fap) * 100);
+        setSistemaSTerceirosPct(Number(enc.sistema_s) * 100);
+      }
     }
   };
 
@@ -80,43 +199,75 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     }
   };
 
-  // Helpers de Formatação
-  const formatMoney = (val: number) => {
+  // Helpers de Formatação (Sem Fallback Silencioso)
+  const formatMoney = (val?: number | null) => {
+    if (val === null || val === undefined || isNaN(val)) return '—';
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  const formatPct = (val: number) => {
+  const formatPct = (val?: number | null) => {
+    if (val === null || val === undefined || isNaN(val)) return '—';
     return (val * 100).toFixed(2) + '%';
   };
 
   // ==========================================================================
-  // CÁLCULO 1: ENQUADRAMENTO SIMPLES NACIONAL (LC 123/2006 & LC 214/227)
+  // CÁLCULO 1: ENQUADRAMENTO SIMPLES NACIONAL (LC 123/2006 & LC 214/2025)
   // ==========================================================================
   const simplesCalculo = useMemo(() => {
-    const tabela: TabelaSimplesAnexo = TABELAS_SIMPLES[anexoSimplesKey] || TABELAS_SIMPLES.anexo1;
-    const faixas = tabela.faixas;
+    const faixas = dbFaixasSimples
+      .filter(f => f.anexo === anexoSimplesKey)
+      .sort((a, b) => a.faixa - b.faixa);
+
+    // Sem Fallback: Se o anexo não existir no banco, não inventa alíquota
+    if (faixas.length === 0) {
+      return {
+        isMissingParams: true,
+        missingMsg: `Alíquotas e faixas do Simples Nacional não cadastradas para "${anexoSimplesKey}".`,
+        faixaNumero: 0,
+        aliqNominal: 0,
+        deducao: 0,
+        aliqEfetiva: 0,
+        fracaoIBSCBS: 0,
+        aliqEfetivaIBSCBS: 0,
+        aliqResidualDAS: 0,
+        pctReparticaoCpp: 0,
+        impostoTradicional: 0,
+        dasResidual: 0,
+        debitoIvaHibrido: 0,
+        creditoIvaEntrada: 0,
+        saldoIvaHibrido: 0,
+        impostoTotalHibrido: 0,
+        creditoClienteTradicional: 0,
+        creditoClienteHibrido: 0,
+        cppEmbutidoSimples: 0
+      };
+    }
 
     let faixaIdx = 0;
     for (let i = 0; i < faixas.length; i++) {
-      if (rbt12 <= faixas[i].limite || i === faixas.length - 1) {
+      if (rbt12 <= Number(faixas[i].limite_superior) || i === faixas.length - 1) {
         faixaIdx = i;
         break;
       }
     }
 
     const faixaConfig = faixas[faixaIdx];
-    const aliqNominal = faixaConfig.aliqNominal;
-    const deducao = faixaConfig.deducao;
+    const aliqNominal = Number(faixaConfig.aliq_nominal);
+    const deducao = Number(faixaConfig.deducao);
 
     // Fórmula legal: [(RBT12 * AliqNominal) - Deducao] / RBT12
     const aliqEfetiva = rbt12 > 0 ? Math.max(0, ((rbt12 * aliqNominal) - deducao) / rbt12) : aliqNominal;
 
     // Repartição do CPP dentro do DAS
-    const pctReparticaoCpp = faixaConfig.reparticao.cpp || 0;
+    const pctReparticaoCpp = Number(faixaConfig.reparticao_cpp) || 0;
 
-    // Fração de partilha IBS e CBS da Reforma (LC 214)
-    const partilhaArray = tabela.partilhaReforma[anoTransicao] || tabela.partilhaReforma['2027'];
-    const fracaoIBSCBS = partilhaArray[faixaIdx] || 0.155;
+    // Fração de partilha IBS e CBS da Reforma (LC 214/2025)
+    const partilha = dbPartilhasSimples.find(
+      p => p.anexo === anexoSimplesKey &&
+           Number(p.ano_transicao) === Number(anoTransicao) &&
+           Number(p.faixa) === (faixaIdx + 1)
+    );
+    const fracaoIBSCBS = partilha ? Number(partilha.perc_remanejado) : 0;
 
     // Fração de IBS/CBS que sai do DAS
     const aliqEfetivaIBSCBS = aliqEfetiva * fracaoIBSCBS;
@@ -149,6 +300,8 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const creditoClienteHibrido = receitaB2B * aliqIvaDecimal;
 
     return {
+      isMissingParams: false,
+      missingMsg: '',
       faixaNumero: faixaIdx + 1,
       aliqNominal,
       deducao,
@@ -167,29 +320,58 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       creditoClienteHibrido,
       cppEmbutidoSimples
     };
-  }, [anexoSimplesKey, rbt12, faturamentoMes, comprasInsumosMes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, anoTransicao]);
+  }, [dbFaixasSimples, dbPartilhasSimples, anexoSimplesKey, rbt12, faturamentoMes, comprasInsumosMes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, anoTransicao]);
 
   // ==========================================================================
   // CÁLCULO 2: LUCRO PRESUMIDO & REGIME NORMAL (LEI 9.249/1995 & REFORMA)
   // ==========================================================================
   const presumidoCalculo = useMemo(() => {
-    const ativ = ATIVIDADES_LUCRO_PRESUMIDO.find(a => a.id === atividadeKey) || ATIVIDADES_LUCRO_PRESUMIDO[1];
-    const presuncaoIrpj = ativ.presuncaoIrpj;
-    const presuncaoCsll = ativ.presuncaoCsll;
+    const ativDb = dbLucroPresumido.find(a => a.codigo_atividade === atividadeKey);
+
+    // Sem Fallback: Se a atividade não existir no banco, não inventa presunção
+    if (!ativDb) {
+      return {
+        isMissingParams: true,
+        missingMsg: `Atividade "${atividadeKey}" não parametrizada no Lucro Presumido.`,
+        ativ: null,
+        presuncaoIrpj: 0,
+        presuncaoCsll: 0,
+        baseIrpj: 0,
+        irpjBasico: 0,
+        excedenteIrpj: 0,
+        irpjAdicional: 0,
+        irpjTotal: 0,
+        baseCsll: 0,
+        csllTotal: 0,
+        debitoIvaPresumido: 0,
+        creditoIvaPresumido: 0,
+        saldoIvaPresumido: 0,
+        totalEncargosPct: 0,
+        cppPatronalFolhaPresumido: 0,
+        totalTributosPresumido: 0,
+        creditoClientePresumido: 0
+      };
+    }
+
+    const presuncaoIrpj = Number(ativDb.presuncao_irpj);
+    const presuncaoCsll = Number(ativDb.presuncao_csll);
+    const aliqIrpjBasico = Number(ativDb.aliq_irpj_basico ?? 0.15);
+    const aliqIrpjAdicional = Number(ativDb.aliq_irpj_adicional ?? 0.10);
+    const limiteMensalAdicional = Number(ativDb.limite_mensal_adicional ?? 20000);
+    const aliqCsll = Number(ativDb.aliq_csll ?? 0.09);
 
     // 1. Base de Cálculo IRPJ: (Faturamento * Presunção) + Adições
     const baseIrpj = (faturamentoMes * presuncaoIrpj) + outrasReceitasAdicoes;
-    // IRPJ Básico (15%)
-    const irpjBasico = baseIrpj * 0.15;
-    // Adicional de IRPJ (10% sobre o que exceder R$ 20.000/mês ou R$ 60.000/trimestre)
-    const excedenteIrpj = Math.max(0, baseIrpj - 20000);
-    const irpjAdicional = excedenteIrpj * 0.10;
+    // IRPJ Básico
+    const irpjBasico = baseIrpj * aliqIrpjBasico;
+    // Adicional de IRPJ
+    const excedenteIrpj = Math.max(0, baseIrpj - limiteMensalAdicional);
+    const irpjAdicional = excedenteIrpj * aliqIrpjAdicional;
     const irpjTotal = irpjBasico + irpjAdicional;
 
     // 2. Base de Cálculo CSLL: (Faturamento * Presunção) + Adições
     const baseCsll = (faturamentoMes * presuncaoCsll) + outrasReceitasAdicoes;
-    // CSLL Alíquota Geral (9%)
-    const csllTotal = baseCsll * 0.09;
+    const csllTotal = baseCsll * aliqCsll;
 
     // 3. IBS e CBS pós-Reforma (Não-Cumulativo Pleno)
     const aliqIvaDecimal = aliquotaIvaGeral / 100;
@@ -197,7 +379,8 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const comprasRG = comprasInsumosMes * (pctCompraRegimeGeral / 100);
     const comprasSimples = comprasInsumosMes * (1 - (pctCompraRegimeGeral / 100));
 
-    const creditoIvaPresumido = (comprasRG * aliqIvaDecimal) + (comprasSimples * simplesCalculo.aliqEfetivaIBSCBS);
+    const aliqEfetivaIBSCBS = simplesCalculo.isMissingParams ? 0 : simplesCalculo.aliqEfetivaIBSCBS;
+    const creditoIvaPresumido = (comprasRG * aliqIvaDecimal) + (comprasSimples * aliqEfetivaIBSCBS);
     const saldoIvaPresumido = Math.max(0, debitoIvaPresumido - creditoIvaPresumido);
 
     // 4. Encargos Previdenciários Patronais sobre a Folha
@@ -212,7 +395,9 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const creditoClientePresumido = receitaB2B * aliqIvaDecimal;
 
     return {
-      ativ,
+      isMissingParams: false,
+      missingMsg: '',
+      ativ: ativDb,
       presuncaoIrpj,
       presuncaoCsll,
       baseIrpj,
@@ -230,44 +415,43 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       totalTributosPresumido,
       creditoClientePresumido
     };
-  }, [atividadeKey, faturamentoMes, comprasInsumosMes, folhaSalariosMes, outrasReceitasAdicoes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, simplesCalculo.aliqEfetivaIBSCBS]);
+  }, [dbLucroPresumido, atividadeKey, faturamentoMes, comprasInsumosMes, folhaSalariosMes, outrasReceitasAdicoes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, simplesCalculo]);
 
   // ==========================================================================
   // CÁLCULO 3: MINI-DRE GERENCIAL & CAIXA LÍQUIDO DOS 3 REGIMES
   // ==========================================================================
   const dreComparativo = useMemo(() => {
+    const encargosFolhaTrad = anexoSimplesKey === 'anexo4' ? (folhaSalariosMes * (inssPatronalPct / 100)) : 0;
+    const encargosFolhaHib = anexoSimplesKey === 'anexo4' ? (folhaSalariosMes * (inssPatronalPct / 100)) : 0;
+
+    const tradTotalTributos = simplesCalculo.isMissingParams ? null : (simplesCalculo.impostoTradicional + encargosFolhaTrad);
+    const hibTotalTributos = simplesCalculo.isMissingParams ? null : (simplesCalculo.impostoTotalHibrido + encargosFolhaHib);
+    const presTotalTributos = presumidoCalculo.isMissingParams ? null : presumidoCalculo.totalTributosPresumido;
+
     // 1. Simples Tradicional
-    const impostoVendasTrad = simplesCalculo.impostoTradicional;
+    const impostoVendasTrad = simplesCalculo.isMissingParams ? 0 : simplesCalculo.impostoTradicional;
     const recLiquidaTrad = faturamentoMes - impostoVendasTrad;
     const margemBrutaTrad = recLiquidaTrad - comprasInsumosMes;
-    // No Simples Anexo I, II, III e Frete Comutado, o CPP já está no DAS, não paga patronal sobre a folha
-    const encargosFolhaTrad = anexoSimplesKey === 'anexo4' ? (folhaSalariosMes * 0.20) : 0;
     const despesasTotaisTrad = outrasDespesasMes + folhaSalariosMes + encargosFolhaTrad;
-    const resultadoLiquidoTrad = margemBrutaTrad - despesasTotaisTrad;
-    const margemLiquidaPctTrad = faturamentoMes > 0 ? (resultadoLiquidoTrad / faturamentoMes) * 100 : 0;
+    const resultadoLiquidoTrad = simplesCalculo.isMissingParams ? null : (margemBrutaTrad - despesasTotaisTrad);
+    const margemLiquidaPctTrad = resultadoLiquidoTrad !== null && faturamentoMes > 0 ? (resultadoLiquidoTrad / faturamentoMes) * 100 : 0;
 
     // 2. Simples Híbrido
-    const impostoVendasHib = simplesCalculo.impostoTotalHibrido;
+    const impostoVendasHib = simplesCalculo.isMissingParams ? 0 : simplesCalculo.impostoTotalHibrido;
     const recLiquidaHib = faturamentoMes - impostoVendasHib;
     const margemBrutaHib = recLiquidaHib - comprasInsumosMes;
-    const encargosFolhaHib = anexoSimplesKey === 'anexo4' ? (folhaSalariosMes * 0.20) : 0;
     const despesasTotaisHib = outrasDespesasMes + folhaSalariosMes + encargosFolhaHib;
-    const resultadoLiquidoHib = margemBrutaHib - despesasTotaisHib;
-    const margemLiquidaPctHib = faturamentoMes > 0 ? (resultadoLiquidoHib / faturamentoMes) * 100 : 0;
+    const resultadoLiquidoHib = simplesCalculo.isMissingParams ? null : (margemBrutaHib - despesasTotaisHib);
+    const margemLiquidaPctHib = resultadoLiquidoHib !== null && faturamentoMes > 0 ? (resultadoLiquidoHib / faturamentoMes) * 100 : 0;
 
     // 3. Lucro Presumido
-    const impostoVendasPres = presumidoCalculo.saldoIvaPresumido;
+    const impostoVendasPres = presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.saldoIvaPresumido;
     const recLiquidaPres = faturamentoMes - impostoVendasPres;
     const margemBrutaPres = recLiquidaPres - comprasInsumosMes;
-    const despesasTotaisPres = outrasDespesasMes + folhaSalariosMes + presumidoCalculo.cppPatronalFolhaPresumido;
-    const irpjCsllPres = presumidoCalculo.irpjTotal + presumidoCalculo.csllTotal;
-    const resultadoLiquidoPres = margemBrutaPres - despesasTotaisPres - irpjCsllPres;
-    const margemLiquidaPctPres = faturamentoMes > 0 ? (resultadoLiquidoPres / faturamentoMes) * 100 : 0;
-
-    // Total de Carga Tributária Global de Cada Regime
-    const totalTributosGlobalTrad = impostoVendasTrad + encargosFolhaTrad;
-    const totalTributosGlobalHib = impostoVendasHib + encargosFolhaHib;
-    const totalTributosGlobalPres = presumidoCalculo.totalTributosPresumido;
+    const despesasTotaisPres = outrasDespesasMes + folhaSalariosMes + (presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.cppPatronalFolhaPresumido);
+    const irpjCsllPres = presumidoCalculo.isMissingParams ? 0 : (presumidoCalculo.irpjTotal + presumidoCalculo.csllTotal);
+    const resultadoLiquidoPres = presumidoCalculo.isMissingParams ? null : (margemBrutaPres - despesasTotaisPres - irpjCsllPres);
+    const margemLiquidaPctPres = resultadoLiquidoPres !== null && faturamentoMes > 0 ? (resultadoLiquidoPres / faturamentoMes) * 100 : 0;
 
     return {
       trad: {
@@ -279,11 +463,11 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
         outrasDespesas: outrasDespesasMes,
         folhaSalarios: folhaSalariosMes,
         encargosPatronais: encargosFolhaTrad,
-        irpjCsll: 0, // Incluso no DAS
+        irpjCsll: 0,
         resultadoLiquido: resultadoLiquidoTrad,
         margemLiquidaPct: margemLiquidaPctTrad,
-        totalTributos: totalTributosGlobalTrad,
-        creditoCliente: simplesCalculo.creditoClienteTradicional
+        totalTributos: tradTotalTributos,
+        creditoCliente: simplesCalculo.isMissingParams ? 0 : simplesCalculo.creditoClienteTradicional
       },
       hib: {
         recBruta: faturamentoMes,
@@ -294,11 +478,11 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
         outrasDespesas: outrasDespesasMes,
         folhaSalarios: folhaSalariosMes,
         encargosPatronais: encargosFolhaHib,
-        irpjCsll: 0, // Incluso no DAS Residual
+        irpjCsll: 0,
         resultadoLiquido: resultadoLiquidoHib,
         margemLiquidaPct: margemLiquidaPctHib,
-        totalTributos: totalTributosGlobalHib,
-        creditoCliente: simplesCalculo.creditoClienteHibrido
+        totalTributos: hibTotalTributos,
+        creditoCliente: simplesCalculo.isMissingParams ? 0 : simplesCalculo.creditoClienteHibrido
       },
       pres: {
         recBruta: faturamentoMes,
@@ -308,15 +492,15 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
         margemBruta: margemBrutaPres,
         outrasDespesas: outrasDespesasMes,
         folhaSalarios: folhaSalariosMes,
-        encargosPatronais: presumidoCalculo.cppPatronalFolhaPresumido,
+        encargosPatronais: presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.cppPatronalFolhaPresumido,
         irpjCsll: irpjCsllPres,
         resultadoLiquido: resultadoLiquidoPres,
         margemLiquidaPct: margemLiquidaPctPres,
-        totalTributos: totalTributosGlobalPres,
-        creditoCliente: presumidoCalculo.creditoClientePresumido
+        totalTributos: presTotalTributos,
+        creditoCliente: presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.creditoClientePresumido
       }
     };
-  }, [faturamentoMes, comprasInsumosMes, outrasDespesasMes, folhaSalariosMes, anexoSimplesKey, simplesCalculo, presumidoCalculo]);
+  }, [faturamentoMes, comprasInsumosMes, outrasDespesasMes, folhaSalariosMes, anexoSimplesKey, inssPatronalPct, simplesCalculo, presumidoCalculo]);
 
   // ==========================================================================
   // CÁLCULO 4: SIMULADOR DE PONTO DE EQUILÍBRIO CPP (EQUIPE X REGIME)
@@ -356,6 +540,8 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const economiaEquipeAtual = custoEquipeAtualFora - custoEquipeAtualSimples;
 
     return {
+      isMissingParams: simplesCalculo.isMissingParams,
+      missingMsg: simplesCalculo.missingMsg,
       cppSimplesTotal,
       cppUnitarioForaSimples,
       totalEncargosTaxa,
@@ -366,7 +552,11 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       economiaEquipeAtual,
       evolucaoColaboradores
     };
-  }, [simplesCalculo.cppEmbutidoSimples, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, salarioBaseColaborador, maxColaboradoresSimulacao, qtdColaboradoresAtual]);
+  }, [simplesCalculo, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, salarioBaseColaborador, maxColaboradoresSimulacao, qtdColaboradoresAtual]);
+
+  const currentAtividade = dbLucroPresumido.find(a => a.codigo_atividade === atividadeKey);
+  const currentEncargo = dbEncargos.find(e => e.codigo_atividade === atividadeKey) || dbEncargos.find(e => e.codigo_atividade === 'padrao');
+  const currentAnexoNome = anexosDisponiveis.find(a => a.id === anexoSimplesKey)?.nome || anexoSimplesKey;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -446,36 +636,52 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
             <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
               <span className="font-bold text-emerald-400 uppercase text-[11px] block">1. Simples Nacional (LC 123/2006)</span>
               <p className="text-[11px] text-slate-400">
+                <strong>Anexo Selecionado:</strong> <span className="text-emerald-300 font-semibold">{currentAnexoNome}</span>
+              </p>
+              <p className="text-[11px] text-slate-400">
                 <strong>Alíquota Efetiva:</strong> [(RBT12 × Alíquota Nominal) - Dedução] ÷ RBT12.
               </p>
               <p className="text-[11px] text-slate-400">
-                <strong>Transporte de Cargas (Art. 18, § 5º-E):</strong> Base Anexo III, deduzindo ISS (32% a 33,5%) e somando ICMS do Anexo I (33,5% a 34%).
+                <strong>Regra Setorial:</strong> {atividadeKey === 'transporte_cargas'
+                  ? 'Transporte Intermunicipal/Interestadual (Art. 18, § 5º-E): Base Anexo III, deduzindo fração ISS e somando ICMS do Anexo I.'
+                  : atividadeKey === 'servicos'
+                  ? 'Prestação de Serviços: Tributação com alíquota progressiva e verificação do Fator R.'
+                  : 'Comércio / Geral: Apuração com partilha de ICMS e CPP integrada no DAS.'}
               </p>
               <p className="text-[11px] text-slate-400">
-                <strong>Reforma (LC 214):</strong> Desonera fração IBS/CBS do DAS no Híbrido, mantendo o DAS residual.
+                <strong>Reforma (LC 214/25):</strong> Desonera fração IBS/CBS do DAS no Híbrido, mantendo o DAS residual (IRPJ, CSLL, CPP).
               </p>
             </div>
 
             <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
               <span className="font-bold text-amber-400 uppercase text-[11px] block">2. Lucro Presumido (Lei 9.249/1995)</span>
               <p className="text-[11px] text-slate-400">
-                <strong>Presunções Oficiais:</strong> Combustíveis 1,6% IRPJ / 12% CSLL; Transporte Cargas 8% IRPJ / 12% CSLL; Serviços 32%.
+                <strong>Atividade Parametrizada:</strong> <span className="text-amber-300 font-semibold">{currentAtividade?.nome_atividade || 'Atividade não configurada'}</span>
               </p>
               <p className="text-[11px] text-slate-400">
-                <strong>Adicional IRPJ (Art. 623 RIR/18):</strong> 10% sobre a parcela da base presumida que exceder R$ 20.000,00/mês.
+                <strong>Presunções Oficiais:</strong> IRPJ {currentAtividade ? (Number(currentAtividade.presuncao_irpj) * 100).toFixed(1) + '%' : '—'} | CSLL {currentAtividade ? (Number(currentAtividade.presuncao_csll) * 100).toFixed(1) + '%' : '—'}.
               </p>
               <p className="text-[11px] text-slate-400">
-                <strong>Adições:</strong> Outras receitas e ganhos de capital tributados a 100% (sem aplicar percentual de presunção).
+                <strong>Alíquotas:</strong> IRPJ Básico {currentAtividade ? (Number(currentAtividade.aliq_irpj_basico) * 100).toFixed(0) + '%' : '15%'} + CSLL {currentAtividade ? (Number(currentAtividade.aliq_csll) * 100).toFixed(0) + '%' : '9%'}.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                <strong>Adicional IRPJ (Art. 623 RIR/18):</strong> {currentAtividade ? (Number(currentAtividade.aliq_irpj_adicional) * 100).toFixed(0) + '%' : '10%'} sobre a parcela da base presumida que exceder R$ {currentAtividade ? Number(currentAtividade.limite_mensal_adicional).toLocaleString('pt-BR') : '20.000,00'}/mês.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                <strong>Base Legal:</strong> {currentAtividade?.artigo_legal || 'Art. 15 Lei 9.249/95 e RIR/2018'}.
               </p>
             </div>
 
             <div className="bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 space-y-1.5">
               <span className="font-bold text-cyan-400 uppercase text-[11px] block">3. Previdenciário / CPP (Break-Even)</span>
               <p className="text-[11px] text-slate-400">
-                <strong>No Simples (Anexos I a III, V):</strong> CPP inclusa no DAS. Custo não varia com novas contratações.
+                <strong>Ramo Parametrizado:</strong> <span className="text-cyan-300 font-semibold">{currentEncargo?.nome_ramo || 'Geral'}</span>
               </p>
               <p className="text-[11px] text-slate-400">
-                <strong>Fora do Simples:</strong> INSS patronal (20%) + RAT/FAP (1% a 3%) + Terceiros (5,2% a 5,8%) sobre folha.
+                <strong>Encargos Patronais Ativos:</strong> INSS ({inssPatronalPct.toFixed(1)}%) + RAT/FAP ({ratFapPct.toFixed(1)}%) + Sistema S ({sistemaSTerceirosPct.toFixed(1)}%) = Total {(inssPatronalPct + ratFapPct + sistemaSTerceirosPct).toFixed(1)}% sobre folha.
+              </p>
+              <p className="text-[11px] text-slate-400">
+                <strong>No Simples (Anexos I a III, V):</strong> CPP inclusa no DAS. Custo previdenciário não varia com novas contratações.
               </p>
               <p className="text-[11px] text-slate-400">
                 <strong>Ponto de Equilíbrio:</strong> N* = CPP Simples ÷ (Salário Médio × % Encargos).
@@ -490,6 +696,24 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       {/* ==================================================================== */}
       {activeTab === 'comparativo_dre' && (
         <div className="space-y-6">
+          {/* AVISO DE PARÂMETROS AUSENTES NO BANCO (SEM FALLBACK) */}
+          {(simplesCalculo.isMissingParams || presumidoCalculo.isMissingParams || aliquotaIvaGeral <= 0) && (
+            <div className="bg-amber-950/40 border border-amber-500/60 rounded-2xl p-4 text-amber-200 flex items-start gap-3 shadow-lg animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <strong className="text-amber-300 font-semibold block text-sm">Aviso: Parâmetros Fiscais Oficiais Pendentes de Cadastro</strong>
+                {simplesCalculo.isMissingParams && <p>• <strong>Simples Nacional:</strong> {simplesCalculo.missingMsg}</p>}
+                {presumidoCalculo.isMissingParams && <p>• <strong>Lucro Presumido:</strong> {presumidoCalculo.missingMsg}</p>}
+                {aliquotaIvaGeral <= 0 && (
+                  <p>• <strong>Alíquota Ad Valorem Reforma ({anoTransicao}):</strong> Alíquota não encontrada na tabela oficial do banco para {anoTransicao}.</p>
+                )}
+                <p className="text-[11px] text-amber-400/90 pt-1">
+                  Para garantir a precisão dos cálculos e a integridade jurídica, o sistema opera <strong>sem fallbacks ou estimativas silenciosas</strong>. Acesse o módulo <strong>"Parâmetros & Tabelas Fiscais"</strong> para cadastrar ou ajustar as faixas e alíquotas oficiais.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* MATRIZ DECISÓRIA DE 4 QUADRANTES (FORNECEDOR X CLIENTE) */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-3">
@@ -584,10 +808,21 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
             {/* COLUNA ESQUERDA: PARÂMETROS COMPLETOS (5 COLUNAS) */}
             <div className="xl:col-span-5 space-y-4">
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-slate-800 pb-3">
-                  <Sliders className="w-4 h-4 text-indigo-400" />
-                  Parâmetros de Entrada & Enquadramento
-                </h3>
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Sliders className="w-4 h-4 text-indigo-400" />
+                    Parâmetros de Entrada & Enquadramento
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleRestaurarPadrao}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 rounded-lg text-[11px] font-semibold transition"
+                    title="Restaura os valores padrões de alíquotas do banco de dados para a atividade e ano selecionados"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-indigo-400" />
+                    Restaurar Padrão dos Parâmetros Oficiais
+                  </button>
+                </div>
 
                 {/* Seletor de Atividade do Lucro Presumido */}
                 <div>
@@ -599,11 +834,15 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                     onChange={(e) => handleAtividadeChange(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                   >
-                    {ATIVIDADES_LUCRO_PRESUMIDO.map((ativ) => (
-                      <option key={ativ.id} value={ativ.id}>
-                        {ativ.nome} ({ativ.artigoLegal.split(';')[0]})
-                      </option>
-                    ))}
+                    {dbLucroPresumido.length > 0 ? (
+                      dbLucroPresumido.map((ativ) => (
+                        <option key={ativ.codigo_atividade} value={ativ.codigo_atividade}>
+                          {ativ.nome_atividade} ({ativ.fundamentacao_legal?.split(';')[0] || ''})
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">Carregando atividades do banco...</option>
+                    )}
                   </select>
                   <p className="text-[10px] text-indigo-400 mt-1">
                     Presunção IRPJ: <strong>{(presumidoCalculo.presuncaoIrpj * 100).toFixed(1)}%</strong> | Presunção CSLL: <strong>{(presumidoCalculo.presuncaoCsll * 100).toFixed(1)}%</strong>
@@ -621,9 +860,13 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                       onChange={(e) => setAnexoSimplesKey(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     >
-                      {Object.values(TABELAS_SIMPLES).map((t) => (
-                        <option key={t.id} value={t.id}>{t.nome}</option>
-                      ))}
+                      {anexosDisponiveis.length > 0 ? (
+                        anexosDisponiveis.map((t) => (
+                          <option key={t.id} value={t.id}>{t.nome}</option>
+                        ))
+                      ) : (
+                        <option value="">Carregando anexos do banco...</option>
+                      )}
                     </select>
                   </div>
 
@@ -633,17 +876,54 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                     </label>
                     <select
                       value={anoTransicao}
-                      onChange={(e) => setAnoTransicao(e.target.value)}
+                      onChange={(e) => handleAnoTransicaoChange(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="2027">2027 / 2028 (CBS 0,9% / IBS 0,1%)</option>
-                      <option value="2029">2029 (Início Redução ICMS/ISS)</option>
-                      <option value="2030">2030</option>
-                      <option value="2031">2031</option>
-                      <option value="2032">2032 (Último ano transição)</option>
-                      <option value="2033">2033 em diante (Regime Pleno)</option>
+                      <option value="2026">2026 (Ano de Teste - 1,00%)</option>
+                      <option value="2027">2027 (CBS 8,80% / IBS 0,10%)</option>
+                      <option value="2028">2028 (CBS 8,80% / IBS 0,10%)</option>
+                      <option value="2029">2029 (Transição IBS 10% - 10,67%)</option>
+                      <option value="2030">2030 (Transição IBS 20% - 12,54%)</option>
+                      <option value="2031">2031 (Transição IBS 30% - 14,41%)</option>
+                      <option value="2032">2032 (Transição IBS 40% - 16,28%)</option>
+                      <option value="2033">2033 em diante (IVA Dual Pleno 27,91%)</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Alíquota IVA Geral da Reforma (Sincronizada com Parâmetros & Tabelas Fiscais) */}
+                <div className="bg-slate-950/40 p-3 rounded-xl border border-slate-800/80">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-semibold text-slate-300">
+                      Alíquota IVA Dual Geral (%) [Ano {anoTransicao}]
+                    </label>
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                      aliquotaIvaGeral > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                    }`}>
+                      {aliquotaIvaGeral > 0 ? 'Oficial da Tabela Ad Valorem' : '⚠️ Alíquota Não Parametrizada'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step={0.01}
+                      value={aliquotaIvaGeral}
+                      onChange={(e) => setAliquotaIvaGeral(Number(e.target.value) || 0)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRestaurarPadrao}
+                      title="Restaurar alíquota oficial cadastrada no banco"
+                      className="flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 rounded-xl text-xs shrink-0 transition"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline text-[10px]">Restaurar</span>
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Origem: Módulo <em>"Parâmetros & Tabelas Fiscais"</em> &gt; aba <em>"Alíquota Ad Valorem (%)"</em>.
+                  </p>
                 </div>
 
                 {/* RBT12 e Faturamento Mensal */}
@@ -775,29 +1055,40 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
               <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 space-y-3">
                 <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
                   <span>Enquadramento Oficial Simples Nacional</span>
-                  <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded font-mono">
-                    {simplesCalculo.faixaNumero}ª Faixa da LC 123
+                  <span className={`px-2 py-0.5 rounded font-mono ${simplesCalculo.isMissingParams ? 'bg-amber-500/20 text-amber-300' : 'bg-indigo-500/20 text-indigo-300'}`}>
+                    {simplesCalculo.isMissingParams ? 'Não Parametrizado' : `${simplesCalculo.faixaNumero}ª Faixa da LC 123`}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Alíq. Nominal</span>
-                    <strong className="text-xs text-white font-mono">{formatPct(simplesCalculo.aliqNominal)}</strong>
+                {simplesCalculo.isMissingParams ? (
+                  <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl text-amber-200 text-xs">
+                    {simplesCalculo.missingMsg}
+                    <div className="text-[11px] text-slate-400 mt-1">
+                      Acesse a aba <strong>Parâmetros & Tabelas Fiscais</strong> &gt; <strong>Simples Nacional (LC 123)</strong> para cadastrar as faixas deste anexo.
+                    </div>
                   </div>
-                  <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Dedução Oficial</span>
-                    <strong className="text-xs text-amber-400 font-mono">{formatMoney(simplesCalculo.deducao)}</strong>
-                  </div>
-                  <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 block">Alíq. Efetiva DAS</span>
-                    <strong className="text-xs text-emerald-400 font-mono">{formatPct(simplesCalculo.aliqEfetiva)}</strong>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Alíq. Nominal</span>
+                        <strong className="text-xs text-white font-mono">{formatPct(simplesCalculo.aliqNominal)}</strong>
+                      </div>
+                      <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Dedução Oficial</span>
+                        <strong className="text-xs text-amber-400 font-mono">{formatMoney(simplesCalculo.deducao)}</strong>
+                      </div>
+                      <div className="p-2 bg-slate-950/80 rounded-xl border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Alíq. Efetiva DAS</span>
+                        <strong className="text-xs text-emerald-400 font-mono">{formatPct(simplesCalculo.aliqEfetiva)}</strong>
+                      </div>
+                    </div>
 
-                <div className="text-[11px] bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-slate-400 leading-relaxed">
-                  <strong>Partilha Reforma (LC 214/227):</strong> Do total do DAS, <span className="text-indigo-300 font-bold">{formatPct(simplesCalculo.fracaoIBSCBS)}</span> representam IBS e CBS em {anoTransicao}. No Simples Híbrido, essa parcela é desonerada da guia do DAS ({formatPct(simplesCalculo.aliqResidualDAS)} residual).
-                </div>
+                    <div className="text-[11px] bg-slate-950/60 p-3 rounded-xl border border-slate-800 text-slate-400 leading-relaxed">
+                      <strong>Partilha Reforma (LC 214/227):</strong> Do total do DAS, <span className="text-indigo-300 font-bold">{formatPct(simplesCalculo.fracaoIBSCBS)}</span> representam IBS e CBS em {anoTransicao}. No Simples Híbrido, essa parcela é desonerada da guia do DAS ({formatPct(simplesCalculo.aliqResidualDAS)} residual).
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -808,30 +1099,30 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Simples Tradicional</span>
                   <div className="text-xl font-extrabold text-white font-mono">
-                    {formatMoney(dreComparativo.trad.totalTributos)}
+                    {simplesCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.trad.totalTributos)}
                   </div>
-                  <span className="text-[11px] text-emerald-400 mt-1 block">
-                    Resultado: {formatMoney(dreComparativo.trad.resultadoLiquido)} ({dreComparativo.trad.margemLiquidaPct.toFixed(1)}%)
+                  <span className={`text-[11px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.trad.resultadoLiquido)} (${dreComparativo.trad.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
 
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Simples Híbrido</span>
                   <div className="text-xl font-extrabold text-indigo-300 font-mono">
-                    {formatMoney(dreComparativo.hib.totalTributos)}
+                    {simplesCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.hib.totalTributos)}
                   </div>
-                  <span className="text-[11px] text-indigo-400 mt-1 block">
-                    Resultado: {formatMoney(dreComparativo.hib.resultadoLiquido)} ({dreComparativo.hib.margemLiquidaPct.toFixed(1)}%)
+                  <span className={`text-[11px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-indigo-400'}`}>
+                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.hib.resultadoLiquido)} (${dreComparativo.hib.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
 
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lucro Presumido</span>
                   <div className="text-xl font-extrabold text-cyan-300 font-mono">
-                    {formatMoney(dreComparativo.pres.totalTributos)}
+                    {presumidoCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.pres.totalTributos)}
                   </div>
-                  <span className="text-[11px] text-cyan-400 mt-1 block">
-                    Resultado: {formatMoney(dreComparativo.pres.resultadoLiquido)} ({dreComparativo.pres.margemLiquidaPct.toFixed(1)}%)
+                  <span className={`text-[11px] mt-1 block ${presumidoCalculo.isMissingParams ? 'text-amber-400' : 'text-cyan-400'}`}>
+                    {presumidoCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.pres.resultadoLiquido)} (${dreComparativo.pres.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
               </div>
@@ -1005,7 +1296,11 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                   Diagnóstico Estratégico do Radar de Conformidade
                 </div>
                 <p className="text-xs leading-relaxed opacity-90">
-                  {pctVendaB2B >= 60 && pctCompraRegimeGeral >= 60 ? (
+                  {simplesCalculo.isMissingParams || presumidoCalculo.isMissingParams ? (
+                    <span>
+                      <strong>Aguardando parametrização oficial:</strong> Para emitir o diagnóstico estratégico comparativo e recomendações precisas de enquadramento tributário, configure os parâmetros oficiais no módulo <strong>Parâmetros & Tabelas Fiscais</strong>.
+                    </span>
+                  ) : pctVendaB2B >= 60 && pctCompraRegimeGeral >= 60 ? (
                     <>
                       <strong>Recomendação: Simples Híbrido (IBS/CBS por Fora).</strong> Sua empresa fatura predominantemente para PJs ({pctVendaB2B}%) e adquire {pctCompraRegimeGeral}% dos seus insumos com crédito pleno no Regime Geral. A vantagem comercial gerada na nota para os seus clientes ({formatMoney(dreComparativo.hib.creditoCliente)} em créditos) neutraliza o impacto de caixa e fortalece sua retenção de clientes contra concorrentes do Lucro Real.
                     </>
@@ -1030,6 +1325,20 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       {/* ==================================================================== */}
       {activeTab === 'break_even_cpp' && (
         <div className="space-y-6">
+          {/* AVISO DE PARÂMETROS AUSENTES NO SIMPLES NACIONAL */}
+          {simplesCalculo.isMissingParams && (
+            <div className="bg-amber-950/40 border border-amber-500/60 rounded-2xl p-4 text-amber-200 flex items-start gap-3 shadow-lg animate-in fade-in">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <strong className="text-amber-300 font-semibold block text-sm">Alerta: CPP do Simples Nacional Não Parametrizado</strong>
+                <p>{simplesCalculo.missingMsg}</p>
+                <p className="text-[11px] text-amber-400/90 pt-1">
+                  O ponto de equilíbrio previdenciário depende da alíquota efetiva e percentual de repartição de CPP oficial da LC 123/2006. Acesse <strong>Parâmetros & Tabelas Fiscais &gt; Simples Nacional (LC 123)</strong> para conferir as faixas.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* BANNER DE ALERTA DE EXCEÇÃO JURÍDICA: ANEXO IV */}
           {anexoSimplesKey === 'anexo4' && (
             <div className="bg-amber-950/60 border border-amber-500/80 rounded-2xl p-4 flex items-start gap-3">

@@ -3,8 +3,8 @@ import { consultarCadastroTriplaCamada, calcularRegimeTributarioEstrito } from '
 
 async function runTests() {
   console.log('═══════════════════════════════════════════════════════════════');
-  console.log('TESTE 1: SUPERGASBRAS ENERGIA LTDA (FILIAL ARAUCÁRIA/PR)');
-  console.log('CNPJ: 19.791.896/0046-02 | UF: PR');
+  console.log('TESTE 1: EMPRESA TESTE REGIME REAL S/A (FILIAL PR)');
+  console.log('CNPJ FILIAL | UF: PR');
   console.log('═══════════════════════════════════════════════════════════════');
 
   // Teste Frontend queryCnpjsData (UF VAZIA POR PADRÃO)

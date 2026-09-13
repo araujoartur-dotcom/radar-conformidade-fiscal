@@ -56,3 +56,4 @@ data/certificates/
 #.vercel
 .gemini
 .system_generated
+scratch/

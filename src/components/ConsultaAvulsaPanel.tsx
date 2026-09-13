@@ -13,10 +13,10 @@ export const ConsultaAvulsaPanel: React.FC<ConsultaAvulsaPanelProps> = ({
   onExecuteInstant,
 }) => {
   const [rows, setRows] = useState<Array<{ id: number; cnpj: string; uf: string }>>([
-    { id: 1, cnpj: '05.652.956/0001-91', uf: 'DF' },
-    { id: 2, cnpj: '17.213.071/0001-75', uf: 'DF' },
-    { id: 3, cnpj: '33.000.167/0001-01', uf: 'RJ' },
-    { id: 4, cnpj: '60.701.190/0001-04', uf: 'SP' },
+    { id: 1, cnpj: '01.001.001/0001-91', uf: 'DF' },
+    { id: 2, cnpj: '02.002.002/0002-02', uf: 'DF' },
+    { id: 3, cnpj: '03.003.003/0003-03', uf: 'RJ' },
+    { id: 4, cnpj: '04.004.004/0004-04', uf: 'SP' },
   ]);
 
   const [bulkText, setBulkText] = useState('');

@@ -1,0 +1,72 @@
+# Walkthrough: Resolução de Visualização de DF-es & Eliminação de Fallbacks Enganosos
+
+Este documento detalha o diagnóstico completo, a resolução do problema de visualização/quantificação das notas fiscais no módulo de Documentos Fiscais DF-e e a eliminação dos fallbacks enganosos, tudo validado localmente com **0 erros** e **sem deploy**.
+
+---
+
+## 1. Diagnóstico do Problema no Módulo de Documentos Fiscais DF-e
+
+### O Que Aconteceu
+1. **Preservação dos Dados**: As **21.345 notas fiscais** continuam 100% íntegras no Supabase Cloud (somando mais de **R$ 789.251.163,21**). Todas pertencem à **SUPERGASBRAS ENERGIA LTDA** (`7c0aa7e3-fc96-4df4-9837-4c20d7b87376`).
+2. **Empresa Padrão no Login**: A empresa `MIS MARKETING LTDA` (`1f669943-4cf8-49a7-a7de-55cbfd782f86`) possui legitimamente 0 notas. Como o login ordenava alfabeticamente por razão social (`MIS Marketing` antes de `Supergasbras`), o usuário Analista Fiscal (`analista.fiscal@empresa.com.br`) era logado na MIS Marketing.
+3. **Falha Silenciosa em `GET /api/auth/me`**: Como a rota selecionava a coluna inexistente `empresa_ativa_id` no Supabase (erro PostgreSQL `42703`), a chamada falhava e caía no fallback SQLite onde o usuário não possuía empresas cadastradas.
+4. **Falta de Reatividade no Front-end**: No componente [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx), o `useEffect` de busca possuía dependência vazia `[]`. Ao trocar para a Supergasbras no Header, o painel não recarregava os documentos nem enviava o parâmetro `empresaId`.
+5. **Filiais da Supergasbras**: Notas emitidas contra filiais da Supergasbras (`19.791.896/0090-78`, `19.791.896/0104-08`, etc.) não entravam no filtro quando a consulta comparava apenas o CNPJ de 14 dígitos da Matriz.
+
+---
+
+## 2. Correções Implementadas
+
+### A. Autenticação & Sincronização Segura ([auth.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/auth.ts))
+- Removida qualquer seleção ou tentativa de atualização da coluna `empresa_ativa_id` no Supabase (elimina o erro PostgreSQL `42703`).
+- Implementada prioridade inteligente no login: usuários com e-mail `@supergasbras.com.br` têm a **SUPERGASBRAS ENERGIA LTDA** selecionada como empresa ativa imediata.
+- Criada a função `syncEmpresaToSqlite`, que atualiza ou insere empresas e vínculos no SQLite sem violar integridade referencial (`FOREIGN KEY constraint`).
+
+### B. Resolução de CNPJ e Matching por Raiz ([upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts))
+- Nas rotas `/documentos` e `/kpis`, o CNPJ da empresa ativa agora é resolvido no SQLite com fallback direto no Supabase.
+- O filtro de tenant agora utiliza `empresa_id.eq.${empresaIdParam}` combinado com a raiz de 8 dígitos do CNPJ (`19791896`), capturando com precisão as **21.345 notas** tanto da Matriz quanto de todas as Filiais.
+
+### C. Isolamento de Chunks nos KPIs ([kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts))
+- Adicionado `.eq('empresa_id', filters.empresaId)` nas consultas paralelas em blocos (chunks), blindando o cálculo agregado de KPIs contra vazamento entre tenants.
+
+### D. Reatividade no Painel de DF-es ([DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx) & [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx))
+- Conectado ao `useAuth()` e adicionado `[empresaAtiva?.id]` no `useEffect`, recarregando instantaneamente a lista ao selecionar outra empresa.
+- A requisição `/upload/documentos` agora envia expressamente `&empresaId=${empresaAtiva.id}`.
+- Adicionado estado visual de carregamento (`isLoadingDocs`) e estado honesto quando não há documentos (`dfeList.length === 0`).
+- No [App.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/App.tsx), a lista compartilhada de DF-es é limpa ao alternar de empresa para evitar contaminação visual entre empresas.
+
+---
+
+## 3. Eliminação de Fallbacks Enganosos (Anteriormente Concluído)
+- **[Header.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/Header.tsx)** e **[CarteiraCnpjsPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CarteiraCnpjsPanel.tsx)**: Removido fallback que simulava sucesso local quando a troca de empresa falhava no servidor.
+- **[DanfeModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DanfeModal.tsx)**: Removido item sintético fictício quando o XML não tem tag `<det>`.
+- **[RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx)**: Removidos registros fictícios (`00.000.000/0001-91`).
+- **[TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx)**: Removidos bypasses diretos ao Supabase que pulavam auditoria.
+
+---
+
+## 4. Resultados dos Testes & Validação de Ponta a Ponta
+
+1. **Teste de Ponta a Ponta (`scripts/verify_all.ts`):**
+   - Login com Analista Fiscal (`analista.fiscal@empresa.com.br`) -> Empresa ativa: **SUPERGASBRAS ENERGIA LTDA**.
+   - `GET /api/auth/me` -> **200 OK** sem erro 42703.
+   - `GET /api/upload/documentos?empresaId=...` -> **21.345 notas fiscais** quantificadas na base.
+   - `GET /api/upload/kpis?empresaId=...` -> Total R$ 789.251.163,21 | CBS R$ 818.009,02 | IBS R$ 90.888,64.
+   - Alternância para MIS Marketing -> 0 notas retornadas com honestidade.
+   - Retorno para Supergasbras -> 21.345 notas com sincronização instantânea.
+   - Resultado: **100% de sucesso**.
+
+2. **TypeScript Compilation:**
+   - Comando: `npx tsc --noEmit`
+   - Resultado: **0 erros**.
+
+3. **Build de Produção (Vite):**
+   - Comando: `npm run build`
+   - Resultado: **Sucesso** em 12.08s com 0 erros.
+
+4. **Regras Tributárias & Gestão Contábil:**
+   - `scripts/test_simulador_regimes.ts`: **100% aprovado**.
+   - `scripts/test_contador_gestor.ts`: **100% aprovado**.
+
+5. **Deploy:**
+   - **NENHUM DEPLOY REALIZADO.** Código pronto, testado e seguro localmente.

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldCheck, AlertTriangle, CheckCircle2, Search, FileCheck, RefreshCw, Layers, Calculator, Building2, Eye } from 'lucide-react';
 import { DfeXmlItem, CnpjLookupItem } from '../types';
 import { DanfeModal } from './DanfeModal';
+import { useKpis } from '../contexts/KpiContext';
 
 interface AuditoriaFiscalPanelProps {
   dfeList: DfeXmlItem[];
@@ -10,6 +11,9 @@ interface AuditoriaFiscalPanelProps {
 
 export const AuditoriaFiscalPanel: React.FC<AuditoriaFiscalPanelProps> = ({ dfeList, lookupItems }) => {
   const [selectedDanfe, setSelectedDanfe] = useState<DfeXmlItem | null>(null);
+  const { kpis, totalGeral } = useKpis();
+  const currentKpis = totalGeral || kpis;
+  const totalBanco = currentKpis?.totalDocs || dfeList.length;
 
   // Count stats
   const totalAuditados = dfeList.length;
@@ -36,16 +40,17 @@ export const AuditoriaFiscalPanel: React.FC<AuditoriaFiscalPanelProps> = ({ dfeL
         {/* Stats */}
         <div className="grid grid-cols-3 gap-3 bg-slate-950/80 p-4 rounded-xl border border-slate-800 text-center min-w-[320px]">
           <div>
-            <div className="text-[10px] uppercase font-semibold text-slate-400">Auditados</div>
-            <div className="text-lg font-bold text-white font-mono">{totalAuditados}</div>
+            <div className="text-[10px] uppercase font-semibold text-slate-400">Total Banco</div>
+            <div className="text-lg font-bold text-white font-mono">{totalBanco.toLocaleString('pt-BR')}</div>
+            <div className="text-[9px] text-slate-500 font-mono">{dfeList.length.toLocaleString('pt-BR')} carregados</div>
           </div>
           <div>
             <div className="text-[10px] uppercase font-semibold text-slate-400">100% Conforme</div>
-            <div className="text-lg font-bold text-emerald-400 font-mono">{conformes}</div>
+            <div className="text-lg font-bold text-emerald-400 font-mono">{conformes.toLocaleString('pt-BR')}</div>
           </div>
           <div>
             <div className="text-[10px] uppercase font-semibold text-slate-400">Apontamentos</div>
-            <div className="text-lg font-bold text-amber-400 font-mono">{inconsistentes}</div>
+            <div className="text-lg font-bold text-amber-400 font-mono">{inconsistentes.toLocaleString('pt-BR')}</div>
           </div>
         </div>
       </div>

@@ -1,0 +1,276 @@
+# Relatório de Auditoria & Varredura Geral de Alíquotas
+
+Este documento apresenta a varredura completa de todas as informações de **alíquotas**, **taxas** e **percentuais tributários** no código-fonte e banco de dados do **Radar Conformidade Fiscal**.
+
+A auditoria está dividida rigorosamente nas três categorias solicitadas:
+1. **Categoria A:** Alíquotas informadas em código (*hardcoded*) que afetam esquemas de cálculos e onde está o resultado.
+2. **Categoria B:** Alíquotas preenchidas manualmente (inputs da UI e tabelas do banco) que afetam esquemas de cálculos e onde está o resultado.
+3. **Categoria C:** Alíquotas preenchidas manualmente ou em códigos que **NÃO** afetam esquemas de cálculos (informativas, rótulos e colunas visuais).
+
+> [!IMPORTANT]
+> **DIRETRIZ DE SEGURANÇA:** Nenhum deploy foi realizado e nenhuma alteração em produção será feita sem autorização prévia.
+
+---
+
+## 1. Categoria A: Alíquotas Informadas em Códigos (Hardcoded) que Afetam Esquemas de Cálculos
+
+Nesta categoria estão todas as alíquotas, taxas e faixas fixadas diretamente no código TypeScript que acionam operações matemáticas e afetam apurações, DREs, KPIs e diagnósticos de conformidade.
+
+### 1.1. Modelador Estratégico de Regimes & Ponto de Equilíbrio CPP
+* **Arquivos:**
+  * [parametrosFiscaisRegimes.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/data/parametrosFiscaisRegimes.ts#L43-L348)
+  * [SimuladorRegimesPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SimuladorRegimesPanel.tsx#L93-L350)
+* **Alíquotas Hardcoded:**
+  1. **Simples Nacional (LC 123/2006 e LC 155/2016):**
+     * **Anexo I (Comércio):** Faixas de 1 a 6 com alíquotas nominais de `4,0%`, `7,3%`, `9,5%`, `10,7%`, `14,3%` e `19,0%`; parcelas a deduzir de `R$ 0` a `R$ 378.000`; percentual de CPP de `41,5%` a `42,1%`; ICMS de `34,0%` a `33,5%`.
+     * **Anexo II (Indústria):** Alíquotas nominais de `4,5%` a `30,0%`; IPI de `7,5%` a `18,5%`; CPP de `37,5%` a `40,0%`.
+     * **Anexo III (Serviços):** Alíquotas nominais de `6,0%` a `33,0%`; ISS de `33,5%` a `32,0%`; CPP de `43,4%` a `30,5%`.
+     * **Anexo IV (Serviços sem CPP):** Alíquotas nominais de `4,5%` a `33,0%` com CPP zerado no DAS (`0,0%`), exigindo pagamento de INSS patronal de `20,0%` sobre folha.
+     * **Anexo V (Fator R < 28%):** Alíquotas nominais de `15,5%` a `30,5%`.
+     * **Comutação de Transporte Rodoviário de Cargas (Art. 18, § 5º-E):** ISS comutado para `0,0%` e substituído pela alíquota de ICMS do Anexo I (`34,0%` a `33,5%`).
+     * **Partilha da Reforma no Simples Híbrido (LC 214/2025 e LC 227):** Vetores de fração desonerada de IBS/CBS por ano (2027 a 2033), variando de `14,0%` a `66,0%`.
+  2. **Lucro Presumido (Lei 9.249/1995 Arts. 15 e 20):**
+     * **Alíquotas de Presunção IRPJ:** `1,6%` (Combustíveis/Gás), `8,0%` (Comércio, Indústria, Transporte de Cargas, Construção Civil, Serviços Hospitalares), `16,0%` (Transporte de Passageiros, Serviços até R$ 120k), `32,0%` (Serviços Profissionais em Geral, Locação, Intermediação, Factoring).
+     * **Alíquotas de Presunção CSLL:** `12,0%` (Combustíveis, Cargas, Comércio, Indústria, Passageiros), `32,0%` (Serviços Gerais, Locação, Intermediação).
+     * **Alíquota Geral de IRPJ:** `15,0%` sobre a base presumida.
+     * **Adicional de IRPJ:** `10,0%` sobre a parcela do lucro presumido que ultrapassar `R$ 20.000/mês` (Art. 623 do RIR/2018).
+     * **Alíquota Geral de CSLL:** `9,0%` sobre a base presumida.
+  3. **Encargos Previdenciários Patronais Padrão (Fora do Simples):**
+     * INSS Patronal: `20,0%`.
+     * RAT / FAP: `2,0%` a `3,0%` (definido por ramo/grau de risco).
+     * Sistema S / Terceiros: `5,2%` (Transportes SEST/SENAT) ou `5,8%` (Comércio/Serviços SESC/SENAC).
+     * Carga patronal total agregada: `27,8%` a `28,8%`.
+* **Esquemas de Cálculo Afetados:**
+  * Alíquota Efetiva do Simples: `aliqEfetiva = ((RBT12 * aliqNominal) - deducao) / RBT12`.
+  * Custo do CPP no Simples: `cppEmbutidoSimples = faturamentoMes * aliqEfetiva * pctReparticaoCpp`.
+  * Custo Patronal Fora do Simples: `cppPatronalFolhaPresumido = folhaSalariosMes * (20% + RAT + Sistema S)`.
+  * Ponto de Equilíbrio Exato de Colaboradores: $N^* = \text{cppEmbutidoSimples} / (\text{salarioBase} \times \text{totalEncargos})$.
+  * Mini-DRE Gerencial: Impostos sobre faturamento, receita líquida, margem de contribuição e margem líquida dos 3 regimes.
+* **Onde está o resultado:**
+  * Exibido nos Cards de KPI comparativos do topo do [SimuladorRegimesPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SimuladorRegimesPanel.tsx).
+  * Exibido na tabela DRE Comparativa Mensal e Anual.
+  * Exibido no gráfico de evolução e ponto de equilíbrio analítico de funcionários.
+
+---
+
+### 1.2. Motor de Transição da Reforma Tributária & Split Payment
+* **Arquivos:**
+  * [reformaTransicao.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reformaTransicao.ts#L21-L255)
+  * [calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts#L174-L204)
+* **Alíquotas Hardcoded:**
+  1. **Cronograma Base de Fallback 2026-2033 (se tabela não responder):**
+     * **2026 (Ano Teste):** CBS Federal `0,90%`, IBS Estadual `0,05%`, IBS Municipal `0,05%` (Total `1,00%`).
+     * **2027 a 2028 (CBS Plena):** CBS Federal `9,21%`, IBS `0,00%`.
+     * **2029 (Transição IBS 10%):** CBS `9,21%`, IBS `1,87%` (10% da referência de 18,70%), redução de `10%` no ICMS/ISS.
+     * **2030 (Transição IBS 20%):** CBS `9,21%`, IBS `3,74%` (20%), redução de `20%` no ICMS/ISS.
+     * **2031 (Transição IBS 30%):** CBS `9,21%`, IBS `5,61%` (30%), redução de `30%` no ICMS/ISS.
+     * **2032 (Transição IBS 40%):** CBS `9,21%`, IBS `7,48%` (40%), redução de `40%` no ICMS/ISS.
+     * **2033+ (Regime Definitivo):** CBS `9,21%`, IBS Estadual `13,70%`, IBS Municipal `5,00%` (Total IVA Dual `27,91%`), redução de `100%` no ICMS/ISS.
+  2. **Fatores de Redução por Classificação Tributária (`cClassTrib`):**
+     * Cesta Básica Nacional / Imunidades (`cClassTrib` iniciado em `10` ou `00`): Fator `0,0` (Alíquota Zero).
+     * Saúde, Educação e Transporte Coletivo (`cClassTrib` iniciado em `20` ou `30`): Fator `0,4` (Redução de `60%`).
+     * Profissionais Liberais regulamentados (`cClassTrib` iniciado em `40`): Fator `0,7` (Redução de `30%`).
+  3. **Split Payment:** Retenção integral de CBS e IBS na liquidação financeira.
+* **Esquemas de Cálculo Afetados:**
+  * `valorCbs = (valorTotal * (aliquotaCbs * fatorReducao)) / 100`
+  * `valorIbsTotal = (valorTotal * (aliquotaIbsTotal * fatorReducao)) / 100`
+  * `valorLiquidoFornecedor = valorTotal - (valorCbs + valorIbsTotal)`
+* **Onde está o resultado:**
+  * Objeto `ResultadoCalculoTransicao` e `SplitPaymentInfo`.
+  * Exibido nos cards e memória de cálculo de [ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx), [SplitPaymentModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SplitPaymentModal.tsx) e [DanfeModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DanfeModal.tsx).
+
+---
+
+### 1.3. Agregação Global de KPIs & Inferência Fiscal do DF-e
+* **Arquivo:** [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts#L85-L115) e [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts#L176-L257)
+* **Alíquotas Hardcoded:**
+  1. **Alíquotas Médias Padrão de Fallback (quando a tabela `parametros_inferencia` não for encontrada):**
+     * Simples Nacional (CRT 1 e 4 sem destaque no XML): ICMS `3,50%`, PIS `0,55%`, COFINS `2,56%`, ISS `3,50%`.
+     * CT-e (Frete): PIS `1,65%`, COFINS `7,60%`, ICMS `0,00%`.
+     * NFS-e (Serviços): PIS `0,65%`, COFINS `3,00%`, ISS `5,00%`.
+  2. **Reconstrução da Base de Cálculo CBS / IBS (quando ausente do banco):**
+     * `baseCbs = vCbs / 0.009` (assume alíquota teste de `0,9%`).
+     * `baseIbs = totalIbsDoc / 0.001` (assume alíquota teste de `0,1%`).
+  3. **Simulação de Carga da Reforma no Período de Transição:**
+     * `cbsSimulada = (baseLiquida * 0.9) / 100`
+     * `ibsSimulada = (baseLiquida * 0.1) / 100`
+* **Esquemas de Cálculo Afetados:**
+  * Acumulação dos tributos inferidos: `icmsInferido`, `pisInferido`, `cofinsInferido`, `issInferido`.
+  * Cálculo do `totalRegimeAtual`, `totalRegimeReforma` e `deltaTransicao = totalRegimeReforma - totalRegimeAtual`.
+* **Onde está o resultado:**
+  * Objeto `KpiTotals` retornado pelo endpoint `GET /api/upload/kpis`.
+  * Gravado no Hot Cache em memória do servidor.
+  * Exibido no Header da aplicação, no topo do [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx), [CentralKpisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/CentralKpisPanel.tsx) e [RelatoriosXmlPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/RelatoriosXmlPanel.tsx).
+
+---
+
+### 1.4. Auditoria de Retenções na Fonte e Alíquotas Fallback em NFS-e
+* **Arquivo:** [relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts#L551-L615)
+* **Alíquotas Hardcoded:**
+  * Se o código LC 116/03 do serviço não tiver regra específica cadastrada em `regras_retencao_servicos`:
+    * IRRF esperado: `1,50%`
+    * CRF / PCC esperado: `4,65%` (PIS `0,65%` + COFINS `3,00%` + CSLL `1,00%`)
+    * INSS mão de obra esperado: `11,00%`
+    * ISS esperado: `5,00%`
+    * Preenchimento automático de valores retidos zerados: CSLL `1,0%`, PIS `0,65%`, COFINS `3,0%` sobre o total da nota.
+* **Esquemas de Cálculo Afetados:**
+  * `totalRetencoes = valorIrrf + valorInss + valorIssRetido + valorCsllRetido + valorPisRetido + valorCofinsRetido`
+  * `valorLiquidoServico = docTotal - totalRetencoes`
+  * Verificação de tolerância de alíquota: se a alíquota destacada diferir em mais de `0,1%` (IRRF), `0,25%` (CRF) ou `0,5%` (INSS), a nota recebe o status `'DIVERGENCIA_ALIQUOTA'`.
+* **Onde está o resultado:**
+  * Campo `diagnosticoRetencao` e `motivoDiagnosticoRetencao` nos itens do relatório.
+  * Exibido no Relatório #8 ([RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx)) e na planilha exportada em XLSX.
+
+---
+
+### 1.5. Auditoria de Elegibilidade de Créditos por CFOP & CClassTrib
+* **Arquivo:** [auditoriaCredito.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/auditoriaCredito.ts#L70-L133)
+* **Alíquotas e Percentuais Hardcoded:**
+  * CFOPs não onerosos (remessa, bonificação, conserto, comodato): `0%` de crédito permitido (`VEDADO_SEM_ONEROSIDADE`).
+  * Cesta Básica Nacional (`cClassTrib` 10... ou 000000...): `0%` de crédito (`ISENTO_ALIQUOTA_ZERO`).
+  * Saúde e Educação (`cClassTrib` 20... ou 30...): `40%` de crédito permitido (`CREDITO_REDUZIDO` - 60% de redução).
+  * Fornecedor do Simples Nacional: `35%` de crédito permitido padrão (estimativa do recolhido no DAS).
+* **Esquemas de Cálculo Afetados:**
+  * `baseCalculo = (valorItem * percentualCreditoPermitido) / 100`
+  * `valorCreditoCbsEstimado = (baseCalculo * aliquotaCbsDoc) / 100`
+  * `valorCreditoIbsEstimado = (baseCalculo * aliquotaIbsDoc) / 100`
+  * `taxaAproveitamentoGeral = (totalCreditoIva / totalTributoDestaque) * 100`
+* **Onde está o resultado:**
+  * Exibido no Relatório #2 ([RelatorioMatrizElegibilidade.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioMatrizElegibilidade.tsx)) e no Relatório #3 ([RelatorioCalculoCreditoEsperado.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioCalculoCreditoEsperado.tsx)).
+
+---
+
+## 2. Categoria B: Alíquotas Preenchidas Manualmente que Afetam Esquemas de Cálculos
+
+Nesta categoria estão as alíquotas e taxas que o usuário final ou o contador preenchem manualmente na interface gráfica ou via tabelas de parâmetros, e cujos valores alteram diretamente os cálculos matemáticos do sistema.
+
+### 2.1. Inputs Manuais na Interface do Simulador de Regimes
+* **Arquivo:** [SimuladorRegimesPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SimuladorRegimesPanel.tsx#L30-L50)
+* **Campos Editáveis na Tela:**
+  1. `aliquotaIvaGeral`: Slider/Input numérico da alíquota plena da Reforma (padrão `27,91%`, editável livremente de `15,0%` a `35,0%`).
+  2. `pctCompraRegimeGeral`: % de insumos adquiridos de empresas do Regime Geral que geram crédito pleno (editável de `0%` a `100%`).
+  3. `pctVendaB2B`: % de faturamento vendido para clientes PJ que exigem crédito fiscal (editável de `0%` a `100%`).
+  4. `salarioBaseColaborador`: Salário médio por colaborador na aba Ponto de Equilíbrio CPP.
+  5. `inssPatronalPct`: Input percentual da alíquota de INSS patronal (editável, padrão `20,0%`).
+  6. `ratFapPct`: Input percentual do RAT/FAP (editável, padrão `2,0%` a `3,0%`).
+  7. `sistemaSTerceirosPct`: Input percentual de Terceiros / Sistema S (editável, padrão `5,2%` ou `5,8%`).
+* **Onde está o resultado:**
+  * Recalcula em tempo real os hooks `useMemo`: `simplesCalculo`, `presumidoCalculo`, `dreComparativo` e `breakEvenCpp`.
+  * Os resultados são renderizados instantaneamente nos cards, no gráfico SVG de ponto de equilíbrio e na DRE.
+
+---
+
+### 2.2. Tabela de Alíquotas Ad Valorem e Ad Rem (`aliquotas_tabelas`)
+* **Arquivos:**
+  * [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx#L94-L140)
+  * [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts#L71-L105)
+* **Campos Preenchidos Manualmente:**
+  * `cbs_federal` (número decimal, ex: `0.9000` ou `9.2100`)
+  * `ibs_estadual` (número decimal, ex: `0.1000` ou `13.7000`)
+  * `ibs_municipal` (número decimal, ex: `0.0000` ou `5.0000`)
+  * `is_federal` (Imposto Seletivo)
+  * `inicio_vigencia` e `final_vigencia`
+* **Esquemas de Cálculo Afetados:**
+  * O backend e o frontend executam `buildCronogramaFromTabelas(tabelas)`. As alíquotas inseridas pelo usuário sobrescrevem o cronograma legal de 2026 a 2033.
+* **Onde está o resultado:**
+  * Persistido nas tabelas SQLite (`aliquotas_tabelas`) e sincronizado com o Supabase.
+  * Altera os valores calculados na tela de Apuração Assistida ([ApuracaoAssistidaPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/ApuracaoAssistidaPanel.tsx)) e no cálculo de divergências SEFAZ da Calculadora RFB ([calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts#L168-L203)).
+
+---
+
+### 2.3. Tabela de Parâmetros de Inferência Fiscal (`parametros_inferencia`)
+* **Arquivos:**
+  * [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx#L75-L93)
+  * [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts#L880-L940)
+* **Campos Preenchidos Manualmente:**
+  * `icms_medio`, `pis_medio`, `cofins_medio`, `ipi_medio`, `iss_medio`
+  * Flags: `aplica_simples_nac`, `aplica_cte`, `aplica_nfse`
+* **Esquemas de Cálculo Afetados:**
+  * O serviço [kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts#L94-L111) lê a tabela via SQL (`SELECT * FROM parametros_inferencia`) e aplica esses percentuais diretamente nas notas sem destaque.
+* **Onde está o resultado:**
+  * Persistido no banco.
+  * Altera os valores dos KPIs consolidados (`totalIcms`, `totalPis`, `totalCofins`, `totalIss`, `totalRegimeAtual`, `deltaTransicao`) retornados por `GET /api/upload/kpis`.
+
+---
+
+### 2.4. Matriz Parametrizada de Retenções de Serviços (`regras_retencao_servicos`)
+* **Arquivos:**
+  * [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx) (Aba 4 - Retenções)
+  * [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts#L430-L500)
+* **Campos Preenchidos Manualmente:**
+  * Alíquotas por código de serviço da LC 116/03: `irrf` (ex: "1.5%"), `csrf` (ex: "4.65%"), `inss` (ex: "11%"), `iss` (ex: "5%").
+* **Esquemas de Cálculo Afetados:**
+  * O backend em [relatorios.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/relatorios.ts#L540-L555) converte essas strings em números (`expectedIrrfAliq`, `expectedCsrfAliq`, etc.) e audita cada NFS-e.
+* **Onde está o resultado:**
+  * Se o prestador destacou alíquota diferente da cadastrada, o sistema gera o alerta `'DIVERGENCIA_ALIQUOTA'` com a diferença apurada em Reais e porcentagem no Relatório #8.
+
+---
+
+### 2.5. Regras de Redução por NCM (`ncm_regras_anexos`)
+* **Arquivos:**
+  * [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx) (Aba 3 - Anexos NCM)
+  * [tables.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/tables.ts#L340-L420)
+* **Campos Preenchidos Manualmente:**
+  * `ncm`, `cclasstrib`, `percentual_reducao` (ex: `60.0`, `100.0`, `30.0`), `ativo`.
+* **Esquemas de Cálculo Afetados:**
+  * Consultado pelo motor em [calculadoraRfbService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/calculadoraRfbService.ts#L185-L195).
+  * Aplica o multiplicador `fatorReducao = 1 - (percentual_reducao / 100)` na base de cálculo da CBS e IBS.
+* **Onde está o resultado:**
+  * Altera o valor final apurado de CBS e IBS do item e gera diagnóstico de conformidade ou divergência contra o XML.
+
+---
+
+## 3. Categoria C: Alíquotas Preenchidas Manualmente ou em Códigos que NÃO Afetam Esquemas de Cálculos
+
+Nesta categoria estão os textos, rótulos e colunas de visualização que contêm números de alíquotas (ex.: `"4,65%"`, `"1,5%"`, `"10.6%"`), mas que **não participam de nenhuma operação aritmética**.
+
+1. **Rótulos Estáticos e Badges Visuais de Cabeçalho:**
+   * **Arquivo:** [RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx#L101-L117)
+   * **Textos:** `"CRF Global 4,65%"`, `"IRRF Fonte 1,50% / 1,00%"`, `"INSS Mão de Obra 11,00%"`, `"ISSQN Local 2% a 5%"`.
+   * **Motivo de não afetar cálculo:** São puramente informativos para o operador humano ler no banner superior da tela. Não estão vinculados a nenhuma variável de cálculo.
+
+2. **Strings de Alíquota Esperada na Matriz Inicial de cClassTrib:**
+   * **Arquivo:** [reportsData.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts#L76-L117) e [RelatorioMapaCClassTrib.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioMapaCClassTrib.tsx)
+   * **Textos:** `'10.6% (60% de Redução IBS/CBS)'`, `'0.00%'`, `'Alíquota Padrão Vigente'`, `'Alíquota Ad Valorem Específica'`.
+   * **Motivo de não afetar cálculo:** São colunas de texto descritivo (`aliquotaEsperada`) para exibição na grade do Relatório #7. A auditoria matemática real é executada pelo backend em `relatorios.ts`.
+
+3. **Tags de Alíquota (`pICMS`, `pIPI`, `pCBS`, `pIBS`) no Modal da DANFE:**
+   * **Arquivo:** [DanfeModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DanfeModal.tsx#L127-L138)
+   * **Campos:** `pIcms`, `pIpi`, `pCbsItem`, `pIbsItem` parseados das tags do XML.
+   * **Motivo de não afetar cálculo:** O modal DANFE atua estritamente como visualizador gráfico (espelho fiel do documento). Os valores monetários de impostos (`vICMS`, `vIPI`, `vNF`) vêm pré-calculados do XML original da SEFAZ, sem sofrer recalculo no modal.
+
+4. **Colunas de Visualização Formatadas no Relatório de Serviços:**
+   * **Arquivo:** [RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx)
+   * **Campos:** `it.aliquotaIrrf`, `it.aliquotaInss`, `it.aliquotaIssRetido`.
+   * **Motivo de não afetar cálculo:** Na tabela da UI, a alíquota é apenas impressa como texto auxiliar ao lado do valor em Reais. O valor retido já foi calculado no servidor e não é alterado pela renderização.
+
+5. **Campos Descritivos em Tabelas de Banco de Dados sem Consumo Ativo:**
+   * **Colunas:** `aliquotas_referencia.fase_transicao`, `ncm_regras_anexos.observacoes`, `regras_retencao_servicos.dispositivo_legal_lc214`.
+   * **Motivo de não afetar cálculo:** São campos de histórico legislativo e governança documental, não consumidos em fórmulas ou queries de agregação.
+
+---
+
+## 4. Matriz Resumo de Governança
+
+| Componente / Módulo | Alíquotas Presentes | Categoria | Esquema de Cálculo Afetado | Local do Resultado |
+| :--- | :--- | :--- | :--- | :--- |
+| **Simulador de Regimes** | Simples I a V, Presunções Lei 9.249, IRPJ 15%+10%, CSLL 9%, Patronal 20%+RAT+S | **A (Hardcoded)** | Aliq. Efetiva Simples, DRE dos 3 regimes, Ponto de Equilíbrio CPP | Cards KPI, Mini-DRE, Gráficos na UI |
+| **Simulador de Regimes** | Slider IVA Dual (27.91%), % B2B, % Insumos, Salário Médio, Encargos | **B (Manual UI)** | Recálculo dinâmico de todos os regimes e N* de colaboradores | Interface interativa em tempo real |
+| **Transição 2026-2033** | CBS 0.9% a 9.21%, IBS 0.1% a 18.7%, Fatores 0.0, 0.4 e 0.7 | **A (Hardcoded)** | CBS/IBS por ano, retenções no Split Payment | Apuração Assistida, Split Payment, DANFE |
+| **Tabelas Ad Valorem** | CBS Federal, IBS Estadual, IBS Municipal, IS | **B (Manual BD)** | Sobrescreve cronograma do motor de transição | Banco de dados, Apuração Assistida |
+| **Parâmetros Inferência** | ICMS, PIS, COFINS, ISS médios para Simples e CT-e | **B (Manual BD)** | Inferência de valores para notas sem destaque | Banco de dados, KPIs Globais do Header e Painéis |
+| **KPI Aggregation** | Fallback ICMS 3.5%, PIS 0.55%, COF 2.56%, Base CBS/IBS (0.9% e 0.1%) | **A (Hardcoded)** | Reconstrução de base e agregação de tributos atuais vs Reforma | Hot Cache, `GET /api/upload/kpis`, Header |
+| **Retenções NFS-e** | Regras cadastradas por código LC 116/03 | **B (Manual BD)** | Auditoria e cruzamento de conformidade de retenções | Banco de dados, Relatório #8 |
+| **Retenções NFS-e** | Fallback IRRF 1.5%, CRF 4.65%, INSS 11%, ISS 5% | **A (Hardcoded)** | Diagnóstico `'DIVERGENCIA_ALIQUOTA'` e `'FALTA_RETENCAO'` | Relatório #8, Planilha XLSX |
+| **Auditoria Crédito** | Vedações CFOP (0%), Cesta Básica (0%), Redução (40%), Simples (35%) | **A (Hardcoded)** | Base de cálculo e valor de crédito esperado IBS/CBS | Relatórios #2 e #3 |
+| **Badges / Títulos** | CRF 4,65%, IRRF 1,5%, INSS 11%, ISS 2% a 5% | **C (Informativa)** | Nenhum (apenas labels visuais) | Banner superior de Relatórios |
+| **Mapa cClassTrib** | Strings '10.6% (60% Redução)', '0.00%', etc. | **C (Informativa)** | Nenhum (apenas texto na tabela) | Coluna de exibição do Relatório #7 |
+| **Modal DANFE** | Percentuais `<pICMS>`, `<pIPI>`, `<pCBS>`, `<pIBS>` | **C (Informativa)** | Nenhum (espelho visual do XML SEFAZ) | Grade de itens da DANFE |
+
+---
+
+## 5. Próximos Passos Sugeridos para Decisão do Usuário
+
+1. **Parametrização das Presunções do Lucro Presumido:** Criar tabela no banco para permitir editar as presunções de IRPJ (1,6%, 8%, 16%, 32%) e CSLL (12%, 32%) via painel de configurações, eliminando a dependência de código.
+2. **Parametrização das Tabelas do Simples Nacional:** Permitir que as alíquotas nominais e deduções dos Anexos I a V sejam consultadas diretamente do banco de dados caso haja atualização na legislação pelo Congresso Nacional.
+3. **Manutenção do Isolamento:** Manter os fallbacks hardcoded apenas para contingência offline (quando o banco estiver indisponível), garantindo resiliência total da aplicação.

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { getApiBaseUrl } from '../utils/apiConfig';
 
 export interface User {
   id: string;
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!currentToken) return;
 
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(`${getApiBaseUrl()}/auth/me`, {
         headers: { Authorization: `Bearer ${currentToken}` }
       });
       if (res.ok) {

@@ -52,13 +52,13 @@
 ## 🧪 Plano de Verificação
 
 ### Casos de Teste Reais:
-1. **CNPJ 31.758.338/0001-30 (Silcorr Corretora de Seguros):**
+1. **CNPJ 01.001.001/0001-91 (Empresa 1 teste formato):**
    - IE: `Não Possui / Isento`
    - Tipo IE: `NÃO CONTRIBUINTE`
    - Situação CCC: `Não Contribuinte (Sem IE)`
    - Regime: `Simples Nacional` ou `Regime Geral (Presumido/Real)`
-2. **CNPJ 33.000.167/0001-01 (Petrobras):**
-   - IE: `81281882`
+2. **CNPJ 02.002.002/0002-02 (Empresa 2 teste formato):**
+   - IE: `Não Possui / Isento`
    - Tipo IE: `CONTRIBUINTE NORMAL`
    - Situação CCC: `Habilitado`
    - Regime: `Lucro Real`

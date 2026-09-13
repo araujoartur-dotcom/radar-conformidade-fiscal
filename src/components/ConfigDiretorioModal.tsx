@@ -130,7 +130,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
   const handleAddCnpjRaiz = async () => {
     const cleanCnpj = newCnpjRaizInput.replace(/\D/g, '').substring(0, 8);
     if (!cleanCnpj || cleanCnpj.length < 8) {
-      alert('Por favor, informe os 8 primeiros dígitos do CNPJ Raiz (ex: 19.791.896).');
+      alert('Por favor, informe os 8 primeiros dígitos do CNPJ Raiz (ex: 01.001.001).');
       return;
     }
 
@@ -691,7 +691,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                   type="text"
                   value={newCnpjRaizInput}
                   onChange={(e) => setNewCnpjRaizInput(e.target.value)}
-                  placeholder="Ex: 19.791.896"
+                  placeholder="Ex: 01.001.001"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
@@ -704,7 +704,7 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
                   type="text"
                   value={newRazaoSocialInput}
                   onChange={(e) => setNewRazaoSocialInput(e.target.value)}
-                  placeholder="Ex: SUPERGASBRAS ENERGIA LTDA"
+                  placeholder="Ex: EMPRESA MATRIZ EXEMPLO LTDA"
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>

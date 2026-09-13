@@ -26,6 +26,27 @@ function requireEnv(key: string, fallback?: string): string {
   return value;
 }
 
+const isProduction = (process.env.NODE_ENV || 'development') === 'production';
+const DEV_JWT_FALLBACK = 'dev-secret-radar-fiscal-change-in-production-2026';
+
+function resolveJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (isProduction) {
+    if (!secret || secret.trim() === '' || secret === DEV_JWT_FALLBACK || secret.includes('dev-secret')) {
+      throw new Error(
+        '🚨 [SEGURANÇA CRÍTICA] Em ambiente de PRODUÇÃO, a variável JWT_SECRET é obrigatória e deve conter um segredo forte de 64+ caracteres! ' +
+        'O uso de valores vazios ou chaves padrão de desenvolvimento foi bloqueado pelo sistema.'
+      );
+    }
+    return secret;
+  }
+  if (!secret) {
+    console.warn('⚠️ [SEGURANÇA] JWT_SECRET não configurado. Usando chave padrão de desenvolvimento.');
+    return DEV_JWT_FALLBACK;
+  }
+  return secret;
+}
+
 // ============================================================
 // SERVIDOR
 // ============================================================
@@ -40,7 +61,7 @@ export const SERVER = {
 // JWT / AUTENTICAÇÃO
 // ============================================================
 export const AUTH = {
-  JWT_SECRET: requireEnv('JWT_SECRET', 'dev-secret-radar-fiscal-change-in-production-2026'),
+  JWT_SECRET: resolveJwtSecret(),
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '8h',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   BCRYPT_ROUNDS: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileCode, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Receipt, Zap, Search } from 'lucide-react';
+import { FileCode, AlertTriangle, RefreshCw, Layers, DollarSign, Calculator, ChevronRight, Eye, ShieldAlert, ArrowRight, Send, Printer, Code, FolderArchive, FolderInput, FolderOutput, Settings, DownloadCloud, Server, CreditCard, Receipt, Zap, Search, Copy, Check } from 'lucide-react';
 import { DfeXmlItem, CertificadoA1, AmbienteSefaz } from '../types';
 import { DanfeModal } from './DanfeModal';
 import { XmlViewerModal } from './XmlViewerModal';
@@ -10,6 +10,7 @@ import { NfseManagerModal } from './NfseManagerModal';
 import { formatBrasiliaDate, formatBrasiliaDateTime } from '../utils/timezone';
 import { useApi } from '../hooks/useApi';
 import { useKpis } from '../contexts/KpiContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DfeManagerPanelProps {
   dfeList: DfeXmlItem[];
@@ -28,6 +29,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   certificado,
   ambienteSefaz
 }) => {
+  const { empresaAtiva } = useAuth();
   const [selectedDfe, setSelectedDfe] = useState<DfeXmlItem | null>(dfeList[0] || null);
   const [danfeModalItem, setDanfeModalItem] = useState<DfeXmlItem | null>(null);
   const [xmlModalItem, setXmlModalItem] = useState<DfeXmlItem | null>(null);
@@ -39,11 +41,28 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [listSearch, setListSearch] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(50);
+  const [isLoadingDocs, setIsLoadingDocs] = useState<boolean>(false);
+  const [copiedChave, setCopiedChave] = useState<boolean>(false);
+
+  const filteredDocs = dfeList.filter(item => {
+    if (tipoDocFiltro === 'NFE' && item.tipo !== 'NFe' && item.tipo !== 'NFCe') return false;
+    if (tipoDocFiltro === 'CTE' && item.tipo !== 'CTe') return false;
+    if (tipoDocFiltro === 'NFSE' && item.tipo !== 'NFSe' && (item.tipo as string) !== 'NFS-e') return false;
+    if (!listSearch) return true;
+    const q = listSearch.toLowerCase();
+    return (
+      (item.numero || '').toLowerCase().includes(q) ||
+      (item.chaveAcesso || '').toLowerCase().includes(q) ||
+      (item.emitenteNome || '').toLowerCase().includes(q) ||
+      (item.emitenteCnpj || '').includes(q) ||
+      (item.tipo || '').toLowerCase().includes(q)
+    );
+  });
 
   const handleListScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
     if (scrollTop + clientHeight >= scrollHeight - 80) {
-      setVisibleLimit(prev => Math.min(dfeList.length, prev + 50));
+      setVisibleLimit(prev => Math.min(filteredDocs.length, prev + 50));
     }
   };
 
@@ -51,73 +70,116 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const { kpis, totalGeral } = useKpis();
   const currentKpis = totalGeral || kpis;
 
+  const activeFiltroCount = 
+    tipoDocFiltro === 'NFE' ? (currentKpis?.nfeCount ?? 0) :
+    tipoDocFiltro === 'CTE' ? (currentKpis?.cteCount ?? 0) :
+    tipoDocFiltro === 'NFSE' ? (currentKpis?.nfseCount ?? 0) :
+    (currentKpis?.totalDocs ?? dfeList.length);
+
+  const handleSelectTipoFiltro = (tipo: 'TODOS' | 'NFE' | 'CTE' | 'NFSE') => {
+    setTipoDocFiltro(tipo);
+    setVisibleLimit(50);
+    if (tipo === 'CTE') {
+      const cteLoaded = dfeList.filter(d => d.tipo === 'CTe').length;
+      if (cteLoaded < 50 && (currentKpis?.cteCount ?? 0) > 0) {
+        loadDocumentos('CTe');
+      }
+    } else if (tipo === 'NFSE') {
+      const nfseLoaded = dfeList.filter(d => d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e').length;
+      if (nfseLoaded < 50 && (currentKpis?.nfseCount ?? 0) > 0) {
+        loadDocumentos('NFSe');
+      }
+    } else if (tipo === 'NFE') {
+      const nfeLoaded = dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length;
+      if (nfeLoaded < 50 && (currentKpis?.nfeCount ?? 0) > 0) {
+        loadDocumentos('NFe');
+      }
+    } else if (tipo === 'TODOS') {
+      if (dfeList.length <= 100) {
+        loadDocumentos();
+      }
+    }
+  };
+
   const loadDocumentos = async (tipo?: string) => {
-    const url = tipo ? `/upload/documentos?tipoDoc=${tipo}&limit=1000` : '/upload/documentos?limit=25000';
-    const res = await get<{ success: boolean; data: any[]; total?: number }>(url);
-    if (res.ok && res.data?.data) {
-      const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
-        const rawTipo = (doc.tipo_doc || '').toString();
-        const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS') ? 'NFSe' : (rawTipo === 'CTe' || rawTipo === 'CT-e' ? 'CTe' : (rawTipo === 'NFe' || rawTipo === 'NF-e' ? 'NFe' : rawTipo || 'NFe'));
+    setIsLoadingDocs(true);
+    try {
+      const empId = empresaAtiva?.id;
+      const empParam = empId ? `&empresaId=${encodeURIComponent(empId)}` : '';
+      const url = tipo ? `/upload/documentos?tipoDoc=${tipo}&limit=1000${empParam}` : `/upload/documentos?limit=25000${empParam}`;
+      const res = await get<{ success: boolean; data: any[]; total?: number }>(url);
+      if (res.ok && res.data?.data) {
+        const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
+          const rawTipo = (doc.tipo_doc || '').toString();
+          const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS') ? 'NFSe' : (rawTipo === 'CTe' || rawTipo === 'CT-e' ? 'CTe' : (rawTipo === 'NFe' || rawTipo === 'NF-e' ? 'NFe' : rawTipo || 'NFe'));
 
-        return {
-          id: doc.id,
-          chaveAcesso: doc.chave_acesso,
-          tipo: tipoCanonico,
-          numero: (doc.numero_serie || '').split(' / ')[0] || (doc.chave_acesso ? doc.chave_acesso.substring(25, 34) : '1'),
-          serie: (doc.numero_serie || '').split(' / ')[1] || '1',
-          dataEmissao: doc.data_emissao,
-          emitenteCnpj: doc.fornecedor_cnpj,
-          emitenteNome: doc.fornecedor_razao,
-          emitenteUf: doc.fornecedor_uf,
-          destinatarioCnpj: doc.cliente_cnpj,
-          destinatarioNome: doc.cliente_razao,
-          destinatarioUf: doc.cliente_uf,
-          valorTotal: doc.valor_total || 0,
-          valorIcms: doc.valor_icms || 0,
-          valorIpi: doc.valor_ipi || 0,
-          valorPis: doc.valor_pis || 0,
-          valorCofins: doc.valor_cofins || 0,
-          aliquotaCbs: doc.valor_total > 0 && doc.valor_cbs ? Number(((doc.valor_cbs / doc.valor_total) * 100).toFixed(2)) : 0,
-          valorCbs: doc.valor_cbs || 0,
-          aliquotaIbs: doc.valor_total > 0 && doc.valor_ibs ? Number(((doc.valor_ibs / doc.valor_total) * 100).toFixed(2)) : 0,
-          valorIbs: doc.valor_ibs || 0,
-          valorImpostoSeletivo: doc.valor_is || 0,
-          valorIrrf: Number(doc.valor_irrf) || 0,
-          valorInssRetido: Number(doc.valor_inss) || 0,
-          valorIssRetido: Number(doc.valor_iss) || 0,
-          valorCsllRetido: Number(doc.valor_csll) || 0,
-          valorPisRetido: Number(doc.valor_pis) || 0,
-          valorCofinsRetido: Number(doc.valor_cofins) || 0,
-          eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
-          situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
-          alertaFraude: Boolean(doc.alerta_fraude),
-          statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
-          alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
-          statusSincronizacaoErp: 'pendente',
-          xmlRaw: doc.xml_raw || '',
-          downloadAt: doc.download_at || '',
-        };
-      });
-
-      if (tipo) {
-        setDfeList(prev => {
-          const existingIds = new Set(prev.map(p => p.id));
-          const newItems = mappedList.filter(m => !existingIds.has(m.id));
-          return [...newItems, ...prev];
+          return {
+            id: doc.id,
+            chaveAcesso: doc.chave_acesso,
+            tipo: tipoCanonico,
+            numero: (doc.numero_serie || '').split(' / ')[0] || (doc.chave_acesso ? doc.chave_acesso.substring(25, 34) : '1'),
+            serie: (doc.numero_serie || '').split(' / ')[1] || '1',
+            dataEmissao: doc.data_emissao,
+            emitenteCnpj: doc.fornecedor_cnpj,
+            emitenteNome: doc.fornecedor_razao,
+            emitenteUf: doc.fornecedor_uf,
+            destinatarioCnpj: doc.cliente_cnpj,
+            destinatarioNome: doc.cliente_razao,
+            destinatarioUf: doc.cliente_uf,
+            valorTotal: doc.valor_total || 0,
+            valorIcms: doc.valor_icms || 0,
+            valorIpi: doc.valor_ipi || 0,
+            valorPis: doc.valor_pis || 0,
+            valorCofins: doc.valor_cofins || 0,
+            aliquotaCbs: doc.valor_total > 0 && doc.valor_cbs ? Number(((doc.valor_cbs / doc.valor_total) * 100).toFixed(2)) : 0,
+            valorCbs: doc.valor_cbs || 0,
+            aliquotaIbs: doc.valor_total > 0 && doc.valor_ibs ? Number(((doc.valor_ibs / doc.valor_total) * 100).toFixed(2)) : 0,
+            valorIbs: doc.valor_ibs || 0,
+            valorImpostoSeletivo: doc.valor_is || 0,
+            valorIrrf: Number(doc.valor_irrf) || 0,
+            valorInssRetido: Number(doc.valor_inss) || 0,
+            valorIssRetido: Number(doc.valor_iss) || 0,
+            valorCsllRetido: Number(doc.valor_csll) || 0,
+            valorPisRetido: Number(doc.valor_pis) || 0,
+            valorCofinsRetido: Number(doc.valor_cofins) || 0,
+            eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
+            situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
+            alertaFraude: Boolean(doc.alerta_fraude),
+            statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
+            alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
+            statusSincronizacaoErp: 'pendente',
+            xmlRaw: doc.xml_raw || '',
+            downloadAt: doc.download_at || '',
+          };
         });
-      } else {
-        setDfeList(mappedList);
-      }
 
-      if (mappedList.length > 0) {
-        setSelectedDfe(prev => prev || mappedList[0]);
+        if (tipo) {
+          setDfeList(prev => {
+            const existingIds = new Set(prev.map(p => p.id));
+            const newItems = mappedList.filter(m => !existingIds.has(m.id));
+            return [...newItems, ...prev];
+          });
+        } else {
+          setDfeList(mappedList);
+        }
+
+        if (mappedList.length > 0) {
+          setSelectedDfe(mappedList[0]);
+        } else {
+          setSelectedDfe(null);
+        }
+      } else if (res.ok && (!res.data?.data || res.data.data.length === 0)) {
+        setDfeList([]);
+        setSelectedDfe(null);
       }
+    } finally {
+      setIsLoadingDocs(false);
     }
   };
 
   useEffect(() => {
     loadDocumentos();
-  }, []);
+  }, [empresaAtiva?.id]);
 
   // Total Metrics Reais da Base (Consolidados via KpiContext - 100% da base 21.000+ XMLs)
   const totalValor = currentKpis?.totalValor ?? 0;
@@ -212,11 +274,11 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
               <FileCode className="w-4 h-4 text-cyan-400" />
-              Documentos Importados ({totalDocsCount.toLocaleString('pt-BR')})
+              Documentos {tipoDocFiltro === 'TODOS' ? 'Importados' : tipoDocFiltro === 'NFE' ? 'NF-e' : tipoDocFiltro === 'CTE' ? 'CT-e' : 'NFS-e'} ({activeFiltroCount.toLocaleString('pt-BR')})
             </h3>
-            {totalDocsCount > 0 && (
+            {activeFiltroCount > 0 && (
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                Mostrando {Math.min(visibleLimit, dfeList.length).toLocaleString('pt-BR')} de {totalDocsCount.toLocaleString('pt-BR')}
+                Mostrando {Math.min(visibleLimit, filteredDocs.length).toLocaleString('pt-BR')} de {activeFiltroCount.toLocaleString('pt-BR')}
               </span>
             )}
           </div>
@@ -224,26 +286,18 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           {/* Document Type Filter Pills */}
           <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px]">
             <button
-              onClick={() => {
-                setTipoDocFiltro('TODOS');
-                if (dfeList.length <= 100) loadDocumentos();
-              }}
+              onClick={() => handleSelectTipoFiltro('TODOS')}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'TODOS'
                   ? 'bg-slate-800 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Todos ({totalDocsCount.toLocaleString('pt-BR')})
+              Todos ({(currentKpis?.totalDocs ?? dfeList.length).toLocaleString('pt-BR')})
             </button>
 
             <button
-              onClick={() => {
-                setTipoDocFiltro('NFE');
-                if (dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length === 0) {
-                  loadDocumentos('NFe');
-                }
-              }}
+              onClick={() => handleSelectTipoFiltro('NFE')}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'NFE'
                   ? 'bg-blue-900/60 text-blue-300 border border-blue-700/60 shadow-sm'
@@ -254,12 +308,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                setTipoDocFiltro('CTE');
-                if (dfeList.filter(d => d.tipo === 'CTe').length === 0) {
-                  loadDocumentos('CTe');
-                }
-              }}
+              onClick={() => handleSelectTipoFiltro('CTE')}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'CTE'
                   ? 'bg-amber-900/60 text-amber-300 border border-amber-700/60 shadow-sm'
@@ -270,12 +319,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             </button>
 
             <button
-              onClick={() => {
-                setTipoDocFiltro('NFSE');
-                if (dfeList.filter(d => d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e').length === 0) {
-                  loadDocumentos('NFSe');
-                }
-              }}
+              onClick={() => handleSelectTipoFiltro('NFSE')}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
                 tipoDocFiltro === 'NFSE'
                   ? 'bg-teal-900/60 text-teal-300 border border-teal-700/60 shadow-sm'
@@ -304,23 +348,23 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             onScroll={handleListScroll}
             className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 select-none"
           >
-            {dfeList
-              .filter(item => {
-                if (tipoDocFiltro === 'NFE' && item.tipo !== 'NFe' && item.tipo !== 'NFCe') return false;
-                if (tipoDocFiltro === 'CTE' && item.tipo !== 'CTe') return false;
-                if (tipoDocFiltro === 'NFSE' && item.tipo !== 'NFSe') return false;
-                if (!listSearch) return true;
-                const q = listSearch.toLowerCase();
-                return (
-                  (item.numero || '').toLowerCase().includes(q) ||
-                  (item.chaveAcesso || '').toLowerCase().includes(q) ||
-                  (item.emitenteNome || '').toLowerCase().includes(q) ||
-                  (item.emitenteCnpj || '').includes(q) ||
-                  (item.tipo || '').toLowerCase().includes(q)
-                );
-              })
-              .slice(0, visibleLimit)
-              .map((item) => {
+            {isLoadingDocs ? (
+              <div className="p-8 text-center bg-slate-900/50 border border-slate-800 rounded-xl space-y-3">
+                <RefreshCw className="w-6 h-6 text-cyan-400 animate-spin mx-auto" />
+                <p className="text-xs text-slate-300 font-medium">Carregando documentos fiscais da empresa ativa...</p>
+              </div>
+            ) : filteredDocs.length === 0 ? (
+              <div className="p-8 text-center bg-slate-900/40 border border-slate-800 rounded-xl space-y-2">
+                <FileCode className="w-8 h-8 text-slate-600 mx-auto" />
+                <p className="text-xs font-semibold text-slate-300">Nenhum documento fiscal encontrado</p>
+                <p className="text-[11px] text-slate-400">
+                  {empresaAtiva ? `Não há documentos deste tipo carregados para ${empresaAtiva.razaoSocial || empresaAtiva.nomeFantasia}.` : 'Selecione uma empresa para visualizar os documentos.'}
+                </p>
+              </div>
+            ) : (
+              filteredDocs
+                .slice(0, visibleLimit)
+                .map((item) => {
                 const isSelected = selectedDfe?.id === item.id;
                 return (
                   <div
@@ -376,13 +420,14 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     </div>
                   </div>
                 );
-              })}
+              })
+            )}
 
             {/* Pagination / Batch Loader */}
-            {dfeList.length > visibleLimit && (
+            {filteredDocs.length > visibleLimit && (
               <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-xl flex items-center justify-between gap-2 text-xs">
                 <span className="text-slate-400 font-mono text-[11px]">
-                  Mais documentos disponíveis
+                  Mais documentos disponíveis ({filteredDocs.length.toLocaleString('pt-BR')} carregados)
                 </span>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -398,10 +443,10 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     + 500
                   </button>
                   <button
-                    onClick={() => setVisibleLimit(dfeList.length)}
+                    onClick={() => setVisibleLimit(filteredDocs.length)}
                     className="px-2.5 py-1 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 hover:bg-cyan-900 font-bold text-xs"
                   >
-                    Ver Todos ({dfeList.length.toLocaleString('pt-BR')})
+                    Ver Carregados ({filteredDocs.length.toLocaleString('pt-BR')})
                   </button>
                 </div>
               </div>
@@ -421,8 +466,30 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     <h3 className="text-lg font-bold text-white">
                       {selectedDfe.tipo} Nº {selectedDfe.numero} - Série {selectedDfe.serie}
                     </h3>
-                    <span className="text-xs px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 font-mono border border-cyan-800" title={selectedDfe.chaveAcesso}>
-                      Chave: {selectedDfe.chaveAcesso.length > 20 ? `${selectedDfe.chaveAcesso.slice(0, 18)}... (${selectedDfe.chaveAcesso.length} pos)` : selectedDfe.chaveAcesso}
+                    <span className="text-xs px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 font-mono border border-cyan-800 flex items-center gap-1.5" title={selectedDfe.chaveAcesso}>
+                      <span>Chave: {selectedDfe.chaveAcesso.length > 20 ? `${selectedDfe.chaveAcesso.slice(0, 18)}...` : selectedDfe.chaveAcesso}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedDfe.chaveAcesso) {
+                            navigator.clipboard.writeText(selectedDfe.chaveAcesso);
+                            setCopiedChave(true);
+                            setTimeout(() => setCopiedChave(false), 1500);
+                          }
+                        }}
+                        className="p-0.5 hover:text-white transition-colors cursor-pointer rounded hover:bg-cyan-900/50"
+                        title="Copiar Chave de Acesso Completa (44 dígitos)"
+                        aria-label="Copiar Chave"
+                      >
+                        {copiedChave ? (
+                          <span className="text-emerald-400 text-[10px] font-bold flex items-center gap-0.5">
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            Copiado!
+                          </span>
+                        ) : (
+                          <Copy className="w-3 h-3 text-cyan-400" />
+                        )}
+                      </button>
                     </span>
                     {selectedDfe.alertaFraude && (
                       <span className="text-xs px-2 py-0.5 rounded bg-red-600 text-white font-bold animate-pulse">

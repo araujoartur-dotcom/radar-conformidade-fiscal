@@ -732,6 +732,16 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
       const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
       if (emp?.cnpj_completo) {
         tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
+      } else if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data: supaEmp } = await supabase.from('empresas').select('cnpj_completo').eq('id', activeEmpresaId).maybeSingle();
+            if (supaEmp?.cnpj_completo) {
+              tenantCnpjClean = supaEmp.cnpj_completo.replace(/\D/g, '');
+            }
+          } catch {}
+        }
       }
     }
     // Fallback: usar o CNPJ do JWT se empresa ativa não tem CNPJ
@@ -774,12 +784,16 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
 
-          // Filtros de tenant
-          if (!isSuperadmin && tenantCnpjClean) {
-            // Usuário comum: documentos onde ele é cliente OU fornecedor
-            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
-          } else if (!isSuperadmin && empresaIdParam) {
-            supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+          // Filtros de tenant (empresa_id primário + match por raiz de CNPJ para cobrir filiais)
+          const cnpjRaiz = tenantCnpjClean.length >= 8 ? tenantCnpjClean.slice(0, 8) : tenantCnpjClean;
+          if (!isSuperadmin && (empresaIdParam || cnpjRaiz)) {
+            if (empresaIdParam && cnpjRaiz) {
+              supaQuery = supaQuery.or(`empresa_id.eq.${empresaIdParam},cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+            } else if (empresaIdParam) {
+              supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+            } else {
+              supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+            }
           }
           // admin_master: sem filtro de tenant = vê TUDO (ou filtra se selecionou empresa)
           if (isSuperadmin && empresaIdParam) {
@@ -820,8 +834,14 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
                     .order('data_emissao', { ascending: false })
                     .limit(200);
 
-                  if (!isSuperadmin && tenantCnpjClean) {
-                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${empresaIdParam || 'null'}`);
+                  if (!isSuperadmin && (empresaIdParam || cnpjRaiz)) {
+                    if (empresaIdParam && cnpjRaiz) {
+                      nfseQuery = nfseQuery.or(`empresa_id.eq.${empresaIdParam},cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+                    } else if (empresaIdParam) {
+                      nfseQuery = nfseQuery.eq('empresa_id', empresaIdParam);
+                    } else {
+                      nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+                    }
                   } else if (empresaIdParam) {
                     nfseQuery = nfseQuery.eq('empresa_id', empresaIdParam);
                   }
@@ -985,7 +1005,19 @@ router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response
     let tenantCnpjClean = '';
     if (activeEmpresaId) {
       const emp = db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?').get(activeEmpresaId) as any;
-      if (emp?.cnpj_completo) tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
+      if (emp?.cnpj_completo) {
+        tenantCnpjClean = emp.cnpj_completo.replace(/\D/g, '');
+      } else if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data: supaEmp } = await supabase.from('empresas').select('cnpj_completo').eq('id', activeEmpresaId).maybeSingle();
+            if (supaEmp?.cnpj_completo) {
+              tenantCnpjClean = supaEmp.cnpj_completo.replace(/\D/g, '');
+            }
+          } catch {}
+        }
+      }
     }
     if (!tenantCnpjClean && req.user?.empresaCnpj) tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
 

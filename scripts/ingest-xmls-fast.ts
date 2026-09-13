@@ -169,13 +169,13 @@ async function runFastIngestion() {
   if (supaConfigured && supabase) {
     defaultSupaEmpresaId = await resolveSupabaseEmpresaId(supabase, {
       id: empresaLocal?.id,
-      cnpj_completo: empresaLocal?.cnpj_completo || '19.791.896/0001-00',
-      cnpj_raiz: empresaLocal?.cnpj_raiz || '19791896',
-      razao_social: empresaLocal?.razao_social || 'SUPERGASBRAS ENERGIA LTDA'
+      cnpj_completo: empresaLocal?.cnpj_completo || '01.001.001/0001-91',
+      cnpj_raiz: empresaLocal?.cnpj_raiz || '01001001',
+      razao_social: empresaLocal?.razao_social || 'EMPRESA MATRIZ EXEMPLO LTDA'
     });
   }
 
-  console.log(`🏢 Tenant Ativo:   [${empresaLocal?.cnpj_completo || '19.791.896/0001-00'}] ${empresaLocal?.razao_social || 'SUPERGASBRAS'}`);
+  console.log(`🏢 Tenant Ativo:   [${empresaLocal?.cnpj_completo || '01.001.001/0001-91'}] ${empresaLocal?.razao_social || 'EMPRESA MATRIZ EXEMPLO'}`);
   console.log(`⚡ Supabase Tenant UUID: ${defaultSupaEmpresaId}`);
   console.log('\n🚀 INICIANDO PROCESSAMENTO DE ALTA PERFORMANCE...\n');
 

@@ -56,7 +56,7 @@ Este plano detalha a implementação do **mecanismo de busca automática de CNPJ
 * Executar `npm run build` para garantir zero erros de TypeScript e compilação limpa do Vite.
 
 ### Verificação Funcional
-1. Digitar o CNPJ `31.758.338/0001-30` no banner de consulta rápida e clicar em **`⚡ Consultar na Receita & Cadastrar`**.
+1. Digitar o CNPJ `01.001.001/0001-91` no banner de consulta rápida e clicar em **`⚡ Consultar na Receita & Cadastrar`**.
 2. Verificar se o modal abre instantaneamente com Razão Social, CNAE, Endereço, Município e Regime preenchidos com fidelidade.
 3. Salvar a nova empresa e conferir se aparece na listagem, pronta para vincular certificado e emitir Bloco 0 do SPED.
 4. Alternar entre as visualizações de Grid e Tabela.

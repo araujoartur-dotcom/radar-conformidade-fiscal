@@ -13,11 +13,16 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuid } from 'uuid';
 import { AUTH } from '../config';
 
+import { seedRegimesParametros } from './seed_regimes';
+import { seedCategoriaB } from './seed_categoria_b';
+
 export function seedDatabase(): void {
   const db = getDatabase();
 
-  // Sempre garantir que parametros_inferencia estejam populados
+  // Sempre garantir que parâmetros fiscais essenciais estejam populados
   seedParametrosInferencia(db);
+  seedRegimesParametros(db);
+  seedCategoriaB(db);
 
   // Verificar se já foi populado
   const existingUsers = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as any;
@@ -45,7 +50,7 @@ export function seedDatabase(): void {
   const empresaId = uuid();
   db.prepare(`
     INSERT OR IGNORE INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, status)
-    VALUES (?, '19791896', '19.791.896/0001-00', 'SUPERGASBRAS ENERGIA LTDA', 'SUPERGASBRAS ENERGIA LTDA', 'SP', 'Lucro Real', 'ativo')
+    VALUES (?, '01001001', '01.001.001/0001-91', 'EMPRESA MATRIZ EXEMPLO LTDA', 'EMPRESA MATRIZ EXEMPLO', 'SP', 'Lucro Real', 'ativo')
   `).run(empresaId);
 
   // Vincular admin à empresa padrão

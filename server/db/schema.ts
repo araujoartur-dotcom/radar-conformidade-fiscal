@@ -384,6 +384,85 @@ export function initializeSchema(): void {
     );
 
     -- =========================================================
+    -- FAIXAS E ALÍQUOTAS DO SIMPLES NACIONAL (LC 123/2006)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS simples_nacional_faixas (
+      id                    TEXT PRIMARY KEY,
+      anexo                 TEXT NOT NULL,               -- anexo1 | anexo2 | anexo3 | anexo4 | anexo5 | transporte_cargas
+      nome_anexo            TEXT NOT NULL,
+      faixa                 INTEGER NOT NULL,            -- 1 a 6
+      limite_superior       REAL NOT NULL,               -- R$ 180.000, 360.000, etc.
+      aliq_nominal          REAL NOT NULL,               -- 0.040, 0.073, etc.
+      deducao               REAL NOT NULL DEFAULT 0.0,   -- R$ 0, 5940, etc.
+      reparticao_irpj       REAL NOT NULL DEFAULT 0.0,
+      reparticao_csll       REAL NOT NULL DEFAULT 0.0,
+      reparticao_cofins     REAL NOT NULL DEFAULT 0.0,
+      reparticao_pis        REAL NOT NULL DEFAULT 0.0,
+      reparticao_cpp        REAL NOT NULL DEFAULT 0.0,
+      reparticao_icms       REAL NOT NULL DEFAULT 0.0,
+      reparticao_iss        REAL NOT NULL DEFAULT 0.0,
+      reparticao_ipi        REAL NOT NULL DEFAULT 0.0,
+      vigencia_inicio       TEXT NOT NULL DEFAULT '2018-01-01',
+      vigencia_fim          TEXT NOT NULL DEFAULT '2099-12-31',
+      ativo                 INTEGER NOT NULL DEFAULT 1,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(anexo, faixa)
+    );
+
+    -- =========================================================
+    -- FRAÇÃO DE PARTILHA DA REFORMA NO SIMPLES (LC 214/2025)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS simples_nacional_partilha_reforma (
+      id                    TEXT PRIMARY KEY,
+      anexo                 TEXT NOT NULL,
+      ano_transicao         INTEGER NOT NULL,            -- 2027 a 2033
+      faixa                 INTEGER NOT NULL,            -- 1 a 6
+      fracao_desoneracao    REAL NOT NULL,               -- ex: 0.1550
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(anexo, ano_transicao, faixa)
+    );
+
+    -- =========================================================
+    -- PRESUNÇÕES E ALÍQUOTAS DO LUCRO PRESUMIDO (LEI 9.249/1995)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS lucro_presumido_parametros (
+      id                    TEXT PRIMARY KEY,
+      codigo_atividade      TEXT NOT NULL UNIQUE,        -- combustiveis | transporte_cargas | comercio_geral | etc.
+      nome_atividade        TEXT NOT NULL,
+      presuncao_irpj        REAL NOT NULL,               -- 0.016, 0.080, 0.160, 0.320
+      presuncao_csll        REAL NOT NULL,               -- 0.120, 0.320
+      aliq_irpj_basico      REAL NOT NULL DEFAULT 0.15,  -- 15%
+      aliq_irpj_adicional   REAL NOT NULL DEFAULT 0.10,  -- 10%
+      limite_mensal_adicional REAL NOT NULL DEFAULT 20000.0, -- R$ 20.000/mês
+      aliq_csll             REAL NOT NULL DEFAULT 0.09,  -- 9%
+      artigo_legal          TEXT DEFAULT '',
+      detalhe               TEXT DEFAULT '',
+      categoria             TEXT NOT NULL DEFAULT 'servicos',
+      anexo_simples_padrao  TEXT NOT NULL DEFAULT 'anexo1',
+      ativo                 INTEGER NOT NULL DEFAULT 1,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
+    -- ENCARGOS PREVIDENCIÁRIOS PATRONAIS FORA DO SIMPLES
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS encargos_patronais_parametros (
+      id                    TEXT PRIMARY KEY,
+      codigo_atividade      TEXT NOT NULL UNIQUE,
+      nome_ramo             TEXT NOT NULL,
+      inss_patronal         REAL NOT NULL DEFAULT 0.20,  -- 20%
+      rat_fap               REAL NOT NULL DEFAULT 0.02,  -- 1% a 3%
+      sistema_s             REAL NOT NULL DEFAULT 0.058, -- 5.2% ou 5.8%
+      entidades_descricao   TEXT DEFAULT '',
+      ativo                 INTEGER NOT NULL DEFAULT 1,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
     -- LOG DE AUDITORIA
     -- =========================================================
     CREATE TABLE IF NOT EXISTS audit_log (

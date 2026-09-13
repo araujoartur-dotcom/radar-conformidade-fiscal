@@ -234,7 +234,10 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       counts['NFCe'].qtd = activeKpis.nfceCount || 0;
       counts['CTe'].qtd = activeKpis.cteCount || 0;
       counts['NFSe'].qtd = activeKpis.nfseCount || 0;
-      counts['NFe'].valor = totalValor;
+      counts['NFe'].valor = activeKpis.nfeValor ?? totalValor;
+      counts['NFCe'].valor = activeKpis.nfceValor ?? 0;
+      counts['CTe'].valor = activeKpis.cteValor ?? 0;
+      counts['NFSe'].valor = activeKpis.nfseValor ?? 0;
       return counts;
     }
 
@@ -877,7 +880,12 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
                       <span className="text-slate-300 font-semibold">{data.label}</span>
                     </div>
                     <div className="flex items-center gap-3 font-mono">
-                      <span className="font-bold text-white">{data.qtd} un</span>
+                      {data.valor > 0 && (
+                        <span className="text-slate-400 text-[11px] hidden sm:inline">
+                          R$ {data.valor.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                        </span>
+                      )}
+                      <span className="font-bold text-white">{data.qtd.toLocaleString('pt-BR')} un</span>
                       <span className="text-slate-400 font-bold text-[11px] w-12 text-right">
                         {pct.toFixed(1)}%
                       </span>

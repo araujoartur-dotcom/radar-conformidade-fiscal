@@ -170,9 +170,9 @@ graph TD
 ```json
 {
   "tipoPessoa": "PJ",
-  "cnpj": "02.456.789/0001-30",
-  "razaoSocial": "METALURGICA BRASIL S/A",
-  "nomeFantasia": "METALBRAS",
+  "cnpj": "01.001.001/0001-91",
+  "razaoSocial": "INDUSTRIA FORNECEDOR EXEMPLO S/A",
+  "nomeFantasia": "FORNECEDOR EXEMPLO",
   "naturezaJuridica": "2054",
   "regimeTributario": "04",
   "cnaePrincipal": "2511000",
@@ -203,9 +203,9 @@ graph TD
 ```json
 {
   "tipoPessoa": "PJ",
-  "cnpj": "14.890.123/0001-45",
-  "razaoSocial": "MERCADO POPULAR DE ALIMENTOS LTDA",
-  "nomeFantasia": "MERCADINHO DA VILA",
+  "cnpj": "02.002.002/0002-02",
+  "razaoSocial": "COMERCIO CLIENTE EXEMPLO LTDA",
+  "nomeFantasia": "CLIENTE EXEMPLO",
   "naturezaJuridica": "2062",
   "regimeTributario": "01",
   "cnaePrincipal": "4711302",
@@ -233,9 +233,9 @@ graph TD
 ```json
 {
   "tipoPessoa": "PJ",
-  "cnpj": "46.395.000/0001-39",
-  "razaoSocial": "MUNICIPIO DE SAO PAULO",
-  "nomeFantasia": "PREFEITURA DE SAO PAULO",
+  "cnpj": "03.003.003/0003-03",
+  "razaoSocial": "ORGAO PUBLICO MUNICIPAL EXEMPLO",
+  "nomeFantasia": "PREFEITURA MUNICIPAL EXEMPLO",
   "naturezaJuridica": "1031",
   "esferaPublica": "MU",
   "regimeTributario": "05",

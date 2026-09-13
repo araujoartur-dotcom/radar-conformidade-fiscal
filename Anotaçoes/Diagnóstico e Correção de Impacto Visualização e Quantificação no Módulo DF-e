@@ -1,0 +1,108 @@
+# Diagnóstico e Correção de Impacto: Visualização e Quantificação no Módulo DF-e
+
+Este documento detalha o diagnóstico completo do motivo pelo qual os documentos fiscais (DF-es) não estavam aparecendo quantificados no módulo de Documentos Fiscais DF-e após os últimos deploys, além do plano de correção técnica para restaurar a visibilidade total e consistente dos 21.345 documentos fiscais e manter o isolamento multi-tenant seguro.
+
+---
+
+## 1. Causa Raiz Identificada (Diagnóstico Detalhado)
+
+Após minuciosa investigação no banco de dados Supabase Cloud, SQLite local e no fluxo de ponta a ponta da aplicação, identificamos **4 fatores interligados** que causaram o problema:
+
+### Causa 1: A Empresa Ativa Padrão no Login caía na "MIS MARKETING" (que tem 0 DF-es)
+- Na tabela `dfe_documentos` do Supabase Cloud, existem **21.345 notas fiscais** cadastradas.
+- Todas as 21.345 pertencem à **SUPERGASBRAS ENERGIA LTDA** (`empresa_id: 7c0aa7e3-fc96-4df4-9837-4c20d7b87376`).
+- A empresa **MIS MARKETING LTDA** (`1f669943-4cf8-49a7-a7de-55cbfd782f86`) possui **0 documentos**.
+- No login do usuário Analista Fiscal (`analista.fiscal@empresa.com.br`), o backend buscava as empresas vinculadas e ordenava por razão social:
+  1. `MARKETING DE INTELIGENCIA E SUPORTE - MIS MARKETING LTDA` (Letra M)
+  2. `SUPERGASBRAS ENERGIA LTDA` (Letra S)
+- Como a coluna `empresa_ativa_id` **não existe** na tabela `usuarios` do Supabase (erro PostgreSQL `42703: column usuarios.empresa_ativa_id does not exist`), o login não conseguia resgatar a empresa anterior e escolhia sempre `empresas[0]`, ou seja, **MIS MARKETING**!
+- Como a MIS Marketing tem 0 notas no banco, todo o módulo exibia legitimamente 0 notas e R$ 0,00 de KPIs.
+
+### Causa 2: O Endpoint `GET /api/auth/me` quebrava no Supabase e caía no SQLite vazio
+- Em `server/routes/auth.ts`, a rota `GET /api/auth/me` incluía `empresa_ativa_id` no `.select()`.
+- O Supabase rejeitava a consulta com código `42703`.
+- O backend caía no fallback do SQLite local, onde o usuário Analista Fiscal não tinha vínculos na tabela `usuario_empresa`.
+- Isso fazia com que, ao atualizar a página (F5), o usuário perdesse os vínculos ou ficasse com estado nulo/desincronizado.
+
+### Causa 3: Falta de Reatividade no Front-end (`DfeManagerPanel.tsx`)
+- No componente [DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx):
+  ```tsx
+  useEffect(() => {
+    loadDocumentos();
+  }, []);
+  ```
+- O `useEffect` possuía array de dependências vazio `[]`.
+- Quando o usuário trocava de empresa no Header (de MIS para Supergasbras), o painel **não recarregava as notas**!
+- Além disso, a função `loadDocumentos()` chamava `/upload/documentos?limit=25000` **sem enviar o parâmetro `empresaId`**, dependendo unicamente do token antigo.
+
+### Causa 4: Descompasso de IDs entre SQLite e Supabase na Resolução de CNPJ (`upload.ts`)
+- Em `server/routes/upload.ts`, as rotas `/documentos` e `/kpis` tentavam resolver o CNPJ da empresa ativa consultando o banco SQLite local (`db.prepare('SELECT cnpj_completo FROM empresas WHERE id = ?')`).
+- No SQLite, a Supergasbras tinha um ID legado (`adb42c62...`), enquanto no Supabase ela tem o UUID `7c0aa7e3...`.
+- O SQLite retornava `undefined`, deixando `tenantCnpjClean` vazio.
+- Adicionalmente, a Supergasbras possui dezenas de filiais (`19.791.896/0090-78`, `19.791.896/0104-08`, etc.). Ao filtrar documentos apenas pelo CNPJ exato de 14 dígitos da Matriz, milhares de notas emitidas contra filiais deixavam de ser contabilizadas caso não houvesse o match pelo `empresa_id` ou CNPJ raiz (8 dígitos: `19791896`).
+
+---
+
+## 2. Mudanças Propostas
+
+### A. Backend - Autenticação & Sincronização (`server/routes/auth.ts`)
+#### [MODIFY] [server/routes/auth.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/auth.ts)
+1. **Remover referência à coluna inexistente `empresa_ativa_id` nas consultas e updates do Supabase**:
+   - No `GET /api/auth/me`: selecionar apenas colunas válidas (`id, nome, email, perfil, mfa_habilitado, status, ultimo_acesso`).
+   - No `POST /api/auth/login`: não tentar atualizar `empresa_ativa_id` no Supabase (manter no JWT e no SQLite local).
+   - No `POST /api/auth/switch-empresa`: não tentar atualizar `empresa_ativa_id` no Supabase.
+2. **Seleção Inteligente da Empresa Padrão no Login**:
+   - Se o usuário tiver um e-mail do domínio `@supergasbras.com.br`, priorizar `SUPERGASBRAS ENERGIA LTDA`.
+   - Resgatar o último acesso gravado no SQLite ou priorizar a empresa que possui documentos/vínculo ativo.
+3. **Sincronização imediata no SQLite no Login**:
+   - Gravar a empresa ativa selecionada no SQLite no momento do login para garantir que qualquer consulta híbrida futura no SQLite localize o ID e o CNPJ da empresa.
+
+---
+
+### B. Backend - Rotas de Consulta DF-e & KPIs (`server/routes/upload.ts`)
+#### [MODIFY] [server/routes/upload.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/routes/upload.ts)
+1. **Resolução Robusta de CNPJ do Tenant**:
+   - Se a empresa ativa não for encontrada no SQLite, consultar o Supabase `empresas` para obter `cnpj_completo` e `cnpj_raiz`.
+2. **Matching Completo (Matriz + Filiais + Empresa ID)**:
+   - Extrair a raiz de 8 dígitos do CNPJ (`tenantCnpjClean.substring(0, 8)`).
+   - No Supabase: filtrar por `empresa_id.eq.${empresaIdParam}` OU `cliente_cnpj.ilike.%${cnpjRaiz}%` OU `fornecedor_cnpj.ilike.%${cnpjRaiz}%`.
+   - Isso garante a captura integral de todas as **21.345 notas fiscais**.
+
+---
+
+### C. Backend - Serviço de Agregação de KPIs (`server/services/kpiAggregationService.ts`)
+#### [MODIFY] [server/services/kpiAggregationService.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/server/services/kpiAggregationService.ts)
+1. **Isolamento de Tenant nas Consultas em Chunks**:
+   - Adicionar `.eq('empresa_id', filters.empresaId)` nas queries de chunks (`chunkQuery`) para que a agregação respeite estritamente o tenant selecionado.
+
+---
+
+### D. Front-end - Reatividade & Parâmetros no Painel DF-e (`src/components/DfeManagerPanel.tsx`)
+#### [MODIFY] [src/components/DfeManagerPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DfeManagerPanel.tsx)
+1. Importar `useAuth()` e obter `empresaAtiva`.
+2. Adicionar `empresaAtiva?.id` no `useEffect`:
+   ```tsx
+   useEffect(() => {
+     loadDocumentos();
+   }, [empresaAtiva?.id]);
+   ```
+3. Enviar `empresaId` na URL da chamada:
+   ```tsx
+   const empQuery = empresaAtiva?.id ? `&empresaId=${encodeURIComponent(empresaAtiva.id)}` : '';
+   const url = tipo ? `/upload/documentos?tipoDoc=${tipo}&limit=1000${empQuery}` : `/upload/documentos?limit=25000${empQuery}`;
+   ```
+4. Exibir feedback visual de carregamento honesto ao alternar de empresa.
+
+---
+
+## 3. Plano de Verificação
+
+### Testes Automatizados
+- Executar script de teste de login com `analista.fiscal@empresa.com.br` verificando que a Supergasbras é selecionada.
+- Executar script de teste de `GET /api/auth/me` verificando resposta 200 OK sem erro 42703.
+- Executar script de consulta de `/upload/documentos` e `/upload/kpis` verificando que os 21.345 documentos retornam com total > R$ 789 milhões para a Supergasbras, e 0 para a MIS Marketing.
+- Executar `npx tsc --noEmit` para garantir ausência total de erros TypeScript.
+- Executar `npm run build` para garantir que o bundle de produção compila 100%.
+
+### Teste de Não Regressão
+- Nenhum deploy externo será disparado (conforme instrução estrita do usuário).

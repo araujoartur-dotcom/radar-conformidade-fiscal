@@ -54,7 +54,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     setEmpresasDisponiveis,
     removerEmpresa,
     adicionarEmpresa,
-    atualizarEmpresa
+    atualizarEmpresa,
+    token
   } = useAuth();
   const [tenants, setTenants] = useState<ClienteEmpresaTenant[]>([]);
 
@@ -434,7 +435,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setNewUf(data.uf || ufInput || 'SP');
         setNewCnae(data.cnaePrincipal || '');
         setNewIe(data.ie || '');
-        
+
         // Mapear Regime Tributário de forma consistente e estrita
         const regStr = (data.regimeTributario || '').toLowerCase();
         let regimeMapped: 'Real' | 'Presumido' | 'Simples Nacional' | 'MEI' | 'Imune / Isento' = 'Real';
@@ -450,7 +451,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           regimeMapped = 'Presumido';
         }
         setNewRegime(regimeMapped);
-        
+
         // Natureza Jurídica
         setNewNaturezaJuridica(data.naturezaJuridica || '');
         setNewCodNaturezaJuridica(data.codigoNaturezaJuridica || '');
@@ -516,11 +517,14 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       onSelectTenantCnpj(certModalTenant.cnpjCompleto);
       setCertificado({
         fileName: certData.fileName,
-        status: certData.status,
+        status: 'valido',
+        valido: true,
         validade: certData.validade,
         cnpj: certModalTenant.cnpjCompleto,
         razãoSocial: certModalTenant.razaoSocial,
-        tipo: 'e-CNPJ A1'
+        tipo: 'e-CNPJ A1',
+        emissor: certData.emissor,
+        impressaoDigital: certData.impressaoDigital
       });
 
       setCertModalTenant(null);
@@ -696,9 +700,67 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const certificadosPendentes = tenants.filter(t => !t.certificadoA1).length;
   const cadastrosCompletos = tenants.filter(t => t.cnaePrincipal || t.ie || t.endereco).length;
 
+  const handleAtivarEmpresa = async (tenant: ClienteEmpresaTenant) => {
+    onSelectTenantCnpj(tenant.cnpjCompleto);
+
+    const empObj = {
+      id: tenant.id,
+      cnpjRaiz: tenant.cnpjRaiz,
+      cnpjCompleto: tenant.cnpjCompleto,
+      razaoSocial: tenant.razaoSocial,
+      nomeFantasia: tenant.nomeFantasia || tenant.razaoSocial,
+      uf: tenant.uf,
+      regimeTributario: tenant.regimeTributario
+    };
+
+    if (tenant.id) {
+      try {
+        const res = await post<{ success: boolean; accessToken: string; empresaAtiva: any }>('/auth/switch-empresa', {
+          empresaId: tenant.id
+        });
+        if (res.ok && res.data?.accessToken && res.data?.empresaAtiva) {
+          switchEmpresa(res.data.empresaAtiva, res.data.accessToken);
+        } else {
+          const errorMsg = res.error || (res.data as any)?.error || 'Não foi possível ativar esta empresa no servidor.';
+          alert(`Não foi possível selecionar esta empresa: ${errorMsg}`);
+          return;
+        }
+      } catch (err: any) {
+        console.error('Erro ao alternar empresa no backend:', err);
+        alert(`Falha de conexão ao ativar empresa: ${err.message || 'Erro de rede'}`);
+        return;
+      }
+    }
+    if (tenant.certificadoA1) {
+      const isVal = tenant.certificadoA1.status === 'valido' ||
+        (tenant.certificadoA1.validade && new Date(tenant.certificadoA1.validade) >= new Date());
+      setCertificado({
+        fileName: tenant.certificadoA1.fileName,
+        cnpj: tenant.cnpjCompleto,
+        razãoSocial: tenant.razaoSocial,
+        tipo: 'e-CNPJ A1',
+        validade: tenant.certificadoA1.validade,
+        status: isVal ? 'valido' : 'pendente',
+        valido: isVal,
+        emissor: tenant.certificadoA1.emissor,
+        impressaoDigital: tenant.certificadoA1.impressaoDigital
+      });
+    } else {
+      setCertificado({
+        fileName: '',
+        cnpj: tenant.cnpjCompleto,
+        razãoSocial: tenant.razaoSocial,
+        tipo: 'e-CNPJ A1',
+        validade: '',
+        status: 'pendente',
+        valido: false
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
-      
+
       {/* ── KPI METRICS CARDS ───────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 transition-all flex items-center gap-3.5 shadow-lg">
@@ -765,7 +827,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
             <Search className="w-4 h-4 text-cyan-400 absolute left-3.5 top-3" />
             <input
               type="text"
-              placeholder="Digite o CNPJ (ex: 31.758.338/0001-30 ou apenas dígitos)..."
+              placeholder="Digite o CNPJ (ex: 01.001.001/0001-91 ou apenas dígitos)..."
               value={quickLookupCnpj}
               onChange={(e) => setQuickLookupCnpj(e.target.value)}
               onKeyDown={(e) => {
@@ -869,9 +931,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('grid')}
-              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                viewMode === 'grid' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'
-              }`}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${viewMode === 'grid' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                }`}
               title="Visualização em Cards"
             >
               <Grid className="w-4 h-4" />
@@ -879,9 +940,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('table')}
-              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
-                viewMode === 'table' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'
-              }`}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${viewMode === 'table' ? 'bg-slate-800 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                }`}
               title="Visualização em Tabela"
             >
               <List className="w-4 h-4" />
@@ -940,15 +1000,17 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       {viewMode === 'grid' && tenantsFiltered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {tenantsFiltered.map(tenant => {
-            const isSelected = tenant.cnpjCompleto === selectedTenantCnpj;
+            const isSelected = Boolean(
+              (empresaAtiva && (tenant.id === empresaAtiva.id || tenant.cnpjCompleto === empresaAtiva.cnpjCompleto)) ||
+              (selectedTenantCnpj && tenant.cnpjCompleto === selectedTenantCnpj)
+            );
             return (
               <div
                 key={tenant.id}
-                className={`p-5 rounded-2xl border transition-all space-y-4 ${
-                  isSelected
+                className={`p-5 rounded-2xl border transition-all space-y-4 ${isSelected
                     ? 'bg-gradient-to-br from-slate-900 via-indigo-950/80 to-slate-900 border-cyan-400 shadow-xl shadow-cyan-500/10 ring-1 ring-cyan-400/40'
                     : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
-                }`}
+                  }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -980,36 +1042,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       </span>
                     ) : (
                       <button
-                        onClick={async () => {
-                          onSelectTenantCnpj(tenant.cnpjCompleto);
-                          if (tenant.id) {
-                            const res = await post<{ success: boolean; accessToken: string; empresaAtiva: any }>('/auth/switch-empresa', {
-                              empresaId: tenant.id
-                            });
-                            if (res.ok && res.data?.accessToken && res.data?.empresaAtiva) {
-                              switchEmpresa(res.data.empresaAtiva, res.data.accessToken);
-                            }
-                          }
-                          if (tenant.certificadoA1) {
-                            setCertificado({
-                              fileName: tenant.certificadoA1.fileName,
-                              cnpj: tenant.cnpjCompleto,
-                              razãoSocial: tenant.razaoSocial,
-                              tipo: 'e-CNPJ A1',
-                              validade: tenant.certificadoA1.validade,
-                              status: 'valido'
-                            });
-                          } else {
-                            setCertificado({
-                              fileName: '',
-                              cnpj: tenant.cnpjCompleto,
-                              razãoSocial: tenant.razaoSocial,
-                              tipo: 'e-CNPJ A1',
-                              validade: '',
-                              status: 'pendente'
-                            });
-                          }
-                        }}
+                        onClick={() => handleAtivarEmpresa(tenant)}
                         className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-cyan-600 hover:text-white text-slate-300 text-xs font-bold transition-all cursor-pointer"
                       >
                         Selecionar
@@ -1126,13 +1159,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {tenantsFiltered.map(tenant => {
-                  const isSelected = tenant.cnpjCompleto === selectedTenantCnpj;
+                  const isSelected = Boolean(
+                    (empresaAtiva && (tenant.id === empresaAtiva.id || tenant.cnpjCompleto === empresaAtiva.cnpjCompleto)) ||
+                    (selectedTenantCnpj && tenant.cnpjCompleto === selectedTenantCnpj)
+                  );
                   return (
                     <tr
                       key={tenant.id}
-                      className={`hover:bg-slate-800/40 transition-colors ${
-                        isSelected ? 'bg-cyan-950/20' : ''
-                      }`}
+                      className={`hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-cyan-950/20' : ''
+                        }`}
                     >
                       <td className="py-3 px-4">
                         <div className="font-mono font-bold text-cyan-300 flex items-center gap-1.5">
@@ -1188,17 +1223,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                           ) : (
                             <button
                               type="button"
-                              onClick={async () => {
-                                onSelectTenantCnpj(tenant.cnpjCompleto);
-                                if (tenant.id) {
-                                  const res = await post<{ success: boolean; accessToken: string; empresaAtiva: any }>('/auth/switch-empresa', {
-                                    empresaId: tenant.id
-                                  });
-                                  if (res.ok && res.data?.accessToken && res.data?.empresaAtiva) {
-                                    switchEmpresa(res.data.empresaAtiva, res.data.accessToken);
-                                  }
-                                }
-                              }}
+                              onClick={() => handleAtivarEmpresa(tenant)}
                               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-cyan-600 text-slate-300 hover:text-white text-[11px] font-bold cursor-pointer"
                             >
                               Ativar
@@ -1259,7 +1284,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
-            
+
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-3">
@@ -1289,11 +1314,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('identificacao')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'identificacao'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'identificacao'
                     ? 'bg-blue-950 text-blue-200 border border-blue-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Building2 className="w-4 h-4 text-blue-400" />
                 1. Identificação da Empresa
@@ -1302,11 +1326,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('endereco')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'endereco'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'endereco'
                     ? 'bg-emerald-950 text-emerald-200 border border-emerald-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 2. Endereço & Contato
@@ -1315,11 +1338,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('contador')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'contador'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'contador'
                     ? 'bg-indigo-950 text-indigo-200 border border-indigo-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <UserCheck className="w-4 h-4 text-indigo-400" />
                 3. Contador Responsável
@@ -1327,11 +1349,11 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
             </div>
 
             <form onSubmit={handleAddTenant} className="space-y-4 text-xs">
-              
+
               {/* TAB 1: IDENTIFICAÇÃO */}
               {modalTab === 'identificacao' && (
                 <div className="space-y-3">
-                  
+
                   {/* Auto-Lookup bar inside Modal */}
                   <div className="p-3 rounded-xl bg-slate-950 border border-cyan-800/40 flex flex-col sm:flex-row items-center gap-2">
                     <div className="flex items-center gap-1.5 text-cyan-400 font-bold shrink-0">
@@ -1398,17 +1420,16 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       <label className="font-bold text-slate-300 flex items-center justify-between mb-1">
                         <span>Inscrição Estadual (IE)</span>
                         {newTipoIe && (
-                          <span className={`font-sans font-bold text-[9px] px-1.5 py-0.5 rounded border ${
-                            newTipoIe.toUpperCase().includes('NÃO CONTRIBUINTE')
+                          <span className={`font-sans font-bold text-[9px] px-1.5 py-0.5 rounded border ${newTipoIe.toUpperCase().includes('NÃO CONTRIBUINTE')
                               ? 'bg-purple-950/60 text-purple-300 border-purple-800'
                               : newTipoIe.toUpperCase().includes('NÃO HABILITADO') || newTipoIe.toUpperCase().includes('INATIVO')
-                              ? 'bg-rose-950/60 text-rose-300 border-rose-800'
-                              : newTipoIe.toUpperCase().includes('SIMPLES')
-                              ? 'bg-amber-950/60 text-amber-300 border-amber-800'
-                              : newTipoIe.toUpperCase().includes('ISENTO')
-                              ? 'bg-blue-950/60 text-blue-300 border-blue-800'
-                              : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
-                          }`}>
+                                ? 'bg-rose-950/60 text-rose-300 border-rose-800'
+                                : newTipoIe.toUpperCase().includes('SIMPLES')
+                                  ? 'bg-amber-950/60 text-amber-300 border-amber-800'
+                                  : newTipoIe.toUpperCase().includes('ISENTO')
+                                    ? 'bg-blue-950/60 text-blue-300 border-blue-800'
+                                    : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                            }`}>
                             {newSituacaoIe && newSituacaoIe !== newTipoIe ? `${newSituacaoIe} - ${newTipoIe}` : newTipoIe}
                           </span>
                         )}
@@ -1836,7 +1857,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       {editingTenant && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
-            
+
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-3">
@@ -1866,11 +1887,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('identificacao')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'identificacao'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'identificacao'
                     ? 'bg-blue-950 text-blue-200 border border-blue-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Building2 className="w-4 h-4 text-blue-400" />
                 1. Identificação da Empresa
@@ -1879,11 +1899,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('endereco')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'endereco'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'endereco'
                     ? 'bg-emerald-950 text-emerald-200 border border-emerald-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <MapPin className="w-4 h-4 text-emerald-400" />
                 2. Endereço & Contato
@@ -1892,11 +1911,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('contador')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'contador'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'contador'
                     ? 'bg-indigo-950 text-indigo-200 border border-indigo-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <UserCheck className="w-4 h-4 text-indigo-400" />
                 3. Contador Responsável
@@ -1905,11 +1923,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('integracoes')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'integracoes'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'integracoes'
                     ? 'bg-purple-950 text-purple-200 border border-purple-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Globe className="w-4 h-4 text-purple-400" />
                 4. APIs Governamentais & Integrações ERP
@@ -1918,11 +1935,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               <button
                 type="button"
                 onClick={() => setModalTab('equipe')}
-                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
-                  modalTab === 'equipe'
+                className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'equipe'
                     ? 'bg-emerald-950 text-emerald-200 border border-emerald-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
-                }`}
+                  }`}
               >
                 <Users className="w-4 h-4 text-emerald-400" />
                 5. Equipe & Permissões Desta Empresa
@@ -1935,7 +1951,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
             </div>
 
             <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
-              
+
               {/* TAB 1: IDENTIFICAÇÃO */}
               {modalTab === 'identificacao' && (
                 <div className="space-y-3">
@@ -2475,7 +2491,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                           <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-purple-900/50 text-purple-300 border border-purple-700/50">Automatismo 100% Zero-Touch</span>
                         </h5>
                         <p className="text-slate-400 leading-relaxed">
-                          O Radar Fiscal atua como um <strong>hub inteligente entre o Fisco e o seu sistema de gestão (ERP)</strong>. 
+                          O Radar Fiscal atua como um <strong>hub inteligente entre o Fisco e o seu sistema de gestão (ERP)</strong>.
                           Assim que um fornecedor emite uma NF-e/NFC-e/CT-e/NFS-e contra este CNPJ, o Radar captura o XML na SEFAZ via Certificado A1, audita preventivamente as regras tributárias e alíquotas da Reforma 2026, e <strong className="text-purple-300">despacha automaticamente os dados e o XML para o seu ERP</strong>.
                         </p>
                       </div>
@@ -2857,11 +2873,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                   {/* Feedback Message */}
                   {equipeFeedback && (
-                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 animate-in fade-in duration-200 ${
-                      equipeFeedback.tipo === 'sucesso'
+                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 animate-in fade-in duration-200 ${equipeFeedback.tipo === 'sucesso'
                         ? 'bg-emerald-950/80 border-emerald-700/60 text-emerald-300'
                         : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
-                    }`}>
+                      }`}>
                       {equipeFeedback.tipo === 'sucesso' ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                       ) : (
@@ -3032,11 +3047,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                                       <option value="escrita">Escrita (Operacional)</option>
                                       <option value="leitura">Leitura (Consulta)</option>
                                     </select>
-                                    
-                                    <span className={`w-2 h-2 rounded-full ${
-                                      m.permissao === 'total' ? 'bg-emerald-400' :
-                                      m.permissao === 'escrita' ? 'bg-cyan-400' : 'bg-amber-400'
-                                    }`} title={`Permissão: ${m.permissao}`} />
+
+                                    <span className={`w-2 h-2 rounded-full ${m.permissao === 'total' ? 'bg-emerald-400' :
+                                        m.permissao === 'escrita' ? 'bg-cyan-400' : 'bg-amber-400'
+                                      }`} title={`Permissão: ${m.permissao}`} />
                                   </div>
                                 </td>
 
@@ -3132,11 +3146,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </label>
                 <div
                   onClick={() => certFileInputRef.current?.click()}
-                  className={`p-5 border-2 border-dashed rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center gap-2 text-center ${
-                    certFile
+                  className={`p-5 border-2 border-dashed rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center gap-2 text-center ${certFile
                       ? 'border-emerald-500/60 bg-emerald-950/20 text-emerald-300 shadow-inner'
                       : 'border-slate-700 hover:border-indigo-500 bg-slate-950/60 hover:bg-slate-950 text-slate-400'
-                  }`}
+                    }`}
                 >
                   <input
                     ref={certFileInputRef}

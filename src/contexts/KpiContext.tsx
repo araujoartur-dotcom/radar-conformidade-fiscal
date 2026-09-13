@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { useApi } from '../hooks/useApi';
 
@@ -16,6 +16,10 @@ export interface KpiTotals {
   nfceCount?: number;
   cteCount?: number;
   nfseCount?: number;
+  nfeValor?: number;
+  nfceValor?: number;
+  cteValor?: number;
+  nfseValor?: number;
   totalIcms?: number;
   totalPis?: number;
   totalCofins?: number;
@@ -49,6 +53,7 @@ interface KpiContextType {
   totalGeral: KpiTotals | null;
   totalFiltrado: KpiTotals | null;
   isLoadingKpis: boolean;
+  kpiError: string | null;
   refreshKpis: (filters?: KpiFilters) => Promise<void>;
 }
 
@@ -59,6 +64,8 @@ const getCacheKey = (empresaId?: string) => `@RadarFiscal:kpis_${empresaId || 'g
 export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { empresaAtiva, token } = useAuth();
   const { get } = useApi();
+  const getRef = useRef(get);
+  getRef.current = get;
 
   const [totalGeral, setTotalGeral] = useState<KpiTotals | null>(() => {
     try {
@@ -83,6 +90,7 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isLoadingKpis, setIsLoadingKpis] = useState<boolean>(false);
+  const [kpiError, setKpiError] = useState<string | null>(null);
 
   const refreshKpis = useCallback(async (filters?: KpiFilters) => {
     if (!token) return;
@@ -96,11 +104,12 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (filters?.dataInicio) q.set('dataInicio', filters.dataInicio);
       if (filters?.dataFim) q.set('dataFim', filters.dataFim);
 
-      const res = await get<{ success: boolean; totalGeral: KpiTotals; totalFiltrado: KpiTotals }>(`/upload/kpis?${q.toString()}`);
+      const res = await getRef.current<{ success: boolean; totalGeral: KpiTotals; totalFiltrado: KpiTotals }>(`/upload/kpis?${q.toString()}`);
       const payload = (res as any)?.data || res;
       if (payload?.success && payload.totalGeral) {
         setTotalGeral(payload.totalGeral);
         setTotalFiltrado(payload.totalFiltrado || payload.totalGeral);
+        setKpiError(null);
         try {
           const cacheData = JSON.stringify({
             totalGeral: payload.totalGeral,
@@ -109,20 +118,28 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           localStorage.setItem(getCacheKey(empId), cacheData);
           localStorage.setItem('@RadarFiscal:kpis_global', cacheData);
         } catch {}
+      } else {
+        const errMsg = (res as any)?.error || 'Resposta inválida do servidor de KPIs.';
+        console.warn('⚠️ Falha ao obter KPIs:', errMsg);
+        setKpiError(errMsg);
       }
-    } catch (err) {
-      console.warn('⚠️ Erro ao atualizar KPIs globais:', err);
+    } catch (err: any) {
+      console.warn('⚠️ Erro de rede ao atualizar KPIs globais:', err);
+      setKpiError(err?.message || 'Erro de conexão com o servidor de indicadores.');
     } finally {
       setIsLoadingKpis(false);
     }
-  }, [empresaAtiva?.id, token, get]);
+  }, [empresaAtiva?.id, token]);
 
-  // Carrega ao montar ou quando a empresa ativa mudar
+  // Carrega ao montar ou quando a empresa ativa mudar.
+  // Nota: refreshKpis é intencionalmente omitido do array de deps para evitar
+  // loop de re-render (o useCallback já reage a empresaAtiva?.id e token).
   useEffect(() => {
     if (token) {
       refreshKpis();
     }
-  }, [empresaAtiva?.id, token, refreshKpis]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresaAtiva?.id, token]);
 
   return (
     <KpiContext.Provider value={{
@@ -130,6 +147,7 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalGeral,
       totalFiltrado,
       isLoadingKpis,
+      kpiError,
       refreshKpis,
     }}>
       {children}

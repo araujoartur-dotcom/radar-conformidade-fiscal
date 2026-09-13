@@ -87,7 +87,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
       limiteCredito: 100000,
       dadosBancarios: {
         bancoCodigo: '001',
-        bancoNome: 'Banco do Brasil',
+        bancoNome: 'Banco Exemplo',
         agencia: '1234-5',
         contaCorrente: '98765-4',
         chavePix: '',
@@ -805,7 +805,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                       </label>
                       <input
                         type="text"
-                        placeholder="Ex: 02.456.789/0001-30 ou 12.ABC.345/0001-30"
+                        placeholder="Ex: 01.001.001/0001-91 ou 12.ABC.345/0001-30"
                         value={formData.cpfCnpj}
                         onChange={(e) => setFormData({ ...formData, cpfCnpj: e.target.value.toUpperCase() })}
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
@@ -1290,7 +1290,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                         <label className="font-bold text-slate-300 block mb-1">Banco FEBRABAN</label>
                         <input
                           type="text"
-                          placeholder="Ex: 001 - Banco do Brasil"
+                          placeholder="Ex: 001 - Banco Exemplo S/A"
                           value={formData.contabil?.dadosBancarios?.bancoNome || ''}
                           onChange={(e) => setFormData({
                             ...formData,

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { XmlItemDetailReport } from '../../types';
+import { getApiBaseUrl } from '../../utils/apiConfig';
 import { 
   Receipt, ShieldCheck, AlertTriangle, CheckCircle2, 
   HelpCircle, Building2, MapPin, DollarSign, Scale, 
@@ -12,9 +13,46 @@ interface RelatorioRetencoesFonteProps {
 }
 
 export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = ({ items, onOpenDetail }) => {
-  const [selectedFilter, setSelectedFilter] = useState<'todos' | 'com_retencao' | 'apenas_divergencias' | 'irrf' | 'crf' | 'inss' | 'iss'>('todos');
+  const [selectedFilter, setSelectedFilter] = useState<'todos' | 'com_retencao' | 'apenas_divergencias' | 'sem_regra' | 'irrf' | 'crf' | 'inss' | 'iss'>('todos');
   const [searchTerm, setSearchTerm] = useState('');
   const [modalItem, setModalItem] = useState<XmlItemDetailReport | null>(null);
+  const [regrasRetencao, setRegrasRetencao] = useState<any[]>([]);
+  const [loadingRegras, setLoadingRegras] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRegras = async () => {
+      try {
+        setLoadingRegras(true);
+        const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+        const res = await fetch(`${getApiBaseUrl()}/tables/regras-retencao-servicos`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data)) {
+            setRegrasRetencao(json.data);
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao buscar regras de retenção:', e);
+      } finally {
+        if (isMounted) setLoadingRegras(false);
+      }
+    };
+    fetchRegras();
+    return () => { isMounted = false; };
+  }, []);
+
+  const csrfValues = useMemo(() => Array.from(new Set(regrasRetencao.map(r => r.csrf).filter(Boolean))), [regrasRetencao]);
+  const irrfValues = useMemo(() => Array.from(new Set(regrasRetencao.map(r => r.irrf).filter(Boolean))), [regrasRetencao]);
+  const inssValues = useMemo(() => Array.from(new Set(regrasRetencao.map(r => r.inss).filter(Boolean))), [regrasRetencao]);
+  const issValues = useMemo(() => Array.from(new Set(regrasRetencao.map(r => r.iss).filter(Boolean))), [regrasRetencao]);
+
+  const csrfBadgeText = csrfValues.length > 0 ? csrfValues.join(' / ') : '—';
+  const irrfBadgeText = irrfValues.length > 0 ? irrfValues.join(' / ') : '—';
+  const inssBadgeText = inssValues.length > 0 ? inssValues.join(' / ') : '—';
+  const issBadgeText = issValues.length > 0 ? (issValues.length === 1 ? issValues[0] : `${issValues[0]} a ${issValues[issValues.length - 1]}`) : '—';
 
   // Considerar estritamente itens que sejam NFS-e ou serviços
   const servicoItems = items.filter(it => 
@@ -52,6 +90,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
 
     if (selectedFilter === 'com_retencao') return totalRet > 0;
     if (selectedFilter === 'apenas_divergencias') return it.diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || it.diagnosticoRetencao === 'FALTA_RETENCAO';
+    if (selectedFilter === 'sem_regra') return it.diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA';
     if (selectedFilter === 'irrf') return (it.valorIrrf || 0) > 0;
     if (selectedFilter === 'crf') return ((it.valorCsllRetido || 0) + (it.valorPisRetido || 0) + (it.valorCofinsRetido || 0)) > 0;
     if (selectedFilter === 'inss') return (it.valorInss || 0) > 0;
@@ -72,6 +111,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
   const totalRetencoesGeral = totalIrrf + totalCrf + totalInss + totalIss;
   const totalValorLiquido = Math.max(0, totalValorBruto - totalRetencoesGeral);
   const totalDivergencias = filteredDataset.filter(it => it.diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || it.diagnosticoRetencao === 'FALTA_RETENCAO').length;
+  const totalSemRegra = dataset.filter(it => it.diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA').length;
 
   return (
     <div className="space-y-4">
@@ -100,23 +140,36 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
           <div className="flex flex-wrap items-center gap-2">
             <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
               <span className="text-slate-500 block text-[9px] uppercase font-mono">CRF Global</span>
-              <span className="font-bold text-cyan-400">4,65%</span> (PIS/COF/CSLL)
+              <span className="font-bold text-cyan-400">{csrfBadgeText}</span> {csrfBadgeText !== '—' ? '(PIS/COF/CSLL)' : <span className="text-amber-400/80 italic text-[9px]">(Não parametrizado)</span>}
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
               <span className="text-slate-500 block text-[9px] uppercase font-mono">IRRF Fonte</span>
-              <span className="font-bold text-amber-400">1,50% / 1,00%</span>
+              <span className="font-bold text-amber-400">{irrfBadgeText}</span> {irrfBadgeText === '—' && <span className="text-amber-400/80 italic text-[9px] block">Pendente</span>}
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
               <span className="text-slate-500 block text-[9px] uppercase font-mono">INSS Mão de Obra</span>
-              <span className="font-bold text-emerald-400">11,00%</span>
+              <span className="font-bold text-emerald-400">{inssBadgeText}</span> {inssBadgeText === '—' && <span className="text-amber-400/80 italic text-[9px] block">Pendente</span>}
             </div>
             <div className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-[11px] text-slate-300">
               <span className="text-slate-500 block text-[9px] uppercase font-mono">ISSQN Local</span>
-              <span className="font-bold text-purple-400">2% a 5%</span>
+              <span className="font-bold text-purple-400">{issBadgeText}</span> {issBadgeText === '—' && <span className="text-amber-400/80 italic text-[9px] block">Pendente</span>}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Aviso de Parâmetros Pendentes de Retenção (SEM FALLBACK) */}
+      {!loadingRegras && regrasRetencao.length === 0 && (
+        <div className="p-4 bg-amber-950/40 border border-amber-500/60 rounded-2xl text-amber-200 text-xs flex items-start gap-3 shadow-lg">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-bold text-amber-300 block text-sm">Regras de Retenção de Serviços Pendentes de Parametrização</span>
+            <p>
+              Nenhuma regra oficial de retenção na fonte encontrada no banco de dados. Para auditar com exatidão as retenções de IRRF, CRF/PCC, INSS e ISSQN, acesse o módulo <strong>"Parâmetros & Tabelas Fiscais &gt; Retenções de Serviços (NFS-e)"</strong> para cadastrar os percentuais legais por item da LC 116/03.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cockpit de Retenções */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -132,7 +185,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
         {/* IRRF Retido */}
         <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-900/30 shadow-md">
           <div className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center justify-between">
-            <span>IRRF (1,5% / 1%)</span>
+            <span>IRRF ({irrfBadgeText})</span>
             <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 font-mono">1708</span>
           </div>
           <div className="text-sm font-black text-amber-300 mt-1 font-mono">
@@ -144,7 +197,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
         {/* CRF / PCC Global */}
         <div className="p-3.5 rounded-xl bg-slate-900/90 border border-cyan-900/30 shadow-md">
           <div className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider flex items-center justify-between">
-            <span>CRF/PCC (4,65%)</span>
+            <span>CRF/PCC ({csrfBadgeText})</span>
             <span className="text-[9px] px-1 rounded bg-cyan-500/20 text-cyan-300 font-mono">5952</span>
           </div>
           <div className="text-sm font-black text-cyan-300 mt-1 font-mono">
@@ -153,10 +206,10 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
           <div className="text-[10px] text-slate-500 mt-0.5">Lei 10.833/03</div>
         </div>
 
-        {/* INSS 11% */}
+        {/* INSS */}
         <div className="p-3.5 rounded-xl bg-slate-900/90 border border-emerald-900/30 shadow-md">
           <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider flex items-center justify-between">
-            <span>INSS (11%)</span>
+            <span>INSS ({inssBadgeText})</span>
             <span className="text-[9px] px-1 rounded bg-emerald-500/20 text-emerald-300 font-mono">DCTFWeb</span>
           </div>
           <div className="text-sm font-black text-emerald-300 mt-1 font-mono">
@@ -168,7 +221,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
         {/* ISSQN Retido */}
         <div className="p-3.5 rounded-xl bg-slate-900/90 border border-purple-900/30 shadow-md">
           <div className="text-[10px] text-purple-400 font-bold uppercase tracking-wider flex items-center justify-between">
-            <span>ISSQN Retido</span>
+            <span>ISSQN ({issBadgeText})</span>
             <span className="text-[9px] px-1 rounded bg-purple-500/20 text-purple-300 font-mono">DAM</span>
           </div>
           <div className="text-sm font-black text-purple-300 mt-1 font-mono">
@@ -233,6 +286,19 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
             <AlertTriangle className="w-3 h-3" />
             Divergências ({totalDivergencias})
           </button>
+          {totalSemRegra > 0 && (
+            <button
+              onClick={() => setSelectedFilter('sem_regra')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
+                selectedFilter === 'sem_regra' 
+                  ? 'bg-rose-600 text-white shadow-md' 
+                  : 'bg-slate-800/80 text-rose-300 hover:bg-slate-700'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              Sem Regra ({totalSemRegra})
+            </button>
+          )}
           <button
             onClick={() => setSelectedFilter('irrf')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
@@ -296,10 +362,10 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
               <th className="py-2.5 px-2.5">Doc / Chave / Prestador</th>
               <th className="py-2.5 px-2.5">Código LC 116 & Discriminação</th>
               <th className="py-2.5 px-2.5 text-right">Valor Bruto (R$)</th>
-              <th className="py-2.5 px-2.5 text-right">IRRF (1,5% / 1%)</th>
-              <th className="py-2.5 px-2.5 text-right">CRF (4,65%)</th>
-              <th className="py-2.5 px-2.5 text-right">INSS (11% / 3,5%)</th>
-              <th className="py-2.5 px-2.5 text-right">ISS Retido</th>
+              <th className="py-2.5 px-2.5 text-right">IRRF ({irrfBadgeText})</th>
+              <th className="py-2.5 px-2.5 text-right">CRF ({csrfBadgeText})</th>
+              <th className="py-2.5 px-2.5 text-right">INSS ({inssBadgeText})</th>
+              <th className="py-2.5 px-2.5 text-right">ISS ({issBadgeText})</th>
               <th className="py-2.5 px-2.5 text-right">Total Retido</th>
               <th className="py-2.5 px-2.5 text-right">Líquido a Pagar</th>
               <th className="py-2.5 px-2.5 text-center">Diagnóstico Matriz</th>
@@ -358,11 +424,11 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     <td className="py-2 px-2.5 font-sans">
                       <div className="flex items-center gap-1.5 font-mono">
                         <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-300 font-bold text-[10px] border border-slate-700">
-                          Item {it.codigoServicoLc116 || '17.01'}
+                          Item {it.codigoServicoLc116 || '—'}
                         </span>
                       </div>
                       <div className="text-[11px] text-slate-300 line-clamp-2 max-w-[280px] mt-1" title={it.discriminacaoServico || it.descricaoItem}>
-                        {it.discriminacaoServico || it.descricaoItem || 'Prestação de Serviços Profissionais / Técnicos'}
+                        {it.discriminacaoServico || it.descricaoItem || '— (Discriminação não informada)'}
                       </div>
                     </td>
 
@@ -379,7 +445,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                             R$ {irrf.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-slate-400">
-                            Aliq: {it.aliquotaIrrf || 1.5}%
+                            Aliq: {it.aliquotaIrrf ? `${it.aliquotaIrrf}%` : (it.regraRetencaoAplicada?.irrf ? it.regraRetencaoAplicada.irrf : '—')}
                           </div>
                         </div>
                       ) : (
@@ -387,7 +453,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                       )}
                     </td>
 
-                    {/* CRF / PCC 4,65% */}
+                    {/* CRF / PCC */}
                     <td className="py-2 px-2.5 text-right">
                       {crf > 0 ? (
                         <div>
@@ -395,7 +461,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                             R$ {crf.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-slate-400">
-                            4,65% (P+C+CSLL)
+                            {it.regraRetencaoAplicada?.csrf ? `${it.regraRetencaoAplicada.csrf}` : 'P+C+CSLL'}
                           </div>
                         </div>
                       ) : (
@@ -403,7 +469,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                       )}
                     </td>
 
-                    {/* INSS 11% */}
+                    {/* INSS */}
                     <td className="py-2 px-2.5 text-right">
                       {inss > 0 ? (
                         <div>
@@ -411,7 +477,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                             R$ {inss.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-slate-400">
-                            Aliq: {it.aliquotaInss || 11}%
+                            Aliq: {it.aliquotaInss ? `${it.aliquotaInss}%` : (it.regraRetencaoAplicada?.inss ? it.regraRetencaoAplicada.inss : '—')}
                           </div>
                         </div>
                       ) : (
@@ -427,7 +493,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                             R$ {iss.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                           <div className="text-[9px] text-slate-400">
-                            Aliq: {it.aliquotaIssRetido || 5}%
+                            Aliq: {it.aliquotaIssRetido ? `${it.aliquotaIssRetido}%` : (it.regraRetencaoAplicada?.iss ? it.regraRetencaoAplicada.iss : '—')}
                           </div>
                         </div>
                       ) : (
@@ -451,7 +517,12 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
 
                     {/* Diagnóstico Matriz */}
                     <td className="py-2 px-2.5 text-center font-sans">
-                      {it.diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' ? (
+                      {it.diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30" title={it.motivoDiagnosticoRetencao || 'Nenhuma regra de retenção cadastrada no banco de dados para este item.'}>
+                          <AlertTriangle className="w-3 h-3" />
+                          Sem Regra
+                        </span>
+                      ) : it.diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30" title={it.motivoDiagnosticoRetencao}>
                           <AlertTriangle className="w-3 h-3" />
                           Divergência
@@ -532,7 +603,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
               </div>
 
               {/* Regra Parametrizada Aplicada */}
-              {modalItem.regraRetencaoAplicada && (
+              {modalItem.regraRetencaoAplicada ? (
                 <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/60 space-y-1">
                   <div className="flex justify-between items-center text-[10px] uppercase font-bold text-indigo-400">
                     <span>Regra Parametrizada da Matriz Fiscal</span>
@@ -552,6 +623,19 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     </div>
                   )}
                 </div>
+              ) : (
+                <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-800/60 space-y-1.5 shadow-md">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-rose-400 uppercase">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>Aviso: Regra de Retenção Não Parametrizada no Banco de Dados</span>
+                  </div>
+                  <div className="text-rose-200 text-xs">
+                    Este serviço (Código LC 116: <strong>{modalItem.codigoServicoLc116 || 'Não informado'}</strong>) não possui correspondência cadastrada na tabela de <em>Retenções de Serviços (NFS-e)</em>.
+                  </div>
+                  <div className="text-[11px] text-slate-300">
+                    O sistema opera <strong>estritamente sem fallbacks ou suposições</strong>. Para conferir ou auditar as retenções devidas, cadastre os percentuais no módulo <strong>"Parâmetros & Tabelas Fiscais" &gt; aba "Retenções de Serviços (NFS-e)"</strong>.
+                  </div>
+                </div>
               )}
 
               {/* Quadro Comparativo de Tributos Retidos */}
@@ -569,7 +653,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     <tr>
                       <td className="p-2.5 text-amber-300 font-bold font-sans">IRRF Fonte</td>
                       <td className="p-2.5 text-slate-300">
-                        {modalItem.regraRetencaoAplicada?.irrf || '1,50%'} (Art. 714 RIR/2018)
+                        {modalItem.regraRetencaoAplicada?.irrf ? `${modalItem.regraRetencaoAplicada.irrf} (Art. 714 RIR/2018)` : <span className="text-amber-400 italic">Não parametrizado</span>}
                       </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorIrrf || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">DARF 1708 (Reinf / DCTFWeb)</td>
@@ -577,7 +661,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     <tr>
                       <td className="p-2.5 text-cyan-300 font-bold font-sans">CRF/PCC (PIS/COFINS/CSLL)</td>
                       <td className="p-2.5 text-slate-300">
-                        {modalItem.regraRetencaoAplicada?.csrf || '4,65%'} (Art. 30 Lei 10.833/03)
+                        {modalItem.regraRetencaoAplicada?.csrf ? `${modalItem.regraRetencaoAplicada.csrf} (Art. 30 Lei 10.833/03)` : <span className="text-amber-400 italic">Não parametrizado</span>}
                       </td>
                       <td className="p-2.5 text-right font-bold text-white">
                         R$ {((modalItem.valorCsllRetido || 0) + (modalItem.valorPisRetido || 0) + (modalItem.valorCofinsRetido || 0)).toFixed(2)}
@@ -587,7 +671,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     <tr>
                       <td className="p-2.5 text-emerald-300 font-bold font-sans">INSS Previdenciário</td>
                       <td className="p-2.5 text-slate-300">
-                        {modalItem.regraRetencaoAplicada?.inss || '11,00%'} (Art. 31 Lei 8.212/91)
+                        {modalItem.regraRetencaoAplicada?.inss ? `${modalItem.regraRetencaoAplicada.inss} (Art. 31 Lei 8.212/91)` : <span className="text-amber-400 italic">Não parametrizado</span>}
                       </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorInss || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">EFD-Reinf / DCTFWeb</td>
@@ -595,7 +679,7 @@ export const RelatorioRetencoesFonte: React.FC<RelatorioRetencoesFonteProps> = (
                     <tr>
                       <td className="p-2.5 text-purple-300 font-bold font-sans">ISSQN Municipal</td>
                       <td className="p-2.5 text-slate-300">
-                        {modalItem.regraRetencaoAplicada?.iss || '2% a 5%'} (LC 116/03)
+                        {modalItem.regraRetencaoAplicada?.iss ? `${modalItem.regraRetencaoAplicada.iss} (LC 116/03)` : <span className="text-amber-400 italic">Não parametrizado</span>}
                       </td>
                       <td className="p-2.5 text-right font-bold text-white">R$ {(modalItem.valorIssRetido || 0).toFixed(2)}</td>
                       <td className="p-2.5 text-slate-400 font-sans">DAM Municipal (Tomador Substituto)</td>

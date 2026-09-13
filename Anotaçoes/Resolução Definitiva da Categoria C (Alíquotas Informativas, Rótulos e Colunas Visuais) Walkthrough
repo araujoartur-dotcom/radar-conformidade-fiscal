@@ -1,0 +1,100 @@
+# Walkthrough: Resolução Definitiva da Categoria C (Alíquotas Informativas, Rótulos e Colunas Visuais)
+
+Concluímos a resolução categórica da **Categoria C: Alíquotas preenchidas manualmente ou em códigos que NÃO afetam esquemas de cálculos (informativas, rótulos e colunas visuais)**. 
+
+A governança visual e informativa foi totalmente integrada ao módulo **"Parâmetros & Tabelas Fiscais"**, com a estrita eliminação de alíquotas arbitrárias, suposições fictícias e fallbacks silenciosos (**"Sem Fallback"**).
+
+---
+
+## 1. Visão Geral das Três Categorias de Alíquotas
+
+No módulo [TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx), foi implementado o **Painel de Governança e Classificação de Alíquotas**, segregando de forma transparente:
+
+| Categoria | Descrição | Tabelas / Módulos Associados | Política de Fallback |
+| :--- | :--- | :--- | :--- |
+| **Categoria A** | Tabelas Oficiais da Lei / RFB | `aliquotas_tabelas` (Ad Valorem/Ad Rem), `ncm_regras_anexos` (LC 214/2025, EC 132/2023) | **Sem Fallback:** Se o ano/NCM não estiver na lei/banco, erro explícito emitido. |
+| **Categoria B** | Parâmetros Operacionais e Motores de Cálculo | `simples_nacional_faixas`, `simples_nacional_partilha_reforma`, `lucro_presumido_parametros`, `encargos_patronais_parametros`, `parametros_inferencia` | **Sem Fallback:** Fórmulas sem alíquota definida geram aviso claro do parâmetro pendente no banco. |
+| **Categoria C** | Informativas, Rótulos e Colunas Visuais | `regras_retencao_servicos` (LC 116), `cclasstrib_regras` (6D), `cfop_tratamento`, DANFE e Relatórios de Auditoria | **Sem Fallback:** Rótulos e colunas exibem alíquotas oficiais do banco ou `— (Pendente de parametrização)`. |
+
+---
+
+## 2. O que Foi Feito na Categoria C
+
+### Item C.1: Eliminação de Fallbacks Arbitrários no DANFE Visual ([DanfeModal.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/DanfeModal.tsx))
+- **Problema anterior:** Quando o XML não continha o código `<cClassTrib>`, o modal preenchia arbitrariamente `'410999'`. Se a NFS-e não continha código de serviço, preenchia `'17.01'` e a discriminação padrão `'PRESTAÇÃO DE SERVIÇOS'`.
+- **Solução Implementada:**
+  - Código `cClassTrib`: agora renderiza `cClassTrib || cest || '—'`.
+  - Código de Serviço NFS-e: renderiza `nfseCodServ || '—'`.
+  - Discriminação: exibe `it.descricao || 'Discriminação não informada no XML'`.
+  - Inserido no rodapé do modal a **Nota de Governança Fiscal (Categoria C - Visualização Documental)**, esclarecendo ao usuário que dados ausentes no documento eletrônico original são representados por travessão (`—`), evitando falsas presunções fiscais.
+
+### Item C.2: Conexão Dinâmica do Relatório de Retenções na Fonte ([RelatorioRetencoesFonte.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioRetencoesFonte.tsx))
+- **Problema anterior:** O banner superior, os KPIs e a tabela analítica continham textos estáticos (`"CRF Global 4,65%"`, `"IRRF 1,50% / 1,00%"`, `"INSS 11,00%"`, `"ISSQN 2% a 5%"`), além de fallbacks nas linhas como `Aliq: {it.aliquotaIrrf || 1.5}%`, `Aliq: {it.aliquotaInss || 11}%`, `Aliq: {it.aliquotaIssRetido || 5}%` e `Item {it.codigoServicoLc116 || '17.01'}`.
+- **Solução Implementada:**
+  - O componente agora consulta dinamicamente a tabela `regras_retencao_servicos` via API (`/tables/regras-retencao-servicos`).
+  - Badges do banner e títulos dos cartões KPI utilizam os percentuais apurados a partir dos registros oficiais do banco de dados (`csrfBadgeText`, `irrfBadgeText`, `inssBadgeText`, `issBadgeText`).
+  - Se a tabela estiver desprovida de registros, exibe badge `—` e um **banner de alerta em destaque** instruindo o usuário a cadastrar as alíquotas oficiais no módulo *"Parâmetros & Tabelas Fiscais > Retenções de Serviços (NFS-e)"*.
+  - Na tabela analítica, eliminados todos os fallbacks inline (`1.5`, `11`, `5`, `'17.01'`), reportando estritamente a taxa real ou o indicador `—`.
+
+### Item C.3: Remoção de Constantes e Fallbacks em Modelos de Exportação ([reportsData.ts](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/utils/reportsData.ts))
+- **Problema anterior:** A constante inicial continha `'10.6% (60% de Redução IBS/CBS)'` e as funções de exportação para planilha atribuíam `1.5`, `11.0` ou `5.0` arbitrariamente para notas com retenção não identificada.
+- **Solução Implementada:**
+  - `INITIAL_MAPA_CCLASSTRIB`: Substituído `'10.6%'` por `'Reduzida Conforme Regulamento (Anexos da Lei)'`.
+  - `exportDetailedReportToExcel`: Alíquotas não destacadas ou sem regra vinculada exportam explicitamente `'— (Pendente de parametrização)'` ou `'— (Não informado)'`.
+
+### Item C.4: Mapa cClassTrib sem Valores Arbitrários ([RelatorioMapaCClassTrib.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/relatorios/RelatorioMapaCClassTrib.tsx))
+- **Problema anterior:** O formulário de inclusão continha placeholder induzindo à taxa fictícia (`"Ex: 10.6%"`), e alíquotas não cadastradas podiam ficar em branco sem instrução.
+- **Solução Implementada:**
+  - Placeholder higienizado para `"Ex: Alíquota Específica ou Anexo LC"`.
+  - Tabela renderiza `{item.aliquotaEsperada || '— (Pendente de parametrização)'}`, garantindo feedback visual imediato.
+
+### Item C.5: Memória Jurídica 100% Dinâmica no Simulador ([SimuladorRegimesPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/SimuladorRegimesPanel.tsx))
+- **Problema anterior:** O drawer de "Memória Jurídica" possuía textos estáticos desvinculados da seleção atual do usuário.
+- **Solução Implementada:**
+  - O drawer agora consome diretamente `currentAtividade`, `currentEncargo` e `currentAnexoNome` a partir das tabelas `lucro_presumido_parametros`, `encargos_patronais_parametros` e `simples_nacional_faixas`.
+  - Exibe as presunções ativas (IRPJ e CSLL), adicional de IRPJ, fundamentação legal oficial e encargos previdenciários patronais (INSS + RAT/FAP + Sistema S) correspondentes à atividade selecionada.
+
+### Item C.6: Painel de Governança e Badges de Categoria ([TabelasFiscaisPanel.tsx](file:///c:/Automacoes/Radar%20Conformidade%20Fiscal/src/components/TabelasFiscaisPanel.tsx))
+- **Problema anterior:** Inexistência de identificação clara das categorias de alíquotas para o usuário; cadastro de cClassTrib iniciava com valor estático `'26.5%'`.
+- **Solução Implementada:**
+  - Adicionado o **Painel de Governança e Classificação de Alíquotas** no topo da tela com drawer expansível detalhando as Categorias A, B e C.
+  - Inseridos badges visuais em todas as abas (`[Cat. A & B]`, `[Cat. B]`, `[Cat. C]`).
+  - Adicionados banners informativos específicos dentro das abas `retencoes_servicos` e `cclasstrib`.
+  - Removido o valor default estático `'26.5%'` do cadastro de cClassTrib.
+
+---
+
+## 3. Resultados dos Testes de Verificação
+
+### Testes Automatizados Executados:
+1. **Compilação TypeScript (`npx tsc --noEmit`):**
+   - **Resultado:** Código 0 (Zero erros).
+2. **Bateria de Testes do Backend (`npx tsx server/test_suite.ts`):**
+   - **Resultado:** 39/39 testes aprovados (100%).
+3. **Verificação Integral da Categoria C (`scratch/verify_categoria_c.ts`):**
+   - **Resultado:** 35/35 testes aprovados (100%):
+     - ✅ DanfeModal: ausência de 410999, 17.01, descrição arbitrária e presença de nota Categoria C.
+     - ✅ RelatorioRetencoesFonte: conexão dinâmica à API, badges dinâmicos, ausência de 1.5, 11 e 5 inline.
+     - ✅ reportsData: remoção de 10.6% e indicação de pendência de parametrização na exportação.
+     - ✅ RelatorioMapaCClassTrib: ausência de 10.6% e fallback '— (Pendente de parametrização)'.
+     - ✅ SimuladorRegimesPanel: Memória Jurídica consumindo atividade e encargos do banco.
+     - ✅ TabelasFiscaisPanel: Guia de Categorias, badges em todas as abas e remoção de 26.5%.
+4. **Auditoria de Registros no SQLite (`scratch/audit_database_categories.cjs`):**
+   - **Resultado:** Todas as 10 tabelas populadas e operacionais:
+     - `aliquotas_tabelas` [Cat. A & B]: 10 registros
+     - `ncm_regras_anexos` [Cat. A & B]: 8 registros
+     - `simples_nacional_faixas` [Cat. B]: 36 registros
+     - `simples_nacional_partilha_reforma` [Cat. B]: 72 registros
+     - `lucro_presumido_parametros` [Cat. B]: 12 registros
+     - `encargos_patronais_parametros` [Cat. B]: 5 registros
+     - `parametros_inferencia` [Cat. B]: 3 registros
+     - `regras_retencao_servicos` [Cat. C]: 8 registros
+     - `cclasstrib_regras` [Cat. C]: 7 registros
+     - `cfop_tratamento` [Cat. C]: 12 registros
+
+---
+
+## 4. Conformidade com as Restrições Operacionais
+
+- **Zero Deploy:** Nenhum comando `git commit`, `git push` ou acionamento de pipeline de nuvem foi executado.
+- **Sem Fallback:** Não existem alíquotas silenciosas, adivinhações ou valores fictícios no sistema. Qualquer ausência de configuração emite aviso objetivo apontando o local exato de parametrização.

@@ -1044,9 +1044,187 @@ router.delete('/regras-retencao-servicos/:id', requireAuth, requirePerfil('admin
       }
     }
 
-    res.json({ success: true, message: 'Regra de retenção excluída com sucesso.' });
+    res.json({ success: true, message: 'Regra excluída com sucesso!' });
   } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro ao excluir regra de retenção: ' + err.message });
+    res.status(500).json({ success: false, message: 'Erro ao excluir regra: ' + err.message });
+  }
+});
+
+// =========================================================
+// 8. SIMPLES NACIONAL (LC 123/2006 & LC 214/2025)
+// =========================================================
+
+/** GET /api/tables/simples-nacional — Listar faixas e partilhas */
+router.get('/simples-nacional', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const faixas = db.prepare(`
+      SELECT * FROM simples_nacional_faixas
+      WHERE ativo = 1
+      ORDER BY anexo, faixa
+    `).all();
+
+    const partilhas = db.prepare(`
+      SELECT * FROM simples_nacional_partilha_reforma
+      ORDER BY anexo, ano_transicao, faixa
+    `).all();
+
+    res.json({ success: true, faixas, partilhas });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao buscar dados do Simples Nacional: ' + err.message });
+  }
+});
+
+/** POST /api/tables/simples-nacional/faixa — Gravar/Atualizar faixa do Simples */
+router.post('/simples-nacional/faixa', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const {
+      id, anexo, nome_anexo, faixa, limite_superior, aliq_nominal, deducao,
+      reparticao_irpj, reparticao_csll, reparticao_cofins, reparticao_pis,
+      reparticao_cpp, reparticao_icms, reparticao_iss, reparticao_ipi
+    } = req.body;
+
+    const faixaId = id || uuid();
+
+    db.prepare(`
+      INSERT INTO simples_nacional_faixas (
+        id, anexo, nome_anexo, faixa, limite_superior, aliq_nominal, deducao,
+        reparticao_irpj, reparticao_csll, reparticao_cofins, reparticao_pis,
+        reparticao_cpp, reparticao_icms, reparticao_iss, reparticao_ipi, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(anexo, faixa) DO UPDATE SET
+        nome_anexo = excluded.nome_anexo,
+        limite_superior = excluded.limite_superior,
+        aliq_nominal = excluded.aliq_nominal,
+        deducao = excluded.deducao,
+        reparticao_irpj = excluded.reparticao_irpj,
+        reparticao_csll = excluded.reparticao_csll,
+        reparticao_cofins = excluded.reparticao_cofins,
+        reparticao_pis = excluded.reparticao_pis,
+        reparticao_cpp = excluded.reparticao_cpp,
+        reparticao_icms = excluded.reparticao_icms,
+        reparticao_iss = excluded.reparticao_iss,
+        reparticao_ipi = excluded.reparticao_ipi,
+        updated_at = datetime('now')
+    `).run(
+      faixaId, anexo, nome_anexo, faixa, limite_superior, aliq_nominal, deducao || 0,
+      reparticao_irpj || 0, reparticao_csll || 0, reparticao_cofins || 0, reparticao_pis || 0,
+      reparticao_cpp || 0, reparticao_icms || 0, reparticao_iss || 0, reparticao_ipi || 0
+    );
+
+    res.json({ success: true, message: 'Faixa do Simples Nacional salva com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao gravar faixa do Simples Nacional: ' + err.message });
+  }
+});
+
+// =========================================================
+// 9. LUCRO PRESUMIDO & PRESUNÇÕES (LEI 9.249/1995)
+// =========================================================
+
+/** GET /api/tables/lucro-presumido — Listar atividades e presunções */
+router.get('/lucro-presumido', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM lucro_presumido_parametros
+      WHERE ativo = 1
+      ORDER BY nome_atividade
+    `).all();
+
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar parâmetros do Lucro Presumido: ' + err.message });
+  }
+});
+
+/** POST /api/tables/lucro-presumido — Gravar/Atualizar atividade */
+router.post('/lucro-presumido', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const {
+      id, codigo_atividade, nome_atividade, presuncao_irpj, presuncao_csll,
+      aliq_irpj_basico, aliq_irpj_adicional, limite_mensal_adicional, aliq_csll,
+      artigo_legal, detalhe, categoria, anexo_simples_padrao
+    } = req.body;
+
+    const rowId = id || uuid();
+
+    db.prepare(`
+      INSERT INTO lucro_presumido_parametros (
+        id, codigo_atividade, nome_atividade, presuncao_irpj, presuncao_csll,
+        aliq_irpj_basico, aliq_irpj_adicional, limite_mensal_adicional, aliq_csll,
+        artigo_legal, detalhe, categoria, anexo_simples_padrao, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo_atividade) DO UPDATE SET
+        nome_atividade = excluded.nome_atividade,
+        presuncao_irpj = excluded.presuncao_irpj,
+        presuncao_csll = excluded.presuncao_csll,
+        aliq_irpj_basico = excluded.aliq_irpj_basico,
+        aliq_irpj_adicional = excluded.aliq_irpj_adicional,
+        limite_mensal_adicional = excluded.limite_mensal_adicional,
+        aliq_csll = excluded.aliq_csll,
+        artigo_legal = excluded.artigo_legal,
+        detalhe = excluded.detalhe,
+        categoria = excluded.categoria,
+        anexo_simples_padrao = excluded.anexo_simples_padrao,
+        updated_at = datetime('now')
+    `).run(
+      rowId, codigo_atividade, nome_atividade, presuncao_irpj, presuncao_csll,
+      aliq_irpj_basico ?? 0.15, aliq_irpj_adicional ?? 0.10, limite_mensal_adicional ?? 20000.0,
+      aliq_csll ?? 0.09, artigo_legal || '', detalhe || '', categoria || 'servicos', anexo_simples_padrao || 'anexo1'
+    );
+
+    res.json({ success: true, message: 'Parâmetro de Lucro Presumido gravado com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao gravar Lucro Presumido: ' + err.message });
+  }
+});
+
+// =========================================================
+// 10. ENCARGOS PREVIDENCIÁRIOS PATRONAIS
+// =========================================================
+
+/** GET /api/tables/encargos-patronais — Listar encargos */
+router.get('/encargos-patronais', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM encargos_patronais_parametros
+      WHERE ativo = 1
+      ORDER BY nome_ramo
+    `).all();
+
+    res.json({ success: true, data: rows });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar encargos patronais: ' + err.message });
+  }
+});
+
+/** POST /api/tables/encargos-patronais — Gravar encargos */
+router.post('/encargos-patronais', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const { id, codigo_atividade, nome_ramo, inss_patronal, rat_fap, sistema_s, entidades_descricao } = req.body;
+    const rowId = id || uuid();
+
+    db.prepare(`
+      INSERT INTO encargos_patronais_parametros (
+        id, codigo_atividade, nome_ramo, inss_patronal, rat_fap, sistema_s, entidades_descricao, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo_atividade) DO UPDATE SET
+        nome_ramo = excluded.nome_ramo,
+        inss_patronal = excluded.inss_patronal,
+        rat_fap = excluded.rat_fap,
+        sistema_s = excluded.sistema_s,
+        entidades_descricao = excluded.entidades_descricao,
+        updated_at = datetime('now')
+    `).run(rowId, codigo_atividade, nome_ramo, inss_patronal, rat_fap, sistema_s, entidades_descricao || '');
+
+    res.json({ success: true, message: 'Encargo patronal gravado com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao gravar encargos patronais: ' + err.message });
   }
 });
 
