@@ -79,6 +79,6 @@ A varredura completa em todos os módulos e fontes de dados foi realizada e os a
 
 ### 🌐 Status do Deploy:
 * **Commit:** `a3bc0a9`
-* **Ambiente:** [cortex-tributario.netlify.app](https://cortex-tributario.netlify.app)
+* **Ambiente:** [radarconformidade.netlify.app](https://radarconformidade.netlify.app)
 
 Basta atualizar a página (`F5` ou `Ctrl+F5`) e realizar a busca ou filtros nos Relatórios e no Painel de DF-e!

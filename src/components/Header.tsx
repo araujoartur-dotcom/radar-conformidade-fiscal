@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
-  ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp, Key
+  ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp, Key,
+  BarChart3, Plug
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -92,6 +93,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getModeLabel = () => {
     switch (activeMode) {
+      case 'central_kpis':
+        return { title: 'Central de KPIs & Dashboards', icon: BarChart3, color: 'text-cyan-400' };
       case 'lote':
         return { title: 'Consulta em Lote (Excel)', icon: FileSpreadsheet, color: 'text-cyan-400' };
       case 'avulsa':
@@ -106,6 +109,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Relatórios Fiscais', icon: FileBarChart, color: 'text-cyan-400' };
       case 'tabelas_fiscais':
         return { title: 'Parâmetros & Tabelas Fiscais', icon: FileBarChart, color: 'text-indigo-400' };
+      case 'conectores_municipais':
+        return { title: 'Conectores Municipais', icon: Plug, color: 'text-emerald-400' };
       case 'acesso_corporativo':
         return { title: 'Gestão de Acessos', icon: Lock, color: 'text-indigo-400' };
       case 'carteira_cnpjs':
@@ -115,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'simulador_regimes':
         return { title: 'Modelador de Regimes & Ponto de Equilíbrio CPP', icon: TrendingUp, color: 'text-indigo-400' };
       default:
-        return { title: 'Painel de Auditoria', icon: Building2, color: 'text-cyan-400' };
+        return { title: 'Central de KPIs & Dashboards', icon: BarChart3, color: 'text-cyan-400' };
     }
   };
 

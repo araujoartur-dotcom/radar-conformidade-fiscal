@@ -8,7 +8,7 @@ O **Deploy em Produção** de todo o ecossistema do **Radar de Conformidade Fisc
 
 | Ambiente / Plataforma | URL de Produção | Status HTTP | Detalhes |
 |---|---|:---:|---|
-| **Frontend Principal (Netlify)** | [https://cortex-tributario.netlify.app](https://cortex-tributario.netlify.app) | `200 OK` | Deploy ativo e sincronizado com o branch `main`. |
+| **Frontend Principal (Netlify)** | [https://radarconformidade.netlify.app](https://radarconformidade.netlify.app) | `200 OK` | Deploy ativo e sincronizado com o branch `main`. |
 | **Repositório GitHub** | [araujoartur-dotcom/radar-conformidade-fiscal](https://github.com/araujoartur-dotcom/radar-conformidade-fiscal) | `Commit 9dfdb4c` | Push de todas as 4 fases com secret protection ativa. |
 | **Backend Standalone (Render)** | [https://radar-conformidade-fiscal-backend.onrender.com](https://radar-conformidade-fiscal-backend.onrender.com) | `Ativo` | API Express com persistência SQLite e rotas SEFAZ/Auth. |
 

@@ -35,7 +35,7 @@ Na aba **"2. Consulta por NSU"**, você agora tem duas opções:
 
 ### 🌐 Status do Deploy:
 * **Commit:** `58e4459`
-* **Ambiente:** [cortex-tributario.netlify.app](https://cortex-tributario.netlify.app)
+* **Ambiente:** [radarconformidade.netlify.app](https://radarconformidade.netlify.app)
 
 Basta dar um `F5` ou `Ctrl+Shift+R` e testar a busca por NSU em Homologação!
 
@@ -77,6 +77,6 @@ O novo visualizador de XML foi **completamente reformulado** para oferecer uma e
 
 ### 🌐 Status do Deploy:
 * **Commit:** `4d55d9c`
-* **Ambiente:** [cortex-tributario.netlify.app](https://cortex-tributario.netlify.app)
+* **Ambiente:** [radarconformidade.netlify.app](https://radarconformidade.netlify.app)
 
 Basta dar um `F5` ou `Ctrl+Shift+R` no navegador e clicar no ícone **XML** de qualquer documento fiscal da lista para ver a nova estrutura!

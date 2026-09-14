@@ -57,3 +57,6 @@ data/certificates/
 .gemini
 .system_generated
 scratch/
+
+# Local Netlify folder
+.netlify
