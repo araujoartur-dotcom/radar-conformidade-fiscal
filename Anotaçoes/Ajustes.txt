@@ -25,3 +25,21 @@ Sendo assim, vamos fazer uma varredura e avaliar em todos os tipos de DF-e, quai
 
 
 consegue gerar o modelo de banco de dados e diagrama de dados para eu enviar a um analista de dados e principalmente em relação as conexões de backend e sistema do netlify também. toda essa conexao de sistema.
+
+
+Muito estranho sua afirmação de que a ultim versão era de 15 de agosto de 2026, pois fizemos diversos deploy de lá pra cá, e eu consigo até listar os últimos códigos, só sei que a ultima versão está prejudicada.
+Vou printar os erros que estão ocorrendo, mas são tantos que é até dificil relatar.
+1- vou a dar erro para o admin trocar de empresa pelo botão seletor, erro que já havia sido corrigido.
+2- existem mais de 21mil documentos na base de dados do Supabase, e o KPI principal está zerado
+3- Admin Master não consegue visualizar os outros usuários que estavam cadastrados
+4- Nenhuma empresa está sendo apresentada para ativação ou edição
+5- Captura de XML sem dados
+6- Central de Eventos sem Busca Inteligente por Chave (44/50 posições), Nº de NF ou Fornecedor. Sem nenhum DF-e
+7- o módulo de Parâmetros e Tabelas fiscais ficaram completamente vazios
+8- modelador de regime com erro de alíquotas não preenchidas
+9- Apuração Assistida falha
+10- relatórios ta uma tristeza só, não pesquisa nada e não tem graficos que definimos. 
+
+Vou parar por aqui, pois atingiu o limite de prints, depois eu falo dos outros, mas estou com inconsistência em todos os módulos, sem exceção, e antes do deploy tudo estava funcionando, estavamos apenas ajustando coisas visuais, não era pra ter acontecido isso, a unica mudança mais estrutural foi remover módulos do visual e a questão de que o Admin via o somatórios das informações de todas empresa e não o valor de cada uma.
+
+Por favor, faça auditoria detalhado da causa raiz de todos esses problemas.

@@ -1,0 +1,248 @@
+Ran command: `curl -I https://radarconformidade.netlify.app/api/health`
+Viewed apiConfig.ts:1-24
+Viewed task-44.log
+Ran command: `curl.exe -i --max-time 15 https://radarconformidade.netlify.app/api/health`
+Used tool: manage_task
+Ran command: `curl.exe -i -X POST https://radarconformidade.netlify.app/api/auth/login -H "Content-Type: application/json" -d "{\"email\":\"admin@radarfiscal.com.br\",\"senha\":\"Admin@RadarFiscal2026!\"}"`
+Ran command: `powershell -Command "$body = @{ email = 'admin@radarfiscal.com.br'; senha = 'Admin@RadarFiscal2026!' } | ConvertTo-Json; Invoke-RestMethod -Uri 'https://radarconformidade.netlify.app/api/auth/login' -Method POST -Body $body -ContentType 'application/json'"`
+Created test_live_api.js
+Ran command: `node scratch/test_live_api.js`
+Ran command: `node scratch/test_live_api.cjs`
+Ran command: `powershell -Command "Move-Item -Path 'scratch/test_live_api.js' -Destination 'scratch/test_live_api.cjs' -Force; node scratch/test_live_api.cjs"`
+Viewed AuthContext.tsx:1-226
+Searched for "login("
+Viewed Login.tsx:1-265
+Edited test_live_api.cjs
+Ran command: `node scratch/test_live_api.cjs`
+Viewed index.ts:1-89
+Viewed app.ts:1-160
+Searched for "/empresas"
+Searched for "/tenants"
+Searched for "get('"
+Viewed useApi.ts:1-141
+Searched for "get('/"
+Searched for "\.get\(|get\("
+Viewed KpiContext.tsx:90-150
+Searched for "router."
+Ran command: `Select-String -Path "server/routes/upload.ts" -Pattern "router\.(get|post|put|delete)"`
+Created test_live_api.cjs
+Ran command: `node scratch/test_live_api.cjs`
+Viewed task-101.log:1-51
+Searched for "switchEmpresa"
+Viewed Header.tsx:150-250
+Viewed Header.tsx:60-145
+Searched for "switch-empresa"
+Viewed auth.ts:170-260
+Ran command: `Select-String -Path "server/routes/auth.ts" -Pattern "switch-empresa" -Context 5,25`
+Viewed auth.ts:520-580
+Created test_switch.cjs
+Ran command: `node scratch/test_switch.cjs`
+Ran command: `powershell -Command "node -e '
+const https = require(\"https\");
+// Let us test KPIs for each company
+async function test() {
+  const loginRes = await fetch(\"https://radarconformidade.netlify.app/api/auth/login\", {
+    method: \"POST\",
+    headers: { \"Content-Type\": \"application/json\" },
+    body: JSON.stringify({ email: \"admin@radarfiscal.com.br\", senha: \"Admin@RadarFiscal2026!\" })
+  }).then(r => r.json());
+
+  console.log(\"Login done. Active company:\", loginRes.empresaAtiva.razaoSocial);
+
+  for (const emp of loginRes.empresasDisponiveis) {
+    const kpiRes = await fetch(\"https://radarconformidade.netlify.app/api/upload/kpis?empresaId=\" + emp.id, {
+      headers: {
+        Authorization: \"Bearer \" + loginRes.accessToken,
+        \"x-empresa-ativa-id\": emp.id
+      }
+    }).then(r => r.json());
+    console.log(\"KPIs for \" + emp.razaoSocial + \": totalDocs=\" + kpiRes.totalGeral?.totalDocs + \", totalValor=\" + kpiRes.totalGeral?.totalValor);
+  }
+}
+test();
+'"`
+Edited test_switch.cjs
+Ran command: `node scratch/test_switch.cjs`
+Viewed tables.ts:1-60
+Searched for "api/"
+Searched for "useApi"
+Viewed TabelasFiscaisPanel.tsx:1-75
+Ran command: `Select-String -Path "src/components/TabelasFiscaisPanel.tsx" -Pattern "get\(" -Context 0,2`
+Viewed TabelasFiscaisPanel.tsx:75-200
+Ran command: `Select-String -Path "src/components/TabelasFiscaisPanel.tsx" -Pattern "(load|fetch)[A-Za-z0-9_]*"`
+Viewed TabelasFiscaisPanel.tsx:418-460
+Created test_tables.cjs
+Ran command: `node scratch/test_tables.cjs`
+Ran command: `git log -n 2 --format="commit %h | %cd | %s"`
+Ran command: `git show 21d4923`
+Ran command: `curl.exe -i --max-time 10 https://radar-conformidade-fiscal-backend.onrender.com/api/health`
+Viewed site_payload.json:1-2
+Viewed inspect_bundle.js:1-17
+Ran command: `node scratch/inspect_bundle.js`
+Ran command: `curl.exe -s https://radarconformidade.netlify.app/`
+Ran command: `node -e "
+async function check() {
+  const res = await fetch('https://radarconformidade.netlify.app/assets/index-BYHZ3KKr.js');
+  const text = await res.text();
+  console.log('Length:', text.length);
+  console.log('Includes /api:', text.includes('/api'));
+  console.log('Includes onrender:', text.includes('onrender'));
+  console.log('Includes VITE_API_URL:', text.includes('VITE_API_URL'));
+  const m = text.match(/https?:\/\/[a-zA-Z0-9.-]+(:[0-9]+)?/g);
+  console.log('URLs:', Array.from(new Set(m || [])).filter(u => !u.includes('w3.org')));
+}
+check();
+"`
+Viewed list_deploys.js:1-9
+Ran command: `node scratch/list_deploys.js`
+Ran command: `powershell -Command "Copy-Item 'scratch/list_deploys.js' 'scratch/list_deploys.cjs'; node scratch/list_deploys.cjs"`
+Viewed task-170.log
+Used tool: manage_task
+Ran command: `node -e "
+const chunks = [
+  'index-BYHZ3KKr.js',
+  'vendor-react-CF2IRM7H.js',
+  'module-relatorios-BPDf3tKA.js',
+  'module-cadastros-dCwIpfKO.js',
+  'module-tributario-Dp5BZZ2V.js'
+];
+async function check() {
+  for (const c of chunks) {
+    const res = await fetch('https://radarconformidade.netlify.app/assets/' + c);
+    const text = await res.text();
+    console.log(c, 'has /api?:', text.includes('/api'), 'has /auth/login?:', text.includes('/auth/login'), 'has /upload/kpis?:', text.includes('/upload/kpis'), 'has onrender?:', text.includes('onrender'));
+  }
+}
+check();
+"`
+Ran command: `node -e "
+async function check() {
+  const res = await fetch('https://radarconformidade.netlify.app/assets/module-relatorios-BPDf3tKA.js');
+  const text = await res.text();
+  const m = text.match(/https?:\/\/[a-zA-Z0-9.-]+\.onrender\.com[^\s'\"`]*/g);
+  console.log('Matches onrender:', Array.from(new Set(m || [])));
+}
+check();
+"`
+Created check_url.cjs
+Ran command: `node scratch/check_url.cjs`
+Ran command: `curl.exe -i -X OPTIONS https://radar-conformidade-fiscal.onrender.com/api/upload/kpis -H "Origin: https://radarconformidade.netlify.app" -H "Access-Control-Request-Method: GET" -H "Access-Control-Request-Headers: authorization, x-empresa-ativa-id"`
+Viewed AcessoCorporativoModal.tsx:1-70
+Viewed AcessoCorporativoModal.tsx:80-130
+Viewed DfeManagerPanel.tsx:50-100
+Viewed DfeManagerPanel.tsx:100-140
+Viewed EventosDfePanel.tsx:60-120
+Viewed App.tsx:100-200
+Viewed App.tsx:196-250
+Viewed SimuladorRegimesPanel.tsx:1-60
+Viewed SimuladorRegimesPanel.tsx:70-115
+Viewed ApuracaoAssistidaPanel.tsx:1-60
+Viewed ApuracaoAssistidaPanel.tsx:61-130
+Viewed RelatoriosXmlPanel.tsx:1-60
+Viewed RelatoriosXmlPanel.tsx:130-190
+Viewed RelatoriosXmlPanel.tsx:250-320
+Created test_relatorios.cjs
+Ran command: `node scratch/test_relatorios.cjs`
+Viewed RelatoriosXmlPanel.tsx:380-450
+Searched for "<FiscalVerticalBarChart"
+Ran command: `Select-String -Path "src/components/RelatoriosXmlPanel.tsx" -Pattern "<FiscalVerticalBarChart" -Context 5,10`
+
+Compreendo perfeitamente a sua agonia. Quando um sistema está funcionando e, após um deploy de ajustes visuais ou de isolamento, vários módulos aparentam "apagar" ou falhar juntos, a sensação é de desespero.
+
+Realizamos uma **auditoria forense profunda no código, no banco Supabase, no servidor Render e no bundle do Netlify**, testando as requisições reais da produção. 
+
+A notícia tranquilizadora é: **os seus dados estão 100% intactos no Supabase (os 21.345 documentos, usuários e empresas continuam salvos)**. O que causou a falha em cadeia em todos os módulos foi **uma falha de comunicação sistêmica desencadeada no último deploy**.
+
+Abaixo está o diagnóstico detalhado da **Causa Raiz Sistêmica**, o **Mapeamento Item por Item (1 ao 10)** e os **Mecanismos de Proteção** para blindar a sua aplicação de modo que isso nunca mais aconteça.
+
+---
+
+## 🎯 A Causa Raiz Central: O Efeito Dominó do Header `x-empresa-ativa-id`
+
+No commit de multi-tenant (`be6e490`), foi feita uma melhoria para que o frontend informasse em cada requisição qual empresa está ativa, adicionando este header HTTP:
+```typescript
+// src/hooks/useApi.ts
+if (empresaAtiva?.id) {
+  headers['x-empresa-ativa-id'] = empresaAtiva.id;
+}
+```
+
+No entanto, no backend (`server/app.ts`), a configuração de CORS estava assim:
+```typescript
+// server/app.ts (Linha 106)
+allowedHeaders: ['Content-Type', 'Authorization'],
+```
+**O header `x-empresa-ativa-id` NÃO foi incluído em `allowedHeaders`!**
+
+### O que acontece no navegador do usuário:
+1. **O Login funciona:** Quando você digita e-mail e senha, ainda não há empresa ativa no estado, logo o header não é enviado e o login tem sucesso (`200 OK`).
+2. **Bloqueio total imediato:** No milissegundo em que o login conclui e o sistema define a empresa ativa, **todas as requisições seguintes do frontend** passam a injetar `x-empresa-ativa-id`.
+3. Como o Netlify compila chamadas apontando para o Render (`https://radar-conformidade-fiscal.onrender.com`), o navegador do cliente dispara uma requisição de segurança chamada **CORS Preflight (`OPTIONS`)**.
+4. O servidor responde: *"Eu só aceito Content-Type e Authorization"*.
+5. O navegador então **bloqueia sumariamente todas as requisições subsequentes**. Nenhuma informação de KPI, DF-e, usuário ou tabela fiscal consegue chegar à tela.
+
+Além disso, o frontend foi compilado com a URL absoluta do Render embutida no código, fazendo o navegador ignorar o proxy do `netlify.toml` e caindo de cabeça no bloqueio de CORS.
+
+---
+
+## 📋 Diagnóstico Detalhado dos 10 Problemas
+
+| # | Problema Relatado | Diagnóstico Forense da Causa Raiz |
+|---|---|---|
+| **1** | **Erro ao trocar de empresa pelo seletor** | O componente `Header.tsx` chama `useApi.post('/auth/switch-empresa')`. Como já existia empresa ativa, ele anexou `x-empresa-ativa-id`, tomou bloqueio de CORS Preflight no navegador e disparou o alerta *"Falha de conexão com o servidor ao alternar empresa"*. |
+| **2** | **21 mil documentos no Supabase, mas KPI zerado** | O `KpiContext.tsx` chama `get('/upload/kpis')`. A requisição foi bloqueada pelo CORS. Ao falhar, o estado de KPIs no React cai no `catch` e permanece zerado (`0`). Comprovamos via script direto que no Supabase **os 21.345 documentos e R$ 789 milhões continuam lá**. |
+| **3** | **Admin Master não vê outros usuários** | O modal `AcessoCorporativoModal.tsx` carrega os usuários via `get('/users')`. Bloqueado pelo CORS, a lista retornou vazia `[]`. No backend, Artur Silveira e os demais usuários continuam cadastrados. |
+| **4** | **Nenhuma empresa para ativação/edição** | O mesmo modal e a Carteira chamam `get('/tenants')`. Com o bloqueio de CORS, a resposta não entra e a tabela fica vazia. |
+| **5** | **Captura de XML sem dados** | O `DfeManagerPanel.tsx` alimenta a tabela via `get('/upload/documentos')`. Como a chamada tomou bloqueio de CORS, nenhuma nota foi renderizada. |
+| **6** | **Central de Eventos sem DF-e nem busca** | A Central de Eventos consome a lista `dfeList` carregada centralizadamente no `App.tsx`. Como o carregamento mestre no `App.tsx` falhou por CORS, a lista de DF-e chegou como array vazio `[]` para a tela de Eventos. |
+| **7** | **Parâmetros e Tabelas Fiscais vazios** | O `TabelasFiscaisPanel.tsx` faz um `Promise.all` com 10 requisições para `/tables/*` (alíquotas, CClassTrib, CFOP, Simples, etc.). Todas utilizam `useApi`, todas enviaram o header e todas foram rejeitadas pelo navegador. |
+| **8** | **Modelador de Regime com alíquotas não preenchidas** | O `SimuladorRegimesPanel.tsx` busca as alíquotas vigentes do banco em `/tables/aliquotas/ad-valorem`. Como a tabela veio vazia devido ao CORS, a alíquota padrão caiu no fallback de `0%`. |
+| **9** | **Apuração Assistida falha** | A tela chama `/apuracao/competencia/2026-02`. A requisição foi interceptada pelo bloqueio do navegador. |
+| **10** | **Relatórios não pesquisam e sem gráficos** | O `RelatoriosXmlPanel.tsx` só exibe os gráficos após uma busca (`hasSearched && !loading`). Como a busca falhava e caía no fallback vazio de `dfeList`, os gráficos e dados ficavam ocultos. |
+
+---
+
+## 🛡️ Mecanismos de Proteção para Nunca Mais Acontecer
+
+Para que seus clientes corporativos e você nunca mais enfrentem essa instabilidade, precisamos implementar **4 barreiras de proteção automatizadas**:
+
+### 1. Blindagem de Comunicação via Same-Origin Proxy (Netlify -> Render)
+O frontend **não deve chamar o Render diretamente com URL absoluta no navegador**. Ele deve chamar sempre a rota relativa `/api/*`.
+* O Netlify recebe a chamada como se fosse dele mesmo (mesmo domínio `radarconformidade.netlify.app`), eliminando 100% das requisições Preflight de CORS.
+* O Netlify encaminha a requisição pelo backend diretamente para o Render.
+* **Resultado:** Impossível haver bloqueio de CORS no navegador dos clientes, mesmo que headers customizados sejam criados.
+
+### 2. Liberação Completa de Headers no Backend Express
+Em `server/app.ts`, configurar explicitamente:
+```typescript
+allowedHeaders: [
+  'Content-Type',
+  'Authorization',
+  'x-empresa-ativa-id',
+  'x-tenant-id',
+  'x-requested-with'
+],
+```
+Dessa forma, mesmo que uma chamada direta ocorra, o servidor aceita o header sem descartar a requisição.
+
+### 3. "Smoke Test / Sanity Gate" Automatizado Pré-Deploy (CI/CD)
+Criar um script de teste de sanidade (`scripts/verify-production-sanity.ts`) que roda automaticamente antes de qualquer deploy.
+Esse script testa:
+* Login do Admin Master;
+* Troca de empresa ativa;
+* Busca de KPIs globais e por empresa;
+* Consulta de DF-e, usuários e tabelas fiscais;
+* Verificação de CORS Preflight.
+Se qualquer teste falhar, o build do deploy é **abortado antes de ir para os clientes**.
+
+### 4. Notificação Transparente de Erro de Conexão no Frontend
+Em vez de telas "em branco" ou valores "0" quando uma requisição falhar, o frontend exibirá um aviso claro com botão de reconectar:  
+*"Não foi possível sincronizar com o servidor em nuvem (Render acordando ou falha de rede). [Tentar Novamente]"*.
+
+---
+
+## 🚀 Próximo Passo
+
+Posso aplicar imediatamente as correções no backend (`server/app.ts`), ajustar a resolução do `apiConfig.ts` para usar o proxy do Netlify e subir um novo deploy limpo e verificado.
+
+Deseja que eu proceda com essa correção agora?

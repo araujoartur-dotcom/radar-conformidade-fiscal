@@ -519,12 +519,15 @@ router.post('/switch-empresa', requireAuth, async (req: AuthenticatedRequest, re
       const supabase = getSupabaseAdmin();
       if (supabase) {
         if (isSuperadmin) {
-          const { data: supaEmp } = await supabase
-            .from('empresas')
-            .select('*')
-            .or(`id.eq.${empresaId},cnpj_completo.eq.${empresaId}`)
-            .eq('status', 'ativo')
-            .maybeSingle();
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(empresaId));
+          let supaEmpQuery = supabase.from('empresas').select('*');
+          if (isUuid) {
+            supaEmpQuery = supaEmpQuery.eq('id', empresaId);
+          } else {
+            const cleanCnpj = String(empresaId).replace(/\D/g, '');
+            supaEmpQuery = supaEmpQuery.or(`cnpj_completo.eq.${empresaId},cnpj_raiz.eq.${cleanCnpj.slice(0, 8)}`);
+          }
+          const { data: supaEmp } = await supaEmpQuery.maybeSingle();
 
           if (supaEmp) {
             empresa = {

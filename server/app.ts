@@ -102,8 +102,17 @@ app.use(cors({
     return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'x-empresa-ativa-id',
+    'x-tenant-id',
+    'x-requested-with',
+    'Accept',
+    'Origin'
+  ],
+  exposedHeaders: ['x-empresa-ativa-id', 'Content-Range', 'X-Total-Count'],
 }));
 
 app.use(express.json({ limit: '10mb' }));

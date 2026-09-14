@@ -26,13 +26,15 @@ import { useApi } from './hooks/useApi';
 import { useKpis } from './contexts/KpiContext';
 import { useBatchProcessing } from './hooks/useBatchProcessing';
 import { Login } from './components/Login';
+import { ConnectionBanner } from './components/ConnectionBanner';
 import { hasModuleAccess } from './utils/permissions';
 
 export default function App() {
   const { user, empresaAtiva } = useAuth();
   const { get } = useApi();
-  const { kpis, totalGeral } = useKpis();
+  const { kpis, totalGeral, refreshKpis } = useKpis();
   const currentKpis = totalGeral || kpis;
+  const [apiError, setApiError] = useState<string | null>(null);
 
   // Initialize activeMode with persistent localStorage state or fallback to central_kpis
   const [activeMode, setActiveMode] = useState<QueryMode>(() => {
@@ -258,7 +260,11 @@ export default function App() {
         };
       });
       setDfeList(mappedList);
+      setApiError(null);
     } else {
+      if (res.error) {
+        setApiError(res.error);
+      }
       setDfeList([]);
     }
   }, [empresaAtiva?.id, get]);
@@ -306,6 +312,16 @@ export default function App() {
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
         onOpenCertModal={() => setIsCertModalOpen(true)}
+      />
+
+      {/* Connectivity & Cold-Start Recovery Banner */}
+      <ConnectionBanner
+        error={apiError}
+        onRetry={() => {
+          setApiError(null);
+          loadDocumentos();
+          if (refreshKpis) refreshKpis();
+        }}
       />
 
       {/* Main Body Workspace Container (fills remaining viewport height) */}
