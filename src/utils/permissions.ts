@@ -125,21 +125,6 @@ export const GRUPOS_MODULOS: GrupoModulos[] = [
         grupo: 'Governança & Integrações',
         descricao: 'Conexão com prefeituras municipais e webservices do padrão nacional NFS-e',
         accent: 'emerald'
-      },
-      {
-        id: 'auditoria_fiscal',
-        label: 'Auditoria & Conformidade',
-        grupo: 'Governança & Integrações',
-        descricao: 'Análise automática de pendências, omissões e inconsistências regulatórias',
-        accent: 'amber'
-      },
-      {
-        id: 'observabilidade_dlq',
-        label: 'Observabilidade & DLQ',
-        grupo: 'Governança & Integrações',
-        descricao: 'Monitoramento técnico de filas assíncronas, falhas de conexão e contingência',
-        accent: 'purple',
-        badge: 'FILAS'
       }
     ]
   },
@@ -219,7 +204,7 @@ export const PRESETS_ACESSO: PresetAcesso[] = [
     badge: 'Compliance',
     perfil: 'auditor_externo',
     permissao: 'leitura',
-    modulos: ['central_kpis', 'dfe_xml', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml', 'auditoria_fiscal']
+    modulos: ['central_kpis', 'dfe_xml', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml']
   },
   {
     id: 'contador_gestor',

@@ -211,12 +211,9 @@ export const RelatorioConsolidadoServicos: React.FC<RelatorioConsolidadoServicos
           )}
 
           <div className="px-3.5 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-right">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Total no Banco & Exibidas</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Notas de Serviço</span>
             <span className="text-xs font-mono font-black text-indigo-300">
-              {totalNfseBanco.toLocaleString('pt-BR')} NFS-e no banco
-            </span>
-            <span className="text-[10px] text-slate-400 block font-mono">
-              ({totalNotas.toLocaleString('pt-BR')} listadas na página)
+              {totalNotas.toLocaleString('pt-BR')} NFS-e carregadas
             </span>
           </div>
         </div>

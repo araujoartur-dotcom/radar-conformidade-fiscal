@@ -49,9 +49,9 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
     setTestResult(null);
     const start = Date.now();
     try {
-      const res = await get<{ success: boolean; status?: string; message?: string }>('/sefaz/status');
-      const latency = Date.now() - start;
-      if (res.ok) {
+      const res = await get<{ success: boolean; status?: string; message?: string; latencyMs?: number }>('/sefaz/status');
+      const latency = res.data?.latencyMs || (Date.now() - start);
+      if (res.ok && res.data?.success) {
         setTestResult({
           tipo: 'sucesso',
           msg: res.data?.message || 'Serviço em Operação — Comunicação com SEFAZ Autorizadora 100% Homologada.',
@@ -60,7 +60,8 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
       } else {
         setTestResult({
           tipo: 'erro',
-          msg: res.error || 'Falha temporária ao comunicar com o WebService da SEFAZ.'
+          msg: res.data?.message || res.error || 'Falha temporária ao comunicar com o WebService da SEFAZ.',
+          latency
         });
       }
     } catch (err: any) {

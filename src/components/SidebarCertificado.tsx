@@ -106,8 +106,6 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       title: 'Governança & Integrações',
       items: [
         { id: 'conectores_municipais' as QueryMode, label: 'Conectores Municipais', icon: Plug, accent: 'emerald' },
-        { id: 'auditoria_fiscal' as QueryMode, label: 'Auditoria & Conformidade', icon: ShieldAlert, accent: 'amber' },
-        { id: 'observabilidade_dlq' as QueryMode, label: 'Observabilidade & DLQ', icon: Layers, accent: 'purple', badge: 'FILAS' },
       ]
     }
   ];

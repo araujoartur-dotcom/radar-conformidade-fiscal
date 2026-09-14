@@ -25,7 +25,7 @@ interface ApiResponse<T = any> {
 }
 
 export function useApi() {
-  const { token, logout } = useAuth();
+  const { token, logout, empresaAtiva } = useAuth();
 
   const request = useCallback(async <T = any>(
     endpoint: string,
@@ -40,6 +40,10 @@ export function useApi() {
 
     if (!skipAuth && token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (empresaAtiva?.id) {
+      headers['x-empresa-ativa-id'] = empresaAtiva.id;
     }
 
     const fetchOptions: RequestInit = {
@@ -81,7 +85,7 @@ export function useApi() {
         error: err.message || 'Erro de conexão com o servidor.',
       };
     }
-  }, [token, logout]);
+  }, [token, logout, empresaAtiva?.id]);
 
   // ── Atalhos HTTP ──────────────────────────────────────────
 
@@ -107,6 +111,9 @@ export function useApi() {
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+    if (empresaAtiva?.id) {
+      headers['x-empresa-ativa-id'] = empresaAtiva.id;
+    }
     // NÃO definir Content-Type — o browser insere com boundary correto
 
     try {
@@ -127,7 +134,7 @@ export function useApi() {
     } catch (err: any) {
       return { ok: false, status: 0, data: {} as T, error: err.message };
     }
-  }, [token]);
+  }, [token, empresaAtiva?.id]);
 
   return { get, post, put, del, uploadFile, request };
 }

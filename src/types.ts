@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'auditoria_fiscal' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'observabilidade_dlq' | 'tabelas_fiscais' | 'conectores_municipais' | 'apuracao_assistida' | 'simulador_regimes';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'tabelas_fiscais' | 'conectores_municipais' | 'apuracao_assistida' | 'simulador_regimes';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -393,6 +393,8 @@ export interface ReportFilterState {
   resultadoElegibilidade: string; // Elegível / Parcial / Não elegível / Pendente / todos
   apenasExcecoes: boolean;  // Apenas com pendência de crédito / exceções
   searchTerm: string;       // Palavra-chave (Razão, Item, Chave, NCM, Pedido)
+  visaoAnalitica?: '360' | 'regime_atual' | 'reforma' | 'governanca' | 'apuracao_rad';
+  statusRad?: 'TODOS' | 'APTO' | 'AGUARDAR' | 'NAO_CONCILIADO';
 }
 
 export interface XmlItemDetailReport {

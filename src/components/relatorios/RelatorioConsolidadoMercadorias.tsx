@@ -15,6 +15,7 @@ interface RelatorioConsolidadoMercadoriasProps {
   onOpenLedger?: (chaveAcesso: string) => void;
   onSyncApuracao?: () => void;
   syncingApuracao?: boolean;
+  viewMode?: '360' | 'regime_atual' | 'reforma' | 'governanca' | 'apuracao_rad';
 }
 
 export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMercadoriasProps> = ({
@@ -23,16 +24,10 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
   onOpenDetail,
   onOpenLedger,
   onSyncApuracao,
-  syncingApuracao = false
+  syncingApuracao = false,
+  viewMode = '360'
 }) => {
-  // Filtro de exibição de colunas (Visões Especializadas)
-  const [activeViewMode, setActiveViewMode] = useState<'360' | 'regime_atual' | 'reforma' | 'governanca' | 'apuracao_rad'>('360');
-
-  // Filtros locais rápidos
-  const [tipoDocFilter, setTipoDocFilter] = useState<'TODOS' | 'NFe' | 'CTe'>('TODOS');
-  const [radFilter, setRadFilter] = useState<'TODOS' | 'APTO' | 'AGUARDAR' | 'NAO_CONCILIADO'>('TODOS');
-  const [onerosidadeFilter, setOnerosidadeFilter] = useState<'TODOS' | 'Oneroso' | 'Não Oneroso'>('TODOS');
-  const [searchTerm, setSearchTerm] = useState('');
+  const activeViewMode = viewMode;
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Modal interno de item
@@ -47,42 +42,8 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
     });
   }, [items]);
 
-  // Aplicação dos filtros locais
-  const filteredDataset = useMemo(() => {
-    return mercadoriasItems.filter(it => {
-      // 1. Filtro Tipo Doc
-      if (tipoDocFilter === 'NFe') {
-        const td = (it.tipoDoc || '').toUpperCase();
-        if (!td.includes('NF-E') && td !== 'NFE' && td !== '55') return false;
-      } else if (tipoDocFilter === 'CTe') {
-        const td = (it.tipoDoc || '').toUpperCase();
-        if (!td.includes('CT-E') && td !== 'CTE' && td !== '57' && td !== '67') return false;
-      }
-
-      // 2. Filtro RAD
-      if (radFilter === 'APTO' && it.impactoDecisorioRad !== 'APTO_PARA_RAD') return false;
-      if (radFilter === 'AGUARDAR' && it.impactoDecisorioRad !== 'AGUARDAR_QUITACAO') return false;
-      if (radFilter === 'NAO_CONCILIADO' && it.impactoDecisorioRad !== 'NAO_CONCILIADO' && it.impactoDecisorioRad !== 'INAPTO_PARA_RAD') return false;
-
-      // 3. Filtro Onerosidade
-      if (onerosidadeFilter !== 'TODOS' && it.indicadorOnerosidade !== onerosidadeFilter) return false;
-
-      // 4. Busca Textual
-      if (searchTerm) {
-        const q = searchTerm.toLowerCase();
-        const matchKey = (it.chaveAcesso || '').toLowerCase().includes(q);
-        const matchForn = (it.fornecedorRazao || '').toLowerCase().includes(q) || (it.fornecedorCnpj || '').includes(q);
-        const matchDesc = (it.descricaoItem || '').toLowerCase().includes(q);
-        const matchNum = (it.numeroSerie || '').toLowerCase().includes(q);
-        const matchNcm = (it.ncm || '').toLowerCase().includes(q);
-        const matchCfop = (it.cfop || '').toLowerCase().includes(q);
-        const matchCClass = (it.cClassTrib || '').toLowerCase().includes(q);
-        if (!matchKey && !matchForn && !matchDesc && !matchNum && !matchNcm && !matchCfop && !matchCClass) return false;
-      }
-
-      return true;
-    });
-  }, [mercadoriasItems, tipoDocFilter, radFilter, onerosidadeFilter, searchTerm]);
+  // Os itens já vêm devidamente filtrados pelo painel principal de filtros
+  const filteredDataset = mercadoriasItems;
 
   // ==========================================
   // CÁLCULO DOS AGREGADOS E KPIS DO COCKPIT
@@ -97,22 +58,12 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
     ? (kpisGeral.nfeValor + (kpisGeral.cteValor || 0))
     : (kpisGeral?.totalValor ?? 788694097.63);
 
-  const isFiltroLocalAtivo = Boolean(searchTerm || radFilter !== 'TODOS' || onerosidadeFilter !== 'TODOS');
-
   const totalItens = filteredDataset.length;
   const countNfe = filteredDataset.filter(i => (i.tipoDoc || '').toUpperCase().includes('NF')).length;
   const countCte = filteredDataset.filter(i => (i.tipoDoc || '').toUpperCase().includes('CT')).length;
 
   const totalValorBruto = filteredDataset.reduce((acc, it) => acc + (it.valorBrutoItem || 0), 0);
   const totalValorLiquido = filteredDataset.reduce((acc, it) => acc + (it.valorLiquidoItem || 0), 0);
-
-  const displayValorLiquido = !isFiltroLocalAtivo
-    ? (tipoDocFilter === 'NFe' ? (kpisGeral?.nfeValor ?? 733612559.02) : tipoDocFilter === 'CTe' ? (kpisGeral?.cteValor ?? 55081538.61) : totalMercadoriasValorBanco)
-    : totalValorLiquido;
-
-  const displayQtd = !isFiltroLocalAtivo
-    ? (tipoDocFilter === 'NFe' ? totalNfeBanco : tipoDocFilter === 'CTe' ? totalCteBanco : totalMercadoriasBanco)
-    : totalItens;
 
   // Tributos do Regime Atual
   const totalIcms = filteredDataset.reduce((acc, it) => acc + (it.valorIcms || 0), 0);
@@ -194,244 +145,17 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
           )}
 
           <div className="px-3.5 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800 text-right">
-            <span className="text-[10px] text-slate-500 block uppercase font-mono">Total no Banco & Exibidos</span>
+            <span className="text-[10px] text-slate-500 block uppercase font-mono">Itens Fiscais</span>
             <span className="text-xs font-mono font-black text-cyan-300">
-              {tipoDocFilter === 'NFe'
-                ? `${totalNfeBanco.toLocaleString('pt-BR')} NF-e no banco`
-                : tipoDocFilter === 'CTe'
-                ? `${totalCteBanco.toLocaleString('pt-BR')} CT-e no banco`
-                : `${totalMercadoriasBanco.toLocaleString('pt-BR')} docs (${totalNfeBanco.toLocaleString('pt-BR')} NF-e | ${totalCteBanco.toLocaleString('pt-BR')} CT-e)`
-              }
-            </span>
-            <span className="text-[10px] text-slate-400 block font-mono">
-              ({totalItens.toLocaleString('pt-BR')} itens listados na página)
+              {totalItens.toLocaleString('pt-BR')} itens carregados
             </span>
           </div>
         </div>
       </div>
 
-      {/* ========================================================
-          COCKPIT DE MÉTRICAS & DECISÃO RAD (RECOLHIMENTO PELO ADQUIRENTE)
-      ======================================================== */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        
-        {/* KPI 1: Volume Financeiro */}
-        <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 shadow-md">
-          <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono">
-            <span>Volume das Operações</span>
-            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
-              {!isFiltroLocalAtivo ? 'Total Banco 100%' : 'Filtrado'}
-            </span>
-          </div>
-          <div className="text-lg font-black text-white mt-1.5 font-mono">
-            R$ {displayValorLiquido.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-1 flex items-center justify-between">
-            <span>
-              {!isFiltroLocalAtivo
-                ? `${displayQtd.toLocaleString('pt-BR')} docs`
-                : `Bruto: R$ ${totalValorBruto.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`
-              }
-            </span>
-            <span className="text-cyan-400 font-semibold">{totalItens.toLocaleString('pt-BR')} listados</span>
-          </div>
-        </div>
 
-        {/* KPI 2: Carga Tributária Atual */}
-        <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-900/30 shadow-md">
-          <div className="flex items-center justify-between text-[10px] text-amber-400 font-bold uppercase tracking-wider font-mono">
-            <span>Tributos Regime Atual</span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 text-[9px]">
-              {cargaAtualMedia.toFixed(2)}% efetiva
-            </span>
-          </div>
-          <div className="text-lg font-black text-amber-300 mt-1.5 font-mono">
-            R$ {totalTributosAtuais.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between font-mono">
-            <span>ICMS: R$ {totalIcms.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-            <span>IPI: R$ {totalIpi.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-            <span>PIS/COF: R$ {(totalPis + totalCofins).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-          </div>
-        </div>
 
-        {/* KPI 3: Carga Tributária Reforma (IBS / CBS / IS) */}
-        <div className="p-4 rounded-2xl bg-slate-900/90 border border-cyan-900/30 shadow-md">
-          <div className="flex items-center justify-between text-[10px] text-cyan-400 font-bold uppercase tracking-wider font-mono">
-            <span>Tributos Reforma (IBS/CBS/IS)</span>
-            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${deltaCargaMedia >= 0 ? 'bg-rose-950/80 text-rose-300 border-rose-800/60' : 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60'}`}>
-              {deltaCargaMedia >= 0 ? `+${deltaCargaMedia.toFixed(2)}%` : `${deltaCargaMedia.toFixed(2)}%`}
-            </span>
-          </div>
-          <div className="text-lg font-black text-cyan-300 mt-1.5 font-mono">
-            R$ {totalTributosReforma.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between font-mono">
-            <span>IBS: R$ {totalIbs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-            <span>CBS: R$ {totalCbs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-            <span>IS: R$ {totalIs.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-          </div>
-        </div>
 
-        {/* KPI 4: Cockpit Decisório RAD (Recolhimento pelo Adquirente) & Crédito Real Liquidado */}
-        <div className={`p-4 rounded-2xl border shadow-lg ${
-          taxaLiquidacaoGlobal >= 95
-            ? 'bg-emerald-950/25 border-emerald-500/40 shadow-emerald-950/30'
-            : taxaLiquidacaoGlobal > 0
-              ? 'bg-amber-950/25 border-amber-500/40 shadow-amber-950/30'
-              : 'bg-slate-900/90 border-slate-800'
-        }`}>
-          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider font-mono">
-            <span className={taxaLiquidacaoGlobal >= 95 ? 'text-emerald-400' : 'text-amber-400'}>
-              Decisão RAD (Recolhimento Adquirente)
-            </span>
-            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black font-mono border ${
-              taxaLiquidacaoGlobal >= 95 
-                ? 'bg-emerald-500 text-slate-950 border-emerald-400' 
-                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-            }`}>
-              {taxaLiquidacaoGlobal.toFixed(1)}% Liquidado
-            </span>
-          </div>
-          
-          <div className="text-lg font-black mt-1.5 font-mono text-white flex items-baseline gap-2">
-            <span>R$ {totalCreditoRealLiquidado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            <span className="text-[10px] font-normal text-slate-400">apropriável</span>
-          </div>
-
-          <div className="text-[10px] mt-1 flex items-center justify-between font-mono">
-            <span className="text-slate-400" title="IBS + CBS destacados nos XMLs (expectativa de crédito)">Doc: R$ {totalCreditoDocumental.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-            <span className="text-amber-400 font-bold" title="Imposto não liquidado pelo fornecedor/split payment (pendente para apropriação)">Em Aberto: R$ {totalCreditoRetido.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span>
-          </div>
-
-          {/* Badge Decisório Oficial */}
-          <div className="mt-2 pt-2 border-t border-slate-800/80 text-[10px]">
-            {taxaLiquidacaoGlobal >= 95 ? (
-              <span className="text-emerald-400 font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span>Crédito Liberado (Liquidado Fornecedor / Split Payment)</span>
-              </span>
-            ) : totalCreditoRealLiquidado > 0 ? (
-              <span className="text-amber-300 font-bold flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
-                <span>R$ {totalCreditoRetido.toLocaleString('pt-BR', { maximumFractionDigits: 0 })} pendente (Emitir RAD para liberar crédito)</span>
-              </span>
-            ) : (
-              <span className="text-slate-400 italic flex items-center gap-1">
-                <HelpCircle className="w-3 h-3 text-slate-500 shrink-0" />
-                <span>Aguardando conciliação com Apuração Assistida</span>
-              </span>
-            )}
-          </div>
-        </div>
-
-      </div>
-
-      {/* ========================================================
-          BARRA DE FERRAMENTAS: SELETOR DE VISÕES & FILTROS RÁPIDOS
-      ======================================================== */}
-      <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3 shadow-md">
-        
-        {/* Seletor de Visão Especializada */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono mr-1">
-            Visão:
-          </span>
-
-          <button
-            onClick={() => setActiveViewMode('360')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeViewMode === '360'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Visão Completa 360°
-          </button>
-
-          <button
-            onClick={() => setActiveViewMode('regime_atual')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeViewMode === 'regime_atual'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Regime Atual (ICMS/IPI/PIS/COF)
-          </button>
-
-          <button
-            onClick={() => setActiveViewMode('reforma')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeViewMode === 'reforma'
-                ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Reforma (IBS/CBS/IS)
-          </button>
-
-          <button
-            onClick={() => setActiveViewMode('governanca')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeViewMode === 'governanca'
-                ? 'bg-purple-500 text-white shadow-md shadow-purple-500/20'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Governança & Elegibilidade
-          </button>
-
-          <button
-            onClick={() => setActiveViewMode('apuracao_rad')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeViewMode === 'apuracao_rad'
-                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
-            }`}
-          >
-            Apuração Assistida & RAD
-          </button>
-        </div>
-
-        {/* Filtros Rápidos de Documento e RAD */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Seletor Tipo Doc */}
-          <select
-            value={tipoDocFilter}
-            onChange={(e) => setTipoDocFilter(e.target.value as any)}
-            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
-          >
-            <option value="TODOS">Todos os Modelos (55, 57, 67)</option>
-            <option value="NFe">Apenas NF-e (Modelo 55)</option>
-            <option value="CTe">Apenas CT-e (Modelos 57 e 67)</option>
-          </select>
-
-          {/* Seletor Decisão RAD */}
-          <select
-            value={radFilter}
-            onChange={(e) => setRadFilter(e.target.value as any)}
-            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 font-mono focus:border-cyan-500 focus:outline-none"
-          >
-            <option value="TODOS">Status RAD: Todos</option>
-            <option value="APTO">🟢 Apto — Desnecessário RAD (Recolhimento pelo Adquirente) ({itensAptosRad})</option>
-            <option value="AGUARDAR">🟡 Aguardar Quitação Fornecedor ({itensAguardandoQuitar})</option>
-            <option value="NAO_CONCILIADO">⚪ Não Conciliado no Ledger ({itensNaoConciliados})</option>
-          </select>
-
-          {/* Busca Textual */}
-          <div className="relative min-w-[200px]">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Buscar chave, fornecedor, NCM, CFOP..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-sans"
-            />
-          </div>
-        </div>
-      </div>
 
       {/* ========================================================
           TABELA ANALÍTICA CONSOLIDADA (COM GRUPOS DE COLUNAS)

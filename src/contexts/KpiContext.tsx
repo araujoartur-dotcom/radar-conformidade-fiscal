@@ -59,7 +59,7 @@ interface KpiContextType {
 
 const KpiContext = createContext<KpiContextType | undefined>(undefined);
 
-const getCacheKey = (empresaId?: string) => `@RadarFiscal:kpis_${empresaId || 'global'}`;
+const getCacheKey = (empresaId?: string) => (empresaId ? `@RadarFiscal:kpis_${empresaId}` : '');
 
 export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { empresaAtiva, token } = useAuth();
@@ -69,10 +69,13 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [totalGeral, setTotalGeral] = useState<KpiTotals | null>(() => {
     try {
-      const saved = localStorage.getItem(getCacheKey(empresaAtiva?.id)) || localStorage.getItem('@RadarFiscal:kpis_global');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.totalGeral || parsed;
+      if (empresaAtiva?.id) {
+        const key = getCacheKey(empresaAtiva.id);
+        const saved = key ? localStorage.getItem(key) : null;
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed.totalGeral || parsed;
+        }
       }
     } catch {}
     return null;
@@ -80,10 +83,13 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [totalFiltrado, setTotalFiltrado] = useState<KpiTotals | null>(() => {
     try {
-      const saved = localStorage.getItem(getCacheKey(empresaAtiva?.id)) || localStorage.getItem('@RadarFiscal:kpis_global');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed.totalFiltrado || parsed.totalGeral || parsed;
+      if (empresaAtiva?.id) {
+        const key = getCacheKey(empresaAtiva.id);
+        const saved = key ? localStorage.getItem(key) : null;
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          return parsed.totalFiltrado || parsed.totalGeral || parsed;
+        }
       }
     } catch {}
     return null;
@@ -111,12 +117,16 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setTotalFiltrado(payload.totalFiltrado || payload.totalGeral);
         setKpiError(null);
         try {
-          const cacheData = JSON.stringify({
-            totalGeral: payload.totalGeral,
-            totalFiltrado: payload.totalFiltrado || payload.totalGeral
-          });
-          localStorage.setItem(getCacheKey(empId), cacheData);
-          localStorage.setItem('@RadarFiscal:kpis_global', cacheData);
+          if (empId) {
+            const cacheData = JSON.stringify({
+              totalGeral: payload.totalGeral,
+              totalFiltrado: payload.totalFiltrado || payload.totalGeral
+            });
+            const key = getCacheKey(empId);
+            if (key) localStorage.setItem(key, cacheData);
+          }
+          // Remove cache global para garantir que nenhum tenant contamine outro
+          localStorage.removeItem('@RadarFiscal:kpis_global');
         } catch {}
       } else {
         const errMsg = (res as any)?.error || 'Resposta inválida do servidor de KPIs.';
@@ -132,9 +142,29 @@ export const KpiProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [empresaAtiva?.id, token]);
 
   // Carrega ao montar ou quando a empresa ativa mudar.
-  // Nota: refreshKpis é intencionalmente omitido do array de deps para evitar
-  // loop de re-render (o useCallback já reage a empresaAtiva?.id e token).
   useEffect(() => {
+    // Resetar imediatamente para evitar vazamento visual de dados da empresa anterior
+    if (empresaAtiva?.id) {
+      const key = getCacheKey(empresaAtiva.id);
+      const cached = key ? localStorage.getItem(key) : null;
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setTotalGeral(parsed.totalGeral || parsed);
+          setTotalFiltrado(parsed.totalFiltrado || parsed.totalGeral || parsed);
+        } catch {
+          setTotalGeral(null);
+          setTotalFiltrado(null);
+        }
+      } else {
+        setTotalGeral(null);
+        setTotalFiltrado(null);
+      }
+    } else {
+      setTotalGeral(null);
+      setTotalFiltrado(null);
+    }
+
     if (token) {
       refreshKpis();
     }

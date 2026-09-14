@@ -22,3 +22,6 @@ Contudo nem todos, devem ter texto padrão, alguns não tem como colocar texto p
 - Solicitação de Apropriação de Crédito de Combustível
 Sendo assim, vamos fazer uma varredura e avaliar em todos os tipos de DF-e, quais poderão ter texto padrão pré definido e quais precisão ter campos específicos de item, quantidade e valor, datas etc, conforme NT 2025.002 v.1.51 da NF-e anexo. 
 
+
+
+consegue gerar o modelo de banco de dados e diagrama de dados para eu enviar a um analista de dados e principalmente em relação as conexões de backend e sistema do netlify também. toda essa conexao de sistema.

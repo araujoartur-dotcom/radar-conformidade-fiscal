@@ -51,6 +51,13 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
     }
 
     req.user = decoded;
+
+    // Se o cliente enviar o header x-empresa-ativa-id, respeita a empresa ativa da UI/sessão atual
+    const headerEmpresaAtiva = req.headers['x-empresa-ativa-id'] as string;
+    if (headerEmpresaAtiva && typeof headerEmpresaAtiva === 'string' && headerEmpresaAtiva.trim() !== '') {
+      req.user.empresaAtivaId = headerEmpresaAtiva.trim();
+    }
+
     next();
   } catch (err: any) {
     if (err.name === 'TokenExpiredError') {

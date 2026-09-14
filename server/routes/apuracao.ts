@@ -18,7 +18,7 @@ const router = Router();
 router.get('/competencia/:periodo', async (req: Request, res: Response) => {
   try {
     const { periodo } = req.params; // Ex: '2026-01', '2026-02'
-    const empresaId = (req.query.empresaId as string) || 'default-empresa';
+    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || (req as any).user?.empresaAtivaId || 'default-empresa';
 
     const resumo = await obterResumoCompetencia(empresaId, periodo);
     res.json(resumo);
@@ -33,7 +33,7 @@ router.get('/competencia/:periodo', async (req: Request, res: Response) => {
 // =========================================================
 router.get('/operacoes', async (req: Request, res: Response) => {
   try {
-    const empresaId = (req.query.empresaId as string) || 'default-empresa';
+    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || (req as any).user?.empresaAtivaId || 'default-empresa';
     const tipo = req.query.tipo as 'fornecimento' | 'aquisicao' | 'todos' | undefined;
     const busca = req.query.busca as string | undefined;
     const competencia = req.query.competencia as string | undefined;

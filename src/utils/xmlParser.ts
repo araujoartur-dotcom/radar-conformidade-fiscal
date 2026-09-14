@@ -28,7 +28,7 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     return getTagValue(parent, tagName);
   };
 
-  // 1. Identificar Tipo de DF-e (NF-e, CT-e, NFS-e)
+  // 1. Identificar Tipo de DF-e (NF-e, NFC-e, CT-e, NFS-e)
   let tipo: TipoDFe = 'NFe';
   if (
     xmlDoc.getElementsByTagName('NFSe').length > 0 || 
@@ -45,7 +45,12 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
   } else if (xmlDoc.getElementsByTagName('infCte').length > 0 || xmlDoc.getElementsByTagName('CTe').length > 0) {
     tipo = 'CTe';
   } else if (xmlDoc.getElementsByTagName('infNfe').length > 0 || xmlDoc.getElementsByTagName('NFe').length > 0) {
-    tipo = 'NFe';
+    const modTag = getTagValue(xmlDoc, 'mod');
+    if (modTag === '65') {
+      tipo = 'NFCe';
+    } else {
+      tipo = 'NFe';
+    }
   }
 
   // 2. Extração da Chave de Acesso
@@ -63,6 +68,18 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     if (infNode) {
       const rawId = infNode.getAttribute('Id') || infNode.getAttribute('id') || '';
       chaveAcesso = rawId.replace(/^[A-Za-z]+/, '').replace(/[^0-9]/g, '');
+    }
+  }
+
+  // 2.1 Refinamento de Modelo pela Chave de Acesso de 44 dígitos
+  if (chaveAcesso && chaveAcesso.length === 44 && tipo !== 'NFSe') {
+    const modChave = chaveAcesso.substring(20, 22);
+    if (modChave === '65') {
+      tipo = 'NFCe';
+    } else if (modChave === '57' || modChave === '67') {
+      tipo = 'CTe';
+    } else if (modChave === '55') {
+      tipo = 'NFe';
     }
   }
 

@@ -76,38 +76,58 @@ export const parseOcorrenciasFromLogs = (logList: string[], conectores: any[]): 
     let msgResumida = 'Nenhum XML retornado';
     let acao = 'Testar individualmente ou validar endpoint';
 
-    if (rawAll.includes('HTTP 200 (sem notas') || (rawAll.includes('HTTP 200') && !rawAll.includes('inválida') && !rawAll.includes('LoteDFe'))) {
+    if (rawAll.includes('HTTP 200 (sem notas') || rawAll.includes('Comunicação Regular (HTTP 200)') || (rawAll.includes('HTTP 200') && !rawAll.includes('inválida') && !rawAll.includes('LoteDFe'))) {
       statusTipo = 'sem_notas';
-      msgResumida = 'HTTP 200: Nenhuma NFS-e emitida no período';
+      msgResumida = 'Comunicação Regular (HTTP 200): Nenhuma NFS-e emitida no período';
       acao = 'Comunicação normal. Nenhuma NFS-e tomada no período de 30 dias.';
-    } else if (rawAll.includes('nfseCabecMsg') || rawAll.includes('nfseDadosMsg') || rawAll.includes('inválida') || rawAll.includes('não conseguiu capturar')) {
+    } else if (rawAll.includes('SAXParseException') || rawAll.includes('PeriodoEmissao')) {
       statusTipo = 'erro_envelope';
-      msgResumida = 'Parâmetro SOAP ausente ou rejeitado (nfseCabecMsg/nfseDadosMsg)';
-      acao = 'Ajustar layout do envelope SOAP específico para o provedor';
+      msgResumida = 'Divergência de Formato XML (Layout GINFES)';
+      acao = 'Incompatibilidade de sintaxe do provedor. Notas garantidas pelo ADN Nacional.';
+    } else if (rawAll.includes('SOAPAction')) {
+      statusTipo = 'erro_envelope';
+      msgResumida = 'Ação SOAP não reconhecida pela prefeitura';
+      acao = 'Requer namespace SOAP específico do município.';
+    } else if (rawAll.includes('Start element') || rawAll.includes('expected') || rawAll.includes('namespace')) {
+      statusTipo = 'erro_envelope';
+      msgResumida = 'Namespace XML divergente do padrão ABRASF';
+      acao = 'Requer ajuste de namespace no conector municipal.';
+    } else if (rawAll.includes('método de despacho') || rawAll.includes('despacho')) {
+      statusTipo = 'outro';
+      msgResumida = 'Método de consulta de tomados não disponível';
+      acao = 'Prefeitura não fornece consulta automatizada de tomados via API.';
     } else if (rawAll.includes('ENOTFOUND') || rawAll.includes('getaddrinfo')) {
       statusTipo = 'erro_rede_dns';
-      msgResumida = 'Host/Domínio não encontrado no DNS (ENOTFOUND)';
-      acao = 'Atualizar URL do endpoint no módulo de Conectores Municipais';
-    } else if (rawAll.includes('Timeout de 25s') || rawAll.includes('ETIMEDOUT') || rawAll.includes('ESOCKETTIMEDOUT')) {
+      msgResumida = 'Domínio Web Inacessível / DNS Não Encontrado';
+      acao = 'O endereço web da prefeitura não foi localizado na internet.';
+    } else if (rawAll.includes('Timeout') || rawAll.includes('ETIMEDOUT') || rawAll.includes('ESOCKETTIMEDOUT')) {
       statusTipo = 'timeout';
-      msgResumida = 'Timeout de conexão excedido (> 25s)';
-      acao = 'Servidor municipal sobrecarregado ou porta bloqueada. Testar individualmente.';
+      msgResumida = 'Tempo Limite de Conexão Excedido (> 25s)';
+      acao = 'Servidor municipal sobrecarregado ou com lentidão temporária.';
     } else if (rawAll.includes('HTTP 500') || rawAll.includes('HTTP 502') || rawAll.includes('HTTP 503')) {
       statusTipo = 'erro_500';
-      msgResumida = 'Instabilidade ou rejeição no servidor da prefeitura (HTTP 50x)';
-      acao = 'Erro interno do servidor municipal. Tentar novamente ou ajustar tags SOAP.';
-    } else if (rawAll.includes('HTTP 401') || rawAll.includes('HTTP 403') || rawAll.includes('HTTP 405') || rawAll.includes('HTTP 406')) {
+      msgResumida = 'Instabilidade ou manutenção no servidor da prefeitura (HTTP 50x)';
+      acao = 'Erro interno do servidor municipal. Tentar novamente mais tarde.';
+    } else if (rawAll.includes('HTTP 401') || rawAll.includes('HTTP 403')) {
       statusTipo = 'autenticacao';
-      msgResumida = 'Acesso não autorizado / Método HTTP rejeitado (HTTP 40x)';
-      acao = 'Verificar se exige autenticação adicional, usuário/senha ou método REST.';
+      msgResumida = 'Acesso não autorizado / Credencial adicional exigida (HTTP 40x)';
+      acao = 'Cadastrar Usuário/Senha ou Token de API no módulo de Conectores.';
+    } else if (rawAll.includes('HTTP 405') || rawAll.includes('HTTP 406')) {
+      statusTipo = 'autenticacao';
+      msgResumida = 'Método ou formato HTTP rejeitado pelo município (HTTP 405/406)';
+      acao = 'Verificar se exige chamada via método REST ou cabeçalhos específicos.';
     } else if (rawAll.includes('HTTP 301') || rawAll.includes('HTTP 302')) {
       statusTipo = 'redirecionamento';
-      msgResumida = 'Redirecionamento HTTP (301/302)';
+      msgResumida = 'Redirecionamento de Rota Web (HTTP 301/302)';
       acao = 'Ajustar URL para o endpoint direto do WebService (remover redirecionamento).';
     }
 
-    const detalheLinha = grp.lines.find(l => l.includes('⚠️') || l.includes('ℹ️') || l.includes('Retorno')) || grp.lines[grp.lines.length - 1] || '';
-    const detalheLimpo = detalheLinha.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*(?:└\s*)?/, '').trim();
+    const detalheLinha = grp.lines.find(l => l.includes('💡 Motivo:') || l.includes('⚠️') || l.includes('ℹ️') || l.includes('Retorno')) || grp.lines[grp.lines.length - 1] || '';
+    // Limpar prefixos e stack traces gigantes de .NET ou Java
+    let detalheLimpo = detalheLinha.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*(?:└\s*)?/, '').trim();
+    if (detalheLimpo.includes(' at ')) {
+      detalheLimpo = detalheLimpo.split(' at ')[0].trim();
+    }
 
     ocorrencias.push({
       ibge: conectorCadastrado?.ibge || conectorCadastrado?.id,

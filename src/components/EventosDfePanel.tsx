@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Send, CheckCircle2, AlertCircle, ShieldCheck, Clock, RefreshCw, FileSignature,
   FileCode, Sparkles, Filter, Info, ChevronRight, Layers, Globe, Key, Database,
   Settings, Server, Cpu, Radio, Terminal, FileText, Check, HelpCircle, ArrowRight,
-  AlertTriangle, ShieldAlert, Calendar, DollarSign, Hash, Package, CheckSquare, XCircle
+  AlertTriangle, ShieldAlert, Calendar, DollarSign, Hash, Package, CheckSquare, XCircle,
+  Search, Copy
 } from 'lucide-react';
 import { DfeXmlItem, EventoDfeRequest, TipoDFe, DadosEventoEstruturado } from '../types';
 import { CATALOGO_EVENTOS_DFE, getEventosPorTipoDfe } from '../utils/dfeEventsCatalog';
@@ -33,12 +34,37 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   // Document Type Filter for Events
   const [selectedTipoDfe, setSelectedTipoDfe] = useState<TipoDFe>('NFe');
   
+  // Normalização do tipo para garantir compatibilidade entre 'NFSe' e 'NFS-e'
+  const isMatchingTipo = (docTipo?: string, targetTipo?: string) => {
+    if (!docTipo || !targetTipo) return false;
+    const c1 = docTipo.toUpperCase().replace(/[^A-Z]/g, '');
+    const c2 = targetTipo.toUpperCase().replace(/[^A-Z]/g, '');
+    return c1 === c2;
+  };
+
   // Available documents of selected DFe type
-  const docsDoTipo = dfeList.filter(d => d.tipo === selectedTipoDfe);
-  
+  const docsDoTipo = useMemo(() => {
+    return dfeList.filter(d => isMatchingTipo(d.tipo, selectedTipoDfe));
+  }, [dfeList, selectedTipoDfe]);
+
+  // Filtro de busca textual na lista de documentos (por chave de 44 ou 50 posições, número ou fornecedor)
+  const [docFilterText, setDocFilterText] = useState<string>('');
+  const [copiedChave, setCopiedChave] = useState<boolean>(false);
+
+  const filteredDocsDoTipo = useMemo(() => {
+    if (!docFilterText.trim()) return docsDoTipo;
+    const q = docFilterText.toLowerCase().trim();
+    return docsDoTipo.filter(d => 
+      d.chaveAcesso?.toLowerCase().includes(q) ||
+      d.numero?.toLowerCase().includes(q) ||
+      d.emitenteNome?.toLowerCase().includes(q) ||
+      d.emitenteCnpj?.toLowerCase().includes(q)
+    );
+  }, [docsDoTipo, docFilterText]);
+
   // Active selected document
   const [activeChave, setActiveChave] = useState<string>(
-    selectedDfe && selectedDfe.tipo === selectedTipoDfe
+    selectedDfe && isMatchingTipo(selectedDfe.tipo, selectedTipoDfe)
       ? selectedDfe.chaveAcesso
       : docsDoTipo[0]?.chaveAcesso || dfeList[0]?.chaveAcesso || ''
   );
@@ -46,13 +72,16 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   // Sync active chave if user changes selected DFe type tab
   const handleSelectTipoDfe = (tipo: TipoDFe) => {
     setSelectedTipoDfe(tipo);
-    const firstDoc = dfeList.find(d => d.tipo === tipo);
+    setDocFilterText('');
+    const firstDoc = dfeList.find(d => isMatchingTipo(d.tipo, tipo));
     if (firstDoc) {
       setActiveChave(firstDoc.chaveAcesso);
     }
   };
 
-  const currentDocument = dfeList.find(d => d.chaveAcesso === activeChave) || selectedDfe || dfeList[0];
+  const currentDocument = useMemo(() => {
+    return dfeList.find(d => d.chaveAcesso?.trim() === activeChave?.trim()) || selectedDfe || dfeList[0];
+  }, [dfeList, activeChave, selectedDfe]);
 
   // Category Filter for Events
   const [categoriaFilter, setCategoriaFilter] = useState<'todos' | 'destinatario' | 'emitente' | 'tomador' | 'reforma_tributaria' | 'contingencia' | 'terceiros'>('todos');
@@ -102,12 +131,17 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
   // Transmitted Event History
   const [transmittedLog, setTransmittedLog] = useState<EventoDfeRequest[]>([]);
+  const [historicoFiltro, setHistoricoFiltro] = useState<'todos' | 'nota_ativa' | 'terceiros'>('todos');
+  const [isConsultandoSefaz, setIsConsultandoSefaz] = useState<boolean>(false);
+  const [consultaSefazResult, setConsultaSefazResult] = useState<{ tipo: 'success' | 'warning' | 'error'; msg: string } | null>(null);
 
   const loadEventos = async () => {
     try {
-      const res = await get<{ success: boolean; eventos: any[] }>(`/sefaz/eventos?limit=100`);
-      if (res.ok && res.data?.eventos) {
-        const mapped: EventoDfeRequest[] = res.data.eventos.map((evt: any) => ({
+      const res = await get<{ success: boolean; eventos: any[] }>(`/sefaz/eventos?limit=150`);
+      const payload = (res as any)?.data || res;
+      const evts = payload?.eventos || payload?.data || [];
+      if (Array.isArray(evts)) {
+        const mapped: EventoDfeRequest[] = evts.map((evt: any) => ({
           id: evt.id,
           chaveAcesso: evt.chave_acesso,
           tipoDfe: (evt.tipo_dfe as TipoDFe) || 'NFe',
@@ -134,6 +168,67 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   useEffect(() => {
     loadEventos();
   }, [empresaAtiva?.id, currentDocument?.id]);
+
+  // Consulta ao WebService SEFAZ de Distribuição de DF-e para buscar eventos da chave (inclusive de terceiros)
+  const handleConsultarEventosSefaz = async () => {
+    if (!activeChave) {
+      alert('Selecione ou informe a chave do documento fiscal para consultar os eventos na SEFAZ.');
+      return;
+    }
+    setIsConsultandoSefaz(true);
+    setConsultaSefazResult(null);
+    try {
+      const response = await fetch(`${getApiBaseUrl()}/sefaz/distribui-dfe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          cnpj: empresaAtiva?.cnpjCompleto || empresaAtiva?.cnpj,
+          chNFe: activeChave,
+          tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe'
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        const totalEvt = (data.eventosTerceiros?.length || 0);
+        const docsRet = (data.docs?.length || 0);
+        setConsultaSefazResult({
+          tipo: 'success',
+          msg: `Consulta SEFAZ concluída (cStat ${data.cStat}: ${data.xMotivo}). ${totalEvt} evento(s) de terceiro e ${docsRet} documento(s) sincronizados.`
+        });
+        await loadEventos();
+      } else {
+        setConsultaSefazResult({
+          tipo: 'warning',
+          msg: data.xMotivo || data.message || 'SEFAZ retornou sem novos eventos para esta chave.'
+        });
+        await loadEventos();
+      }
+    } catch (err: any) {
+      setConsultaSefazResult({
+        tipo: 'error',
+        msg: `Falha na comunicação com a SEFAZ: ${err.message}`
+      });
+    } finally {
+      setIsConsultandoSefaz(false);
+    }
+  };
+
+  const displayedEventos = useMemo(() => {
+    return transmittedLog.filter(log => {
+      if (historicoFiltro === 'nota_ativa') {
+        return log.chaveAcesso?.trim() === activeChave?.trim();
+      }
+      if (historicoFiltro === 'terceiros') {
+        return log.origemEvento === 'terceiro_destinatario' || 
+               ['210220', '210240', '210200', '210210'].includes(log.codigoEvento);
+      }
+      return true;
+    });
+  }, [transmittedLog, historicoFiltro, activeChave]);
 
   const handleTransmitEvent = async () => {
     if (!activeChave) {
@@ -459,30 +554,108 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
               </h3>
 
               {/* Document Selector for Selected TipoDFe */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
-                  <span>Documento Fiscal Alvo ({selectedTipoDfe})</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                    <span>Documento Fiscal Alvo ({selectedTipoDfe === 'NFSe' ? 'NFS-e Nacional' : selectedTipoDfe})</span>
+                    {selectedTipoDfe === 'NFSe' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800 font-mono">
+                        Chave 50 Dígitos
+                      </span>
+                    )}
+                  </label>
                   <span className="text-[10px] text-slate-400 font-mono">{docsDoTipo.length} carregado(s)</span>
-                </label>
+                </div>
 
-                {docsDoTipo.length > 0 ? (
+                {/* Campo de pesquisa rápida por Chave (44 ou 50 dígitos), Número ou Fornecedor */}
+                {docsDoTipo.length > 2 && (
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder={selectedTipoDfe === 'NFSe' 
+                        ? "Filtrar por Chave de 50 dígitos, Nº NFS-e ou Prestador..." 
+                        : "Filtrar por Chave de 44 dígitos, Nº NF-e ou Fornecedor..."}
+                      value={docFilterText}
+                      onChange={(e) => setDocFilterText(e.target.value)}
+                      className="w-full bg-slate-950/90 border border-slate-800 rounded-xl pl-8 pr-7 py-1.5 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                    />
+                    {docFilterText && (
+                      <button
+                        type="button"
+                        onClick={() => setDocFilterText('')}
+                        className="absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {filteredDocsDoTipo.length > 0 ? (
                   <select
                     value={activeChave}
                     onChange={(e) => setActiveChave(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
                   >
-                    {docsDoTipo.map((d) => (
+                    {filteredDocsDoTipo.map((d) => (
                       <option key={d.id} value={d.chaveAcesso}>
-                        {d.tipo} N. {d.numero} - {d.emitenteNome} ({d.chaveAcesso.slice(0, 18)}...)
+                        {d.tipo === 'NFSe' || (d.tipo as string) === 'NFS-e' ? 'NFS-e' : d.tipo} N. {d.numero} - {d.emitenteNome} ({d.chaveAcesso.length === 50 ? `${d.chaveAcesso.slice(0, 12)}...${d.chaveAcesso.slice(-6)} [50D]` : `${d.chaveAcesso.slice(0, 18)}... [44D]`})
                       </option>
                     ))}
                   </select>
                 ) : (
                   <div className="p-3 rounded-xl bg-slate-950 border border-amber-900/40 text-xs text-amber-300 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Nenhum XML de {selectedTipoDfe} selecionado. Pode digitar ou usar a chave de homologação abaixo.</span>
+                    <span>
+                      {docFilterText 
+                        ? `Nenhum documento encontrado para "${docFilterText}".` 
+                        : `Nenhum XML de ${selectedTipoDfe} selecionado. Pode digitar ou usar a chave abaixo.`}
+                    </span>
                   </div>
                 )}
+
+                {/* Entrada / Colagem direta de chave (44 posições NF-e/CT-e ou 50 posições NFS-e Nacional) */}
+                <div className="pt-1">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                    <span>Chave Ativa do Documento:</span>
+                    <span className="font-mono text-[10px]">
+                      {activeChave?.length === 50 ? (
+                        <span className="text-purple-400 font-bold">✓ 50 dígitos (NFS-e Nacional)</span>
+                      ) : activeChave?.length === 44 ? (
+                        <span className="text-cyan-400 font-bold">✓ 44 dígitos (NF-e / CT-e)</span>
+                      ) : activeChave?.length > 0 ? (
+                        <span className="text-amber-400 font-bold">{activeChave.length} dígitos</span>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="relative flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={activeChave}
+                      onChange={(e) => setActiveChave(e.target.value.trim())}
+                      placeholder={selectedTipoDfe === 'NFSe' 
+                        ? "Cole aqui a chave de 50 dígitos da NFS-e Nacional..." 
+                        : "Cole aqui a chave de 44 dígitos da NF-e / CT-e..."}
+                      className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400"
+                    />
+                    {activeChave && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(activeChave);
+                          setCopiedChave(true);
+                          setTimeout(() => setCopiedChave(false), 2000);
+                        }}
+                        title="Copiar Chave Completa"
+                        className="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-xs shrink-0 flex items-center gap-1 transition cursor-pointer"
+                      >
+                        {copiedChave ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-cyan-400" />}
+                        <span className="text-[10px] hidden sm:inline">{copiedChave ? 'Copiada' : 'Copiar'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Active Document Details Summary */}
@@ -490,8 +663,25 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                 <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-xs space-y-2">
                   <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
                     <div>
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Emitente</div>
-                      <div className="font-bold text-white text-sm">{currentDocument.emitenteNome}</div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black font-mono uppercase tracking-wider ${
+                          (currentDocument.tipo === 'NFSe' || (currentDocument.tipo as string) === 'NFS-e' || currentDocument.chaveAcesso?.length === 50)
+                            ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                            : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                        }`}>
+                          {(currentDocument.tipo === 'NFSe' || (currentDocument.tipo as string) === 'NFS-e' || currentDocument.chaveAcesso?.length === 50) ? 'NFS-e Nacional' : currentDocument.tipo}
+                        </span>
+                        <span className="text-white font-bold text-xs">
+                          Nº {currentDocument.numero || '—'}
+                          {currentDocument.serie ? ` (Série ${currentDocument.serie})` : ''}
+                        </span>
+                        {currentDocument.dataEmissao && (
+                          <span className="text-[10px] text-slate-400">
+                            📅 {new Date(currentDocument.dataEmissao).toLocaleDateString('pt-BR')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-bold text-white text-sm mt-1">{currentDocument.emitenteNome}</div>
                       <div className="text-[11px] text-slate-400 font-mono">CNPJ: {currentDocument.emitenteCnpj} | UF: {currentDocument.emitenteUf}</div>
                     </div>
                     <div className="text-right">
@@ -1235,18 +1425,104 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
               {/* Transmitted Log History */}
               <div className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-3 shadow-lg">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+                  <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-indigo-400" />
-                    Histórico de Eventos Transmitidos
-                  </h3>
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">
-                    {transmittedLog.length} Evento(s)
-                  </span>
+                    <h3 className="text-sm font-bold text-white">
+                      Histórico de Eventos & Manifestações
+                    </h3>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold">
+                      {displayedEventos.length}
+                    </span>
+                  </div>
+
+                  {/* Botão de Consulta de Eventos na SEFAZ */}
+                  <button
+                    type="button"
+                    disabled={isConsultandoSefaz || !activeChave}
+                    onClick={handleConsultarEventosSefaz}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 disabled:opacity-50 text-white font-bold text-xs shadow-md transition cursor-pointer self-start sm:self-auto"
+                    title="Consulta o WebService da SEFAZ para buscar eventos registrados por terceiros (manifestações, CC-e, cancelamentos)"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isConsultandoSefaz ? 'animate-spin' : ''}`} />
+                    <span>{isConsultandoSefaz ? 'Consultando SEFAZ...' : 'Consultar Eventos na SEFAZ'}</span>
+                  </button>
                 </div>
 
-                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                  {transmittedLog.map((log) => (
+                {/* Filtros do Histórico: Todos vs Desta Nota vs Terceiros */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setHistoricoFiltro('todos')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      historicoFiltro === 'todos'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Todos da Empresa ({transmittedLog.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHistoricoFiltro('nota_ativa')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                      historicoFiltro === 'nota_ativa'
+                        ? 'bg-cyan-600 text-white shadow-sm'
+                        : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    Desta Nota ({transmittedLog.filter(l => l.chaveAcesso?.trim() === activeChave?.trim()).length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setHistoricoFiltro('terceiros')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-1 ${
+                      historicoFiltro === 'terceiros'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-slate-950 text-amber-400/80 hover:text-amber-300 border border-slate-800'
+                    }`}
+                  >
+                    <span>🚨 Recebidos de Terceiros</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-950 text-amber-200 border border-amber-800">
+                      {transmittedLog.filter(l => l.origemEvento === 'terceiro_destinatario' || ['210220', '210240', '210200'].includes(l.codigoEvento)).length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Feedback da Consulta SEFAZ */}
+                {consultaSefazResult && (
+                  <div className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 animate-in fade-in duration-150 ${
+                    consultaSefazResult.tipo === 'success'
+                      ? 'bg-emerald-950/60 border-emerald-800 text-emerald-200'
+                      : consultaSefazResult.tipo === 'warning'
+                      ? 'bg-amber-950/60 border-amber-800 text-amber-200'
+                      : 'bg-rose-950/60 border-rose-800 text-rose-200'
+                  }`}>
+                    <span>{consultaSefazResult.msg}</span>
+                    <button
+                      type="button"
+                      onClick={() => setConsultaSefazResult(null)}
+                      className="text-slate-400 hover:text-white text-xs px-1 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                  {displayedEventos.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-400 bg-slate-950/40 rounded-xl border border-slate-800/80 space-y-2">
+                      <p>Nenhum evento registrado com este filtro.</p>
+                      {activeChave && (
+                        <p className="text-slate-500 text-[11px]">
+                          Clique no botão <strong>"Consultar Eventos na SEFAZ"</strong> acima para verificar se clientes ou a SEFAZ registraram manifestações (Ciência, Confirmação, Desconhecimento) para esta chave.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    displayedEventos.map((log) => (
                     <div
                       key={log.id}
                       className={`p-3.5 rounded-xl border space-y-2 text-xs transition-all ${
@@ -1370,7 +1646,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                         </div>
                       )}
                     </div>
-                  ))}
+                  )))}
                 </div>
               </div>
 

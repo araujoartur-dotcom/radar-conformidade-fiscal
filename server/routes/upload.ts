@@ -784,20 +784,14 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
 
-          // Filtros de tenant (empresa_id primário + match por raiz de CNPJ para cobrir filiais)
+          // Filtros de tenant rigorosos (empresa_id da empresa ativa selecionada)
           const cnpjRaiz = tenantCnpjClean.length >= 8 ? tenantCnpjClean.slice(0, 8) : tenantCnpjClean;
-          if (!isSuperadmin && (empresaIdParam || cnpjRaiz)) {
-            if (empresaIdParam && cnpjRaiz) {
-              supaQuery = supaQuery.or(`empresa_id.eq.${empresaIdParam},cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
-            } else if (empresaIdParam) {
-              supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
-            } else {
-              supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
-            }
-          }
-          // admin_master: sem filtro de tenant = vê TUDO (ou filtra se selecionou empresa)
-          if (isSuperadmin && empresaIdParam) {
+          if (empresaIdParam) {
             supaQuery = supaQuery.eq('empresa_id', empresaIdParam);
+          } else if (cnpjRaiz) {
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+          } else {
+            supaQuery = supaQuery.eq('empresa_id', 'none');
           }
 
           // Filtros opcionais
@@ -806,6 +800,8 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
             const td = String(req.query.tipoDoc).toUpperCase();
             if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
               supaQuery = supaQuery.or('tipo_doc.eq.NFSe,tipo_doc.eq.NFS-e,tipo_doc.ilike.%nfse%');
+            } else if (td === 'NFCE' || td === 'NFC-E' || td === '65') {
+              supaQuery = supaQuery.or('tipo_doc.eq.NFCe,tipo_doc.eq.NFC-e,tipo_doc.ilike.%nfce%');
             } else if (td === 'CTE' || td === 'CT-E') {
               supaQuery = supaQuery.or('tipo_doc.eq.CTe,tipo_doc.eq.CT-e,tipo_doc.ilike.%cte%');
             } else if (td === 'NFE' || td === 'NF-E') {
@@ -834,16 +830,12 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
                     .order('data_emissao', { ascending: false })
                     .limit(200);
 
-                  if (!isSuperadmin && (empresaIdParam || cnpjRaiz)) {
-                    if (empresaIdParam && cnpjRaiz) {
-                      nfseQuery = nfseQuery.or(`empresa_id.eq.${empresaIdParam},cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
-                    } else if (empresaIdParam) {
-                      nfseQuery = nfseQuery.eq('empresa_id', empresaIdParam);
-                    } else {
-                      nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
-                    }
-                  } else if (empresaIdParam) {
+                  if (empresaIdParam) {
                     nfseQuery = nfseQuery.eq('empresa_id', empresaIdParam);
+                  } else if (cnpjRaiz) {
+                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
+                  } else {
+                    nfseQuery = nfseQuery.eq('empresa_id', 'none');
                   }
 
                   const { data: extraNfse } = await nfseQuery;
@@ -893,39 +885,25 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
       const params: any[] = [];
       const countParams: any[] = [];
 
-      if (!isSuperadmin) {
-        if (tenantCnpjClean) {
-          const tenantFilter = `
-            AND (
-              d.empresa_id = ?
-              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-              OR d.cliente_cnpj LIKE ?
-              OR d.fornecedor_cnpj LIKE ?
-            )
-          `;
-          query += tenantFilter;
-          countQuery += tenantFilter;
-          const filterParams = [activeEmpresaId || '', req.user?.userId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`];
-          params.push(...filterParams);
-          countParams.push(...filterParams);
-        } else if (activeEmpresaId) {
-          const tenantFilter = `
-            AND (
-              d.empresa_id = ?
-              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-            )
-          `;
-          query += tenantFilter;
-          countQuery += tenantFilter;
-          const filterParams = [activeEmpresaId, req.user?.userId || ''];
-          params.push(...filterParams);
-          countParams.push(...filterParams);
-        }
-      } else if (isSuperadmin && empresaIdParam) {
+      if (empresaIdParam) {
         query += ' AND d.empresa_id = ?';
         countQuery += ' AND d.empresa_id = ?';
         params.push(empresaIdParam);
         countParams.push(empresaIdParam);
+      } else if (tenantCnpjClean) {
+        const tenantFilter = `
+          AND (
+            d.cliente_cnpj LIKE ?
+            OR d.fornecedor_cnpj LIKE ?
+          )
+        `;
+        query += tenantFilter;
+        countQuery += tenantFilter;
+        params.push(`%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+        countParams.push(`%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+      } else {
+        query += ' AND 1=0';
+        countQuery += ' AND 1=0';
       }
 
       if (req.query.tipoOperacao) {
@@ -939,6 +917,9 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
           query += " AND (d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')";
           countQuery += " AND (d.tipo_doc IN ('NFSe', 'NFS-e') OR d.tipo_doc LIKE '%nfse%')";
+        } else if (td === 'NFCE' || td === 'NFC-E' || td === '65') {
+          query += " AND (d.tipo_doc IN ('NFCe', 'NFC-e', '65') OR d.tipo_doc LIKE '%nfce%')";
+          countQuery += " AND (d.tipo_doc IN ('NFCe', 'NFC-e', '65') OR d.tipo_doc LIKE '%nfce%')";
         } else if (td === 'CTE' || td === 'CT-E') {
           query += " AND (d.tipo_doc IN ('CTe', 'CT-e') OR d.tipo_doc LIKE '%cte%')";
           countQuery += " AND (d.tipo_doc IN ('CTe', 'CT-e') OR d.tipo_doc LIKE '%cte%')";
@@ -999,7 +980,7 @@ router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response
   try {
     const { dataInicio, dataFim, tipoDoc, tipoOperacao, empresaId } = req.query as Record<string, string>;
     const db = getDatabase();
-    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
+    const activeEmpresaId = empresaId || (req.headers['x-empresa-ativa-id'] as string) || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
     const isSuperadmin = req.user?.perfil === 'admin_master';
 
     let tenantCnpjClean = '';
@@ -1050,7 +1031,7 @@ router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response
 router.get('/periodos-disponiveis', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId } = req.query as Record<string, string>;
-    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
+    const activeEmpresaId = empresaId || (req.headers['x-empresa-ativa-id'] as string) || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
     const isSuperadmin = req.user?.perfil === 'admin_master';
 
     let minDataStr: string | null = null;
@@ -1061,14 +1042,14 @@ router.get('/periodos-disponiveis', requireAuth, async (req: AuthenticatedReques
         const supabase = getSupabaseAdmin();
         if (supabase) {
           let qMin = supabase.from('dfe_documentos').select('data_emissao').order('data_emissao', { ascending: true }).limit(1);
-          if (activeEmpresaId && !isSuperadmin) qMin = qMin.eq('empresa_id', activeEmpresaId);
+          if (activeEmpresaId) qMin = qMin.eq('empresa_id', activeEmpresaId);
           const { data: minRes } = await qMin;
           if (minRes && minRes[0]?.data_emissao) {
             minDataStr = minRes[0].data_emissao;
           }
 
           let qMax = supabase.from('dfe_documentos').select('data_emissao').order('data_emissao', { ascending: false }).limit(1);
-          if (activeEmpresaId && !isSuperadmin) qMax = qMax.eq('empresa_id', activeEmpresaId);
+          if (activeEmpresaId) qMax = qMax.eq('empresa_id', activeEmpresaId);
           const { data: maxRes } = await qMax;
           if (maxRes && maxRes[0]?.data_emissao) {
             maxDataStr = maxRes[0].data_emissao;
@@ -1084,7 +1065,7 @@ router.get('/periodos-disponiveis', requireAuth, async (req: AuthenticatedReques
         const db = getDatabase();
         let sql = 'SELECT min(data_emissao) as minData, max(data_emissao) as maxData FROM dfe_documentos';
         const params: any[] = [];
-        if (activeEmpresaId && !isSuperadmin) {
+        if (activeEmpresaId) {
           sql += ' WHERE empresa_id = ?';
           params.push(activeEmpresaId);
         }
@@ -1127,7 +1108,7 @@ router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Respons
   try {
     const { dataInicio, dataFim, tipoDoc, tipoOperacao, empresaId } = req.query as Record<string, string>;
     const db = getDatabase();
-    const activeEmpresaId = empresaId || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
+    const activeEmpresaId = empresaId || (req.headers['x-empresa-ativa-id'] as string) || (req as any).empresaAtivaId || req.user?.empresaAtivaId;
     const isSuperadmin = req.user?.perfil === 'admin_master';
 
     let tenantCnpjClean = '';

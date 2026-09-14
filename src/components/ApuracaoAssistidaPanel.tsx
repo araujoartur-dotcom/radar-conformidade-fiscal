@@ -287,46 +287,35 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
   return (
     <div className="w-full flex flex-col gap-6 pb-12">
       
-      {/* Top Banner de Identidade & Status Oficial */}
-      <div className="bg-gradient-to-r from-[#0d1b2e] via-[#0e2238] to-[#0a1828] border border-cyan-500/30 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+      {/* Top Banner de Identidade & Status Oficial Unificado */}
+      <div className="bg-gradient-to-r from-[#0d1b2e] via-[#0e2238] to-[#0a1828] border border-cyan-500/20 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none -mr-16 -mt-16" />
+        
+        {/* Linha Superior: Título & Ações Principais */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
           
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-white shrink-0">
-              <Calculator className="w-7 h-7" />
+          {/* Título e Badge Oficial */}
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-500/20 text-white shrink-0">
+              <Calculator className="w-6 h-6" />
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl font-bold text-white tracking-tight">
+                <h1 className="text-xl font-bold text-white tracking-tight">
                   Apuração Assistida <span className="text-cyan-400">IBS / CBS</span>
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
                   CGIBS MOC v1.00 & RFB RTC v1
                 </span>
-                {credencialInfo?.configurado ? (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 shadow-sm shadow-emerald-950">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — Conectado CGIBS/RFB
-                  </span>
-                ) : (
-                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-sm shadow-amber-950">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                    {empresaAtiva?.razaoSocial || 'Empresa'} (CNPJ8: {cnpjRaizAtivo}) — Credenciais Pendentes
-                  </span>
-                )}
               </div>
-              <p className="text-xs text-slate-400 mt-1 max-w-2xl">
-                Operacionalização da não-cumulatividade, controle do Conta Corrente Fiscal em 7 campos oficiais e ledger incremental com cálculo em tempo real.
-              </p>
             </div>
           </div>
 
-          {/* Controles de Topo: Competência + Botão Cenários */}
-          <div className="flex flex-wrap items-center gap-3">
+          {/* Controles de Topo: Competência, Credenciais, Cenários e Refresh */}
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Seletor de Competência */}
-            <div className="flex items-center gap-2 bg-slate-900/80 border border-slate-700/80 rounded-xl px-3 py-2 text-xs">
-              <Calendar className="w-4 h-4 text-cyan-400" />
+            <div className="flex items-center gap-2 bg-slate-900/90 border border-slate-700/80 hover:border-slate-600 rounded-xl px-3 py-1.5 text-xs transition-colors">
+              <Calendar className="w-3.5 h-3.5 text-cyan-400" />
               <span className="text-slate-400 font-medium">Competência:</span>
               <select
                 value={competencia}
@@ -341,7 +330,7 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               </select>
             </div>
 
-            {/* Botão Configurar Credenciais */}
+            {/* Botão Configurar Credenciais com Status Integrado */}
             <button
               onClick={() => {
                 setFormClientId(credencialInfo?.clientId || '');
@@ -349,69 +338,123 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 setFormWebhookUrl(credencialInfo?.webhookUrl || '');
                 setIsModalCredenciaisOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold transition-all cursor-pointer"
-              title="Configurar Credenciais do CGIBS / SEFIN Nacional"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/40 text-slate-200 text-xs font-semibold transition-all cursor-pointer shadow-sm"
+              title={credencialInfo?.configurado ? "Credenciais CGIBS / SEFIN Conectadas" : "Credenciais CGIBS / SEFIN Pendentes para este CNPJ"}
             >
               <Settings className="w-3.5 h-3.5 text-cyan-400" />
               <span>Credenciais</span>
+              <span className={`w-2 h-2 rounded-full ${credencialInfo?.configurado ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400 animate-pulse shadow-sm shadow-amber-400/50'}`} />
             </button>
 
             {/* Botão Carregar Cenários Didáticos Oficiais */}
             <button
               onClick={handleCarregarCenarios}
               disabled={carregandoCenarios}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-indigo-500/20 transition-all cursor-pointer border border-cyan-400/30"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white text-xs font-bold shadow-md shadow-indigo-500/20 transition-all cursor-pointer border border-cyan-400/30"
               title="Carregar Cenários 1 e 2 das páginas 33 a 43 do Manual do CGIBS"
             >
-              <Sparkles className={`w-4 h-4 ${carregandoCenarios ? 'animate-spin' : ''}`} />
-              <span>{carregandoCenarios ? 'Importando...' : 'Carregar Cenários Didáticos CGIBS'}</span>
+              <Sparkles className={`w-3.5 h-3.5 ${carregandoCenarios ? 'animate-spin' : ''}`} />
+              <span>{carregandoCenarios ? 'Importando...' : 'Carregar Cenários Didáticos'}</span>
             </button>
 
             {/* Botão Refresh */}
             <button
               onClick={carregarDados}
               disabled={loading}
-              className="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer"
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white transition-all cursor-pointer"
               title="Atualizar Dados"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-cyan-400' : ''}`} />
             </button>
           </div>
         </div>
 
-        {/* Indicador do Ciclo de Vida da Competência */}
-        {resumo && (
-          <div className="mt-5 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-xs">
-            <div className="flex items-center gap-3">
-              <span className="text-slate-400">Estágio da Competência:</span>
-              <div className={`px-3 py-1 rounded-lg font-bold flex items-center gap-1.5 ${
-                resumo.fase === 'concluida'
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                  : resumo.fase === 'periodo_ajuste'
-                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                  : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-              }`}>
-                <Clock className="w-3.5 h-3.5" />
-                <span>{resumo.fase_descricao}</span>
+        {/* Linha Inferior Unificada: Canais de Ingestão CGIBS + Estágio da Competência */}
+        <div className="mt-4 pt-3 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs relative z-10">
+          {/* Canais de Ingestão CGIBS */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              Canais de Ingestão:
+            </span>
+
+            {/* Webhook Push */}
+            <button
+              onClick={() => handleToggleFlag('webhook', !flagWebhook)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border cursor-pointer ${
+                flagWebhook
+                  ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/50'
+                  : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-300 hover:border-slate-700'
+              }`}
+              title="Ativar/Desativar recebimento automático via Webhook"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${flagWebhook ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              <span>Webhook</span>
+              <span className="text-[10px] opacity-70 font-mono">[{flagWebhook ? 'Ativo' : 'Desligado'}]</span>
+            </button>
+
+            {/* Consulta por Demanda */}
+            <button
+              onClick={() => handleToggleFlag('demanda', !flagConsultaDemanda)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border cursor-pointer ${
+                flagConsultaDemanda
+                  ? 'bg-indigo-950/60 text-indigo-300 border-indigo-500/40 hover:bg-indigo-900/50'
+                  : 'bg-slate-900/60 text-slate-400 border-slate-800 hover:text-slate-300 hover:border-slate-700'
+              }`}
+              title="Ativar/Desativar requisição manual sob demanda à SEFIN Nacional"
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${flagConsultaDemanda ? 'bg-indigo-400' : 'bg-slate-500'}`} />
+              <span>Consulta por Demanda</span>
+              <span className="text-[10px] opacity-70 font-mono">[{flagConsultaDemanda ? 'Ativo' : 'Desligado'}]</span>
+            </button>
+
+            {/* Botão de Disparo Manual de Consulta GET (quando Demanda está ativa) */}
+            {flagConsultaDemanda && (
+              <button
+                onClick={handleDispararConsultaDemanda}
+                disabled={consultandoDemanda}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold transition-all cursor-pointer shadow-sm shadow-cyan-600/30 disabled:opacity-50"
+                title="Disparar consulta manual GET /v1/aassist/solicitacao/... à SEFIN Nacional"
+              >
+                <RefreshCw className={`w-3 h-3 ${consultandoDemanda ? 'animate-spin' : ''}`} />
+                <span>{consultandoDemanda ? 'Solicitando...' : 'Consultar (GET)'}</span>
+              </button>
+            )}
+          </div>
+
+          {/* Status do Ciclo & Métricas */}
+          {resumo && (
+            <div className="flex flex-wrap items-center gap-3 text-slate-400 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">Estágio:</span>
+                <div className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 ${
+                  resumo.fase === 'concluida'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : resumo.fase === 'periodo_ajuste'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                }`}>
+                  <Clock className="w-3 h-3" />
+                  <span>{resumo.fase_descricao}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 text-[11px] text-slate-400 border-l border-slate-800 pl-3">
+                <span>Operações: <strong className="text-cyan-400 font-bold">{resumo.total_operacoes}</strong></span>
+                <span>Lançamentos C/C: <strong className="text-cyan-400 font-bold">{resumo.total_lancamentos}</strong></span>
               </div>
             </div>
-
-            <div className="flex items-center gap-4 text-slate-400">
-              <span>Período: <strong className="text-slate-200">{resumo.data_inicio}</strong> a <strong className="text-slate-200">{resumo.data_fim}</strong></span>
-              <span>Operações vinculadas: <strong className="text-cyan-400">{resumo.total_operacoes}</strong></span>
-              <span>Lançamentos no Conta Corrente: <strong className="text-cyan-400">{resumo.total_lancamentos}</strong></span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Alerta de Feedback */}
         {acaoStatus && (
-          <div className={`mt-3 p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+          <div className={`mt-3 p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
             acaoStatus.tipo === 'sucesso'
               ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40'
               : 'bg-rose-950/60 text-rose-300 border border-rose-500/40'
           }`}>
-            {acaoStatus.tipo === 'sucesso' ? <Check className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
+            {acaoStatus.tipo === 'sucesso' ? <Check className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />}
             <span>{acaoStatus.msg}</span>
           </div>
         )}
@@ -505,92 +548,6 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Banner de Canais de Ingestão CGIBS (Webhook vs Demanda GET) & Desacoplamento ERP */}
-      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-4 shadow-lg">
-        <div className="flex flex-col gap-1 max-w-xl">
-          <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-cyan-400" />
-            <span className="text-xs font-bold text-white uppercase tracking-wider">
-              Canais de Ingestão CGIBS / SEFIN Nacional
-            </span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 border border-slate-700 font-mono">
-              ERP Desacoplado
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400">
-            Controle a recepção automática via Webhook ou sob demanda via requisição GET. O módulo opera de forma autônoma sem exigir conexão síncrona com o ERP.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Flag 1: Webhook Push */}
-          <button
-            onClick={() => handleToggleFlag('webhook', !flagWebhook)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-              flagWebhook
-                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80 shadow-sm shadow-emerald-900/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-400'
-            }`}
-            title="Ativar/Desativar recebimento de Deltas via Webhook"
-          >
-            <div className={`w-2 h-2 rounded-full ${flagWebhook ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`} />
-            <span>Webhook Automático</span>
-            <span className="text-[10px] opacity-80 font-mono">[{flagWebhook ? 'ATIVO' : 'DESLIGADO'}]</span>
-          </button>
-
-          {/* Flag 2: Consulta por Demanda */}
-          <button
-            onClick={() => handleToggleFlag('demanda', !flagConsultaDemanda)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-              flagConsultaDemanda
-                ? 'bg-indigo-950/80 text-indigo-300 border-indigo-700/80 shadow-sm shadow-indigo-900/30'
-                : 'bg-slate-950 text-slate-500 border-slate-800 hover:text-slate-400'
-            }`}
-            title="Ativar/Desativar consultas manuais por demanda à API CGIBS"
-          >
-            <div className={`w-2 h-2 rounded-full ${flagConsultaDemanda ? 'bg-indigo-400' : 'bg-slate-600'}`} />
-            <span>Consultas por Demanda (GET)</span>
-            <span className="text-[10px] opacity-80 font-mono">[{flagConsultaDemanda ? 'ATIVO' : 'DESLIGADO'}]</span>
-          </button>
-
-          {/* Botão de Disparo Manual de Consulta GET */}
-          {flagConsultaDemanda && (
-            <button
-              onClick={handleDispararConsultaDemanda}
-              disabled={consultandoDemanda}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all cursor-pointer shadow-sm shadow-cyan-600/30 disabled:opacity-50"
-              title="Disparar consulta manual GET /v1/aassist/solicitacao/... à SEFIN Nacional"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${consultandoDemanda ? 'animate-spin' : ''}`} />
-              <span>{consultandoDemanda ? 'Solicitando...' : 'Consultar Arquivos (GET)'}</span>
-            </button>
-          )}
-        </div>
-
-        {/* Aviso de Configuração de Credenciais Segregadas por CNPJ */}
-        {!credencialInfo?.configurado && (
-          <div className="w-full mt-2 p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-300 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>
-                A empresa <strong>{empresaAtiva?.razaoSocial || 'ativa'}</strong> (CNPJ raiz <strong>{cnpjRaizAtivo}</strong>) ainda não possui credenciais do CGIBS registradas. Configure os acessos exclusivos para este CNPJ.
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                setFormClientId('');
-                setFormClientSecret('');
-                setFormWebhookUrl('');
-                setIsModalCredenciaisOpen(true);
-              }}
-              className="px-3 py-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs shrink-0 cursor-pointer shadow-sm transition-all"
-            >
-              Cadastrar Credenciais do CNPJ
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Navegação por Abas Oficiais */}

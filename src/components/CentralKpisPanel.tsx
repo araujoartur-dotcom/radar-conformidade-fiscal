@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, DollarSign, FileText, CheckCircle2,
   AlertTriangle, ArrowUpRight, ArrowDownRight, Layers, PieChart,
@@ -10,7 +10,7 @@ import { exportToExcel } from '../utils/excel';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { useKpis } from '../contexts/KpiContext';
-import { getRegraTransicaoAno, ANOS_TRANSICAO, buildCronogramaFromTabelas } from '../utils/reformaTransicao';
+import { getRegraTransicaoAno, ANOS_TRANSICAO, buildCronogramaFromTabelas, setDynamicCronograma } from '../utils/reformaTransicao';
 
 interface CentralKpisPanelProps {
   dfeList?: DfeXmlItem[];
@@ -43,11 +43,12 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     get<{ success: boolean; anos: number[]; anoInicial: number; anoFinal: number }>(
       `/upload/periodos-disponiveis?empresaId=${empId}`
     ).then(res => {
-      if (res?.success && Array.isArray(res.anos) && res.anos.length > 0) {
-        setAnosDisponiveis(res.anos);
-        if (!res.anos.includes(anoSelecionado)) {
-          setAnoSelecionado(res.anos[0]);
-          setAnoSimulado(res.anos[0]);
+      const payload = (res as any)?.data || res;
+      if (payload?.success && Array.isArray(payload.anos) && payload.anos.length > 0) {
+        setAnosDisponiveis(payload.anos);
+        if (!payload.anos.includes(anoSelecionado)) {
+          setAnoSelecionado(payload.anos[0]);
+          setAnoSimulado(payload.anos[0]);
         }
       }
     }).catch(err => {
@@ -115,19 +116,30 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   };
 
   useEffect(() => {
+    // Limpar KPIs da empresa anterior imediatamente para isolamento completo
+    setDbKpis(null);
     loadKpis();
   }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, operacaoFilter, dataInicio, dataFim]);
 
   // Buscar alíquotas cadastradas no banco para cálculo 100% dinâmico
-  useEffect(() => {
+  const loadTabelasAliquotas = useCallback(() => {
     get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem')
       .then(res => {
-        if (res?.success && Array.isArray(res.data) && res.data.length > 0) {
-          setTabelasAliquotas(res.data);
+        const payload = (res as any)?.data || res;
+        const rows = payload?.data || (Array.isArray(payload) ? payload : []);
+        if (Array.isArray(rows) && rows.length > 0) {
+          setTabelasAliquotas(rows);
+          setDynamicCronograma(rows);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn('⚠️ Falha ao carregar alíquotas Ad Valorem:', err);
+      });
   }, [get]);
+
+  useEffect(() => {
+    loadTabelasAliquotas();
+  }, [loadTabelasAliquotas]);
 
   const customCronograma = useMemo(() => {
     return buildCronogramaFromTabelas(tabelasAliquotas);
@@ -303,6 +315,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   const handleRefresh = () => {
     setIsRefreshing(true);
     loadKpis();
+    loadTabelasAliquotas();
     setTimeout(() => {
       setIsRefreshing(false);
     }, 600);

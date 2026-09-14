@@ -48,7 +48,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       : null;
 
     const isSuperadmin = req.user!.perfil === 'admin_master';
-    const activeEmpresaId = req.user!.empresaAtivaId;
+    const activeEmpresaId = (req.headers['x-empresa-ativa-id'] as string) || (paramEmpresaId as string) || req.user!.empresaAtivaId;
     const targetEmpresaId = (paramEmpresaId as string) || activeEmpresaId;
 
     // Obter informações do tenant ativo para consulta flexível
@@ -70,9 +70,10 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
     // Normalização do tipoDoc / relatório
     const relatorioParam = String(req.query.relatorio || req.query.tipoRelatorio || '');
     const isRelatorioRetencoes = relatorioParam === 'retencoes_fonte' || relatorioParam === 'consolidado_servicos';
+    const isRelatorioServicos = isRelatorioRetencoes || relatorioParam === 'servicos';
     const isRelatorioMercadorias = relatorioParam === 'consolidado_mercadorias';
-    const effectiveTipoDoc = isRelatorioRetencoes && (!tipoDoc || tipoDoc === 'TODOS')
-      ? 'NFSE'
+    let effectiveTipoDoc = isRelatorioServicos 
+      ? 'NFSE' 
       : (isRelatorioMercadorias && (!tipoDoc || tipoDoc === 'TODOS') ? 'MERCADORIAS' : (tipoDoc ? String(tipoDoc) : null));
 
     let rows: any[] = [];
@@ -85,10 +86,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       if (supabase) {
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
-          if (targetEmpresaId && !isSuperadmin) {
+          if (targetEmpresaId) {
             supaQuery = supaQuery.eq('empresa_id', targetEmpresaId);
-          } else if (!isSuperadmin && tenantCnpjClean) {
-            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
+          } else if (tenantCnpjClean) {
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%`);
+          } else {
+            supaQuery = supaQuery.eq('empresa_id', 'none');
           }
 
           if (cnpjEmitente) supaQuery = supaQuery.ilike('fornecedor_cnpj', `%${cnpjEmitente}%`);
@@ -138,10 +141,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                     .order('data_emissao', { ascending: false })
                     .limit(200);
 
-                  if (!isSuperadmin && tenantCnpjClean) {
-                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
-                  } else if (targetEmpresaId) {
+                  if (targetEmpresaId) {
                     nfseQuery = nfseQuery.eq('empresa_id', targetEmpresaId);
+                  } else if (tenantCnpjClean) {
+                    nfseQuery = nfseQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%`);
+                  } else {
+                    nfseQuery = nfseQuery.eq('empresa_id', 'none');
                   }
 
                   if (supaDataInicio) nfseQuery = nfseQuery.gte('data_emissao', supaDataInicio);
@@ -340,29 +345,30 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       `;
       const params: any[] = [];
 
-      if (!isSuperadmin) {
-        if (activeEmpresaId && tenantCnpjClean) {
+      if (targetEmpresaId) {
+        if (tenantCnpjClean) {
           query += `
             AND (
               d.empresa_id = ?
-              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
               OR d.cliente_cnpj LIKE ?
               OR d.fornecedor_cnpj LIKE ?
             )
           `;
-          params.push(activeEmpresaId, req.user!.userId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
-        } else if (activeEmpresaId) {
-          query += `
-            AND (
-              d.empresa_id = ?
-              OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
-            )
-          `;
-          params.push(activeEmpresaId, req.user!.userId);
+          params.push(targetEmpresaId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
+        } else {
+          query += ` AND d.empresa_id = ?`;
+          params.push(targetEmpresaId);
         }
-      } else if (targetEmpresaId) {
-        query += ` AND (d.empresa_id = ? OR d.empresa_id IS NULL)`;
-        params.push(targetEmpresaId);
+      } else if (!isSuperadmin && activeEmpresaId) {
+        query += `
+          AND (
+            d.empresa_id = ?
+            OR d.empresa_id IN (SELECT empresa_id FROM usuario_empresa WHERE usuario_id = ?)
+          )
+        `;
+        params.push(activeEmpresaId, req.user!.userId);
+      } else {
+        query += ` AND 1=0`;
       }
 
       if (cnpjEmitente) {
@@ -973,13 +979,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
 router.get('/sincronizar-apuracao', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const activeEmpresaId = req.user!.empresaAtivaId;
-    const isSuperadmin = req.user!.perfil === 'admin_master';
+    const activeEmpresaId = (req.headers['x-empresa-ativa-id'] as string) || (req.query.empresaId as string) || req.user?.empresaAtivaId;
 
     let queryOp = `SELECT COUNT(*) as count FROM apuracao_operacoes op WHERE 1=1`;
     const paramsOp: any[] = [];
-    if (!isSuperadmin && activeEmpresaId) {
-      queryOp += ` AND (op.empresa_id = ? OR op.empresa_id IS NULL)`;
+    if (activeEmpresaId) {
+      queryOp += ` AND op.empresa_id = ?`;
       paramsOp.push(activeEmpresaId);
     }
     const opCount = (db.prepare(queryOp).get(...paramsOp) as any)?.count || 0;
@@ -996,8 +1001,8 @@ router.get('/sincronizar-apuracao', requireAuth, async (req: AuthenticatedReques
       WHERE 1=1
     `;
     const paramsExtrato: any[] = [];
-    if (!isSuperadmin && activeEmpresaId) {
-      queryExtrato += ` AND (op.empresa_id = ? OR op.empresa_id IS NULL)`;
+    if (activeEmpresaId) {
+      queryExtrato += ` AND op.empresa_id = ?`;
       paramsExtrato.push(activeEmpresaId);
     }
     const extratoStats = db.prepare(queryExtrato).get(...paramsExtrato) as any;

@@ -46,7 +46,7 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
       empresaId
     } = req.body;
 
-    const targetEmpresaId = isSuperadmin && empresaId ? empresaId : activeEmpresaId;
+    const targetEmpresaId = empresaId || (req.headers['x-empresa-ativa-id'] as string) || activeEmpresaId;
 
     let tenantCnpjClean = '';
     let empresaNome = 'EMPRESA';
@@ -76,6 +76,7 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
 
     // ── BUSCAR DOCUMENTOS NO BANCO ──
     let docs: any[] = [];
+    let supabaseSucceeded = false;
 
     // Tentar Supabase primeiro se configurado
     if (isSupabaseConfigured()) {
@@ -83,8 +84,8 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
       if (supabase) {
         try {
           let supaQuery = supabase.from('dfe_documentos').select('*');
-          if (!isSuperadmin && tenantCnpjClean) {
-            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId || 'null'}`);
+          if (targetEmpresaId && tenantCnpjClean) {
+            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%,empresa_id.eq.${targetEmpresaId}`);
           } else if (targetEmpresaId) {
             supaQuery = supaQuery.eq('empresa_id', targetEmpresaId);
           }
@@ -96,8 +97,9 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
           }
 
           const { data, error } = await supaQuery.order('data_emissao', { ascending: false }).limit(50000);
-          if (!error && data && data.length > 0) {
+          if (!error && data) {
             docs = data;
+            supabaseSucceeded = true;
           }
         } catch (e: any) {
           console.warn('⚠️ Supabase export query exception:', e?.message);
@@ -105,19 +107,14 @@ router.post('/fiscal-zip', requireAuth, async (req: AuthenticatedRequest, res: R
       }
     }
 
-    // Fallback SQLite
-    if (docs.length === 0) {
+    // Fallback SQLite apenas se Supabase não estava disponível ou falhou
+    if (!supabaseSucceeded) {
       let query = 'SELECT * FROM dfe_documentos WHERE 1=1';
       const params: any[] = [];
 
-      if (!isSuperadmin) {
-        if (tenantCnpjClean) {
-          query += ' AND (empresa_id = ? OR cliente_cnpj LIKE ? OR fornecedor_cnpj LIKE ?)';
-          params.push(targetEmpresaId || '', `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
-        } else if (targetEmpresaId) {
-          query += ' AND empresa_id = ?';
-          params.push(targetEmpresaId);
-        }
+      if (targetEmpresaId && tenantCnpjClean) {
+        query += ' AND (empresa_id = ? OR cliente_cnpj LIKE ? OR fornecedor_cnpj LIKE ?)';
+        params.push(targetEmpresaId, `%${tenantCnpjClean}%`, `%${tenantCnpjClean}%`);
       } else if (targetEmpresaId) {
         query += ' AND empresa_id = ?';
         params.push(targetEmpresaId);

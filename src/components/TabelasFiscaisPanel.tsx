@@ -903,17 +903,11 @@ export const TabelasFiscaisPanel: React.FC = () => {
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                 Governança & Parâmetros Fiscais
               </span>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Regra Sem Fallback Ativa
-              </span>
             </div>
             <h2 className="text-base font-bold text-white mt-1.5 flex items-center gap-2">
               <Scale className="w-5 h-5 text-indigo-400" />
               Matriz Parametrizada de Alíquotas & Governança Fiscal
             </h2>
-            <p className="text-xs text-slate-400 mt-1 max-w-4xl">
-              Central única de parametrização fiscal do sistema. As alíquotas oficiais e parâmetros operacionais estão segregados em três categorias transparentes: <strong>Categoria A</strong> (Tabelas Oficiais da Lei/RFB), <strong>Categoria B</strong> (Parâmetros Operacionais de Cálculo) e <strong>Categoria C</strong> (Informativas, Rótulos e Colunas Visuais).
-            </p>
           </div>
 
           <button
@@ -1079,18 +1073,6 @@ export const TabelasFiscaisPanel: React.FC = () => {
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Cat. C</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('regras')}
-          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'regras'
-              ? 'bg-teal-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Regras Elegibilidade ({regras.length})</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono">Cat. B</span>
-        </button>
 
         <button
           onClick={() => setActiveTab('inferencia')}
@@ -1588,18 +1570,13 @@ export const TabelasFiscaisPanel: React.FC = () => {
       {activeTab === 'cclasstrib' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
           {/* Header Informativo Categoria C */}
-          <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-800/50 flex items-start gap-3">
-            <Table className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
-            <div className="text-xs space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-purple-300 text-sm">Classificação Tributária cClassTrib (6 Dígitos)</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                  Categoria C — Informativa & Referência
-                </span>
-              </div>
-              <p className="text-slate-300">
-                Esta tabela padroniza a interpretação da tag <code>&lt;cClassTrib&gt;</code> exigida pela Reforma Tributária (LC 214/25) para orientação em relatórios analíticos, DANFE e painéis fiscais. A alíquota informada serve como <strong>referência cadastral</strong> e não substitui os cálculos oficiais realizados pelos motores da Reforma.
-              </p>
+          <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-800/50 flex items-center gap-3">
+            <Table className="w-5 h-5 text-purple-400 shrink-0" />
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-purple-300 text-sm">Classificação Tributária cClassTrib (6 Dígitos)</span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                Categoria C — Informativa & Referência
+              </span>
             </div>
           </div>
 
@@ -1887,7 +1864,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 Tabelas Oficiais do Simples Nacional (LC nº 123/2006 & LC nº 214/2025)
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Alíquotas nominais, parcelas a deduzir e repartição dos tributos (IRPJ, CSLL, PIS, COFINS, CPP, ICMS, ISS e IPI). Parâmetros vivos que alimentam o Simulador de Regimes sem fallbacks ocultos.
+                Alíquotas nominais, parcelas a deduzir e repartição dos tributos (IRPJ, CSLL, PIS, COFINS, CPP, ICMS, ISS e IPI).
               </p>
             </div>
 

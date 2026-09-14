@@ -326,14 +326,31 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
     try {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        // Primeiro, obtém a contagem exata da base
+        // Primeiro, obtém a contagem exata da base para esta empresa
         let baseCountQuery = supabase.from('dfe_documentos').select('*', { count: 'exact', head: true });
-        if (filters.empresaId && !filters.isSuperadmin) {
+        if (filters.empresaId) {
           baseCountQuery = baseCountQuery.eq('empresa_id', filters.empresaId);
+        } else if (filters.tenantCnpj) {
+          const cnpjRaiz = filters.tenantCnpj.length >= 8 ? filters.tenantCnpj.slice(0, 8) : filters.tenantCnpj;
+          baseCountQuery = baseCountQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
         }
         const { count: totalDocsSupabase, error: countErr } = await baseCountQuery;
 
-        if (!countErr && totalDocsSupabase && totalDocsSupabase > 0) {
+        if (!countErr) {
+          if (!totalDocsSupabase || totalDocsSupabase === 0) {
+            // Empresa ativa não possui documentos ainda cadastrados no Supabase
+            const totalGeral = emptyTotals();
+            const totalFiltrado = emptyTotals();
+            const result: KpiAggregateResult = {
+              totalGeral,
+              totalFiltrado,
+              source: 'supabase',
+              executionTimeMs: Date.now() - startTime,
+            };
+            hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado }, 0);
+            return result;
+          }
+
           const CHUNK_SIZE = 1000;
           const numChunks = Math.ceil(totalDocsSupabase / CHUNK_SIZE);
           const chunkPromises: Promise<any>[] = [];
@@ -352,8 +369,11 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
               .from('dfe_documentos')
               .select(selectFields);
 
-            if (filters.empresaId && !filters.isSuperadmin) {
+            if (filters.empresaId) {
               chunkQuery = chunkQuery.eq('empresa_id', filters.empresaId);
+            } else if (filters.tenantCnpj) {
+              const cnpjRaiz = filters.tenantCnpj.length >= 8 ? filters.tenantCnpj.slice(0, 8) : filters.tenantCnpj;
+              chunkQuery = chunkQuery.or(`cliente_cnpj.ilike.%${cnpjRaiz}%,fornecedor_cnpj.ilike.%${cnpjRaiz}%`);
             }
 
             chunkQuery = chunkQuery.range(from, to);
@@ -438,9 +458,14 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
       FROM dfe_documentos
     `;
     const paramsSql: any[] = [];
-    if (filters.empresaId && !filters.isSuperadmin) {
+    if (filters.empresaId) {
       sql += ' WHERE empresa_id = ?';
       paramsSql.push(filters.empresaId);
+    } else if (filters.tenantCnpj) {
+      sql += ' WHERE (cliente_cnpj LIKE ? OR fornecedor_cnpj LIKE ?)';
+      paramsSql.push(`%${filters.tenantCnpj}%`, `%${filters.tenantCnpj}%`);
+    } else if (!filters.isSuperadmin) {
+      sql += ' WHERE 1=0';
     }
 
     const rows = db.prepare(sql).all(...paramsSql) as any[];

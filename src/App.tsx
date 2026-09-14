@@ -7,11 +7,9 @@ import { DetalhesModal } from './components/DetalhesModal';
 import { StatusBar } from './components/StatusBar';
 import { DfeManagerPanel } from './components/DfeManagerPanel';
 import { EventosDfePanel } from './components/EventosDfePanel';
-import { AuditoriaFiscalPanel } from './components/AuditoriaFiscalPanel';
 import { RelatoriosXmlPanel } from './components/RelatoriosXmlPanel';
 import { AcessoCorporativoModal } from './components/AcessoCorporativoModal';
 import { CarteiraCnpjsPanel, INITIAL_TENANTS } from './components/CarteiraCnpjsPanel';
-import { ObservabilidadeDlqPanel } from './components/ObservabilidadeDlqPanel';
 import { TabelasFiscaisPanel } from './components/TabelasFiscaisPanel';
 import { CentralKpisPanel } from './components/CentralKpisPanel';
 import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
@@ -39,7 +37,12 @@ export default function App() {
   // Initialize activeMode with persistent localStorage state or fallback to central_kpis
   const [activeMode, setActiveMode] = useState<QueryMode>(() => {
     const saved = localStorage.getItem('@RadarFiscal:activeMode') as QueryMode;
-    return saved || 'central_kpis';
+    const validModes: QueryMode[] = [
+      'central_kpis', 'lote', 'avulsa', 'detalhada', 'dfe_xml', 'eventos_dfe',
+      'relatorios_xml', 'acesso_corporativo', 'carteira_cnpjs', 'tabelas_fiscais',
+      'conectores_municipais', 'apuracao_assistida', 'simulador_regimes'
+    ];
+    return (saved && validModes.includes(saved)) ? saved : 'central_kpis';
   });
 
   // Persist activeMode on navigation (sem recarregar documentos massivos desnecessariamente)
@@ -191,8 +194,12 @@ export default function App() {
 
   // Carregamento paginado/otimizado de documentos (limite padrão seguro: 1000)
   const loadDocumentos = useCallback(async () => {
-    if (!empresaAtiva) return;
-    const res = await get<{ success: boolean; data: any[]; total?: number }>('/upload/documentos?limit=1000');
+    if (!empresaAtiva?.id) {
+      setDfeList([]);
+      return;
+    }
+    const empId = empresaAtiva.id;
+    const res = await get<{ success: boolean; data: any[]; total?: number }>(`/upload/documentos?limit=1000&empresaId=${encodeURIComponent(empId)}`);
     if (res.ok && res.data?.data) {
       const mappedList: DfeXmlItem[] = res.data.data.map(doc => {
         const docTotal = Number(doc.valor_total) || 0;
@@ -201,7 +208,11 @@ export default function App() {
         const numSerieParts = (doc.numero_serie || '').split(' / ');
         
         const rawTipo = (doc.tipo_doc || '').toString();
-        const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS') ? 'NFSe' : (rawTipo === 'CTe' || rawTipo === 'CT-e' ? 'CTe' : (rawTipo === 'NFe' || rawTipo === 'NF-e' ? 'NFe' : rawTipo || 'NFe'));
+        const tipoCanonico: any = rawTipo.toUpperCase().includes('NFS')
+          ? 'NFSe'
+          : (rawTipo.toUpperCase().includes('NFC') || rawTipo === '65')
+          ? 'NFCe'
+          : (rawTipo === 'CTe' || rawTipo === 'CT-e' || rawTipo === '57' || rawTipo === '67' ? 'CTe' : 'NFe');
 
         return {
           id: doc.id,
@@ -225,6 +236,10 @@ export default function App() {
           valorCbs: cbsVal,
           aliquotaIbs: docTotal > 0 && ibsVal > 0 ? Number(((ibsVal / docTotal) * 100).toFixed(2)) : 0,
           valorIbs: ibsVal,
+          aliquotaIbsUf: 0.05,
+          valorIbsUf: ibsVal * 0.5,
+          aliquotaIbsMun: 0.05,
+          valorIbsMun: ibsVal * 0.5,
           valorImpostoSeletivo: Number(doc.valor_is) || 0,
           valorIrrf: Number(doc.valor_irrf) || 0,
           valorInssRetido: Number(doc.valor_inss) || 0,
@@ -243,11 +258,15 @@ export default function App() {
         };
       });
       setDfeList(mappedList);
+    } else {
+      setDfeList([]);
     }
-  }, [empresaAtiva, get]);
+  }, [empresaAtiva?.id, get]);
 
   // Efeito único de sincronização quando a empresa ativa mudar
   useEffect(() => {
+    // Limpar documentos e estado anterior imediatamente para isolamento rigoroso de tenants
+    setDfeList([]);
     if (empresaAtiva?.cnpjCompleto) {
       setSelectedTenantCnpj(empresaAtiva.cnpjCompleto);
     } else {
@@ -390,16 +409,6 @@ export default function App() {
                 selectedTenantCnpj={selectedTenantCnpj}
                 empresaAtiva={empresaAtiva}
               />
-            )}
-
-            {/* Mode 7: Auditoria Fiscal & Cruzamento Cadastral */}
-            {activeMode === 'auditoria_fiscal' && (
-              <AuditoriaFiscalPanel dfeList={dfeList} lookupItems={items} />
-            )}
-
-            {/* Mode 11: Observabilidade Técnica, Filas & Dead Letter Queue (DLQ) */}
-            {activeMode === 'observabilidade_dlq' && (
-              <ObservabilidadeDlqPanel />
             )}
 
             {/* Mode 8: Relatórios Múltiplos com Base nos XMLs de Entradas */}

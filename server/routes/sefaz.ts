@@ -24,6 +24,7 @@ import {
   EventoSefazRequest,
 } from '../services/sefazService';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
+import { SEFAZ } from '../config';
 
 const router = Router();
 
@@ -277,8 +278,8 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
     }
 
     const cleanChave = chaveAcesso.replace(/\D/g, '');
-    if (cleanChave.length !== 44) {
-      res.status(400).json({ error: 'Chave de acesso deve conter 44 dígitos numéricos.' });
+    if (cleanChave.length !== 44 && cleanChave.length !== 50) {
+      res.status(400).json({ error: 'Chave de acesso deve conter 44 dígitos (NF-e/CT-e) ou 50 dígitos (NFS-e Nacional).' });
       return;
     }
 
@@ -481,8 +482,8 @@ router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) =
   const db = getDatabase();
   const { limit, offset, chaveAcesso, status, origem } = req.query;
 
-  const empresaId = req.user!.empresaAtivaId;
-  const isSuperadmin = req.user!.perfil === 'admin_master';
+  const empresaId = (req.headers['x-empresa-ativa-id'] as string) || (req.query.empresaId as string) || req.user?.empresaAtivaId;
+  const isSuperadmin = req.user?.perfil === 'admin_master';
 
   let query = `
     SELECT et.*, u.nome as usuario_nome, u.email as usuario_email, e.razao_social as empresa_nome
@@ -493,10 +494,12 @@ router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) =
   `;
   const params: any[] = [];
 
-  // Se não for superadmin, isola estritamente por empresa_id da sessão
-  if (!isSuperadmin || empresaId) {
+  // Se houver empresa ativa especificada, isola estritamente por ela
+  if (empresaId) {
     query += ' AND et.empresa_id = ?';
     params.push(empresaId);
+  } else if (!isSuperadmin) {
+    query += ' AND 1=0';
   }
 
   if (chaveAcesso) {
@@ -546,15 +549,43 @@ router.post('/consulta-cadastro', async (req: AuthenticatedRequest, res: Respons
 });
 
 // =========================================================
-// GET /api/sefaz/ping — Teste de Conectividade
+// GET /api/sefaz/status | /ping | /status-servico — Teste Real de Conectividade SEFAZ (Sem fallback)
 // =========================================================
-router.get('/ping', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get(['/status', '/ping', '/status-servico'], requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const tpAmb = (req.query.tpAmb as string) === '1' ? '1' : '2';
+    const tpAmb = (req.query.tpAmb as string) === '1' ? '1' : (SEFAZ.TP_AMB as '1' | '2');
     const status = await testarConexaoSefaz(tpAmb);
-    res.json(status);
+
+    if (!status.online) {
+      res.status(503).json({
+        success: false,
+        online: false,
+        status: 'indisponivel',
+        error: status.error || 'WebService SEFAZ indisponível ou inacessível no momento.',
+        message: status.error || 'WebService SEFAZ indisponível ou inacessível no momento.',
+        latencyMs: status.latencyMs,
+        endpoint: status.endpoint,
+        ambiente: tpAmb === '1' ? 'Produção' : 'Homologação',
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      online: true,
+      status: 'operacional',
+      message: 'Serviço em Operação — Comunicação com SEFAZ Autorizadora 100% Homologada.',
+      latencyMs: status.latencyMs,
+      endpoint: status.endpoint,
+      ambiente: tpAmb === '1' ? 'Produção' : 'Homologação',
+    });
   } catch (err: any) {
-    res.status(500).json({ online: false, error: err.message });
+    res.status(500).json({
+      success: false,
+      online: false,
+      error: `Erro ao testar comunicação SEFAZ: ${err.message}`,
+      message: `Erro ao testar comunicação SEFAZ: ${err.message}`,
+    });
   }
 });
 

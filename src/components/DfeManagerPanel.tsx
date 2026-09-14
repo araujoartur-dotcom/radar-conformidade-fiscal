@@ -37,7 +37,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [isConsultaNsuOpen, setIsConsultaNsuOpen] = useState<boolean>(false);
   const [isTurboModalOpen, setIsTurboModalOpen] = useState<boolean>(false);
   const [isNfseModalOpen, setIsNfseModalOpen] = useState<boolean>(false);
-  const [tipoDocFiltro, setTipoDocFiltro] = useState<'TODOS' | 'NFE' | 'CTE' | 'NFSE'>('TODOS');
+  const [tipoDocFiltro, setTipoDocFiltro] = useState<'TODOS' | 'NFE' | 'NFCE' | 'CTE' | 'NFSE'>('TODOS');
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [listSearch, setListSearch] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(50);
@@ -45,7 +45,8 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [copiedChave, setCopiedChave] = useState<boolean>(false);
 
   const filteredDocs = dfeList.filter(item => {
-    if (tipoDocFiltro === 'NFE' && item.tipo !== 'NFe' && item.tipo !== 'NFCe') return false;
+    if (tipoDocFiltro === 'NFE' && item.tipo !== 'NFe') return false;
+    if (tipoDocFiltro === 'NFCE' && item.tipo !== 'NFCe') return false;
     if (tipoDocFiltro === 'CTE' && item.tipo !== 'CTe') return false;
     if (tipoDocFiltro === 'NFSE' && item.tipo !== 'NFSe' && (item.tipo as string) !== 'NFS-e') return false;
     if (!listSearch) return true;
@@ -72,11 +73,12 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
 
   const activeFiltroCount = 
     tipoDocFiltro === 'NFE' ? (currentKpis?.nfeCount ?? 0) :
+    tipoDocFiltro === 'NFCE' ? (currentKpis?.nfceCount ?? 0) :
     tipoDocFiltro === 'CTE' ? (currentKpis?.cteCount ?? 0) :
     tipoDocFiltro === 'NFSE' ? (currentKpis?.nfseCount ?? 0) :
     (currentKpis?.totalDocs ?? dfeList.length);
 
-  const handleSelectTipoFiltro = (tipo: 'TODOS' | 'NFE' | 'CTE' | 'NFSE') => {
+  const handleSelectTipoFiltro = (tipo: 'TODOS' | 'NFE' | 'NFCE' | 'CTE' | 'NFSE') => {
     setTipoDocFiltro(tipo);
     setVisibleLimit(50);
     if (tipo === 'CTE') {
@@ -89,8 +91,13 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
       if (nfseLoaded < 50 && (currentKpis?.nfseCount ?? 0) > 0) {
         loadDocumentos('NFSe');
       }
+    } else if (tipo === 'NFCE') {
+      const nfceLoaded = dfeList.filter(d => d.tipo === 'NFCe').length;
+      if (nfceLoaded < 50 && (currentKpis?.nfceCount ?? 0) > 0) {
+        loadDocumentos('NFCe');
+      }
     } else if (tipo === 'NFE') {
-      const nfeLoaded = dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length;
+      const nfeLoaded = dfeList.filter(d => d.tipo === 'NFe').length;
       if (nfeLoaded < 50 && (currentKpis?.nfeCount ?? 0) > 0) {
         loadDocumentos('NFe');
       }
@@ -195,7 +202,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-900/60 border border-blue-700/60 text-blue-300 text-xs font-semibold">
             <Calculator className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Captura de XML (NF-e, NFS-e e CT-e)</span>
+            <span>Captura de XML (NF-e, NFC-e, NFS-e e CT-e)</span>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -284,7 +291,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
           </div>
 
           {/* Document Type Filter Pills */}
-          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px]">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 p-1 bg-slate-950 border border-slate-800 rounded-xl text-[11px]">
             <button
               onClick={() => handleSelectTipoFiltro('TODOS')}
               className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
@@ -304,7 +311,18 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              NF-e ({(currentKpis?.nfeCount ?? dfeList.filter(d => d.tipo === 'NFe' || d.tipo === 'NFCe').length).toLocaleString('pt-BR')})
+              NF-e ({(currentKpis?.nfeCount ?? dfeList.filter(d => d.tipo === 'NFe').length).toLocaleString('pt-BR')})
+            </button>
+
+            <button
+              onClick={() => handleSelectTipoFiltro('NFCE')}
+              className={`py-1 px-1.5 rounded-lg font-bold transition-all text-center cursor-pointer truncate ${
+                tipoDocFiltro === 'NFCE'
+                  ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/60 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              NFC-e ({(currentKpis?.nfceCount ?? dfeList.filter(d => d.tipo === 'NFCe').length).toLocaleString('pt-BR')})
             </button>
 
             <button

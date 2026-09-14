@@ -68,7 +68,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
   const [modalMode, setModalMode] = useState<'nsu' | 'chave' | 'upload'>('chave');
   const [subModeChave, setSubModeChave] = useState<'individual' | 'massivo'>('massivo');
   const [fluxo, setFluxo] = useState<'entrada' | 'saida'>(defaultFluxo);
-  const [modeloDfe, setModeloDfe] = useState<'NFe' | 'CTe'>('NFe');
+  const [modeloDfe, setModeloDfe] = useState<'NFe' | 'NFCe' | 'CTe'>('NFe');
   
   // Tab 1: NSU State
   const [ultNSU, setUltNSU] = useState<string>('000000000000000');
@@ -678,27 +678,40 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
               <button
                 type="button"
                 onClick={() => { setModeloDfe('NFe'); setResults(null); }}
-                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   modeloDfe === 'NFe'
                     ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <FileCode className="w-3.5 h-3.5" />
-                <span>NF-e (Mercadorias - Mod. 55)</span>
+                <span>NF-e (Mod. 55)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setModeloDfe('NFCe'); setResults(null); }}
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                  modeloDfe === 'NFCe'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>NFC-e (Mod. 65)</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => { setModeloDfe('CTe'); setResults(null); }}
-                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
                   modeloDfe === 'CTe'
                     ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <FileArchive className="w-3.5 h-3.5" />
-                <span>CT-e (Transporte / Fretes - Mod. 57)</span>
+                <span>CT-e (Mod. 57)</span>
               </button>
             </div>
           </div>
@@ -1134,6 +1147,16 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
           {modalMode === 'nsu' && (
             <div className="p-5 rounded-2xl bg-slate-900/60 border border-blue-900/40 space-y-4">
               
+              {modeloDfe === 'NFCe' && (
+                <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-200 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="block text-amber-300 font-bold mb-0.5">Distribuição SEFAZ — NFC-e (Mod. 65 - Varejo)</strong>
+                    O webservice nacional da SEFAZ não disponibiliza distribuição por NSU para NFC-e (emitida no balcão a consumidor final). Para importar seus cupons fiscais, utilize a busca <strong>Por Chave de Acesso</strong> ou carregue as pastas de XMLs/ZIP pelo <strong>Motor Turbo V12</strong>.
+                  </div>
+                </div>
+              )}
+
               {/* Sub-mode Switcher for NSU */}
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { XmlItemDetailReport, ReportFilterState, ReportTabType, DfeXmlItem } from '../types';
 import { exportReportToExcel } from '../utils/reportsData';
 import { useAuth } from '../contexts/AuthContext';
 import { useKpis } from '../contexts/KpiContext';
 import { getApiBaseUrl } from '../utils/apiConfig';
+import { FiscalVerticalBarChart } from './FiscalVerticalBarChart';
 import { RelatorioRazaoEntradas } from './relatorios/RelatorioRazaoEntradas';
 import { RelatorioMatrizElegibilidade } from './relatorios/RelatorioMatrizElegibilidade';
 import { RelatorioCalculoCreditoEsperado } from './relatorios/RelatorioCalculoCreditoEsperado';
@@ -19,7 +20,8 @@ import {
   FileBarChart, Filter, Download, RefreshCw, Search, ShieldAlert,
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
   RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, Receipt,
-  Sparkles, Clock, ChevronDown, ChevronUp, ExternalLink, Check, Copy
+  Sparkles, Clock, ChevronDown, ChevronUp, ExternalLink, Check, Copy,
+  Calendar, Key, Hash
 } from 'lucide-react';
 
 interface RelatoriosXmlPanelProps {
@@ -32,6 +34,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [activeTab, setActiveTab] = useState<ReportTabType>('consolidado_mercadorias');
   const [items, setItems] = useState<XmlItemDetailReport[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
+  const [hasSearched, setHasSearched] = useState<boolean>(false);
+  const [volumeWarning, setVolumeWarning] = useState<{ show: boolean; count: number } | null>(null);
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
   const [dbKpis, setDbKpis] = useState<any>(null);
@@ -61,16 +65,140 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     indicadorOnerosidade: 'TODOS',
     resultadoElegibilidade: 'TODOS',
     apenasExcecoes: false,
-    searchTerm: ''
+    searchTerm: '',
+    visaoAnalitica: '360',
+    statusRad: 'TODOS'
   });
 
-  // Auto-busca inicial e quando empresa ativa mudar
-  useEffect(() => {
-    handleSearch();
-  }, [empresaAtiva?.id, empresaAtiva?.cnpj]);
+  // Estados para o Localizador Rápido e Preview de DF-e & NFS-e Nacional
+  const [selectedPreviewDoc, setSelectedPreviewDoc] = useState<DfeXmlItem | null>(null);
+  const [isQuickSearchOpen, setIsQuickSearchOpen] = useState<boolean>(false);
+  const [copiedChavePreview, setCopiedChavePreview] = useState<boolean>(false);
 
-  // Removemos o filtro local, agora será feito no backend.
-  const filteredItems = items; // items já vem filtrado da API
+  const formatDocDate = (dt?: string) => {
+    if (!dt) return '—';
+    try {
+      const d = new Date(dt);
+      if (isNaN(d.getTime())) return dt;
+      return d.toLocaleDateString('pt-BR');
+    } catch {
+      return dt;
+    }
+  };
+
+  const formatCurrency = (val?: number) => {
+    const num = Number(val) || 0;
+    return num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  // Lista de documentos filtrados para o autocomplete inteligente
+  const matchingDocs = useMemo(() => {
+    if (!filters.searchTerm || filters.searchTerm.trim().length === 0) {
+      return dfeList.slice(0, 12);
+    }
+    const q = filters.searchTerm.toLowerCase().trim();
+    const qDigits = q.replace(/\D/g, '');
+    return dfeList.filter(d => {
+      const ch = d.chaveAcesso?.toLowerCase() || '';
+      const num = d.numero?.toLowerCase() || '';
+      const emit = d.emitenteNome?.toLowerCase() || '';
+      const cnpj = d.emitenteCnpj?.replace(/\D/g, '') || '';
+
+      return ch.includes(q) || 
+             num.includes(q) || 
+             emit.includes(q) || 
+             (qDigits.length >= 3 && cnpj.includes(qDigits));
+    }).slice(0, 25);
+  }, [dfeList, filters.searchTerm]);
+
+  // Sincroniza o preview se o usuário digitar/colar a chave exata (44 ou 50 dígitos)
+  useEffect(() => {
+    const term = filters.searchTerm?.trim();
+    if (term && (term.length === 44 || term.length === 50)) {
+      const found = dfeList.find(d => d.chaveAcesso?.trim() === term);
+      if (found) {
+        setSelectedPreviewDoc(found);
+      }
+    }
+  }, [filters.searchTerm, dfeList]);
+
+  const handleSelectDocForPreview = (doc: DfeXmlItem) => {
+    setSelectedPreviewDoc(doc);
+    setFilters(prev => ({ ...prev, searchTerm: doc.chaveAcesso }));
+    setIsQuickSearchOpen(false);
+  };
+
+  const handleApplyDocFilter = (doc: DfeXmlItem) => {
+    const updated = { ...filters, searchTerm: doc.chaveAcesso };
+    setFilters(updated);
+    setIsQuickSearchOpen(false);
+    handleSearch(undefined, updated);
+  };
+
+  const handleClearPreviewDoc = () => {
+    setSelectedPreviewDoc(null);
+    setFilters(prev => ({ ...prev, searchTerm: '' }));
+  };
+
+  // Resetar busca quando empresa ativa mudar (sem disparar busca automática para manter tela limpa)
+  useEffect(() => {
+    setHasSearched(false);
+    setItems([]);
+    setDbKpis(null);
+    setTotalDbCount(0);
+    setVolumeWarning(null);
+    setSelectedPreviewDoc(null);
+    setIsQuickSearchOpen(false);
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto]);
+
+  // Filtro de itens com suporte a Status RAD e conciliação da Apuração Assistida
+  const filteredItems = useMemo(() => {
+    if (!filters.statusRad || filters.statusRad === 'TODOS') return items;
+    return items.filter(it => {
+      if (filters.statusRad === 'APTO') return it.impactoDecisorioRad === 'APTO_PARA_RAD';
+      if (filters.statusRad === 'AGUARDAR') return it.impactoDecisorioRad === 'AGUARDAR_QUITACAO';
+      if (filters.statusRad === 'NAO_CONCILIADO') return !it.impactoDecisorioRad || it.impactoDecisorioRad === 'NAO_CONCILIADO' || it.impactoDecisorioRad === 'INAPTO_PARA_RAD';
+      return true;
+    });
+  }, [items, filters.statusRad]);
+
+  // Cálculo consolidado das grandezas fiscais 100% fidedigno aos itens da busca
+  const chartMetrics = useMemo(() => {
+    const totalOperacoes = filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || it.valorBrutoItem || 0), 0);
+    const baseCalculo = filteredItems.reduce((acc, it) => acc + (it.baseIbs || it.baseCbs || 0), 0);
+    const icms = filteredItems.reduce((acc, it) => acc + (it.valorIcms || 0), 0);
+    const iss = filteredItems.reduce((acc, it) => acc + (it.valorIssRetido || (it as any).valorIss || 0), 0);
+    const ipi = filteredItems.reduce((acc, it) => acc + (it.valorIpi || 0), 0);
+    const pis = filteredItems.reduce((acc, it) => acc + (it.valorPis || 0), 0);
+    const cofins = filteredItems.reduce((acc, it) => acc + (it.valorCofins || 0), 0);
+    const ibs = filteredItems.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
+    const cbs = filteredItems.reduce((acc, it) => acc + (it.valorCbs || 0), 0);
+    const isVal = filteredItems.reduce((acc, it) => acc + (it.valorIs || 0), 0);
+    const creditoIbsCbs = filteredItems.reduce((acc, it) => acc + (it.creditoEsperadoIbs || it.valorIbs || 0) + (it.creditoEsperadoCbs || it.valorCbs || 0), 0);
+    const distinctDocs = new Set(filteredItems.map(it => it.chaveAcesso).filter(Boolean)).size;
+
+    return {
+      totalOperacoes,
+      baseCalculo,
+      tributosAtuais: {
+        total: icms + iss + ipi + pis + cofins,
+        icms,
+        iss,
+        ipi,
+        pis,
+        cofins
+      },
+      tributosReforma: {
+        total: ibs + cbs + isVal,
+        ibs,
+        cbs,
+        is: isVal
+      },
+      creditoIbsCbs,
+      totalDocs: distinctDocs || filteredItems.length,
+      totalItens: filteredItems.length
+    };
+  }, [filteredItems]);
 
   const handleClearFilters = () => {
     const cleared: ReportFilterState = {
@@ -86,10 +214,16 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       indicadorOnerosidade: 'TODOS',
       resultadoElegibilidade: 'TODOS',
       apenasExcecoes: false,
-      searchTerm: ''
+      searchTerm: '',
+      visaoAnalitica: '360',
+      statusRad: 'TODOS'
     };
     setFilters(cleared);
-    handleSearch(activeTab, cleared);
+    setSelectedPreviewDoc(null);
+    setIsQuickSearchOpen(false);
+    setHasSearched(false);
+    setItems([]);
+    setVolumeWarning(null);
   };
 
   const handleSearch = async (tabOverride?: ReportTabType, customFilters?: ReportFilterState) => {
@@ -136,6 +270,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         fetchedItems = (data.data || []) as XmlItemDetailReport[];
         if (typeof data.total === 'number' && data.total > 0) {
           setTotalDbCount(data.total);
+          // Alerta preventivo se o operador buscou sem recorte de datas e a base possui alta volumetria (> 5.000 notas)
+          if (!activeF.dataInicio && !activeF.dataFim && data.total > 5000) {
+            setVolumeWarning({ show: true, count: data.total });
+          } else {
+            setVolumeWarning(null);
+          }
         }
         if (data.totaisBanco) {
           setDbKpis((prev: any) => ({
@@ -325,7 +465,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     Boolean(filters.cClassTrib),
     filters.indicadorOnerosidade !== 'TODOS',
     filters.resultadoElegibilidade !== 'TODOS',
-    filters.apenasExcecoes
+    filters.apenasExcecoes,
+    filters.statusRad && filters.statusRad !== 'TODOS',
+    filters.visaoAnalitica && filters.visaoAnalitica !== '360'
   ].filter(Boolean).length;
 
   const reportTabs = [
@@ -351,25 +493,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-200 min-w-0 flex-wrap">
             <Filter className="w-4 h-4 text-cyan-400 shrink-0" />
             <span>Filtros Seletores de Extração Parametrizada</span>
-            {(() => {
-              const totalNoBanco = Number(
-                dbKpis?.totalGeral?.totalDocs ||
-                activeTotalGeral?.totalDocs ||
-                globalTotalGeral?.totalDocs ||
-                totalDbCount ||
-                21250
-              );
-              const itensExibidos = filteredItems.length;
-              return (
-                <span
-                  className="text-[11px] font-mono font-semibold text-rose-300 bg-rose-950/80 px-2.5 py-0.5 rounded-full border border-rose-700/60 shadow-sm flex items-center gap-1.5"
-                  title={`${itensExibidos.toLocaleString('pt-BR')} itens carregados na listagem analítica, de um total de ${totalNoBanco.toLocaleString('pt-BR')} documentos arquivados no banco de dados.`}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
-                  {itensExibidos.toLocaleString('pt-BR')} itens exibidos (de {totalNoBanco.toLocaleString('pt-BR')} no banco)
-                </span>
-              );
-            })()}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -427,9 +550,22 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         </div>
 
         {/* Barra de resumo quando os filtros estiverem recolhidos */}
-        {!isFiltersExpanded && activeFiltersCount > 0 && (
+        {!isFiltersExpanded && (
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80 text-[11px]">
             <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Filtros ativos:</span>
+            <span className="bg-cyan-950/80 text-cyan-300 px-2.5 py-0.5 rounded-lg border border-cyan-700/60 font-bold">
+              Relatório: {reportTabs.find(t => t.id === activeTab)?.label || activeTab}
+            </span>
+            {filters.visaoAnalitica && filters.visaoAnalitica !== '360' && (
+              <span className="bg-purple-950/80 text-purple-300 px-2 py-0.5 rounded-lg border border-purple-800/60 font-medium">
+                Visão: {filters.visaoAnalitica === 'regime_atual' ? 'Regime Atual' : filters.visaoAnalitica === 'reforma' ? 'Reforma' : filters.visaoAnalitica === 'governanca' ? 'Governança' : 'Apuração RAD'}
+              </span>
+            )}
+            {filters.statusRad && filters.statusRad !== 'TODOS' && (
+              <span className="bg-emerald-950/80 text-emerald-300 px-2 py-0.5 rounded-lg border border-emerald-800/60 font-medium">
+                RAD: {filters.statusRad}
+              </span>
+            )}
             {filters.dataInicio && (
               <span className="bg-slate-800 text-cyan-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono">
                 De: {filters.dataInicio.split('-').reverse().join('/')}
@@ -465,37 +601,401 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 Apenas Exceções
               </span>
             )}
-            <button
-              onClick={handleClearFilters}
-              className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
-            >
-              Limpar todos
-            </button>
+            {activeFiltersCount > 0 && (
+              <button
+                onClick={handleClearFilters}
+                className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
+              >
+                Limpar todos
+              </button>
+            )}
           </div>
         )}
 
         {isFiltersExpanded && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 text-xs w-full min-w-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5 text-xs w-full min-w-0">
             
-            {/* Filter: Search Keyword */}
+            {/* Linha 1: Tipo de Relatório */}
             <div className="sm:col-span-2 md:col-span-2 xl:col-span-2 min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5">
-                Busca Textual (Razão Social, Item, Chave, NCM, Pedido):
+              <label className="text-xs uppercase font-bold text-cyan-400 block mb-1.5 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Tipos de Relatórios:</span>
               </label>
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  placeholder="Digite CNPJ, Chave de Acesso, NCM, Razão Social..."
-                  value={filters.searchTerm}
-                  onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                  className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
+              <select
+                value={activeTab}
+                onChange={(e) => {
+                  const newTab = e.target.value as ReportTabType;
+                  setActiveTab(newTab);
+                  if (hasSearched) {
+                    handleSearch(newTab);
+                  }
+                }}
+                className="w-full bg-slate-950 border border-cyan-500/60 rounded-xl px-3.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-cyan-400 shadow-lg shadow-cyan-950/40 cursor-pointer"
+              >
+                {reportTabs.map(tab => (
+                  <option key={tab.id} value={tab.id} className="bg-slate-900 text-white py-1">
+                    {tab.label} {tab.badge ? `[${tab.badge}]` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            {/* Filter: Fornecedor CNPJ */}
+            {/* Linha 1: Visão Analítica de Colunas */}
+            <div className="sm:col-span-2 md:col-span-2 xl:col-span-2 min-w-0">
+              <label className="text-xs uppercase font-bold text-cyan-400 block mb-1.5 flex items-center gap-1.5">
+                <Layers className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>Visão Analítica (Colunas):</span>
+              </label>
+              <select
+                value={filters.visaoAnalitica || '360'}
+                onChange={(e) => setFilters({ ...filters, visaoAnalitica: e.target.value as any })}
+                className="w-full bg-slate-950 border border-cyan-500/60 rounded-xl px-3.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-cyan-400 shadow-lg shadow-cyan-950/40 cursor-pointer"
+              >
+                <option value="360" className="bg-slate-900 text-white py-1">🌐 Visão Completa 360° (Todas as Colunas)</option>
+                <option value="regime_atual" className="bg-slate-900 text-white py-1">🔶 Regime Atual (ICMS / IPI / PIS / COFINS)</option>
+                <option value="reforma" className="bg-slate-900 text-white py-1">🔷 Reforma Tributária (IBS / CBS / Imposto Seletivo)</option>
+                <option value="governanca" className="bg-slate-900 text-white py-1">🟣 Governança, NCM &amp; Elegibilidade</option>
+                <option value="apuracao_rad" className="bg-slate-900 text-white py-1">🟢 Apuração Assistida &amp; RAD (CGIBS/RFB)</option>
+              </select>
+            </div>
+
+            {/* Linha 2: Tipo de Documento (Modelos) */}
+            <div className="sm:col-span-2 md:col-span-2 xl:col-span-2 min-w-0">
+              <label className="text-xs uppercase font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span>Tipo de Documento (Modelos):</span>
+              </label>
+              <select
+                value={filters.tipoDoc}
+                onChange={(e) => setFilters({ ...filters, tipoDoc: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-medium focus:outline-none focus:border-cyan-500"
+              >
+                <option value="TODOS">Todos os Modelos (NF-e 55, CT-e 57/67, NFS-e)</option>
+                <option value="NF-e">Apenas NF-e (Modelo 55 - Mercadorias)</option>
+                <option value="CT-e">Apenas CT-e (Modelos 57 e 67 - Fretes)</option>
+                <option value="NFS-e">Apenas NFS-e (Serviços)</option>
+              </select>
+            </div>
+
+            {/* Linha 2: Status RAD & Conciliação */}
+            <div className="sm:col-span-2 md:col-span-2 xl:col-span-2 min-w-0">
+              <label className="text-xs uppercase font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Status RAD &amp; Conciliação (Apuração Assistida):</span>
+              </label>
+              <select
+                value={filters.statusRad || 'TODOS'}
+                onChange={(e) => setFilters({ ...filters, statusRad: e.target.value as any })}
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white font-medium focus:outline-none focus:border-cyan-500"
+              >
+                <option value="TODOS">Todos os Status RAD</option>
+                <option value="APTO">🟢 Apto — Desnecessário RAD (Quitação Confirmada)</option>
+                <option value="AGUARDAR">🟡 Aguardar Quitação Fornecedor (Risco Retenção)</option>
+                <option value="NAO_CONCILIADO">⚪ Não Conciliado no Ledger / Pendente CGIBS</option>
+              </select>
+            </div>
+
+            {/* Linha 3: Localizador Inteligente de DF-e & NFS-e Nacional com Autocomplete e Preview */}
+            <div className="col-span-1 sm:col-span-2 md:col-span-3 xl:col-span-4 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 mb-1.5">
+                <label className="text-xs uppercase font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Search className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Busca Inteligente por Chave (44/50 posições), Nº de NF ou Fornecedor:</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-purple-300 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800 font-mono">
+                    ✓ NFS-e Nacional (50 posições)
+                  </span>
+                  <span className="text-[10px] text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded border border-cyan-800 font-mono">
+                    ✓ NF-e / CT-e (44 posições)
+                  </span>
+                </div>
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5 z-10" />
+                <input
+                  type="text"
+                  placeholder="Digite chave de 50 dígitos (NFS-e), 44 dígitos (NF-e/CT-e), Nº da NF ou Razão Social do fornecedor..."
+                  value={filters.searchTerm}
+                  onFocus={() => setIsQuickSearchOpen(true)}
+                  onChange={(e) => {
+                    setFilters({ ...filters, searchTerm: e.target.value });
+                    setIsQuickSearchOpen(true);
+                  }}
+                  onKeyDown={(e) => { 
+                    if (e.key === 'Enter') {
+                      setIsQuickSearchOpen(false);
+                      handleSearch(); 
+                    }
+                  }}
+                  className="w-full bg-slate-950 border border-cyan-500/60 rounded-xl pl-9 pr-24 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 shadow-lg shadow-cyan-950/30 font-medium"
+                />
+                
+                <div className="absolute right-2 top-1.5 flex items-center gap-1.5 z-10">
+                  {filters.searchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFilters({ ...filters, searchTerm: '' });
+                        setSelectedPreviewDoc(null);
+                      }}
+                      className="text-slate-400 hover:text-white text-xs px-1.5 py-1 rounded bg-slate-800 hover:bg-slate-700 cursor-pointer"
+                      title="Limpar campo de busca"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickSearchOpen(!isQuickSearchOpen)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold border border-slate-700 transition cursor-pointer"
+                    title={isQuickSearchOpen ? "Ocultar lista rápida" : "Ver lista de documentos"}
+                  >
+                    <span className="font-mono text-[10px]">{dfeList.length} notas</span>
+                    {isQuickSearchOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                </div>
+
+                {/* Dropdown de Autocomplete com os Documentos Encontrados */}
+                {isQuickSearchOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-80 flex flex-col animate-in fade-in duration-150">
+                    <div className="p-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                        <span>Documentos Disponíveis ({matchingDocs.length} exibidos de {dfeList.length})</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsQuickSearchOpen(false)}
+                        className="text-slate-400 hover:text-white text-xs cursor-pointer font-bold"
+                      >
+                        Fechar ✕
+                      </button>
+                    </div>
+
+                    <div className="overflow-y-auto divide-y divide-slate-800/60">
+                      {matchingDocs.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-400">
+                          Nenhum documento encontrado com "{filters.searchTerm}". Pressione <strong>Enter</strong> ou clique em "Buscar" para consultar a base inteira no banco.
+                        </div>
+                      ) : (
+                        matchingDocs.map((doc) => {
+                          const isNfse = doc.tipo === 'NFSe' || (doc.tipo as string) === 'NFS-e' || doc.chaveAcesso?.length === 50;
+                          return (
+                            <button
+                              key={doc.id || doc.chaveAcesso}
+                              type="button"
+                              onClick={() => handleSelectDocForPreview(doc)}
+                              className="w-full text-left p-3 hover:bg-slate-800/80 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
+                            >
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9.5px] font-black font-mono uppercase tracking-wider ${
+                                    isNfse 
+                                      ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' 
+                                      : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                                  }`}>
+                                    {isNfse ? 'NFS-e Nacional (50D)' : `${doc.tipo || 'NF-e'} (44D)`}
+                                  </span>
+                                  <span className="font-bold text-white text-xs group-hover:text-cyan-300 transition-colors">
+                                    Nº {doc.numero || '—'}
+                                  </span>
+                                  {doc.serie && (
+                                    <span className="text-[10px] text-slate-400">
+                                      Série {doc.serie}
+                                    </span>
+                                  )}
+                                  {doc.dataEmissao && (
+                                    <span className="text-[10px] text-slate-400">
+                                      📅 {formatDocDate(doc.dataEmissao)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-slate-300 truncate">
+                                  <strong className="text-slate-200">{doc.emitenteNome}</strong>
+                                  <span className="text-slate-500 text-[11px] font-mono ml-1.5">
+                                    ({doc.emitenteCnpj})
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono truncate">
+                                  Chave: {doc.chaveAcesso}
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-xs font-black text-emerald-400 font-mono">
+                                  {formatCurrency(doc.valorTotal)}
+                                </div>
+                                <span className="text-[10px] text-cyan-400 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-end gap-1 mt-1">
+                                  Ver Prévia →
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CARD DE RESULTADO PRÉVIO DO DOCUMENTO SELECIONADO */}
+              {selectedPreviewDoc && (
+                <div className="mt-3 p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border-2 border-cyan-500/60 shadow-2xl shadow-cyan-950/40 space-y-3 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`px-2.5 py-1 rounded-xl text-xs font-black font-mono uppercase tracking-wider ${
+                        selectedPreviewDoc.tipo === 'NFSe' || (selectedPreviewDoc.tipo as string) === 'NFS-e' || selectedPreviewDoc.chaveAcesso?.length === 50
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40 shadow-sm'
+                          : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                      }`}>
+                        {selectedPreviewDoc.tipo === 'NFSe' || (selectedPreviewDoc.tipo as string) === 'NFS-e' || selectedPreviewDoc.chaveAcesso?.length === 50
+                          ? '🏛️ NFS-e Nacional (50 Posições — CGNFSe / RFB)'
+                          : `📄 ${selectedPreviewDoc.tipo || 'NF-e'} (44 Posições — SEFAZ)`}
+                      </span>
+                      <span className="text-white font-extrabold text-sm">
+                        Nº {selectedPreviewDoc.numero || '—'}
+                      </span>
+                      <span className="text-xs text-slate-300 font-semibold px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700">
+                        Série: {selectedPreviewDoc.serie || '1'}
+                      </span>
+                      <span className="text-xs text-slate-300 font-semibold px-2 py-0.5 rounded-lg bg-slate-800 border border-slate-700 flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-cyan-400" />
+                        Emissão: {formatDocDate(selectedPreviewDoc.dataEmissao)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Valor Total</span>
+                        <span className="text-base font-extrabold text-emerald-400 font-mono">
+                          {formatCurrency(selectedPreviewDoc.valorTotal)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleClearPreviewDoc}
+                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+                        title="Fechar prévia"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Informações de Fornecedor e Destinatário */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-1">
+                        <Building2 className="w-3 h-3 text-cyan-400" />
+                        <span>Fornecedor / Prestador</span>
+                      </div>
+                      <div className="font-bold text-white text-sm truncate">{selectedPreviewDoc.emitenteNome}</div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        CNPJ: <strong className="text-slate-200">{selectedPreviewDoc.emitenteCnpj}</strong>
+                        {selectedPreviewDoc.emitenteUf ? ` | UF: ${selectedPreviewDoc.emitenteUf}` : ''}
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-1">
+                        <MapPin className="w-3 h-3 text-indigo-400" />
+                        <span>Destinatário / Tomador</span>
+                      </div>
+                      <div className="font-bold text-white text-sm truncate">{selectedPreviewDoc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA'}</div>
+                      <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                        CNPJ: <strong className="text-slate-200">{selectedPreviewDoc.destinatarioCnpj || empresaAtiva?.cnpj || '—'}</strong>
+                        {selectedPreviewDoc.destinatarioUf ? ` | UF: ${selectedPreviewDoc.destinatarioUf}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Chave de Acesso Completa com Botão de Copiar */}
+                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Chave de Acesso Completa</span>
+                      </span>
+                      <span className="text-[10px] font-mono font-bold text-cyan-400">
+                        {selectedPreviewDoc.chaveAcesso?.length === 50 
+                          ? '✓ 50 Dígitos (Padrão NFS-e Nacional / CGNFSe)' 
+                          : '✓ 44 Dígitos (Padrão NF-e/CT-e SEFAZ)'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-slate-900 px-3 py-2 rounded-lg border border-slate-800 font-mono text-xs text-amber-300 break-all select-all">
+                        {selectedPreviewDoc.chaveAcesso}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(selectedPreviewDoc.chaveAcesso);
+                          setCopiedChavePreview(true);
+                          setTimeout(() => setCopiedChavePreview(false), 2500);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold shrink-0 transition cursor-pointer"
+                        title="Copiar chave de acesso completa"
+                      >
+                        {copiedChavePreview ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-cyan-400" />}
+                        <span>{copiedChavePreview ? 'Copiada!' : 'Copiar Chave'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tributos da Reforma / Atuais destacados */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+                    <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">CBS (Federal):</span>
+                      <span className="font-bold text-cyan-300 font-mono text-xs">
+                        {formatCurrency(selectedPreviewDoc.valorCbs)}
+                      </span>
+                    </div>
+                    <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">IBS (Est/Mun):</span>
+                      <span className="font-bold text-indigo-300 font-mono text-xs">
+                        {formatCurrency(selectedPreviewDoc.valorIbs)}
+                      </span>
+                    </div>
+                    <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">ICMS / ISS:</span>
+                      <span className="font-bold text-slate-200 font-mono text-xs">
+                        {formatCurrency(selectedPreviewDoc.valorIcms || (selectedPreviewDoc as any).valorIss)}
+                      </span>
+                    </div>
+                    <div className="bg-slate-900/60 p-2 rounded-lg border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">PIS / COFINS:</span>
+                      <span className="font-bold text-slate-200 font-mono text-xs">
+                        {formatCurrency((selectedPreviewDoc.valorPis || 0) + (selectedPreviewDoc.valorCofins || 0))}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Botão de Ação: Filtrar os Itens no Relatório */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800/80">
+                    <button
+                      type="button"
+                      onClick={handleClearPreviewDoc}
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition cursor-pointer"
+                    >
+                      Limpar Prévia
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyDocFilter(selectedPreviewDoc)}
+                      className="flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-900/40 transition cursor-pointer"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Filtrar Itens Deste Documento no Relatório</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Linha 4: CNPJ Emitente */}
             <div className="min-w-0">
               <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 CNPJ Emitente / Fornecedor:
@@ -510,7 +1010,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: Cliente / Destinatário CNPJ */}
+            {/* Linha 4: CNPJ Destinatário */}
             <div className="min-w-0">
               <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 CNPJ Destinatário / Filial:
@@ -525,7 +1025,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: UF */}
+            {/* Linha 4: UF */}
             <div className="min-w-0">
               <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Estado / UF Emitente / Dest:
@@ -545,7 +1045,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               </select>
             </div>
 
-            {/* Filter: Data Início */}
+            {/* Linha 4: Data Início */}
             <div className="min-w-0">
               <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Data Inicial Emissão:
@@ -559,7 +1059,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: Data Fim */}
+            {/* Linha 4: Data Fim */}
             <div className="min-w-0">
               <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
                 Data Final Emissão:
@@ -573,42 +1073,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: Tipo Documento */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Tipo de Documento:
-              </label>
-              <select
-                value={filters.tipoDoc}
-                onChange={(e) => setFilters({ ...filters, tipoDoc: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              >
-                <option value="TODOS">Todos (NF-e, CT-e, NFS-e)</option>
-                <option value="NF-e">NF-e (Nota Eletrônica)</option>
-                <option value="CT-e">CT-e (Transporte)</option>
-                <option value="NFS-e">NFS-e (Serviços)</option>
-              </select>
-            </div>
-
-            {/* Filter: Situação Doc */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Situação do Documento:
-              </label>
-              <select
-                value={filters.situacaoDoc}
-                onChange={(e) => setFilters({ ...filters, situacaoDoc: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              >
-                <option value="TODAS">Todas as Situações</option>
-                <option value="autorizado">Autorizado</option>
-                <option value="cancelado">Cancelado</option>
-                <option value="denegado">Denegado</option>
-                <option value="substituido">Substituído</option>
-              </select>
-            </div>
-
-            {/* Filter: CFOP */}
+            {/* Linha 5: CFOP */}
             <div className="min-w-0">
               <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
                 CFOP (ex: 1102, 1551, 1910):
@@ -623,7 +1088,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: cClassTrib */}
+            {/* Linha 5: cClassTrib */}
             <div className="min-w-0">
               <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
                 cClassTrib (ex: 000001, 100001, 200001):
@@ -639,7 +1104,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               />
             </div>
 
-            {/* Filter: Indicador Onerosidade */}
+            {/* Linha 5: Indicador Onerosidade */}
             <div className="min-w-0">
               <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
                 Indicador de Onerosidade:
@@ -657,7 +1122,25 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               </select>
             </div>
 
-            {/* Checkbox Exceções */}
+            {/* Linha 5: Situação Doc */}
+            <div className="min-w-0">
+              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
+                Situação do Documento:
+              </label>
+              <select
+                value={filters.situacaoDoc}
+                onChange={(e) => setFilters({ ...filters, situacaoDoc: e.target.value })}
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+              >
+                <option value="TODAS">Todas as Situações</option>
+                <option value="autorizado">Autorizado</option>
+                <option value="cancelado">Cancelado</option>
+                <option value="denegado">Denegado</option>
+                <option value="substituido">Substituído</option>
+              </select>
+            </div>
+
+            {/* Linha 6: Checkbox Exceções */}
             <div className="flex items-center gap-2 pt-2 col-span-1 sm:col-span-2 md:col-span-3 xl:col-span-4 min-w-0">
               <label className="flex items-center gap-2 text-rose-300 font-bold cursor-pointer select-none text-xs">
                 <input
@@ -674,178 +1157,189 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         )}
       </div>
 
-      {/* Dynamic Report Summary KPI Cards (5 Cards Estratégicos com Base de Cálculo IBS/CBS) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total Líquido Filtrado</span>
-          <strong className="text-base sm:text-lg font-black text-emerald-400 font-mono truncate">
-            {(activeKpis?.totalValor ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </strong>
-          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            Base Geral: {(activeTotalGeral?.totalValor ?? 0).toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' })}
-          </span>
+      {/* Alerta Preventivo de Volume Elevado (> 5.000 notas sem filtro de data) */}
+      {volumeWarning?.show && (
+        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs flex items-start gap-3 shadow-xl animate-fade-in">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1.5 flex-1">
+            <div className="font-bold text-amber-100 text-sm flex items-center gap-2">
+              <span>Volume elevado para extração analítica ({volumeWarning.count.toLocaleString('pt-BR')} documentos no banco)</span>
+            </div>
+            <p className="text-amber-300/90 leading-relaxed">
+              Para evitar lentidão superior a <strong>5 minutos</strong> ou interrupção por limite de processamento de XMLs, recomendamos selecionar um <strong>período menor</strong> (ex: mensal ou trimestral) nos campos de <strong>Data Inicial</strong> e <strong>Data Final</strong> dos filtros acima.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const ano = now.getFullYear();
+                  const mes = String(now.getMonth() + 1).padStart(2, '0');
+                  const dataIni = `${ano}-${mes}-01`;
+                  const ultimoDia = new Date(ano, now.getMonth() + 1, 0).getDate();
+                  const dataFim = `${ano}-${mes}-${String(ultimoDia).padStart(2, '0')}`;
+                  const newF = { ...filters, dataInicio: dataIni, dataFim: dataFim };
+                  setFilters(newF);
+                  setVolumeWarning(null);
+                  handleSearch(activeTab, newF);
+                }}
+                className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold border border-amber-500/40 transition-all cursor-pointer"
+              >
+                Filtrar Mês Atual
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const newF = { ...filters, dataInicio: '2026-08-01', dataFim: '2026-08-31' };
+                  setFilters(newF);
+                  setVolumeWarning(null);
+                  handleSearch(activeTab, newF);
+                }}
+                className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold border border-amber-500/40 transition-all cursor-pointer"
+              >
+                Filtrar Competência 08/2026
+              </button>
+            </div>
+          </div>
         </div>
+      )}
 
-        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-teal-500/30 flex flex-col justify-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-teal-300 mb-0.5">&lt;vBC&gt; Base IBS / CBS</span>
-          <strong className="text-base sm:text-lg font-black text-teal-300 font-mono truncate">
-            {(activeKpis?.totalBaseCbs ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </strong>
-          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            Base Geral: {(activeTotalGeral?.totalBaseCbs ?? 0).toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL' })}
-          </span>
+      {/* Estado Inicial: Tela Limpa sem busca realizada */}
+      {!hasSearched && !loading && (
+        <div className="glass-panel rounded-2xl p-12 border border-slate-800 text-center flex flex-col items-center justify-center gap-3 bg-slate-950/60 shadow-2xl">
+          <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-cyan-400">
+            <FileBarChart className="w-10 h-10 text-cyan-400" />
+          </div>
+          <h3 className="text-base font-bold text-white">Nenhum relatório gerado no momento</h3>
+          <p className="text-xs text-slate-400 max-w-lg leading-relaxed">
+            Selecione os parâmetros desejados nos filtros acima (período de emissão, tipo de documento, UF, etc.) e clique no botão <strong className="text-cyan-300">"Buscar Relatório"</strong> para processar e visualizar o gráfico fiscal consolidado e os relatórios analíticos.
+          </p>
         </div>
+      )}
 
-        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total CBS Real (XMLs)</span>
-          <strong className="text-base sm:text-lg font-black text-cyan-400 font-mono truncate">
-            {(activeKpis?.totalCbs ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </strong>
-          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            União
-          </span>
+      {/* Estado de Carregamento */}
+      {loading && (
+        <div className="glass-panel rounded-2xl p-12 border border-slate-800 text-center flex flex-col items-center justify-center gap-3 bg-slate-950/60 shadow-xl animate-pulse">
+          <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
+          <h3 className="text-sm font-bold text-white">Processando extração parametrizada de XMLs...</h3>
+          <p className="text-xs text-slate-400">
+            Auditando regras de tributação, alíquotas RTC e elegibilidade de crédito.
+          </p>
         </div>
+      )}
 
-        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total IBS Real (XMLs)</span>
-          <strong className="text-base sm:text-lg font-black text-indigo-400 font-mono truncate">
-            {(activeKpis?.totalIbs ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </strong>
-          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            Estados / Municípios
-          </span>
-        </div>
-
-        <div className="bg-slate-950/80 p-3.5 rounded-xl border border-slate-800 flex flex-col justify-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Crédito Esperado IBS+CBS</span>
-          <strong className="text-base sm:text-lg font-black text-purple-300 font-mono truncate">
-            {((activeKpis?.totalCbs ?? 0) + (activeKpis?.totalIbs ?? 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-          </strong>
-          <span className="text-[9px] font-mono text-slate-500 mt-0.5">
-            {filteredItems.filter(i => i.elegivelIbsCbs).length} itens na página
-          </span>
-        </div>
-      </div>
-
-      {/* Report Package Tabs Bar (#1 to #9) */}
-      <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-slate-800 w-full min-w-0">
-        {reportTabs.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-
-          return (
-            <button
-              key={tab.id}
-              onClick={() => {
-                setActiveTab(tab.id);
-                if (tab.id === 'retencoes_fonte' || activeTab === 'retencoes_fonte') {
-                  handleSearch(tab.id);
-                }
-              }}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                isActive
-                  ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 text-white shadow-lg shadow-blue-600/25 border border-cyan-400/40'
-                  : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5 shrink-0" />
-              <span>{tab.label}</span>
-              {tab.badge && (
-                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">
-                  {tab.badge}
-                </span>
-              )}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-rose-950 text-rose-300 border border-rose-800 font-mono">
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Main Report View Content */}
-      <div className="space-y-4 w-full min-w-0 max-w-full">
-        {activeTab === 'consolidado_mercadorias' && (
-          <RelatorioConsolidadoMercadorias
-            items={filteredItems}
-            dbKpis={dbKpis}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-            onOpenLedger={(chave) => handleOpenLedger(chave)}
-            onSyncApuracao={handleSyncApuracao}
-            syncingApuracao={syncingApuracao}
+      {/* Exibição dos Dados Apenas Após Busca Realizada */}
+      {hasSearched && !loading && (
+        <>
+          {/* Único Bloco de KPI: Gráfico de Barras Verticais Fiscais */}
+          <FiscalVerticalBarChart
+            totalOperacoes={chartMetrics.totalOperacoes}
+            baseCalculo={chartMetrics.baseCalculo}
+            tributosAtuais={chartMetrics.tributosAtuais}
+            tributosReforma={chartMetrics.tributosReforma}
+            creditoIbsCbs={chartMetrics.creditoIbsCbs}
+            totalDocs={chartMetrics.totalDocs}
+            totalItens={chartMetrics.totalItens}
           />
-        )}
 
-        {activeTab === 'consolidado_servicos' && (
-          <RelatorioConsolidadoServicos
-            items={filteredItems}
-            dbKpis={dbKpis}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-            onOpenLedger={(chave) => handleOpenLedger(chave)}
-            onSyncApuracao={handleSyncApuracao}
-            syncingApuracao={syncingApuracao}
-          />
-        )}
+          {filteredItems.length === 0 ? (
+            <div className="glass-panel rounded-2xl p-8 border border-slate-800 text-center flex flex-col items-center justify-center gap-2 bg-slate-950/60 shadow-xl">
+              <Search className="w-8 h-8 text-slate-500" />
+              <h3 className="text-sm font-bold text-white">Nenhum documento encontrado</h3>
+              <p className="text-xs text-slate-400">
+                Nenhum XML correspondeu aos filtros aplicados. Tente alterar o período ou limpar filtros restritivos.
+              </p>
+            </div>
+          ) : (
+            <>
 
-        {activeTab === 'razao_entradas' && (
-          <RelatorioRazaoEntradas
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
 
-        {activeTab === 'matriz_elegibilidade' && (
-          <RelatorioMatrizElegibilidade
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
+              {/* Main Report View Content */}
+              <div className="space-y-4 w-full min-w-0 max-w-full">
+                {activeTab === 'consolidado_mercadorias' && (
+                  <RelatorioConsolidadoMercadorias
+                    items={filteredItems}
+                    dbKpis={dbKpis}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                    onOpenLedger={(chave) => handleOpenLedger(chave)}
+                    onSyncApuracao={handleSyncApuracao}
+                    syncingApuracao={syncingApuracao}
+                    viewMode={filters.visaoAnalitica || '360'}
+                  />
+                )}
 
-        {activeTab === 'calculo_credito' && (
-          <RelatorioCalculoCreditoEsperado
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
+                {activeTab === 'consolidado_servicos' && (
+                  <RelatorioConsolidadoServicos
+                    items={filteredItems}
+                    dbKpis={dbKpis}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                    onOpenLedger={(chave) => handleOpenLedger(chave)}
+                    onSyncApuracao={handleSyncApuracao}
+                    syncingApuracao={syncingApuracao}
+                  />
+                )}
 
-        {activeTab === 'excecoes_pendencias' && (
-          <RelatorioExcecoesPendencias
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
+                {activeTab === 'razao_entradas' && (
+                  <RelatorioRazaoEntradas
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
 
-        {activeTab === 'estornos_ajustes' && (
-          <RelatorioEstornosAjustes
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
+                {activeTab === 'matriz_elegibilidade' && (
+                  <RelatorioMatrizElegibilidade
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
 
-        {activeTab === 'mapa_cfop' && (
-          <RelatorioMapaCfop />
-        )}
+                {activeTab === 'calculo_credito' && (
+                  <RelatorioCalculoCreditoEsperado
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
 
-        {activeTab === 'mapa_cclasstrib' && (
-          <RelatorioMapaCClassTrib />
-        )}
+                {activeTab === 'excecoes_pendencias' && (
+                  <RelatorioExcecoesPendencias
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
 
-        {activeTab === 'onerosidade_auditoria' && (
-          <RelatorioOnerosidade
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
+                {activeTab === 'estornos_ajustes' && (
+                  <RelatorioEstornosAjustes
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
 
-        {activeTab === 'retencoes_fonte' && (
-          <RelatorioRetencoesFonte
-            items={filteredItems}
-            onOpenDetail={(it) => setSelectedItemForModal(it)}
-          />
-        )}
-      </div>
+                {activeTab === 'mapa_cfop' && (
+                  <RelatorioMapaCfop />
+                )}
+
+                {activeTab === 'mapa_cclasstrib' && (
+                  <RelatorioMapaCClassTrib />
+                )}
+
+                {activeTab === 'onerosidade_auditoria' && (
+                  <RelatorioOnerosidade
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
+
+                {activeTab === 'retencoes_fonte' && (
+                  <RelatorioRetencoesFonte
+                    items={filteredItems}
+                    onOpenDetail={(it) => setSelectedItemForModal(it)}
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {/* Item Inspection Modal */}
       {selectedItemForModal && (

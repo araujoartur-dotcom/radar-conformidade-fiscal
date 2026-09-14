@@ -213,7 +213,12 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     sanitized.includes('<ItemListaServico')
   ) {
     tipoDoc = 'NFSe';
-  } else if (sanitized.includes('mod=65') || sanitized.includes('<tpAmb') && sanitized.includes('mod=65')) {
+  } else if (
+    sanitized.includes('<mod>65</mod>') || 
+    sanitized.match(/<mod>\s*65\s*<\/mod>/i) || 
+    sanitized.includes('mod=65') ||
+    extractTagRegex(sanitized, 'mod') === '65'
+  ) {
     tipoDoc = 'NFCe';
   }
 
@@ -227,6 +232,18 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || (sanitized.match(/<infNFSe[^>]*Id="([a-zA-Z0-9_-]+)"/i)?.[1])
     || (sanitized.match(/<InfNfse[^>]*Id="([a-zA-Z0-9_-]+)"/i)?.[1])
     || '';
+
+  // 2.1 Refinamento de Modelo pela Chave de Acesso Oficial (Dígitos 21 e 22 = Modelo 55/65/57)
+  if (chaveAcesso && chaveAcesso.length === 44 && tipoDoc !== 'NFSe') {
+    const modChave = chaveAcesso.substring(20, 22);
+    if (modChave === '65') {
+      tipoDoc = 'NFCe';
+    } else if (modChave === '57' || modChave === '67') {
+      tipoDoc = 'CTe';
+    } else if (modChave === '55') {
+      tipoDoc = 'NFe';
+    }
+  }
 
   // 3. Emitente (Prestador / Fornecedor / Transportador)
   const emitCnpj = extractSubTagRegex(sanitized, 'emit', 'CNPJ') 

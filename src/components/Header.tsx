@@ -102,8 +102,6 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Captura de XMLs', icon: FileCode, color: 'text-cyan-400' };
       case 'eventos_dfe':
         return { title: 'Central de Eventos DF-e', icon: Send, color: 'text-indigo-400' };
-      case 'auditoria_fiscal':
-        return { title: 'Auditoria Fiscal & Conformidade', icon: ShieldAlert, color: 'text-amber-400' };
       case 'relatorios_xml':
         return { title: 'Relatórios Fiscais', icon: FileBarChart, color: 'text-cyan-400' };
       case 'tabelas_fiscais':
@@ -112,8 +110,6 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Gestão de Acessos', icon: Lock, color: 'text-indigo-400' };
       case 'carteira_cnpjs':
         return { title: 'Cadastro de Empresas', icon: Building2, color: 'text-emerald-400' };
-      case 'observabilidade_dlq':
-        return { title: 'Observabilidade & Filas (DLQ)', icon: Layers, color: 'text-blue-400' };
       case 'apuracao_assistida':
         return { title: 'Apuração Assistida (IBS/CBS)', icon: Calculator, color: 'text-emerald-400' };
       case 'simulador_regimes':
