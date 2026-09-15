@@ -29,7 +29,7 @@ interface DfeTypeStat {
 
 export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = [], selectedTenantCnpj, empresaAtiva }) => {
   const { get } = useApi();
-  const [anoSelecionado, setAnoSelecionado] = useState<number>(2026);
+  const [anoSelecionado, setAnoSelecionado] = useState<number | 'todos'>(2026);
   const [mesSelecionado, setMesSelecionado] = useState<string>('todos');
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([2026, 2025, 2024, 2023, 2022]);
   const [operacaoFilter, setOperacaoFilter] = useState<'todas' | 'entradas' | 'saidas'>('todas');
@@ -46,7 +46,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
       const payload = (res as any)?.data || res;
       if (payload?.success && Array.isArray(payload.anos) && payload.anos.length > 0) {
         setAnosDisponiveis(payload.anos);
-        if (!payload.anos.includes(anoSelecionado)) {
+        if (anoSelecionado !== 'todos' && !payload.anos.includes(anoSelecionado)) {
           setAnoSelecionado(payload.anos[0]);
           setAnoSimulado(payload.anos[0]);
         }
@@ -58,7 +58,10 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
 
   // Cálculo de intervalo de datas (dataInicio e dataFim) baseado no Ano e Mês selecionados
   const { dataInicio, dataFim } = useMemo(() => {
-    const ano = anoSelecionado || 2026;
+    if (anoSelecionado === 'todos') {
+      return { dataInicio: '', dataFim: '' };
+    }
+    const ano = Number(anoSelecionado) || 2026;
     if (mesSelecionado === 'todos') {
       return { dataInicio: `${ano}-01-01`, dataFim: `${ano}-12-31` };
     }
@@ -265,7 +268,7 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
     });
 
     return counts;
-  }, [filteredItems, dbKpis, totalValor]);
+  }, [filteredItems, dbKpis, totalValor, activeKpis]);
 
   const maxQtdType = Math.max(...Object.values(dfeTypeCounts).map((c: DfeTypeStat) => c.qtd), 1);
   const maxValorTributario = Math.max(totalValor, 1);
@@ -409,13 +412,19 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             <select
               value={anoSelecionado}
               onChange={(e) => {
-                const novoAno = Number(e.target.value);
-                setAnoSelecionado(novoAno);
-                setAnoSimulado(novoAno);
+                const val = e.target.value;
+                const novoAno = val === 'todos' ? 'todos' : Number(val);
+                setAnoSelecionado(novoAno as any);
+                if (typeof novoAno === 'number') {
+                  setAnoSimulado(novoAno);
+                }
               }}
               className="bg-transparent text-cyan-400 font-bold font-mono focus:outline-none cursor-pointer"
               title="Filtrar ano de emissão dos documentos fiscais"
             >
+              <option value="todos" className="bg-slate-900 text-cyan-300 font-bold font-mono">
+                Todos os Anos (Acumulado)
+              </option>
               {anosDisponiveis.map(ano => (
                 <option key={ano} value={ano} className="bg-slate-900 text-white font-mono">
                   {ano}
@@ -433,7 +442,9 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
               className="bg-transparent text-slate-200 font-semibold focus:outline-none cursor-pointer"
               title="Filtrar mês ou período da competência"
             >
-              <option value="todos" className="bg-slate-900 text-white font-bold">Todos os Meses ({anoSelecionado})</option>
+              <option value="todos" className="bg-slate-900 text-white font-bold">
+                {anoSelecionado === 'todos' ? 'Todos os Meses (Histórico Completo)' : `Todos os Meses (${anoSelecionado})`}
+              </option>
               <optgroup label="Trimestres" className="bg-slate-950 text-slate-400 font-bold">
                 <option value="Q1" className="bg-slate-900 text-white">1º Trimestre (Jan - Mar)</option>
                 <option value="Q2" className="bg-slate-900 text-white">2º Trimestre (Abr - Jun)</option>
@@ -612,7 +623,17 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
                 </span>
               </div>
               <div className="flex justify-between items-center py-1 border-b border-slate-900">
-                <span className="text-slate-400">ISS Destacado:</span>
+                <span className="text-slate-400 flex items-center gap-1">
+                  ISS Destacado:
+                  {totalIssReal === 0 && (activeTotalGeral?.totalIss || 0) > 0 && (
+                    <span 
+                      className="text-[10px] text-slate-500 font-normal cursor-help" 
+                      title={`Sem NFS-e no ano ${anoSelecionado}. Há ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(activeTotalGeral.totalIss)} no histórico acumulado da base.`}
+                    >
+                      (0 no ano)
+                    </span>
+                  )}
+                </span>
                 <span className="font-mono text-slate-200 font-semibold">
                   {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalIssReal + (dbKpis?.totalFiltrado?.issInferido || 0))}
                 </span>
@@ -949,9 +970,9 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             {/* Valor Bruto Total */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-200">1. Base de Cálculo Total</span>
-                <span className="font-mono font-bold text-white">
-                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalValor)}
+                <span className="font-bold text-slate-200">1. Base de Cálculo CBS/IBS</span>
+                <span className="font-mono font-bold text-white" title="Base sobre a qual o CBS e IBS incidem">
+                  {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalBaseCbsFiltrada > 0 ? totalBaseCbsFiltrada : baseLiquidaSimulada)}
                 </span>
               </div>
               <div className="w-full h-3 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">

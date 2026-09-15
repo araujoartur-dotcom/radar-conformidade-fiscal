@@ -282,9 +282,28 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   const emitIe = extractSubTagRegex(sanitized, 'emit', 'IE') || extractSubTagRegex(sanitized, 'rem', 'IE') || '';
 
   // 3b. Código de Regime Tributário (CRT) do Emitente
-  // 1 = Simples Nacional, 2 = SN Sublimite Excedido, 3 = Regime Normal, 4 = MEI
-  const regimeTributario = extractSubTagRegex(sanitized, 'emit', 'CRT') || extractTagRegex(sanitized, 'CRT') || '';
+  // NF-e/CT-e: 1 = Simples Nacional, 2 = SN Sublimite, 3 = Regime Normal, 4 = MEI
+  let regimeTributario = extractSubTagRegex(sanitized, 'emit', 'CRT') || extractTagRegex(sanitized, 'CRT') || '';
 
+  // Tratamento específico para NFS-e Padrão Nacional (opSimpNac) e ABRASF (OptanteSimplesNacional)
+  if (tipoDoc === 'NFSe') {
+    const opSimpNac = extractSubTagRegex(sanitized, 'regTrib', 'opSimpNac') || extractTagRegex(sanitized, 'opSimpNac');
+    const optanteSimplesNacional = extractTagRegex(sanitized, 'OptanteSimplesNacional');
+    
+    if (opSimpNac) {
+      // Padrão Nacional Padrão ABRASF/NT 009: 1=Não Optante, 2=MEI, 3=ME/EPP, 4=Pendente
+      if (opSimpNac === '2') regimeTributario = '4'; // MEI
+      else if (opSimpNac === '3' || opSimpNac === '4') regimeTributario = '1'; // Simples Nacional
+      else if (opSimpNac === '1') regimeTributario = '3'; // Normal
+    } else if (optanteSimplesNacional) {
+      // ABRASF antigo: 1=Sim, 2=Não
+      if (optanteSimplesNacional === '1' || optanteSimplesNacional.toLowerCase() === 'sim' || optanteSimplesNacional.toLowerCase() === 'true') {
+        regimeTributario = '1';
+      } else if (optanteSimplesNacional === '2' || optanteSimplesNacional.toLowerCase() === 'nao' || optanteSimplesNacional.toLowerCase() === 'false') {
+        regimeTributario = '3';
+      }
+    }
+  }
   // 4. Destinatário (Tomador / Cliente)
   const destCnpj = extractSubTagRegex(sanitized, 'dest', 'CNPJ') 
     || extractSubTagRegex(sanitized, 'toma', 'CNPJ') 
@@ -384,9 +403,9 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || '0'
   );
 
-  const valorIcms = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vICMS') || extractTagRegex(sanitized, 'vICMS') || '0');
-  const valorIpi = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vIPI') || extractTagRegex(sanitized, 'vIPI') || '0');
-  const valorPis = parseValor(
+  let valorIcms = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vICMS') || extractTagRegex(sanitized, 'vICMS') || '0');
+  let valorIpi = parseValor(extractSubTagRegex(sanitized, 'ICMSTot', 'vIPI') || extractTagRegex(sanitized, 'vIPI') || '0');
+  let valorPis = parseValor(
     extractSubTagRegex(sanitized, 'ICMSTot', 'vPIS') 
     || extractSubTagRegex(sanitized, 'piscofins', 'vPIS')
     || extractTagRegex(sanitized, 'vPIS') 
@@ -396,7 +415,7 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     || '0'
   );
 
-  const valorCofins = parseValor(
+  let valorCofins = parseValor(
     extractSubTagRegex(sanitized, 'ICMSTot', 'vCOFINS') 
     || extractSubTagRegex(sanitized, 'piscofins', 'vCOFINS')
     || extractTagRegex(sanitized, 'vCOFINS') 
@@ -455,7 +474,8 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   );
 
   const valorIss = parseValor(
-    extractSubTagRegex(sanitized, 'tribMun', 'vISSQN')
+    extractSubTagRegex(sanitized, 'ISSQNTot', 'vISS')
+    || extractSubTagRegex(sanitized, 'tribMun', 'vISSQN')
     || extractSubTagRegex(sanitized, 'trib', 'vISSQN')
     || extractTagRegex(sanitized, 'vISSQN') 
     || extractTagRegex(sanitized, 'ValorIssRetido') 
@@ -644,6 +664,27 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   if (valorIbs === 0 && itens.length > 0) {
     const somaIbs = itens.reduce((acc, it) => acc + (it.valorIbs || 0), 0);
     if (somaIbs > 0) valorIbs = Number(somaIbs.toFixed(2));
+  }
+
+  // Se o totalizador de IPI veio 0 mas os itens possuem IPI destacado, totaliza a partir dos itens
+  if (valorIpi === 0 && itens.length > 0) {
+    const somaIpi = itens.reduce((acc, it) => acc + (it.valorIpi || 0), 0);
+    if (somaIpi > 0) valorIpi = Number(somaIpi.toFixed(2));
+  }
+  // Se o totalizador de ICMS veio 0 mas os itens possuem ICMS, totaliza a partir dos itens
+  if (valorIcms === 0 && itens.length > 0) {
+    const somaIcms = itens.reduce((acc, it) => acc + (it.valorIcms || 0), 0);
+    if (somaIcms > 0) valorIcms = Number(somaIcms.toFixed(2));
+  }
+  // Se o totalizador de PIS veio 0 mas os itens possuem PIS, totaliza a partir dos itens
+  if (valorPis === 0 && itens.length > 0) {
+    const somaPis = itens.reduce((acc, it) => acc + (it.valorPis || 0), 0);
+    if (somaPis > 0) valorPis = Number(somaPis.toFixed(2));
+  }
+  // Se o totalizador de COFINS veio 0 mas os itens possuem COFINS, totaliza a partir dos itens
+  if (valorCofins === 0 && itens.length > 0) {
+    const somaCofins = itens.reduce((acc, it) => acc + (it.valorCofins || 0), 0);
+    if (somaCofins > 0) valorCofins = Number(somaCofins.toFixed(2));
   }
 
   // Se as bases de cálculo de CBS/IBS globais vieram 0, soma dos itens

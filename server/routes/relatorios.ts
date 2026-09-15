@@ -64,7 +64,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       tenantCnpjClean = req.user.empresaCnpj.replace(/\D/g, '');
     }
 
-    const requestedLimit = req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000);
+    const isExport = req.query.isExport === 'true';
+    const requestedLimit = isExport ? 50000 : (req.query.limit === 'all' ? 50000 : Math.min(50000, parseInt(req.query.limit as string) || 10000));
     const requestedOffset = parseInt(req.query.offset as string) || 0;
 
     // Normalização do tipoDoc / relatório
@@ -85,52 +86,83 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       const supabase = getSupabaseAdmin();
       if (supabase) {
         try {
-          let supaQuery = supabase.from('dfe_documentos').select('*', { count: 'exact' });
-          if (targetEmpresaId) {
-            supaQuery = supaQuery.eq('empresa_id', targetEmpresaId);
-          } else if (tenantCnpjClean) {
-            supaQuery = supaQuery.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%`);
-          } else {
-            supaQuery = supaQuery.eq('empresa_id', 'none');
-          }
-
-          if (cnpjEmitente) supaQuery = supaQuery.ilike('fornecedor_cnpj', `%${cnpjEmitente}%`);
-          if (cnpjDestinatario) supaQuery = supaQuery.ilike('cliente_cnpj', `%${cnpjDestinatario}%`);
-          if (supaDataInicio) supaQuery = supaQuery.gte('data_emissao', supaDataInicio);
-          if (supaDataFim) supaQuery = supaQuery.lte('data_emissao', supaDataFim);
-          if (situacaoDoc && situacaoDoc !== 'TODAS') supaQuery = supaQuery.ilike('situacao_doc', `%${situacaoDoc}%`);
-
-          if (uf && uf !== 'TODAS') {
-            supaQuery = supaQuery.or(`fornecedor_uf.eq.${uf},cliente_uf.eq.${uf}`);
-          }
-
-          if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
-            const td = effectiveTipoDoc.toUpperCase();
-            if (td === 'MERCADORIAS' || td === 'CONSOLIDADO_MERCADORIAS') {
-              supaQuery = supaQuery.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55', 'CTe', 'CT-e', 'CTE', '57', '67', 'NFCE', 'NFC-e', '65']);
-            } else if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
-              supaQuery = supaQuery.in('tipo_doc', ['NFSe', 'NFS-e', 'NFSE', 'NFS']);
-            } else if (td === 'CTE' || td === 'CT-E') {
-              supaQuery = supaQuery.in('tipo_doc', ['CTe', 'CT-e', 'CTE', '57', '67']);
-            } else if (td === 'NFE' || td === 'NF-E') {
-              supaQuery = supaQuery.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55']);
+          const buildSupaQuery = () => {
+            let sq = supabase.from('dfe_documentos').select('*', { count: 'exact' });
+            if (targetEmpresaId) {
+              sq = sq.eq('empresa_id', targetEmpresaId);
+            } else if (tenantCnpjClean) {
+              sq = sq.or(`cliente_cnpj.ilike.%${tenantCnpjClean}%,fornecedor_cnpj.ilike.%${tenantCnpjClean}%`);
             } else {
-              supaQuery = supaQuery.eq('tipo_doc', effectiveTipoDoc);
+              sq = sq.eq('empresa_id', 'none');
             }
-          }
 
-          if (searchTerm) {
-            supaQuery = supaQuery.or(`fornecedor_razao.ilike.%${searchTerm}%,fornecedor_cnpj.ilike.%${searchTerm}%,chave_acesso.ilike.%${searchTerm}%`);
-          }
+            if (cnpjEmitente) sq = sq.ilike('fornecedor_cnpj', `%${cnpjEmitente}%`);
+            if (cnpjDestinatario) sq = sq.ilike('cliente_cnpj', `%${cnpjDestinatario}%`);
+            if (supaDataInicio) sq = sq.gte('data_emissao', supaDataInicio);
+            if (supaDataFim) sq = sq.lte('data_emissao', supaDataFim);
+            if (situacaoDoc && situacaoDoc !== 'TODAS') sq = sq.ilike('situacao_doc', `%${situacaoDoc}%`);
 
-          let { data: supaDocs, count: supaTotal, error: supaErr } = await supaQuery
-            .order('data_emissao', { ascending: false })
-            .range(requestedOffset, requestedOffset + requestedLimit - 1);
+            if (uf && uf !== 'TODAS') {
+              sq = sq.or(`fornecedor_uf.eq.${uf},cliente_uf.eq.${uf}`);
+            }
+
+            if (effectiveTipoDoc && effectiveTipoDoc !== 'TODOS') {
+              const td = effectiveTipoDoc.toUpperCase();
+              if (td === 'MERCADORIAS' || td === 'CONSOLIDADO_MERCADORIAS') {
+                sq = sq.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55', 'CTe', 'CT-e', 'CTE', '57', '67', 'NFCE', 'NFC-e', '65']);
+              } else if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
+                sq = sq.in('tipo_doc', ['NFSe', 'NFS-e', 'NFSE', 'NFS']);
+              } else if (td === 'CTE' || td === 'CT-E') {
+                sq = sq.in('tipo_doc', ['CTe', 'CT-e', 'CTE', '57', '67']);
+              } else if (td === 'NFE' || td === 'NF-E') {
+                sq = sq.in('tipo_doc', ['NFe', 'NF-e', 'NFE', '55']);
+              } else {
+                sq = sq.eq('tipo_doc', effectiveTipoDoc);
+              }
+            }
+
+            if (searchTerm) {
+              sq = sq.or(`fornecedor_razao.ilike.%${searchTerm}%,fornecedor_cnpj.ilike.%${searchTerm}%,chave_acesso.ilike.%${searchTerm}%`);
+            }
+            return sq;
+          };
+
+          let supaDocs: any[] = [];
+          let supaTotal = 0;
+          let supaErr: any = null;
+
+          if (isExport) {
+            let loopOffset = 0;
+            let hasMore = true;
+            while(hasMore) {
+              const { data, count, error } = await buildSupaQuery()
+                .order('data_emissao', { ascending: false })
+                .range(loopOffset, loopOffset + 1000 - 1);
+                
+              if (error) { supaErr = error; break; }
+              if (count !== null) supaTotal = count;
+              
+              if (data && data.length > 0) {
+                supaDocs.push(...data);
+                loopOffset += data.length;
+                if (data.length < 1000) hasMore = false;
+              } else {
+                hasMore = false;
+              }
+            }
+          } else {
+            const result = await buildSupaQuery()
+              .order('data_emissao', { ascending: false })
+              .range(requestedOffset, requestedOffset + requestedLimit - 1);
+            supaDocs = result.data || [];
+            supaTotal = result.count || 0;
+            supaErr = result.error;
+          }
 
           if (!supaErr && supaDocs) {
             // Se a consulta foi geral (TODOS) e os 1000 CT-e de 2026 preencheram o teto do PostgREST,
             // injeta as 50 NFS-e da empresa para que estejam no lote consolidado de relatórios
-            if (requestedOffset === 0 && (!effectiveTipoDoc || effectiveTipoDoc === 'TODOS')) {
+            if (!isExport && requestedOffset === 0 && (!effectiveTipoDoc || effectiveTipoDoc === 'TODOS')) {
               const hasNfse = supaDocs.some(d => (d.tipo_doc || '').toString().toUpperCase().includes('NFS'));
               if (!hasNfse) {
                 try {
@@ -958,6 +990,50 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       totaisFiltrados = kpisRes.totalFiltrado;
     } catch (kpiErr: any) {
       console.warn('⚠️ Falha ao obter totais agregados para /api/relatorios/xml:', kpiErr.message);
+    }
+
+    if (isExport) {
+      try {
+        const XLSX = require('xlsx');
+        const wb = XLSX.utils.book_new();
+        
+        const exportData = finalMapped.map(item => ({
+          'Documento': item.tipoDoc,
+          'Série': item.numeroSerie || '-',
+          'Chave de Acesso': item.chaveAcesso || '-',
+          'Data Emissão': item.dataEmissao ? new Date(item.dataEmissao).toLocaleDateString('pt-BR') : '-',
+          'Fornecedor / Emitente': item.fornecedorRazao || '-',
+          'CNPJ Emitente': item.fornecedorCnpj || '-',
+          'UF Emit.': item.fornecedorUf || '-',
+          'Município Emit.': item.fornecedorMunicipio || '-',
+          'Cliente / Dest.': item.clienteRazao || '-',
+          'CNPJ Dest.': item.clienteCnpj || '-',
+          'UF Dest.': item.clienteUf || '-',
+          'Descrição': item.descricaoItem || '-',
+          'NCM': item.ncm || '-',
+          'CFOP': item.cfop || '-',
+          'cClassTrib': item.cClassTrib || '-',
+          'Situação': item.situacaoDoc || '-',
+          'Valor Total (R$)': Number(item.valorLiquidoItem || 0).toFixed(2),
+          'Base IBS/CBS (R$)': Number(item.baseIbs || 0).toFixed(2),
+          'IBS (R$)': Number(item.valorIbs || 0).toFixed(2),
+          'CBS (R$)': Number(item.valorCbs || 0).toFixed(2),
+          'Crédito IBS (R$)': Number(item.creditoEsperadoIbs || 0).toFixed(2),
+          'Crédito CBS (R$)': Number(item.creditoEsperadoCbs || 0).toFixed(2)
+        }));
+        
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
+        
+        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        
+        res.setHeader('Content-Disposition', 'attachment; filename="relatorio_export.xlsx"');
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        return res.send(buffer);
+      } catch (err) {
+        console.error('Erro ao gerar XLSX:', err);
+        return res.status(500).json({ success: false, error: 'Erro ao gerar XLSX' });
+      }
     }
 
     res.json({ 

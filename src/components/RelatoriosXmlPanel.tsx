@@ -39,6 +39,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
   const [dbKpis, setDbKpis] = useState<any>(null);
   const [totalDbCount, setTotalDbCount] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 1000;
 
   // Estados de Integração em Tempo Real com Apuração Assistida & Modal do Ledger CGIBS
   const [syncingApuracao, setSyncingApuracao] = useState<boolean>(false);
@@ -158,6 +160,41 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
   // Cálculo consolidado das grandezas fiscais 100% fidedigno aos itens da busca
   const chartMetrics = useMemo(() => {
+    // Se o backend retornou os KPIs (o que inclui todos os documentos sem limite de paginação), usamos eles.
+    if (activeKpis && activeKpis.totalDocs > 0) {
+      const icms = activeKpis.totalIcms || 0;
+      const iss = activeKpis.totalIss || 0;
+      const ipi = activeKpis.totalIpi || 0;
+      const pis = activeKpis.totalPis || 0;
+      const cofins = activeKpis.totalCofins || 0;
+      const ibs = activeKpis.totalIbs || 0;
+      const cbs = activeKpis.totalCbs || 0;
+      const isVal = activeKpis.totalIs || 0;
+
+      return {
+        totalOperacoes: activeKpis.totalValor || 0,
+        baseCalculo: activeKpis.totalBaseCbs || activeKpis.totalBaseIbs || 0,
+        tributosAtuais: {
+          total: icms + iss + ipi + pis + cofins,
+          icms,
+          iss,
+          ipi,
+          pis,
+          cofins
+        },
+        tributosReforma: {
+          total: ibs + cbs + isVal,
+          ibs,
+          cbs,
+          is: isVal
+        },
+        creditoIbsCbs: ibs + cbs, // Aproximação baseada no valor dos tributos (que é a regra padrão atual)
+        totalDocs: activeKpis.totalDocs,
+        totalItens: activeKpis.totalDocs
+      };
+    }
+
+    // Fallback para itens em memória caso não tenhamos o activeKpis
     const totalOperacoes = filteredItems.reduce((acc, it) => acc + (it.valorLiquidoItem || it.valorBrutoItem || 0), 0);
     const baseCalculo = filteredItems.reduce((acc, it) => acc + (it.baseIbs || it.baseCbs || 0), 0);
     const icms = filteredItems.reduce((acc, it) => acc + (it.valorIcms || 0), 0);
@@ -192,7 +229,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       totalDocs: distinctDocs || filteredItems.length,
       totalItens: filteredItems.length
     };
-  }, [filteredItems]);
+  }, [filteredItems, activeKpis]);
 
   const handleClearFilters = () => {
     const cleared: ReportFilterState = {
@@ -215,14 +252,16 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     setFilters(cleared);
     setSelectedPreviewDoc(null);
     setIsQuickSearchOpen(false);
-    handleSearch(activeTab, cleared);
+    setCurrentPage(1);
+    handleSearch(activeTab, cleared, 1);
   };
 
-  const handleSearch = async (tabOverride?: ReportTabType, customFilters?: ReportFilterState) => {
+  const handleSearch = async (tabOverride?: ReportTabType, customFilters?: ReportFilterState, pageOverride?: number) => {
     setLoading(true);
     try {
       const activeF = customFilters || filters;
       const currentTab = tabOverride || activeTab;
+      const page = pageOverride || currentPage;
       const query = new URLSearchParams();
       if (activeF.cnpjEmitente) query.append('cnpjEmitente', activeF.cnpjEmitente);
       if (activeF.cnpjDestinatario) query.append('cnpjDestinatario', activeF.cnpjDestinatario);
@@ -248,7 +287,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       if (activeF.apenasExcecoes) query.append('apenasExcecoes', 'true');
       if (activeF.searchTerm) query.append('searchTerm', activeF.searchTerm);
       if (empresaAtiva?.id) query.append('empresaId', empresaAtiva.id);
-      query.append('limit', '25000');
+      
+      query.append('limit', pageSize.toString());
+      query.append('offset', ((page - 1) * pageSize).toString());
       
       const response = await fetch(`${getApiBaseUrl()}/relatorios/xml?${query.toString()}`, {
         headers: {
@@ -394,7 +435,26 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   }, [empresaAtiva?.id]);
 
   const handleExportExcel = () => {
-    exportReportToExcel(filteredItems, `Relatorio_${activeTab}`);
+    const query = new URLSearchParams();
+    if (filters.cnpjEmitente) query.append('cnpjEmitente', filters.cnpjEmitente);
+    if (filters.cnpjDestinatario) query.append('cnpjDestinatario', filters.cnpjDestinatario);
+    if (filters.dataInicio) query.append('dataInicio', filters.dataInicio);
+    if (filters.dataFim) query.append('dataFim', filters.dataFim);
+    if (filters.uf && filters.uf !== 'TODAS') query.append('uf', filters.uf);
+    if (filters.tipoDoc && filters.tipoDoc !== 'TODOS') query.append('tipoDoc', filters.tipoDoc);
+    if (filters.situacaoDoc && filters.situacaoDoc !== 'TODAS') query.append('situacaoDoc', filters.situacaoDoc);
+    if (filters.cfop) query.append('cfop', filters.cfop);
+    if (filters.cClassTrib) query.append('cClassTrib', filters.cClassTrib);
+    if (filters.indicadorOnerosidade && filters.indicadorOnerosidade !== 'TODOS') query.append('indicadorOnerosidade', filters.indicadorOnerosidade);
+    if (filters.resultadoElegibilidade && filters.resultadoElegibilidade !== 'TODOS') query.append('resultadoElegibilidade', filters.resultadoElegibilidade);
+    if (filters.apenasExcecoes) query.append('apenasExcecoes', 'true');
+    if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
+    if (empresaAtiva?.id) query.append('empresaId', empresaAtiva.id);
+    
+    // Anexa o token se puder (em produção idealmente usa cookie HTTPOnly para download)
+    query.append('token', token);
+
+    window.open(`${getApiBaseUrl()}/relatorios/xml/export?${query.toString()}`, '_blank');
   };
 
   // Ação de Sincronização em Tempo Real com Apuração Assistida (CGIBS / RTC)
@@ -1284,6 +1344,42 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                   />
                 )}
               </div>
+              
+              {/* Controles de Paginação */}
+              {totalDbCount > pageSize && (
+                <div className="flex items-center justify-between p-4 mt-4 bg-slate-900/50 border border-slate-800 rounded-xl">
+                  <div className="text-xs text-slate-400">
+                    Mostrando itens <strong className="text-white">{(currentPage - 1) * pageSize + 1}</strong> a <strong className="text-white">{Math.min(currentPage * pageSize, totalDbCount)}</strong> de <strong className="text-cyan-400">{totalDbCount.toLocaleString('pt-BR')}</strong> totais
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const newPage = Math.max(1, currentPage - 1);
+                        setCurrentPage(newPage);
+                        handleSearch(activeTab, filters, newPage);
+                      }}
+                      disabled={currentPage === 1 || loading}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentPage === 1 || loading ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                    >
+                      Anterior
+                    </button>
+                    <div className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 text-cyan-400 border border-slate-700">
+                      Página {currentPage} de {Math.ceil(totalDbCount / pageSize)}
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newPage = Math.min(Math.ceil(totalDbCount / pageSize), currentPage + 1);
+                        setCurrentPage(newPage);
+                        handleSearch(activeTab, filters, newPage);
+                      }}
+                      disabled={currentPage >= Math.ceil(totalDbCount / pageSize) || loading}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentPage >= Math.ceil(totalDbCount / pageSize) || loading ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>

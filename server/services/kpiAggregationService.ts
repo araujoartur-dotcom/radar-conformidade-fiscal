@@ -356,10 +356,10 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
           const chunkPromises: Promise<any>[] = [];
 
           // Detecta se base_cbs já existe como coluna no Supabase
-          let selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, base_cbs, base_ibs, regime_tributario, cliente_cnpj, fornecedor_cnpj';
+          let selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, base_cbs, base_ibs, regime_tributario, cliente_cnpj, fornecedor_cnpj';
           const { error: testColErr } = await supabase.from('dfe_documentos').select('base_cbs').limit(0);
           if (testColErr) {
-            selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, cliente_cnpj, fornecedor_cnpj';
+            selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, cliente_cnpj, fornecedor_cnpj';
           }
 
           for (let i = 0; i < numChunks; i++) {

@@ -307,14 +307,21 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
     const vICMSStr = getSubTagValue('ICMSTot', 'vICMS') || '0';
     valorIcms = parseFloat(vICMSStr) || 0;
 
-    const vIPIStr = getSubTagValue('ICMSTot', 'vIPI') || '0';
+    const vIPIStr = getSubTagValue('ICMSTot', 'vIPI') || getSubTagValue('IPITot', 'vIPI') || getTagValue(xmlDoc, 'vIPI') || '0';
     valorIpi = parseFloat(vIPIStr) || 0;
 
-    const vPISStr = getSubTagValue('ICMSTot', 'vPIS') || '0';
+    const vPISStr = getSubTagValue('ICMSTot', 'vPIS') || getTagValue(xmlDoc, 'vPIS') || '0';
     valorPis = parseFloat(vPISStr) || 0;
 
-    const vCOFINSStr = getSubTagValue('ICMSTot', 'vCOFINS') || '0';
+    const vCOFINSStr = getSubTagValue('ICMSTot', 'vCOFINS') || getTagValue(xmlDoc, 'vCOFINS') || '0';
     valorCofins = parseFloat(vCOFINSStr) || 0;
+
+    // ISSQN em NF-e Conjugada (ISSQNTot)
+    const vISSStr = getSubTagValue('ISSQNTot', 'vISS') || getTagValue(xmlDoc, 'vISS') || getTagValue(xmlDoc, 'vISSQN') || '0';
+    const valorIssNfe = parseFloat(vISSStr) || 0;
+    if (valorIssNfe > 0) {
+      valorIssRetido = valorIssNfe;
+    }
 
     // Reforma Tributária Global NF-e (IBSCBSTot / gCBS / gIBS)
     const vCBSGlobalStr = getSubTagValue('IBSCBSTot', 'vCBS') || getSubTagValue('gCBS', 'vCBS') || getTagValue(xmlDoc, 'vCBS') || '0';
@@ -440,6 +447,12 @@ export function parseDfeXmlString(xmlString: string, fileName?: string): DfeXmlI
       aliquotaIbs,
       cClassTrib: '000001',
     });
+  }
+
+  // Totalização de IPI a partir dos itens se o cabeçalho veio zerado
+  if (valorIpi === 0 && itensExtraidos.length > 0) {
+    const somaIpi = itensExtraidos.reduce((acc, it) => acc + (it.valorIpi || 0), 0);
+    if (somaIpi > 0) valorIpi = somaIpi;
   }
 
   return {
