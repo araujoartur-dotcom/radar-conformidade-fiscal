@@ -35,7 +35,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [items, setItems] = useState<XmlItemDetailReport[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [hasSearched, setHasSearched] = useState<boolean>(false);
-  const [volumeWarning, setVolumeWarning] = useState<{ show: boolean; count: number } | null>(null);
   const [selectedItemForModal, setSelectedItemForModal] = useState<XmlItemDetailReport | null>(null);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState<boolean>(true);
   const [dbKpis, setDbKpis] = useState<any>(null);
@@ -140,13 +139,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     setFilters(prev => ({ ...prev, searchTerm: '' }));
   };
 
-  // Resetar busca quando empresa ativa mudar (sem disparar busca automática para manter tela limpa)
+  // Limpar preview de documento quando a empresa ativa mudar
   useEffect(() => {
-    setHasSearched(false);
-    setItems([]);
-    setDbKpis(null);
-    setTotalDbCount(0);
-    setVolumeWarning(null);
     setSelectedPreviewDoc(null);
     setIsQuickSearchOpen(false);
   }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto]);
@@ -221,9 +215,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     setFilters(cleared);
     setSelectedPreviewDoc(null);
     setIsQuickSearchOpen(false);
-    setHasSearched(false);
-    setItems([]);
-    setVolumeWarning(null);
+    handleSearch(activeTab, cleared);
   };
 
   const handleSearch = async (tabOverride?: ReportTabType, customFilters?: ReportFilterState) => {
@@ -270,12 +262,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         fetchedItems = (data.data || []) as XmlItemDetailReport[];
         if (typeof data.total === 'number' && data.total > 0) {
           setTotalDbCount(data.total);
-          // Alerta preventivo se o operador buscou sem recorte de datas e a base possui alta volumetria (> 5.000 notas)
-          if (!activeF.dataInicio && !activeF.dataFim && data.total > 5000) {
-            setVolumeWarning({ show: true, count: data.total });
-          } else {
-            setVolumeWarning(null);
-          }
         }
         if (data.totaisBanco) {
           setDbKpis((prev: any) => ({
@@ -312,6 +298,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       }
       
       setItems(fetchedItems);
+      setHasSearched(true);
     } catch (error) {
       console.error('Erro na busca:', error);
       if (dfeList && dfeList.length > 0) {
@@ -393,10 +380,18 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         });
         setItems(mapped);
       }
+      setHasSearched(true);
     } finally {
       setLoading(false);
     }
   };
+
+  // Carregar dados automaticamente consolidando métricas na montagem e ao alternar a empresa ativa
+  useEffect(() => {
+    if (empresaAtiva?.id) {
+      handleSearch();
+    }
+  }, [empresaAtiva?.id]);
 
   const handleExportExcel = () => {
     exportReportToExcel(filteredItems, `Relatorio_${activeTab}`);
@@ -626,9 +621,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 onChange={(e) => {
                   const newTab = e.target.value as ReportTabType;
                   setActiveTab(newTab);
-                  if (hasSearched) {
-                    handleSearch(newTab);
-                  }
+                  handleSearch(newTab);
                 }}
                 className="w-full bg-slate-950 border border-cyan-500/60 rounded-xl px-3.5 py-2 text-xs text-white font-bold focus:outline-none focus:border-cyan-400 shadow-lg shadow-cyan-950/40 cursor-pointer"
               >
@@ -1157,52 +1150,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
         )}
       </div>
 
-      {/* Alerta Preventivo de Volume Elevado (> 5.000 notas sem filtro de data) */}
-      {volumeWarning?.show && (
-        <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs flex items-start gap-3 shadow-xl animate-fade-in">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-1.5 flex-1">
-            <div className="font-bold text-amber-100 text-sm flex items-center gap-2">
-              <span>Volume elevado para extração analítica ({volumeWarning.count.toLocaleString('pt-BR')} documentos no banco)</span>
-            </div>
-            <p className="text-amber-300/90 leading-relaxed">
-              Para evitar lentidão superior a <strong>5 minutos</strong> ou interrupção por limite de processamento de XMLs, recomendamos selecionar um <strong>período menor</strong> (ex: mensal ou trimestral) nos campos de <strong>Data Inicial</strong> e <strong>Data Final</strong> dos filtros acima.
-            </p>
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  const now = new Date();
-                  const ano = now.getFullYear();
-                  const mes = String(now.getMonth() + 1).padStart(2, '0');
-                  const dataIni = `${ano}-${mes}-01`;
-                  const ultimoDia = new Date(ano, now.getMonth() + 1, 0).getDate();
-                  const dataFim = `${ano}-${mes}-${String(ultimoDia).padStart(2, '0')}`;
-                  const newF = { ...filters, dataInicio: dataIni, dataFim: dataFim };
-                  setFilters(newF);
-                  setVolumeWarning(null);
-                  handleSearch(activeTab, newF);
-                }}
-                className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold border border-amber-500/40 transition-all cursor-pointer"
-              >
-                Filtrar Mês Atual
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const newF = { ...filters, dataInicio: '2026-08-01', dataFim: '2026-08-31' };
-                  setFilters(newF);
-                  setVolumeWarning(null);
-                  handleSearch(activeTab, newF);
-                }}
-                className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold border border-amber-500/40 transition-all cursor-pointer"
-              >
-                Filtrar Competência 08/2026
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Estado Inicial: Tela Limpa sem busca realizada */}
       {!hasSearched && !loading && (
@@ -1238,8 +1186,8 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
             tributosAtuais={chartMetrics.tributosAtuais}
             tributosReforma={chartMetrics.tributosReforma}
             creditoIbsCbs={chartMetrics.creditoIbsCbs}
-            totalDocs={chartMetrics.totalDocs}
-            totalItens={chartMetrics.totalItens}
+            totalDocs={totalDbCount > 0 ? totalDbCount : chartMetrics.totalDocs}
+            totalItens={totalDbCount > 0 ? totalDbCount : chartMetrics.totalItens}
           />
 
           {filteredItems.length === 0 ? (
