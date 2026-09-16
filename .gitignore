@@ -52,8 +52,7 @@ data/certificates/
 *.sln
 *.sw?
 
-# Vercel & Gemini cache
-#.vercel
+# Gemini cache
 .gemini
 .system_generated
 scratch/

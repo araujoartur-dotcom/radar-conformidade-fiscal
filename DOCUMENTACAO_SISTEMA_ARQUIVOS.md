@@ -105,7 +105,7 @@ graph TD
   * Função `isSupabaseConfigured()` para verificar dinamicamente se as credenciais do Supabase estão preenchidas no `.env`.
   * Função `getSupabaseAdmin()` que cria o cliente administrativo com `SERVICE_ROLE_KEY` (ignorando restrições automáticas de RLS para rotas internas do backend).
 * **Reflexo no sistema:**
-  * Habilita a operação em nuvem escalável. Sempre que o Supabase estiver configurado, as rotas do backend dão preferência ao PostgreSQL Cloud, viabilizando acesso distribuído multiusuário e deploy no Render/Vercel.
+  * Habilita a operação em nuvem escalável. Sempre que o Supabase estiver configurado, as rotas do backend dão preferência ao PostgreSQL Cloud, viabilizando acesso distribuído multiusuário e deploy no Render/Netlify.
 
 ---
 

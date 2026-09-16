@@ -25,7 +25,7 @@ export function getApiBaseUrl(): string {
     return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
   }
 
-  // Se estamos rodando no navegador em um domínio público (Netlify, Vercel ou domínio próprio)
+  // Se estamos rodando no navegador em um domínio público (Netlify ou domínio próprio)
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
     // Sempre usa o proxy reverso do mesmo domínio (/api), garantindo imunidade total a CORS
     return '/api';

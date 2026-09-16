@@ -55,7 +55,7 @@ O **Radar de Conformidade Fiscal** é uma plataforma corporativa *mission-critic
   - Proteção de cabeçalhos HTTP com `helmet`, rate-limiting contra ataques de negação de serviço e controle de CORS estrito.
 - [x] **1.2. Camada de Persistência Híbrida (SQLite WAL + Supabase PostgreSQL)**
   - Banco de dados local SQLite de alta performance com modo WAL (`Write-Ahead Logging`), transações atômicas e chaves estrangeiras ativas.
-  - Suporte e sincronização com Supabase (PostgreSQL) para ambientes de produção em nuvem (Render/Vercel).
+  - Suporte e sincronização com Supabase (PostgreSQL) para ambientes de produção em nuvem (Render/Netlify).
 - [x] **1.3. Modelagem do Schema Relacional Completo**
   - Tabelas estruturadas:
     - `empresas`: Cadastro multi-tenant por CNPJ Raiz, dados cadastrais, regime tributário e controles de NSU.
@@ -128,7 +128,7 @@ O **Radar de Conformidade Fiscal** é uma plataforma corporativa *mission-critic
 | **3.2** | **Motor de Split Payment (LC 214/2025)** | Implementar motor de cálculo de retenção na fonte no momento da liquidação financeira da fatura (via arranjos de pagamento / Pix / boleto), segregando a parcela do tributo direto para a conta do Comitê Gestor do IBS e Receita Federal. | 🔴 Alta |
 | **3.3** | **Decomposição Modular do Frontend (`App.tsx`)** | Refatorar o componente principal `App.tsx` (que centraliza múltiplos estados) separando-o em rotas independentes (`/dashboard`, `/carteira`, `/dfe`, `/eventos`, `/relatorios`, `/configuracoes`) com React Router e Zustand para gerenciamento de estado global. | 🟡 Média |
 | **3.4** | **Row-Level Security (RLS) no PostgreSQL (Supabase)** | Ativar e configurar políticas estritas de RLS no PostgreSQL onde cada `SELECT`, `UPDATE` e `DELETE` é filtrado automaticamente pelo `tenant_id` / `empresa_id` do usuário autenticado no JWT. | 🟡 Média |
-| **3.5** | **Pipeline CI/CD com Docker e GitHub Actions** | Criar `Dockerfile` multi-stage (Node.js Alpine) e workflow de GitHub Actions para execução de testes automatizados, checagem de tipos TypeScript (`tsc`) e deploy automatizado no Render e Vercel/Netlify. | 🟢 Estrutural |
+| **3.5** | **Pipeline CI/CD com Docker e GitHub Actions** | Criar `Dockerfile` multi-stage (Node.js Alpine) e workflow de GitHub Actions para execução de testes automatizados, checagem de tipos TypeScript (`tsc`) e deploy automatizado no Render e Netlify. | 🟢 Estrutural |
 | **3.6** | **Guarda Imutável de XMLs (Object Lock / WORM — 5 Anos)** | Implementar rotina de armazenamento em nuvem (S3 / Cloud Storage / Supabase Storage) com retenção bloqueada contra deleção acidental (WORM - Write Once, Read Many) e geração de hash SHA-256 para cada XML conforme exigência do Código Tributário Nacional (Art. 173). | 🟢 Compliance |
 
 ---
