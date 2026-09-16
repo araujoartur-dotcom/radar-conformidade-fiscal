@@ -560,7 +560,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                     <span>Documento Fiscal Alvo ({selectedTipoDfe === 'NFSe' ? 'NFS-e Nacional' : selectedTipoDfe})</span>
                     {selectedTipoDfe === 'NFSe' && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950 text-purple-300 border border-purple-800 font-mono">
-                        Chave 50 Dígitos
+                        Chave 50 ou 44 Dígitos (Nacional/Municipal)
                       </span>
                     )}
                   </label>
@@ -574,7 +574,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                     <input
                       type="text"
                       placeholder={selectedTipoDfe === 'NFSe' 
-                        ? "Filtrar por Chave de 50 dígitos, Nº NFS-e ou Prestador..." 
+                        ? "Filtrar por Chave de 50/44 dígitos, Nº NFS-e ou Prestador..." 
                         : "Filtrar por Chave de 44 dígitos, Nº NF-e ou Fornecedor..."}
                       value={docFilterText}
                       onChange={(e) => setDocFilterText(e.target.value)}
@@ -623,7 +623,9 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                       {activeChave?.length === 50 ? (
                         <span className="text-purple-400 font-bold">✓ 50 dígitos (NFS-e Nacional)</span>
                       ) : activeChave?.length === 44 ? (
-                        <span className="text-cyan-400 font-bold">✓ 44 dígitos (NF-e / CT-e)</span>
+                        <span className="text-cyan-400 font-bold">
+                          ✓ 44 dígitos {selectedTipoDfe === 'NFSe' ? '(NFS-e Municipal)' : '(NF-e / CT-e)'}
+                        </span>
                       ) : activeChave?.length > 0 ? (
                         <span className="text-amber-400 font-bold">{activeChave.length} dígitos</span>
                       ) : null}
@@ -635,7 +637,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                       value={activeChave}
                       onChange={(e) => setActiveChave(e.target.value.trim())}
                       placeholder={selectedTipoDfe === 'NFSe' 
-                        ? "Cole aqui a chave de 50 dígitos da NFS-e Nacional..." 
+                        ? "Cole aqui a chave da NFS-e (Nacional 50d ou Municipal 44d)..." 
                         : "Cole aqui a chave de 44 dígitos da NF-e / CT-e..."}
                       className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400"
                     />
