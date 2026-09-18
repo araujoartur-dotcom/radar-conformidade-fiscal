@@ -12,7 +12,8 @@
     "lint": "tsc --noEmit",
     "test:supabase": "tsx scripts/test-supabase-connection.ts",
     "test:sanity": "tsx scripts/verify-production-sanity.ts",
-    "ingest": "tsx scripts/ingest-xmls-fast.ts"
+    "ingest": "tsx scripts/ingest-xmls-fast.ts",
+    "seed:dev": "tsx scripts/seed-dev-mock.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

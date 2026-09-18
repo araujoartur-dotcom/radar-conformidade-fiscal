@@ -41,6 +41,20 @@ coverage/
 *.crt
 data/certificates/
 
+# Real XML customer data & raw documents (CRITICAL FOR FISCAL PRIVACY)
+XML ENTRADA/
+XML SAIDA/
+*.xml
+
+# Internal notes, recovery codes, database queries & operational docs (CONFIDENTIAL)
+Anotaçoes/
+Anotações/
+Anotacoes/
+*.bak
+*.dump
+*.sql.gz
+
+
 # IDE & OS Files
 .vscode/*
 !.vscode/extensions.json
