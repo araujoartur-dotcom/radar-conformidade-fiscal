@@ -255,7 +255,9 @@ export function Login() {
         
         <div className="px-8 py-4 bg-slate-950 border-t border-slate-800 flex justify-between items-center text-xs text-slate-500">
           <span>Ambiente Seguro e Monitorado</span>
-          <span>v2.5.0</span>
+          <span title={`Build: ${__BUILD_HASH__} em ${__BUILD_TIMESTAMP__}`}>
+            v{__APP_VERSION__} ({__BUILD_HASH__})
+          </span>
         </div>
       </div>
     </div>

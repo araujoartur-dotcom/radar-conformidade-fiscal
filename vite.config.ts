@@ -1,10 +1,23 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { execSync } from 'child_process';
 import {defineConfig} from 'vite';
+
+let commitHash = 'local-dev';
+try {
+  commitHash = execSync('git rev-parse --short HEAD').toString().trim();
+} catch {}
+
+const buildTimestamp = new Date().toISOString();
 
 export default defineConfig(() => {
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '2.5.0'),
+      __BUILD_HASH__: JSON.stringify(commitHash),
+      __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
