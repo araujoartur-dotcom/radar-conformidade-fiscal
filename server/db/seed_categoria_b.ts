@@ -24,21 +24,18 @@ export function seedCategoriaB(db: any): void {
 
 export function seedAdValoremEAdRem(db: any): void {
   try {
-    const countAdValorem = db.prepare("SELECT COUNT(*) as count FROM aliquotas_tabelas WHERE modalidade = 'ad_valorem'").get() as any;
-    
-    // Se tiver menos de 8 vigências Ad Valorem, atualizar/inserir o cronograma completo
-    if (!countAdValorem || countAdValorem.count < 8) {
-      console.log('🌱 Semeando vigências anuais da alíquota Ad Valorem (2026 a 2033+)...');
+    console.log('🌱 Sincronizando vigências anuais da alíquota Ad Valorem (2026 a 2033+)...');
+    db.prepare("DELETE FROM aliquotas_tabelas WHERE modalidade = 'ad_valorem'").run();
 
       const adValoremData = [
         { cod: '00001', ini: '2026-01-01', fim: '2026-12-31', cbs: 0.9000, est: 0.0500, mun: 0.0500, is: 0.0000, desc: 'Ano de Teste e Calibração Operacional (Art. 342 LC 214/2025) - Total 1,00%' },
-        { cod: '00002', ini: '2027-01-01', fim: '2027-12-31', cbs: 8.8000, est: 0.0500, mun: 0.0500, is: 0.0000, desc: 'Entrada em Vigor Plena da CBS Federal (8,80%) e IBS Teste (0,10%)' },
-        { cod: '00003', ini: '2033-01-01', fim: '2099-12-31', cbs: 9.2100, est: 13.7000, mun: 5.0000, is: 0.0000, desc: 'Regime Pleno Definitivo do IVA Dual (27,91%) — Comitê Gestor IBS' },
-        { cod: '00004', ini: '2028-01-01', fim: '2028-12-31', cbs: 8.8000, est: 0.0500, mun: 0.0500, is: 0.0000, desc: 'Consolidação da CBS e Ajuste Fino para o IBS Estadual/Municipal' },
-        { cod: '00005', ini: '2029-01-01', fim: '2029-12-31', cbs: 8.8000, est: 1.3700, mun: 0.5000, is: 0.0000, desc: 'Transição IBS (10% da Ref. = 1,87%) + Redução ICMS/ISS 10% - Total 10,67%' },
-        { cod: '00006', ini: '2030-01-01', fim: '2030-12-31', cbs: 8.8000, est: 2.7400, mun: 1.0000, is: 0.0000, desc: 'Transição IBS (20% da Ref. = 3,74%) + Redução ICMS/ISS 20% - Total 12,54%' },
-        { cod: '00007', ini: '2031-01-01', fim: '2031-12-31', cbs: 8.8000, est: 4.1100, mun: 1.5000, is: 0.0000, desc: 'Transição IBS (30% da Ref. = 5,61%) + Redução ICMS/ISS 30% - Total 14,41%' },
-        { cod: '00008', ini: '2032-01-01', fim: '2032-12-31', cbs: 8.8000, est: 5.4800, mun: 2.0000, is: 0.0000, desc: 'Transição IBS (40% da Ref. = 7,48%) + Redução ICMS/ISS 40% - Total 16,28%' },
+        { cod: '00002', ini: '2027-01-01', fim: '2027-12-31', cbs: 9.1100, est: 0.0500, mun: 0.0500, is: 0.0000, desc: 'Entrada em Vigor Plena da CBS Federal (9,11%) e IBS Teste (0,10%)' },
+        { cod: '00003', ini: '2028-01-01', fim: '2028-12-31', cbs: 9.1100, est: 0.0500, mun: 0.0500, is: 0.0000, desc: 'Consolidação da CBS (9,11%) e Ajuste Fino para o IBS Estadual/Municipal' },
+        { cod: '00004', ini: '2029-01-01', fim: '2029-12-31', cbs: 9.2100, est: 1.3700, mun: 0.5000, is: 0.0000, desc: 'Transição IBS (10% da Ref. = 1,87%) + Redução ICMS/ISS 10% - Total 11,08%' },
+        { cod: '00005', ini: '2030-01-01', fim: '2030-12-31', cbs: 9.2100, est: 2.7400, mun: 1.0000, is: 0.0000, desc: 'Transição IBS (20% da Ref. = 3,74%) + Redução ICMS/ISS 20% - Total 12,95%' },
+        { cod: '00006', ini: '2031-01-01', fim: '2031-12-31', cbs: 9.2100, est: 4.1100, mun: 1.5000, is: 0.0000, desc: 'Transição IBS (30% da Ref. = 5,61%) + Redução ICMS/ISS 30% - Total 14,82%' },
+        { cod: '00007', ini: '2032-01-01', fim: '2032-12-31', cbs: 9.2100, est: 5.4800, mun: 2.0000, is: 0.0000, desc: 'Transição IBS (40% da Ref. = 7,48%) + Redução ICMS/ISS 40% - Total 16,69%' },
+        { cod: '00008', ini: '2033-01-01', fim: '2099-12-31', cbs: 9.2100, est: 13.7000, mun: 5.0000, is: 0.0000, desc: 'Regime Pleno Definitivo do IVA Dual (27,91%) — Comitê Gestor IBS' },
       ];
 
       const stmtAdVal = db.prepare(`
@@ -50,7 +47,6 @@ export function seedAdValoremEAdRem(db: any): void {
       for (const row of adValoremData) {
         stmtAdVal.run(uuid(), row.cod, row.cbs, row.est, row.mun, row.is, row.ini, row.fim, row.desc);
       }
-    }
 
     const countAdRem = db.prepare("SELECT COUNT(*) as count FROM aliquotas_tabelas WHERE modalidade = 'ad_rem'").get() as any;
     if (!countAdRem || countAdRem.count === 0) {

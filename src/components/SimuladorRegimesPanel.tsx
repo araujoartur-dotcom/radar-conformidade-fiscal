@@ -89,7 +89,7 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
         // Sincronizar alíquota do IVA da Reforma com o ano selecionado
         const rowAno = adVals.find((t: AliquotaTabelaItem) => {
           if (t.inicio_vigencia?.startsWith(anoTransicao)) return true;
-          if (anoTransicao === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+          if (anoTransicao === '2033' && (t.codigo_cadastro === '00008' || t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
           return false;
         });
         if (rowAno) {
@@ -110,7 +110,7 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     setAnoTransicao(novoAno);
     const rowAno = dbAdValorem.find(t => {
       if (t.inicio_vigencia?.startsWith(novoAno)) return true;
-      if (novoAno === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+      if (novoAno === '2033' && (t.codigo_cadastro === '00008' || t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
       return false;
     });
     if (rowAno) {
@@ -125,7 +125,7 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     // 1. Restaurar IVA Oficial do ano selecionado a partir do banco
     const rowAno = dbAdValorem.find(t => {
       if (t.inicio_vigencia?.startsWith(anoTransicao)) return true;
-      if (anoTransicao === '2033' && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
+      if (anoTransicao === '2033' && (t.codigo_cadastro === '00008' || t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01')) return true;
       return false;
     });
     if (rowAno) {

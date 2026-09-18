@@ -160,7 +160,7 @@ export function seedDatabase(): void {
     // Ad Valorem (%)
     { cod: '00001', mod: 'ad_valorem', cbs: 0.9000, ibs_est: 0.0500, ibs_mun: 0.0500, is_fed: 0.0000, unid: null, ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste e Calibração Operacional (Art. 342 LC 214/2025)' },
     { cod: '00002', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 0.0000, ibs_mun: 0.0000, is_fed: 0.0000, unid: null, ini: '2027-01-01', fim: '2027-12-31', desc: 'Início Vigência CBS Plena e IBS Transição' },
-    { cod: '00003', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 13.7000, ibs_mun: 5.0000, is_fed: 0.0000, unid: null, ini: '2033-01-01', fim: '2099-12-31', desc: 'Vigência Plena e Definitiva do IVA Dual (27,91%) — Comitê Gestor IBS' },
+    { cod: '00008', mod: 'ad_valorem', cbs: 9.2100, ibs_est: 13.7000, ibs_mun: 5.0000, is_fed: 0.0000, unid: null, ini: '2033-01-01', fim: '2099-12-31', desc: 'Vigência Plena e Definitiva do IVA Dual (27,91%) — Comitê Gestor IBS' },
 
     // Ad Rem (R$ / Unidade)
     { cod: '00001', mod: 'ad_rem', cbs: 0.0000, ibs_est: 0.0000, ibs_mun: 0.0000, is_fed: 0.0000, unid: 'kg', ini: '2026-01-01', fim: '2026-12-31', desc: 'Ano de Teste Ad Rem (Combustíveis e GLP)' },

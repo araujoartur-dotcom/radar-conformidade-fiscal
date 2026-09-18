@@ -30,7 +30,7 @@ export const RelatorioMapaCClassTrib: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         const rows = data.data || [];
-        const refRow = rows.find((r: any) => r.codigo_cadastro === '00003' || r.inicio_vigencia?.startsWith('2033')) || rows[rows.length - 1];
+        const refRow = rows.find((r: any) => r.codigo_cadastro === '00008' || r.codigo_cadastro === '00003' || r.inicio_vigencia?.startsWith('2033')) || rows[rows.length - 1];
         if (refRow) {
           const tot = (Number(refRow.cbs_federal) + Number(refRow.ibs_estadual) + Number(refRow.ibs_municipal)).toFixed(2);
           const formatted = `${tot}%`;

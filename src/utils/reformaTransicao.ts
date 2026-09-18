@@ -27,7 +27,7 @@ export function buildCronogramaFromTabelas(tabelas?: AliquotaTabelaItem[]): Reco
     return adValorem.find(t => {
       if (!t.inicio_vigencia) return false;
       if (t.inicio_vigencia.startsWith(anoStr) || t.inicio_vigencia.endsWith(anoStr) || t.inicio_vigencia.includes(anoStr)) return true;
-      if (ano === 2033 && (t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01' || (t.final_vigencia && (t.final_vigencia >= '2099-01-01' || t.final_vigencia.includes('2099'))))) return true;
+      if (ano === 2033 && (t.codigo_cadastro === '00008' || t.codigo_cadastro === '00003' || t.inicio_vigencia >= '2033-01-01' || (t.final_vigencia && (t.final_vigencia >= '2099-01-01' || t.final_vigencia.includes('2099'))))) return true;
       return false;
     });
   };
