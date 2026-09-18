@@ -53,6 +53,7 @@ Anotacoes/
 *.bak
 *.dump
 *.sql.gz
+*.zip
 
 
 # IDE & OS Files
