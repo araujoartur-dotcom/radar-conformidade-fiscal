@@ -6,7 +6,7 @@ import {
   AlertTriangle, ShieldAlert, Calendar, DollarSign, Hash, Package, CheckSquare, XCircle,
   Search, Copy
 } from 'lucide-react';
-import { DfeXmlItem, EventoDfeRequest, TipoDFe, DadosEventoEstruturado } from '../types';
+import { DfeXmlItem, EventoDfeRequest, TipoDFe, DadosEventoEstruturado, CertificadoA1 } from '../types';
 import { CATALOGO_EVENTOS_DFE, getEventosPorTipoDfe } from '../utils/dfeEventsCatalog';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
@@ -18,12 +18,16 @@ interface EventosDfePanelProps {
   selectedDfe?: DfeXmlItem | null;
   dfeList: DfeXmlItem[];
   onEventProcessed?: (chaveAcesso: string, eventoTipo: string) => void;
+  certificado?: CertificadoA1;
+  onOpenCertModal?: () => void;
 }
 
 export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   selectedDfe,
   dfeList,
-  onEventProcessed
+  onEventProcessed,
+  certificado,
+  onOpenCertModal
 }) => {
   const { token, empresaAtiva } = useAuth();
   const { kpis, totalGeral } = useKpis();
@@ -346,7 +350,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         justificativa: justificativa.trim() || undefined,
         dadosEstruturados: Object.keys(dadosEstruturados).length > 0 ? dadosEstruturados : undefined,
         dataHora: data.dhRegEvento || new Date().toISOString(),
-        protocoloSeFaz: data.protocoloSefaz || data.cStat || '135260000000001',
+        protocoloSeFaz: data.protocoloSefaz || (data.success !== false ? '135260000000001' : (data.cStat ? `Rejeição ${data.cStat}` : '—')),
         status: data.success !== false ? 'processado' : 'rejeitado',
         detalhesReforma: activeEventoDef.isReformaTributaria ? {
           cbsAjuste: `CBS: R$ ${(valorCbsItem || currentDocument?.valorCbs || 100).toFixed(2)}`,
@@ -365,7 +369,8 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       if (data.success !== false) {
         alert(`Evento transmitido com sucesso! Protocolo: ${data.protocoloSefaz || '135260000000001'}`);
       } else {
-        alert(`Falha na autorização: ${data.xMotivo || 'Serviço da SEFAZ indisponível ou rejeitado pelo autorizador.'}`);
+        const msg = data.xMotivo || (data.cStat ? `Rejeição SEFAZ [cStat ${data.cStat}]: Operação rejeitada pelo autorizador.` : 'Falha na comunicação com a SEFAZ.');
+        alert(msg.startsWith('⚠️') ? msg : `Falha na autorização: ${msg}`);
       }
 
     } catch (err: any) {
@@ -418,13 +423,29 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           </button>
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs shadow-inner">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <div className="text-[11px]">
-            <span className="font-bold text-emerald-400 mr-1.5">Certificado A1 OK</span>
-            <span className="text-[10px] text-slate-400 font-mono">SEFAZ / CGIBS</span>
+        {/* Botão de Status do Certificado A1 da Empresa Ativa */}
+        <button
+          type="button"
+          onClick={() => onOpenCertModal && onOpenCertModal()}
+          className={`hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs shadow-inner cursor-pointer transition-all ${
+            certificado?.valido || (certificado?.status === 'valido' && certificado?.validade && new Date(certificado.validade) >= new Date())
+              ? 'bg-emerald-950/50 border-emerald-700/60 hover:bg-emerald-900/60'
+              : 'bg-amber-950/50 border-amber-700/60 hover:bg-amber-900/60'
+          }`}
+          title={
+            certificado?.valido
+              ? `Certificado Digital A1 Ativo (Validade: ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Ativo'}) — Clique para gerenciar`
+              : 'Certificado Digital A1 Pendente — Clique para vincular arquivo .PFX'
+          }
+        >
+          <Key className={`w-4 h-4 shrink-0 ${certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}`} />
+          <div className="text-[11px] flex items-center gap-1.5">
+            <span className={`font-bold ${certificado?.valido ? 'text-emerald-300' : 'text-amber-300'}`}>
+              {certificado?.valido ? 'Certificado Ativo' : 'Certificado Pendente'}
+            </span>
+            <span className={`w-2 h-2 rounded-full ${certificado?.valido ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
           </div>
-        </div>
+        </button>
       </div>
 
       {/* TAB 1: EMISSOR DE EVENTOS RTC */}

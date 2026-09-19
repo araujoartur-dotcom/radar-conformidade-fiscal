@@ -23,6 +23,7 @@ import { Search } from 'lucide-react';
 
 import { useAuth } from './contexts/AuthContext';
 import { useApi } from './hooks/useApi';
+import { getApiBaseUrl } from './utils/apiConfig';
 import { useKpis } from './contexts/KpiContext';
 import { useBatchProcessing } from './hooks/useBatchProcessing';
 import { Login } from './components/Login';
@@ -102,6 +103,38 @@ export default function App() {
   useEffect(() => {
     setDfeList([]);
     setSelectedDfeForEvents(null);
+  }, [empresaAtiva?.id]);
+
+  // Sincroniza o status persistente do Certificado A1 da empresa ativa (persiste após login/logout)
+  useEffect(() => {
+    if (!empresaAtiva?.id) return;
+    const fetchCertStatus = async () => {
+      try {
+        const token = localStorage.getItem('@RadarFiscal:token');
+        const res = await fetch(`${getApiBaseUrl()}/config/certificate/status/${empresaAtiva.id}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.hasCertificate && data.certificado) {
+            setCertificado(data.certificado);
+          } else {
+            setCertificado({
+              fileName: '',
+              cnpj: empresaAtiva.cnpjCompleto || '',
+              razãoSocial: empresaAtiva.razaoSocial || '',
+              tipo: 'e-CNPJ A1',
+              validade: '',
+              status: 'pendente',
+              valido: false
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Aviso ao carregar status do certificado:', e);
+      }
+    };
+    fetchCertStatus();
   }, [empresaAtiva?.id]);
 
   // Modal State for Turbo Fiscal .ZIP Export
@@ -409,6 +442,8 @@ export default function App() {
                 onEventProcessed={(chave, evt) => {
                   setDfeList(prev => prev.map(d => d.chaveAcesso === chave ? { ...d, eventoUltimo: evt as any } : d));
                 }}
+                certificado={certificado}
+                onOpenCertModal={() => setIsCertModalOpen(true)}
               />
             )}
 

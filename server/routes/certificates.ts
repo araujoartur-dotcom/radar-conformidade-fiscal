@@ -234,4 +234,121 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res: Respon
   }
 });
 
+/**
+ * GET /api/config/certificate/status/:tenantId?
+ * Retorna os metadados do certificado A1 ativo para a empresa informada (ou ativa).
+ * NUNCA retorna senhas nem chaves privadas, garantindo conformidade Zero-Trust e persistência após login.
+ */
+router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const target = req.params.tenantId || req.user?.empresaAtivaId || req.user?.empresaCnpj;
+    if (!target) {
+      res.json({ success: true, hasCertificate: false, certificado: null });
+      return;
+    }
+
+    const cleanTarget = target.replace(/\D/g, '');
+    let cert: any = null;
+    let empresa: any = null;
+
+    // 1. Supabase Cloud se configurado
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: empById } = await supabase
+          .from('empresas')
+          .select('id, razao_social, cnpj_completo, cnpj_raiz')
+          .eq('id', target)
+          .maybeSingle();
+
+        if (empById) {
+          empresa = empById;
+        } else if (cleanTarget) {
+          const { data: empByCnpj } = await supabase
+            .from('empresas')
+            .select('id, razao_social, cnpj_completo, cnpj_raiz')
+            .or(`cnpj_completo.eq.${target},cnpj_raiz.eq.${cleanTarget.slice(0, 8)}`)
+            .maybeSingle();
+          if (empByCnpj) empresa = empByCnpj;
+        }
+
+        if (empresa) {
+          const { data: supaCert } = await supabase
+            .from('certificados')
+            .select('id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at')
+            .eq('empresa_id', empresa.id)
+            .neq('status_alerta', 'expirado')
+            .neq('status_alerta', 'substituido')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (supaCert) cert = supaCert;
+        }
+      }
+    }
+
+    // 2. Fallback SQLite Local
+    if (!cert) {
+      const db = getDatabase();
+      if (!empresa) {
+        empresa = db.prepare(`
+          SELECT id, razao_social, cnpj_completo, cnpj_raiz 
+          FROM empresas 
+          WHERE id = ? OR cnpj_completo = ? OR cnpj_raiz = ?
+        `).get(target, target, cleanTarget.slice(0, 8)) as any;
+      }
+
+      if (empresa) {
+        cert = db.prepare(`
+          SELECT id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at
+          FROM certificados
+          WHERE empresa_id = ? AND status_alerta NOT IN ('expirado', 'substituido')
+          ORDER BY validade DESC, created_at DESC
+          LIMIT 1
+        `).get(empresa.id) as any;
+      }
+    }
+
+    if (!cert) {
+      res.json({
+        success: true,
+        hasCertificate: false,
+        certificado: {
+          fileName: '',
+          cnpj: empresa?.cnpj_completo || '',
+          razãoSocial: empresa?.razao_social || '',
+          tipo: 'e-CNPJ A1',
+          validade: '',
+          status: 'pendente',
+          valido: false
+        }
+      });
+      return;
+    }
+
+    const isValido = cert.status_alerta === 'ok' || cert.status_alerta === 'valido' || !cert.status_alerta;
+
+    res.json({
+      success: true,
+      hasCertificate: true,
+      certificado: {
+        id: cert.id,
+        fileName: cert.arquivo_nome || 'certificado.pfx',
+        validade: cert.validade || '2028-12-31',
+        status: isValido ? 'valido' : 'pendente',
+        valido: isValido,
+        emissor: cert.emissor || 'AC Certificadora A1',
+        impressaoDigital: cert.impressao_digital || '',
+        cnpj: empresa?.cnpj_completo || '',
+        razãoSocial: empresa?.razao_social || '',
+        tipo: 'e-CNPJ A1'
+      }
+    });
+  } catch (err: any) {
+    console.error('❌ Erro ao buscar status do certificado:', err);
+    res.status(500).json({ success: false, error: 'Erro ao verificar certificado ativo.' });
+  }
+});
+
 export default router;

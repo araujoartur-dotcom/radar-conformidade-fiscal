@@ -464,7 +464,7 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
     return {
       success: false,
       cStat: '999',
-      xMotivo: 'Certificado Digital A1 não configurado para esta empresa no cofre seguro.',
+      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para transmitir à SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       xmlEnvio: xmlEvento,
       xmlRetorno: '',
       tpAmb,
@@ -481,12 +481,13 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
     const dhRegEvento = extractTagRegex(response.body, 'dhRegEvento') || getBrasiliaTimestamp();
 
     const success = ['128', '135', '136'].includes(cStat);
-    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat}: ${xMotivo} (nProt=${nProt})`);
+    const resolvedMotivo = xMotivo || (success ? 'Evento processado com sucesso.' : (cStat ? `Rejeição SEFAZ (cStat ${cStat})` : (response.statusCode === 403 ? 'Acesso negado pela SEFAZ (Bloqueio de IP ou Certificado rejeitado pelo autorizador)' : `Falha no retorno da SEFAZ (HTTP ${response.statusCode})`)));
+    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat || 'N/A'}: ${resolvedMotivo} (nProt=${nProt || 'N/A'})`);
 
     return {
       success,
-      cStat,
-      xMotivo,
+      cStat: cStat || String(response.statusCode || '999'),
+      xMotivo: resolvedMotivo,
       nProt: nProt || undefined,
       dhRegEvento,
       xmlEnvio: xmlEvento,
@@ -498,7 +499,7 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
     return {
       success: false,
       cStat: '999',
-      xMotivo: `Erro de comunicação: ${err.message}`,
+      xMotivo: `Erro de comunicação com a SEFAZ: ${err.message}`,
       xmlEnvio: xmlEvento,
       xmlRetorno: '',
       tpAmb,
@@ -524,7 +525,7 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
     return {
       success: false,
       cStat: '999',
-      xMotivo: 'Certificado Digital A1 não configurado no cofre seguro para este CNPJ.',
+      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       ultNSU: params.ultNSU || '000000000000000',
       maxNSU: '000000000000000',
       tpAmb,
@@ -1196,7 +1197,7 @@ export async function consultarDistribuicaoCTe(params: DistribucaoDfeRequest): P
     return {
       success: false,
       cStat: '999',
-      xMotivo: 'Certificado Digital A1 não configurado no cofre seguro para este CNPJ.',
+      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       ultNSU: params.ultNSU || '000000000000000',
       maxNSU: '000000000000000',
       tpAmb,
