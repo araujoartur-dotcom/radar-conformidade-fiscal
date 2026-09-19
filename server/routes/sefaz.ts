@@ -242,22 +242,112 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
       ? req.body.tpAmb 
       : (process.env.SEFAZ_TP_AMB || '1'); // Default para Produção ('1') para dados reais
 
+    const cleanChave = chNFe.replace(/\D/g, '');
+    const isCte = (cleanChave.substring(20, 22) === '57' || cleanChave.substring(20, 22) === '67' || tipoDoc === 'CTe');
+    const tipoDocReal = isCte ? 'CTe' : 'NFe';
+
+    // 1. Consulta Situação na SEFAZ Estadual Autorizadora (Autorização 100, Cancelamento, CC-e)
     const resultado = await consultarSituacaoCompletaDFe({
-      chaveAcesso: chNFe,
-      tipoDoc: tipoDoc as 'NFe' | 'CTe',
+      chaveAcesso: cleanChave,
+      tipoDoc: tipoDocReal,
       tpAmb: tpAmb as '1' | '2',
       empresaId: empresa.id,
       cnpj: empresa.cnpj_completo,
       userId: req.user?.userId
     });
 
+    // 2. Consulta 360° no Ambiente Nacional (AN) via consChNFe / consChCTe (Ciência, Confirmação, Eventos de Terceiros, Passagens)
+    try {
+      console.log(`🔍 [Monitor 360°] Consultando Ambiente Nacional (consChNFe) para chave ${cleanChave}...`);
+      const empDetails = db.prepare('SELECT uf FROM empresas WHERE id = ?').get(empresa.id) as any;
+      const ufAutor = empDetails?.uf || (cleanChave.substring(0, 2) === '33' ? 'RJ' : 'SP');
+
+      const distResultado = isCte
+        ? await consultarDistribuicaoCTe({
+            cnpj: empresa.cnpj_completo.replace(/\D/g, ''),
+            chNFe: cleanChave,
+            tpAmb: tpAmb as '1' | '2',
+            empresaId: empresa.id,
+            ufAutor,
+            userId: req.user?.userId,
+          })
+        : await consultarDistribuicaoDFe({
+            cnpj: empresa.cnpj_completo.replace(/\D/g, ''),
+            chNFe: cleanChave,
+            tpAmb: tpAmb as '1' | '2',
+            empresaId: empresa.id,
+            ufAutor,
+            userId: req.user?.userId,
+            manifestarCienciaAutomatica: false,
+          });
+
+      if (distResultado && Array.isArray(distResultado.eventosTerceiros) && distResultado.eventosTerceiros.length > 0) {
+        for (const evt of distResultado.eventosTerceiros) {
+          const jaExiste = resultado.eventos.some(
+            e => e.codigoEvento === evt.codigoEvento && (e.protocolo === evt.protocolo || e.dataHora === evt.dhEvento)
+          );
+          if (!jaExiste) {
+            resultado.eventos.push({
+              codigoEvento: evt.codigoEvento,
+              nomeEvento: evt.nomeEvento,
+              nSeqEvento: evt.nSeqEvento || 1,
+              dataHora: evt.dhEvento || getBrasiliaTimestamp(),
+              protocolo: evt.protocolo || '',
+              cStat: evt.cStat || '135',
+              xMotivo: evt.xMotivo || 'Evento vinculado à NF-e no Ambiente Nacional',
+              origemEvento: evt.origemEvento || 'terceiro_destinatario',
+              autorCnpj: evt.autorCnpj || '',
+            });
+          }
+        }
+      }
+    } catch (distErr: any) {
+      console.warn(`⚠️ Aviso: falha ao consultar Ambiente Nacional via consChNFe (seguindo com eventos locais e estaduais):`, distErr.message);
+    }
+
+    // 3. Merge com Eventos já Registrados na Base de Dados Local (SQLite + Supabase) para a Chave
+    try {
+      const eventosLocais = db.prepare(`
+        SELECT codigo_evento, nome_evento, data_hora, protocolo_sefaz, cstat, codigo_retorno, motivo_retorno, origem_evento, autor_cnpj
+        FROM eventos_transmitidos
+        WHERE chave_acesso = ? AND status = 'processado'
+        ORDER BY data_hora DESC
+      `).all(cleanChave) as any[];
+
+      if (eventosLocais && eventosLocais.length > 0) {
+        for (const loc of eventosLocais) {
+          const jaExiste = resultado.eventos.some(
+            e => e.codigoEvento === loc.codigo_evento && (e.protocolo === loc.protocolo_sefaz || e.dataHora === loc.data_hora)
+          );
+          if (!jaExiste) {
+            resultado.eventos.push({
+              codigoEvento: loc.codigo_evento,
+              nomeEvento: loc.nome_evento,
+              nSeqEvento: 1,
+              dataHora: loc.data_hora,
+              protocolo: loc.protocolo_sefaz || '',
+              cStat: loc.cstat || loc.codigo_retorno || '135',
+              xMotivo: loc.motivo_retorno || 'Evento registrado com sucesso',
+              origemEvento: loc.origem_evento || 'proprio',
+              autorCnpj: loc.autor_cnpj || '',
+            });
+          }
+        }
+      }
+    } catch (dbEvtErr: any) {
+      console.warn('⚠️ Aviso ao consolidar eventos locais:', dbEvtErr.message);
+    }
+
+    // Ordenar cronologicamente todos os eventos (mais recentes primeiro)
+    resultado.eventos.sort((a, b) => new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime());
+
     // Registrar no Log de Auditoria
     logAuditAction(
       req,
-      'CONSULTA_SEFAZ',
-      `Consulta Completa de Situação da chave ${chNFe.slice(0, 20)}... cStat=${resultado.cStat} - ${resultado.xMotivo}. ${resultado.eventos.length} evento(s) baixado(s).`,
+      'CONSULTA_SEFAZ_360',
+      `Consulta Completa Unificada 360° da chave ${cleanChave.slice(0, 20)}... cStat=${resultado.cStat} - ${resultado.xMotivo}. Total consolidado: ${resultado.eventos.length} evento(s).`,
       resultado.success ? 'INFO' : 'WARN',
-      { chaveAcesso: chNFe, cStat: resultado.cStat, totalEventos: resultado.eventos.length }
+      { chaveAcesso: cleanChave, cStat: resultado.cStat, totalEventos: resultado.eventos.length }
     );
 
     res.json(resultado);
