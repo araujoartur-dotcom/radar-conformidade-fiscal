@@ -22,8 +22,10 @@ import {
   consultarDistribuicaoCTe,
   consultarCadastroTriplaCamada,
   consultarSituacaoCompletaDFe,
+  descriptografarCertificadoComDiagnostico,
   EventoSefazRequest,
 } from '../services/sefazService';
+import { consultarEventosPortalNacionalMtls } from '../services/portalNfeScraperService';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
 import { SEFAZ } from '../config';
 
@@ -245,20 +247,58 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
     const cleanChave = chNFe.replace(/\D/g, '');
     const isCte = (cleanChave.substring(20, 22) === '57' || cleanChave.substring(20, 22) === '67' || tipoDoc === 'CTe');
     const tipoDocReal = isCte ? 'CTe' : 'NFe';
+    const cUF = cleanChave.substring(0, 2);
 
-    // 1. Consulta Situação na SEFAZ Estadual Autorizadora (Autorização 100, Cancelamento, CC-e)
-    const resultado = await consultarSituacaoCompletaDFe({
-      chaveAcesso: cleanChave,
-      tipoDoc: tipoDocReal,
-      tpAmb: tpAmb as '1' | '2',
-      empresaId: empresa.id,
-      cnpj: empresa.cnpj_completo,
-      userId: req.user?.userId
-    });
+    const eventosConsolidados: any[] = [];
+    let protocoloAutorizacaoFinal = '';
+    let dhRecbtoFinal = getBrasiliaTimestamp();
+    let cStatFinal = '100';
+    let xMotivoFinal = 'Consulta realizada com sucesso no Ambiente Nacional';
 
-    // 2. Consulta 360° no Ambiente Nacional (AN) via consChNFe / consChCTe (Ciência, Confirmação, Eventos de Terceiros, Passagens)
+    // =========================================================================
+    // 1. CAPTURA NO AMBIENTE NACIONAL (AN) — PRIORIDADE 1 SOBERANA
+    // =========================================================================
+
+    // 1.1. Fluxo B: Consulta Direta dos Eventos Oficiais do Portal Nacional com Certificado A1 (mTLS)
     try {
-      console.log(`🔍 [Monitor 360°] Consultando Ambiente Nacional (consChNFe) para chave ${cleanChave}...`);
+      console.log(`🌐 [Monitor 360°] Prioridade 1 (Fluxo B): Consultando Ambiente Nacional com Certificado A1 (mTLS) para chave ${cleanChave}...`);
+      const diagCert = await descriptografarCertificadoComDiagnostico(empresa.id, empresa.cnpj_completo);
+      if (diagCert && diagCert.certificado) {
+        const portalRes = await consultarEventosPortalNacionalMtls({
+          chaveAcesso: cleanChave,
+          pfxBuffer: diagCert.certificado.pfxBuffer,
+          senhaPfx: diagCert.certificado.senha,
+        });
+
+        if (portalRes.success && portalRes.eventos.length > 0) {
+          console.log(`✅ [Monitor 360°] ${portalRes.eventos.length} evento(s) oficial(is) obtido(s) via mTLS do Portal Nacional!`);
+          for (const pe of portalRes.eventos) {
+            eventosConsolidados.push({
+              codigoEvento: pe.codigoEvento,
+              nomeEvento: pe.nomeEvento,
+              nSeqEvento: pe.nSeqEvento,
+              dataHora: pe.dataHora,
+              protocolo: pe.protocolo,
+              cStat: pe.cStat,
+              xMotivo: pe.xMotivo,
+              origemEvento: pe.origemEvento,
+              autorCnpj: pe.autorCnpj || '',
+            });
+            if (pe.codigoEvento === '100' && pe.protocolo) {
+              protocoloAutorizacaoFinal = pe.protocolo;
+            }
+          }
+        }
+      } else {
+        console.warn(`⚠️ [Monitor 360°] Certificado A1 não disponível para mTLS no Ambiente Nacional: ${diagCert?.motivoErro}`);
+      }
+    } catch (portalErr: any) {
+      console.warn(`⚠️ [Monitor 360°] Aviso na consulta mTLS do Ambiente Nacional: ${portalErr.message}`);
+    }
+
+    // 1.2. Fluxo A: Consulta / Varredura de Eventos do Ambiente Nacional via NFeDistribuicaoDFe
+    try {
+      console.log(`🔍 [Monitor 360°] Prioridade 1 (Fluxo A): Verificando eventos de distribuição do Ambiente Nacional (distDFe)...`);
       const empDetails = db.prepare('SELECT uf FROM empresas WHERE id = ?').get(empresa.id) as any;
       const ufAutor = empDetails?.uf || (cleanChave.substring(0, 2) === '33' ? 'RJ' : 'SP');
       const validUserId = ensureUsuarioExists(db, req.user?.userId, req.user?.email);
@@ -284,11 +324,11 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
 
       if (distResultado && Array.isArray(distResultado.eventosTerceiros) && distResultado.eventosTerceiros.length > 0) {
         for (const evt of distResultado.eventosTerceiros) {
-          const jaExiste = resultado.eventos.some(
+          const jaExiste = eventosConsolidados.some(
             e => e.codigoEvento === evt.codigoEvento && (e.protocolo === evt.protocolo || e.dataHora === evt.dhEvento)
           );
           if (!jaExiste) {
-            resultado.eventos.push({
+            eventosConsolidados.push({
               codigoEvento: evt.codigoEvento,
               nomeEvento: evt.nomeEvento,
               nSeqEvento: evt.nSeqEvento || 1,
@@ -303,11 +343,57 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
         }
       }
     } catch (distErr: any) {
-      console.warn(`⚠️ Aviso: falha ao consultar Ambiente Nacional via consChNFe (seguindo com eventos locais e estaduais):`, distErr.message);
+      console.warn(`⚠️ Aviso: falha ao consultar eventos de distribuição no Ambiente Nacional:`, distErr.message);
     }
 
-    // 3. Merge com Eventos já Registrados na Base de Dados Local (SQLite + Supabase) para a Chave
+    // =========================================================================
+    // 2. CONSULTA COMPLEMENTAR À SEFAZ ESTADUAL AUTORIZADORA — PRIORIDADE 2
+    // =========================================================================
+    let resultadoEstadual: any = null;
     try {
+      console.log(`🏛️ [Monitor 360°] Prioridade 2: Consultando SEFAZ Estadual Autorizadora (UF ${cUF}) para protocolo 100...`);
+      resultadoEstadual = await consultarSituacaoCompletaDFe({
+        chaveAcesso: cleanChave,
+        tipoDoc: tipoDocReal,
+        tpAmb: tpAmb as '1' | '2',
+        empresaId: empresa.id,
+        cnpj: empresa.cnpj_completo,
+        userId: req.user?.userId
+      });
+
+      if (resultadoEstadual) {
+        cStatFinal = resultadoEstadual.cStat || cStatFinal;
+        xMotivoFinal = resultadoEstadual.xMotivo || xMotivoFinal;
+        if (resultadoEstadual.protocoloAutorizacao) {
+          protocoloAutorizacaoFinal = resultadoEstadual.protocoloAutorizacao;
+        }
+        if (resultadoEstadual.dhRecbto) {
+          dhRecbtoFinal = resultadoEstadual.dhRecbto;
+        }
+
+        if (Array.isArray(resultadoEstadual.eventos) && resultadoEstadual.eventos.length > 0) {
+          for (const estEvt of resultadoEstadual.eventos) {
+            const jaExiste = eventosConsolidados.some(
+              e => e.codigoEvento === estEvt.codigoEvento && (
+                (e.protocolo && estEvt.protocolo && e.protocolo === estEvt.protocolo) ||
+                (e.dataHora === estEvt.dataHora)
+              )
+            );
+            if (!jaExiste) {
+              eventosConsolidados.push(estEvt);
+            }
+          }
+        }
+      }
+    } catch (estErr: any) {
+      console.warn(`⚠️ Aviso na consulta complementar da SEFAZ Estadual:`, estErr.message);
+    }
+
+    // =========================================================================
+    // 3. EVENTOS DE CUSTÓDIA HISTÓRICA REGISTRADOS (SQLite + Supabase)
+    // =========================================================================
+    try {
+      // 3.1 SQLite Local
       const eventosLocais = db.prepare(`
         SELECT codigo_evento, nome_evento, data_hora, protocolo_sefaz, cstat, codigo_retorno, motivo_retorno, origem_evento, autor_cnpj
         FROM eventos_transmitidos
@@ -317,11 +403,11 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
 
       if (eventosLocais && eventosLocais.length > 0) {
         for (const loc of eventosLocais) {
-          const jaExiste = resultado.eventos.some(
+          const jaExiste = eventosConsolidados.some(
             e => e.codigoEvento === loc.codigo_evento && (e.protocolo === loc.protocolo_sefaz || e.dataHora === loc.data_hora)
           );
           if (!jaExiste) {
-            resultado.eventos.push({
+            eventosConsolidados.push({
               codigoEvento: loc.codigo_evento,
               nomeEvento: loc.nome_evento,
               nSeqEvento: 1,
@@ -335,23 +421,71 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
           }
         }
       }
+
+      // 3.2 Supabase Remoto
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data: supaEvts } = await supabase
+            .from('eventos_transmitidos')
+            .select('codigo_evento, nome_evento, data_hora, protocolo_sefaz, codigo_retorno, motivo_retorno, origem_evento, autor_cnpj')
+            .eq('chave_acesso', cleanChave)
+            .eq('status', 'processado');
+
+          if (supaEvts && supaEvts.length > 0) {
+            for (const se of supaEvts) {
+              const jaExiste = eventosConsolidados.some(
+                e => e.codigoEvento === se.codigo_evento && (e.protocolo === se.protocolo_sefaz || e.dataHora === se.data_hora)
+              );
+              if (!jaExiste) {
+                eventosConsolidados.push({
+                  codigoEvento: se.codigo_evento,
+                  nomeEvento: se.nome_evento,
+                  nSeqEvento: 1,
+                  dataHora: se.data_hora,
+                  protocolo: se.protocolo_sefaz || '',
+                  cStat: se.codigo_retorno || '135',
+                  xMotivo: se.motivo_retorno || 'Evento registrado com sucesso',
+                  origemEvento: se.origem_evento || 'proprio',
+                  autorCnpj: se.autor_cnpj || '',
+                });
+              }
+            }
+          }
+        }
+      }
     } catch (dbEvtErr: any) {
-      console.warn('⚠️ Aviso ao consolidar eventos locais:', dbEvtErr.message);
+      console.warn('⚠️ Aviso ao consolidar eventos de custódia:', dbEvtErr.message);
     }
 
     // Ordenar cronologicamente todos os eventos (mais recentes primeiro)
-    resultado.eventos.sort((a, b) => new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime());
+    eventosConsolidados.sort((a, b) => new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime());
+
+    const resultadoFinal = {
+      success: true,
+      cStat: cStatFinal,
+      xMotivo: xMotivoFinal,
+      chaveAcesso: cleanChave,
+      tipoDoc: tipoDocReal,
+      tpAmb,
+      cUF,
+      dhRecbto: dhRecbtoFinal,
+      protocoloAutorizacao: protocoloAutorizacaoFinal,
+      eventos: eventosConsolidados,
+      origem: 'ambiente_nacional_e_sefaz',
+      xmlRetorno: resultadoEstadual?.xmlRetorno || '',
+    };
 
     // Registrar no Log de Auditoria
     logAuditAction(
       req,
       'CONSULTA_SEFAZ_360',
-      `Consulta Completa Unificada 360° da chave ${cleanChave.slice(0, 20)}... cStat=${resultado.cStat} - ${resultado.xMotivo}. Total consolidado: ${resultado.eventos.length} evento(s).`,
-      resultado.success ? 'INFO' : 'WARN',
-      { chaveAcesso: cleanChave, cStat: resultado.cStat, totalEventos: resultado.eventos.length }
+      `Consulta Unificada Ambiente Nacional (AN) + Estadual da chave ${cleanChave.slice(0, 20)}... cStat=${cStatFinal} - ${xMotivoFinal}. Total consolidado: ${eventosConsolidados.length} evento(s).`,
+      resultadoFinal.success ? 'INFO' : 'WARN',
+      { chaveAcesso: cleanChave, cStat: cStatFinal, totalEventos: eventosConsolidados.length }
     );
 
-    res.json(resultado);
+    res.json(resultadoFinal);
   } catch (err: any) {
     console.error('❌ Erro na Consulta de Situação SEFAZ:', err);
     res.status(500).json({ success: false, error: err.message || 'Falha ao consultar situação na SEFAZ.' });
@@ -617,11 +751,11 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
       try {
         const supabase = getSupabaseAdmin();
         if (supabase) {
-          await supabase.from('eventos_transmitidos').upsert({
-            id: eventoId,
+          await supabase.from('eventos_transmitidos').insert({
+            id: uuidv4(),
             empresa_id: empresaId,
             usuario_id: userId,
-            documento_id: docDbId,
+            documento_id: null,
             chave_acesso: cleanChave,
             tipo_dfe: tipoDfe || 'NFe',
             codigo_evento: codigoEvento,
@@ -639,7 +773,7 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
             status: resultado.success ? 'processado' : 'rejeitado',
             data_hora: resultado.dhRegEvento || nowBrasilia,
             created_at: nowBrasilia
-          }, { onConflict: 'id' });
+          });
         }
       } catch (supaErr: any) {
         console.warn('⚠️ Falha ao espelhar evento transmitido no Supabase:', supaErr.message);

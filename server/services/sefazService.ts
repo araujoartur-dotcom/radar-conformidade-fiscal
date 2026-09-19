@@ -1939,9 +1939,9 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
         const supabase = getSupabaseAdmin();
         if (supabase && eventos.length > 0) {
           const supabaseRows = eventos.map(evt => ({
-            id: `evt-${cleanChave}-${evt.codigoEvento}-${evt.nSeqEvento}`,
+            id: uuidv4(),
             empresa_id: empresaId,
-            documento_id: docDbId,
+            documento_id: null,
             chave_acesso: cleanChave,
             tipo_dfe: tipoDocReal,
             codigo_evento: evt.codigoEvento,
@@ -1961,7 +1961,7 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
             data_hora: evt.dataHora,
             created_at: nowBrasilia
           }));
-          await supabase.from('eventos_transmitidos').upsert(supabaseRows, { onConflict: 'id' });
+          await supabase.from('eventos_transmitidos').insert(supabaseRows);
         }
       } catch (supaErr: any) {
         console.warn('⚠️ Falha ao sincronizar eventos consultados no Supabase:', supaErr.message);

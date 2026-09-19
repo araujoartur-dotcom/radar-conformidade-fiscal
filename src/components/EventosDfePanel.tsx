@@ -284,6 +284,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       }
       if (historicoFiltro === 'terceiros') {
         return log.origemEvento === 'terceiro_destinatario' || 
+               log.origemEvento === 'portal_nacional' ||
                ['210220', '210240', '210200', '210210'].includes(log.codigoEvento);
       }
       return true;
@@ -1636,6 +1637,11 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                           {log.origemEvento === 'terceiro_destinatario' && (
                             <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-700">
                               Recebido de Cliente
+                            </span>
+                          )}
+                          {log.origemEvento === 'portal_nacional' && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-700">
+                              Ambiente Nacional
                             </span>
                           )}
                         </div>
