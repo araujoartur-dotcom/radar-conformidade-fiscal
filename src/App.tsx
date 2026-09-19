@@ -16,9 +16,10 @@ import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
 import { SimuladorRegimesPanel } from './components/SimuladorRegimesPanel';
+import { CopilotoFiscalDrawer } from './components/CopilotoFiscalDrawer';
 import { QueryMode, CertificadoA1, DfeXmlItem, AmbienteSefaz } from './types';
 import { formatCNPJ, onlyNumbers } from './utils/cnpj';
-import { Search } from 'lucide-react';
+import { Search, Sparkles } from 'lucide-react';
 
 import { useAuth } from './contexts/AuthContext';
 import { useApi } from './hooks/useApi';
@@ -106,6 +107,21 @@ export default function App() {
 
   // Modal State for Turbo Fiscal .ZIP Export
   const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
+
+  // Copiloto Fiscal IA (Auditor AI) Drawer State
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+
+  // Atalho de teclado global para abrir/fechar o Copiloto Fiscal (Ctrl + J ou Cmd + J)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        setIsCopilotOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Settings
   const [rateLimit, setRateLimit] = useState<number>(8); // 8 req/s default
@@ -308,6 +324,7 @@ export default function App() {
         onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
+        onOpenCopiloto={() => setIsCopilotOpen(true)}
       />
 
       {/* Connectivity & Cold-Start Recovery Banner */}
@@ -537,6 +554,33 @@ export default function App() {
         isOpen={isExportFiscalModalOpen}
         onClose={() => setIsExportFiscalModalOpen(false)}
         totalDocsAvailable={currentKpis?.totalDocs || dfeList.length || 21345}
+      />
+
+      {/* Floating Action Button (FAB) - Copiloto Fiscal IA (Auditor AI) */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => setIsCopilotOpen(prev => !prev)}
+          className="group relative flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs shadow-2xl shadow-cyan-500/30 border border-cyan-400/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+          title="Abrir Copiloto Fiscal IA — Auditor AI (Ctrl + J)"
+          aria-label="Abrir Copiloto Fiscal IA"
+        >
+          <div className="relative">
+            <Sparkles className="w-4 h-4 text-white animate-pulse" />
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 border border-[#0b121e]" />
+          </div>
+          <span className="tracking-tight font-extrabold font-['Plus_Jakarta_Sans']">
+            Copiloto Fiscal
+          </span>
+          <span className="text-[10px] bg-black/30 px-1.5 py-0.5 rounded text-cyan-200 font-mono hidden sm:inline">
+            Ctrl+J
+          </span>
+        </button>
+      </div>
+
+      {/* Copiloto Fiscal IA Drawer */}
+      <CopilotoFiscalDrawer
+        isOpen={isCopilotOpen}
+        onClose={() => setIsCopilotOpen(false)}
       />
 
     </div>

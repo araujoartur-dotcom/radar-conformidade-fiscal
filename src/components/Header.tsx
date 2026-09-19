@@ -3,7 +3,7 @@ import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
   ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp, Key,
-  BarChart3, Plug
+  BarChart3, Plug, Sparkles
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,6 +18,7 @@ interface HeaderProps {
   ambienteSefaz: AmbienteSefaz;
   setAmbienteSefaz: (amb: AmbienteSefaz) => void;
   onOpenCertModal?: () => void;
+  onOpenCopiloto?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExportFiscal,
   ambienteSefaz,
   setAmbienteSefaz,
+  onOpenCopiloto,
 }) => {
   const { user, empresaAtiva, empresasDisponiveis, logout, switchEmpresa, token } = useAuth();
   const { post } = useApi();
@@ -279,6 +281,27 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-[9px] text-slate-400 font-normal">(Clique p/ gerenciar)</span>
             </div>
           </div>
+
+          {/* Copiloto Fiscal IA (Auditor AI) */}
+          {onOpenCopiloto && (
+            <div className="relative group">
+              <button
+                onClick={onOpenCopiloto}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-950/80 via-indigo-950/80 to-cyan-950/80 hover:from-blue-900 hover:to-cyan-900 text-cyan-300 border border-cyan-500/50 hover:border-cyan-400 text-xs font-bold shadow-md shadow-cyan-500/15 transition-all cursor-pointer"
+                title="Abrir Copiloto Fiscal IA — Auditor AI (Consultor Sênior 30+ Anos)"
+                aria-label="Copiloto Fiscal IA"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+                <span className="hidden sm:inline">Auditor AI</span>
+              </button>
+
+              {/* Hover Tooltip */}
+              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-cyan-700/60 text-[11px] font-bold text-cyan-200 whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1">
+                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-cyan-700/60" />
+                <span>Auditor AI (30+ Anos) • RTC & ICMS</span>
+              </div>
+            </div>
+          )}
 
           {/* Export Fiscal (Compact Icon Button with Hover Tooltip) */}
           {onOpenExportFiscal && (

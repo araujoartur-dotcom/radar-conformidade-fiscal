@@ -165,6 +165,15 @@ export const SUPABASE = {
   IS_CONFIGURED: Boolean(normalizedSupabaseUrl && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)),
 } as const;
 
+// ============================================================
+// INTELIGÊNCIA ARTIFICIAL FISCAL (GOOGLE GEMINI)
+// ============================================================
+export const AI_CONFIG = {
+  GEMINI_API_KEY: (process.env.GEMINI_API_KEY || '').trim(),
+  MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  IS_CONFIGURED: Boolean((process.env.GEMINI_API_KEY || '').trim()),
+} as const;
+
 export default {
-  SERVER, AUTH, DATABASE, SUPABASE, SEFAZ, CGIBS, RFB, ERP, CERTIFICADO, RATE_LIMIT,
+  SERVER, AUTH, DATABASE, SUPABASE, SEFAZ, CGIBS, RFB, ERP, CERTIFICADO, RATE_LIMIT, AI_CONFIG,
 };
