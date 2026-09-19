@@ -10,6 +10,8 @@ import {
   Globe,
   Database,
   ArrowRight,
+  Folder,
+  FolderOpen,
   FolderInput,
   FolderOutput,
   Key,
@@ -133,6 +135,20 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     setParsedChavesList(unique);
   }, [rawChavesText]);
 
+  // Diretório de Salvamento Unificado (Todos os DF-e)
+  const [baseDirectory, setBaseDirectory] = useState<string>(() => {
+    return localStorage.getItem('radar_diretorio_base_xml') || 'C:\\SEFAZ\\XMLs';
+  });
+  const [showDirectoryPickerModal, setShowDirectoryPickerModal] = useState<boolean>(false);
+  const [tempDirectoryInput, setTempDirectoryInput] = useState<string>('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('radar_diretorio_base_xml');
+    if (saved) {
+      setBaseDirectory(saved);
+    }
+  }, []);
+
   if (!isOpen) return null;
 
   const addLog = (msg: string) => {
@@ -229,7 +245,7 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         addLog(`Descompactando XML(s) autorizado(s)...`);
         const folderCode = currentCnpj.replace(/\D/g, '').substring(0, 8) || '00000000';
         addLog(`Download concluído: ${data.docs.length} XML(s) processado(s) e salvo(s) em disco.`);
-        addLog(`📁 Pasta Local: C:\\SEFAZ\\XMLs\\${folderCode}\\${fluxo === 'saida' ? 'Saida' : 'Entrada'}\\`);
+        addLog(`📁 Pasta Local: ${baseDirectory}\\${folderCode}\\${fluxo === 'saida' ? 'Saida' : 'Entrada'}\\`);
 
         if (data.ultNSU) {
           setUltNSU(data.ultNSU);
@@ -1303,33 +1319,60 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
             </div>
           )}
 
-          {/* Path Notice */}
-          <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
-            <div className="flex items-center gap-2">
-              {fluxo === 'entrada' ? (
-                <>
-                  <FolderInput className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                  <span>Gravação física automática: <code className="text-blue-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Entrada\YYYY\MM\</code></span>
-                </>
-              ) : (
-                <>
-                  <FolderOutput className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Gravação física automática: <code className="text-emerald-300 font-mono">C:\SEFAZ\XMLs\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\Saida\YYYY\MM\</code></span>
-                </>
-              )}
+          {/* Seleção e Visualização de Diretório de Gravação Unificado (Todos os DF-e) */}
+          <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5 flex-1 min-w-[280px]">
+              <div className="p-2 rounded-lg bg-blue-950/50 border border-blue-800/60 text-blue-400 shrink-0">
+                {fluxo === 'entrada' ? (
+                  <FolderInput className="w-4 h-4 text-cyan-400" />
+                ) : (
+                  <FolderOutput className="w-4 h-4 text-emerald-400" />
+                )}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-300 font-semibold">Diretório de Gravação dos XMLs:</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-800/60 text-cyan-300 font-medium">
+                    Aplicado para todos DF-e (NF-e, CT-e, NFS-e)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <code
+                    className="text-cyan-300 font-mono text-[11px] bg-slate-900/90 px-2 py-0.5 rounded border border-slate-800 truncate max-w-[460px]"
+                    title={`${baseDirectory}\\${(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\\${fluxo === 'saida' ? 'Saida' : 'Entrada'}\\YYYY\\MM\\`}
+                  >
+                    {baseDirectory}\{(cnpjInput || '00000000').replace(/\D/g, '').substring(0, 8)}\{fluxo === 'saida' ? 'Saida' : 'Entrada'}\YYYY\MM\
+                  </code>
+                </div>
+              </div>
             </div>
 
-            {results && results.length > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={handleDownloadZip}
-                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white font-bold text-[10px] flex items-center gap-1 border border-slate-700 transition-all cursor-pointer shrink-0 ml-2"
-                title="Baixar todos os XMLs em arquivo compactado .ZIP"
+                onClick={() => {
+                  setTempDirectoryInput(baseDirectory);
+                  setShowDirectoryPickerModal(true);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-blue-900/30 transition-all cursor-pointer"
+                title="Clique para selecionar ou alterar o diretório onde os arquivos XML serão gravados"
               >
-                <FileArchive className="w-3.5 h-3.5 text-amber-400" />
-                <span>💾 Baixar Lote em ZIP</span>
+                <FolderOpen className="w-4 h-4 text-amber-300" />
+                <span>Selecione diretório para salvar os XML</span>
               </button>
-            )}
+
+              {results && results.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDownloadZip}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white font-bold text-xs flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer shrink-0"
+                  title="Baixar todos os XMLs em arquivo compactado .ZIP"
+                >
+                  <FileArchive className="w-3.5 h-3.5 text-amber-400" />
+                  <span>💾 Baixar Lote em ZIP</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* cStat Feedback Banner */}
@@ -1473,6 +1516,125 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Seleção de Diretório Unificado para Todos os DF-e */}
+      {showDirectoryPickerModal && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-cyan-950/80 border border-cyan-700/60 flex items-center justify-center text-cyan-400">
+                  <FolderOpen className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white">Configurar Diretório de Gravação dos XMLs</h4>
+                  <p className="text-[11px] text-slate-400">Aplicado universalmente para todos os DF-e (NF-e, CT-e e NFS-e)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDirectoryPickerModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">
+                  Caminho do Diretório Base no Computador ou Rede:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={tempDirectoryInput}
+                    onChange={(e) => setTempDirectoryInput(e.target.value)}
+                    placeholder="Ex: C:\Fiscal\XMLs ou D:\MinhaEmpresa\XMLs"
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                  {'showDirectoryPicker' in window && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const dirHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+                          if (dirHandle?.name) {
+                            setTempDirectoryInput(`C:\\${dirHandle.name}`);
+                          }
+                        } catch (err: any) {
+                          // Seleção cancelada pelo usuário
+                        }
+                      }}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-xl border border-slate-700 font-medium text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                      title="Abrir o seletor nativo do Windows"
+                    >
+                      <Folder className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Explorar</span>
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Organização automática: <code className="text-cyan-400 font-mono">{(tempDirectoryInput || 'C:\\SEFAZ\\XMLs').replace(/[\\/]+$/, '')}\[CNPJ_RAIZ]\[Entrada|Saida]\[AAAA]\[MM]\[chave].xml</code>
+                </p>
+              </div>
+
+              {/* Sugestões Rápidas */}
+              <div>
+                <span className="text-[11px] text-slate-400 block mb-1.5 font-medium">Atalhos recomendados:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {['C:\\SEFAZ\\XMLs', 'C:\\Fiscal\\XMLs', 'D:\\XMLs_Fiscais', 'C:\\Contabilidade\\XMLs'].map((sug) => (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setTempDirectoryInput(sug)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-[11px] font-mono transition-all cursor-pointer"
+                    >
+                      {sug}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-900/60 text-blue-300 text-[11px] flex items-start gap-2">
+                <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span>
+                  Esta configuração define o diretório raiz para salvar todas as notas fiscais (NF-e, CT-e e NFS-e) no disco de forma estruturada.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowDirectoryPickerModal(false)}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const newDir = tempDirectoryInput.trim().replace(/[\\/]+$/, '') || 'C:\\SEFAZ\\XMLs';
+                  setBaseDirectory(newDir);
+                  localStorage.setItem('radar_diretorio_base_xml', newDir);
+                  setShowDirectoryPickerModal(false);
+                  addLog(`📁 Diretório de gravação de XMLs atualizado: ${newDir} (aplicado para todos os DF-e)`);
+                  try {
+                    await post('/directories/global', { basePath: newDir });
+                  } catch (e) {
+                    console.warn('Erro ao sincronizar diretório no servidor:', e);
+                  }
+                }}
+                className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Confirmar e Salvar Diretório</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

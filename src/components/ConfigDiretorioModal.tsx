@@ -79,17 +79,18 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
           if (clean.length === 8 && !existingRaizSet.has(clean)) {
             existingRaizSet.add(clean);
             const formatted = `${clean.substring(0, 2)}.${clean.substring(2, 5)}.${clean.substring(5, 8)}`;
+            const baseDir = (typeof localStorage !== 'undefined' ? localStorage.getItem('radar_diretorio_base_xml') : null) || 'C:\\SEFAZ\\XMLs';
             mergedConfigs.push({
               id: `cfg-${clean}`,
               cnpjRaiz: formatted,
               razaoSocial: emp.razaoSocial || emp.nomeFantasia || `EMPRESA CNPJ RAIZ ${formatted}`,
-              diretorioEntrada: `C:\\SEFAZ\\XMLs\\${clean}\\Entrada`,
+              diretorioEntrada: `${baseDir}\\${clean}\\Entrada`,
               subpastaDataEntrada: true,
               estruturaNomeEntrada: 'chave',
-              diretorioSaida: `C:\\SEFAZ\\XMLs\\${clean}\\Saida`,
+              diretorioSaida: `${baseDir}\\${clean}\\Saida`,
               subpastaDataSaida: true,
               estruturaNomeSaida: 'chave',
-              diretorioEventos: `C:\\SEFAZ\\XMLs\\${clean}\\Eventos`,
+              diretorioEventos: `${baseDir}\\${clean}\\Eventos`,
               autoOrganizarAoCapturar: true,
               statusMonitoramento: 'ativo',
               ultimaSincronizacao: 'Cadastrada na Carteira'
@@ -148,17 +149,18 @@ export const ConfigDiretorioModal: React.FC<ConfigDiretorioModalProps> = ({
       return;
     }
 
+    const baseDir = (typeof localStorage !== 'undefined' ? localStorage.getItem('radar_diretorio_base_xml') : null) || 'C:\\SEFAZ\\XMLs';
     const newConfig: CnpjRaizDirectoryConfig = {
       id: newId,
       cnpjRaiz: formattedCnpj,
       razaoSocial: newRazaoSocialInput.trim() || `EMPRESA CNPJ RAIZ ${formattedCnpj}`,
-      diretorioEntrada: `C:\\SEFAZ\\XMLs\\${cleanCnpj}\\Entrada`,
+      diretorioEntrada: `${baseDir}\\${cleanCnpj}\\Entrada`,
       subpastaDataEntrada: true,
       estruturaNomeEntrada: 'chave',
-      diretorioSaida: `C:\\SEFAZ\\XMLs\\${cleanCnpj}\\Saida`,
+      diretorioSaida: `${baseDir}\\${cleanCnpj}\\Saida`,
       subpastaDataSaida: true,
       estruturaNomeSaida: 'chave',
-      diretorioEventos: `C:\\SEFAZ\\XMLs\\${cleanCnpj}\\Eventos`,
+      diretorioEventos: `${baseDir}\\${cleanCnpj}\\Eventos`,
       autoOrganizarAoCapturar: true,
       statusMonitoramento: 'ativo',
       ultimaSincronizacao: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })

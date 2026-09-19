@@ -227,6 +227,62 @@ router.post('/', async (req, res) => {
   }
 });
 
+// POST /api/directories/global - Atualizar diretório base unificado para todos os DF-e
+router.post('/global', async (req, res) => {
+  try {
+    const { basePath } = req.body;
+    if (!basePath) {
+      return res.status(400).json({ success: false, message: 'Diretório base é obrigatório.' });
+    }
+
+    const cleanBase = basePath.trim().replace(/[\\/]+$/, '');
+
+    // 1. Atualizar no Supabase
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: rows } = await supabase.from('diretorios_config').select('id, cnpj_raiz');
+        if (rows && rows.length > 0) {
+          for (const r of rows) {
+            const clean = (r.cnpj_raiz || '').replace(/\D/g, '');
+            await supabase.from('diretorios_config').update({
+              diretorio_entrada: `${cleanBase}\\${clean}\\Entrada`,
+              diretorio_saida: `${cleanBase}\\${clean}\\Saida`,
+              diretorio_eventos: `${cleanBase}\\${clean}\\Eventos`,
+              updated_at: new Date().toISOString()
+            }).eq('id', r.id);
+          }
+        }
+      }
+    }
+
+    // 2. Atualizar no SQLite
+    const db = getDatabase();
+    try {
+      const rows = db.prepare(`SELECT id, cnpj_raiz FROM diretorios_config`).all() as any[];
+      for (const r of rows) {
+        const clean = (r.cnpj_raiz || '').replace(/\D/g, '');
+        db.prepare(`
+          UPDATE diretorios_config
+          SET diretorio_entrada = ?, diretorio_saida = ?, diretorio_eventos = ?
+          WHERE id = ?
+        `).run(`${cleanBase}\\${clean}\\Entrada`, `${cleanBase}\\${clean}\\Saida`, `${cleanBase}\\${clean}\\Eventos`, r.id);
+      }
+    } catch {}
+
+    process.env.SEFAZ_XML_DIR = cleanBase;
+
+    return res.json({
+      success: true,
+      message: `Diretório base atualizado para: ${cleanBase}`,
+      basePath: cleanBase
+    });
+  } catch (err: any) {
+    console.error('❌ Erro ao atualizar diretório global:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // DELETE /api/directories/:id - Excluir regra de diretório
 router.delete('/:id', async (req, res) => {
   try {
