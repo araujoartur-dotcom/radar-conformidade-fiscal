@@ -87,6 +87,20 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     return dfeList.find(d => d.chaveAcesso?.trim() === activeChave?.trim()) || selectedDfe || dfeList[0];
   }, [dfeList, activeChave, selectedDfe]);
 
+  // Define colors for specific event categories/badges
+  const getBadgeColors = (nomeEvento: string, categoria: string, codigo: string) => {
+    if (codigo === '100' || nomeEvento.includes('Autorização')) return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
+    if (codigo === '110111' || nomeEvento.includes('Cancelamento')) return 'bg-rose-500/10 text-rose-500 border-rose-500/20';
+    if (codigo === '110110' || nomeEvento.includes('Carta de Correção') || nomeEvento.includes('CC-e')) return 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+    if (categoria === 'fisco' || nomeEvento.includes('Passagem') || nomeEvento.includes('Barreira') || codigo.startsWith('610')) return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+    if (nomeEvento.includes('SUFRAMA') || codigo.startsWith('990')) return 'bg-orange-500/10 text-orange-400 border-orange-500/20';
+    if (nomeEvento.includes('Comprovante') || nomeEvento.includes('Logística') || codigo === '110130') return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+    if (nomeEvento.includes('Exportação') || codigo === '110150') return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+    if (categoria === 'destinatario') return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+    if (categoria === 'reforma_tributaria') return 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/20';
+    return 'bg-slate-700 text-slate-300 border-slate-600';
+  };
+
   // Category Filter for Events
   const [categoriaFilter, setCategoriaFilter] = useState<'todos' | 'destinatario' | 'emitente' | 'tomador' | 'reforma_tributaria' | 'contingencia' | 'terceiros'>('todos');
 
@@ -173,7 +187,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     loadEventos();
   }, [empresaAtiva?.id, currentDocument?.id]);
 
-  // Consulta ao WebService SEFAZ de Distribuição de DF-e para buscar eventos da chave (inclusive de terceiros)
+  // Consulta Completa ao WebService SEFAZ de Situação (Tudão: NFeConsultaProtocolo4 / CTeConsultaV4)
   const handleConsultarEventosSefaz = async () => {
     if (!activeChave) {
       alert('Selecione ou informe a chave do documento fiscal para consultar os eventos na SEFAZ.');
@@ -182,14 +196,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
     setIsConsultandoSefaz(true);
     setConsultaSefazResult(null);
     try {
-      const response = await fetch(`${getApiBaseUrl()}/sefaz/distribui-dfe`, {
+      const response = await fetch(`${getApiBaseUrl()}/sefaz/consulta-situacao`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          cnpj: empresaAtiva?.cnpjCompleto || empresaAtiva?.cnpj,
           chNFe: activeChave,
           tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe'
         })
@@ -197,17 +210,16 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
       const data = await response.json();
       if (response.ok && data.success) {
-        const totalEvt = (data.eventosTerceiros?.length || 0);
-        const docsRet = (data.docs?.length || 0);
+        const totalEvt = (data.eventos?.length || 0);
         setConsultaSefazResult({
           tipo: 'success',
-          msg: `Consulta SEFAZ concluída (cStat ${data.cStat}: ${data.xMotivo}). ${totalEvt} evento(s) de terceiro e ${docsRet} documento(s) sincronizados.`
+          msg: `Consulta SEFAZ concluída (cStat ${data.cStat}: ${data.xMotivo}). ${totalEvt} evento(s) vinculado(s) baixado(s) com sucesso.`
         });
         await loadEventos();
       } else {
         setConsultaSefazResult({
-          tipo: 'warning',
-          msg: data.xMotivo || data.message || 'SEFAZ retornou sem novos eventos para esta chave.'
+          tipo: data.cStat === '999' ? 'error' : 'warning',
+          msg: data.xMotivo || data.message || `Rejeição SEFAZ [cStat ${data.cStat || 'Desconhecido'}]`
         });
         await loadEventos();
       }
@@ -369,8 +381,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
       if (data.success !== false) {
         alert(`Evento transmitido com sucesso! Protocolo: ${data.protocoloSefaz || '135260000000001'}`);
       } else {
-        const msg = data.xMotivo || (data.cStat ? `Rejeição SEFAZ [cStat ${data.cStat}]: Operação rejeitada pelo autorizador.` : 'Falha na comunicação com a SEFAZ.');
-        alert(msg.startsWith('⚠️') ? msg : `Falha na autorização: ${msg}`);
+        const cStatBadge = data.cStat ? `[cStat ${data.cStat}] ` : '';
+        const msg = data.xMotivo || 'Operação rejeitada pelo autorizador SEFAZ.';
+        if (msg.startsWith('⚠️')) {
+          alert(msg);
+        } else {
+          alert(`Rejeição SEFAZ ${cStatBadge}\n${msg}`);
+        }
       }
 
     } catch (err: any) {
@@ -1606,7 +1623,11 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
                       <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[10px]">
                         <div className="text-slate-400">
-                          Protocolo SEFAZ: <strong className="text-emerald-400 font-mono">{log.protocoloSeFaz || 'Autorizado'}</strong>
+                          {log.status === 'processado' ? (
+                            <>Protocolo SEFAZ: <strong className="text-emerald-400 font-mono">{log.protocoloSeFaz || 'Autorizado'}</strong></>
+                          ) : (
+                            <>Situação: <strong className="text-amber-400 font-mono">{log.protocoloSeFaz || 'Rejeição SEFAZ'}</strong></>
+                          )}
                         </div>
 
                         <span className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded border ${
@@ -1616,6 +1637,13 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                         }`}>
                           {log.status === 'processado' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
                           {log.status === 'processado' ? 'Homologado SEFAZ' : 'Rejeitado / Pendente'}
+                        </span>
+                      </div>
+
+                      {/* Badge usando getBadgeColors */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full border ${getBadgeColors(log.nomeEvento, log.categoria, log.codigoEvento)}`}>
+                          {log.categoria === 'destinatario' ? 'Terceiro' : log.categoria === 'fisco' ? 'Fisco' : 'Próprio'}
                         </span>
                       </div>
 

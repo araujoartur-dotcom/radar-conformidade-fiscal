@@ -21,6 +21,7 @@ import {
   consultarDistribuicaoDFe,
   consultarDistribuicaoCTe,
   consultarCadastroTriplaCamada,
+  consultarSituacaoCompletaDFe,
   EventoSefazRequest,
 } from '../services/sefazService';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
@@ -197,6 +198,46 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
   } catch (err: any) {
     console.error('❌ Erro na rota /api/sefaz/distribui-dfe:', err.message);
     res.status(500).json({ success: false, message: 'Erro interno ao consultar SEFAZ: ' + err.message });
+  }
+});
+
+// =========================================================
+// POST /api/sefaz/consulta-situacao — Consulta Completa de Eventos da Chave (Tudão)
+// =========================================================
+router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { chNFe, tipoDoc } = req.body;
+    
+    if (!chNFe || chNFe.length < 44) {
+      res.status(400).json({ success: false, error: 'Chave de acesso não informada ou inválida.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, req.user?.empresaCnpj);
+
+    const resultado = await consultarSituacaoCompletaDFe({
+      chaveAcesso: chNFe,
+      tipoDoc: tipoDoc as 'NFe' | 'CTe',
+      tpAmb: SEFAZ.TP_AMB as '1' | '2',
+      empresaId: empresa.id,
+      cnpj: empresa.cnpj_completo,
+      userId: req.user?.userId
+    });
+
+    // Registrar no Log de Auditoria
+    logAuditAction(
+      req,
+      'CONSULTA_SEFAZ',
+      `Consulta Completa de Situação da chave ${chNFe.slice(0, 20)}... cStat=${resultado.cStat} - ${resultado.xMotivo}. ${resultado.eventos.length} evento(s) baixado(s).`,
+      resultado.success ? 'INFO' : 'WARN',
+      { chaveAcesso: chNFe, cStat: resultado.cStat, totalEventos: resultado.eventos.length }
+    );
+
+    res.json(resultado);
+  } catch (err: any) {
+    console.error('❌ Erro na Consulta de Situação SEFAZ:', err);
+    res.status(500).json({ success: false, error: err.message || 'Falha ao consultar situação na SEFAZ.' });
   }
 });
 

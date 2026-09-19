@@ -112,6 +112,46 @@ export interface DocumentoDfeExtraido {
   itens?: any[];
 }
 
+export interface ConsultaProtocoloDfeRequest {
+  chaveAcesso: string;
+  tipoDoc?: 'NFe' | 'CTe';
+  tpAmb: '1' | '2';
+  empresaId: string;
+  cnpj?: string;
+  userId?: string;
+}
+
+export interface ConsultaProtocoloEventoItem {
+  codigoEvento: string;
+  nomeEvento: string;
+  nSeqEvento: number;
+  dataHora: string;
+  protocolo: string;
+  cStat: string;
+  xMotivo: string;
+  autorCnpj?: string;
+  justificativa?: string;
+  detalhes?: any;
+  origemEvento: 'proprio' | 'terceiro_destinatario' | 'fisco' | 'sefaz';
+  xmlRetorno?: string;
+}
+
+export interface ConsultaProtocoloDfeResponse {
+  success: boolean;
+  cStat: string;
+  xMotivo: string;
+  chaveAcesso: string;
+  tipoDoc: 'NFe' | 'CTe';
+  tpAmb: '1' | '2';
+  cUF?: string;
+  dhRecbto?: string;
+  protocoloAutorizacao?: string;
+  situacaoDoc?: string;
+  eventos: ConsultaProtocoloEventoItem[];
+  xmlEnvio: string;
+  xmlRetorno: string;
+}
+
 export interface DistribucaoDfeResponse {
   success: boolean;
   cStat: string;
@@ -138,7 +178,9 @@ function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
     cnpjAutor,
   } = params;
 
-  const orgaoUf = chaveAcesso.substring(0, 2);
+  // Eventos de Manifestação do Destinatário (210200, 210210, 210220, 210240) exigem obrigatoriamente cOrgao=91 (Ambiente Nacional RFB - NT 2020.001)
+  const isManifestacaoDest = ['210200', '210210', '210220', '210240'].includes(codigoEvento);
+  const orgaoUf = isManifestacaoDest ? '91' : chaveAcesso.substring(0, 2);
   const dhEvento = getBrasiliaTimestamp(); // Padrão SEFAZ YYYY-MM-DDThh:mm:ss-03:00
   const idEvento = `ID${codigoEvento}${chaveAcesso}${String(nSeq).padStart(2, '0')}`;
 
@@ -473,21 +515,46 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
 
   try {
     console.log(`📡 [${getBrasiliaTimestamp()}] Transmitindo evento ${params.codigoEvento} para SEFAZ (${url})...`);
-    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha);
+    const soapAction = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4';
+    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha, soapAction);
 
-    const cStat = extractTagRegex(response.body, 'cStat');
-    const xMotivo = extractTagRegex(response.body, 'xMotivo');
-    const nProt = extractTagRegex(response.body, 'nProt');
-    const dhRegEvento = extractTagRegex(response.body, 'dhRegEvento') || getBrasiliaTimestamp();
+    // 1. Extração profunda de cStat e xMotivo específicos do evento (dentro de <infEvento>)
+    const cStatEvento = extractSubTagRegex(response.body, 'infEvento', 'cStat');
+    const xMotivoEvento = extractSubTagRegex(response.body, 'infEvento', 'xMotivo');
 
-    const success = ['128', '135', '136'].includes(cStat);
-    const resolvedMotivo = xMotivo || (success ? 'Evento processado com sucesso.' : (cStat ? `Rejeição SEFAZ (cStat ${cStat})` : (response.statusCode === 403 ? 'Acesso negado pela SEFAZ (Bloqueio de IP ou Certificado rejeitado pelo autorizador)' : `Falha no retorno da SEFAZ (HTTP ${response.statusCode})`)));
-    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat || 'N/A'}: ${resolvedMotivo} (nProt=${nProt || 'N/A'})`);
+    // 2. Extração do lote geral ou raiz (se o lote como um todo foi rejeitado antes dos eventos)
+    const cStatLote = extractTagRegex(response.body, 'cStat');
+    const xMotivoLote = extractTagRegex(response.body, 'xMotivo');
+
+    // 3. Extração de mensagem de erro SOAP Fault caso tenha ocorrido falha de validação no envelope
+    const faultString = extractTagRegex(response.body, 'faultstring') || extractTagRegex(response.body, 'Text');
+
+    // Prioridade máxima para o código específico do evento, depois lote, depois status HTTP
+    const cStat = cStatEvento || cStatLote || (response.statusCode !== 200 ? String(response.statusCode) : '999');
+    let xMotivo = xMotivoEvento || xMotivoLote || faultString;
+
+    if (!xMotivo) {
+      if (response.statusCode === 400) {
+        xMotivo = 'Falha no Schema XML ou cabeçalho SOAP rejeitado pelo autorizador (HTTP 400 Bad Request)';
+      } else if (response.statusCode === 403) {
+        xMotivo = 'Acesso negado pela SEFAZ (Bloqueio de IP ou Certificado rejeitado pelo autorizador)';
+      } else if (response.statusCode !== 200) {
+        xMotivo = `Servidor da SEFAZ retornou erro HTTP ${response.statusCode}`;
+      } else {
+        xMotivo = `Rejeição SEFAZ (cStat ${cStat})`;
+      }
+    }
+
+    const nProt = extractSubTagRegex(response.body, 'infEvento', 'nProt') || extractTagRegex(response.body, 'nProt');
+    const dhRegEvento = extractSubTagRegex(response.body, 'infEvento', 'dhRegEvento') || extractTagRegex(response.body, 'dhRegEvento') || getBrasiliaTimestamp();
+
+    const success = ['128', '135', '136'].includes(cStatEvento || cStat);
+    console.log(`${success ? '✅' : '❌'} SEFAZ cStat=${cStat}: ${xMotivo} (nProt=${nProt || 'N/A'})`);
 
     return {
       success,
-      cStat: cStat || String(response.statusCode || '999'),
-      xMotivo: resolvedMotivo,
+      cStat,
+      xMotivo,
       nProt: nProt || undefined,
       dhRegEvento,
       xmlEnvio: xmlEvento,
@@ -1173,6 +1240,418 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
       maxNSU: '000000000000000',
       tpAmb,
       docs: [],
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: '',
+    };
+  }
+}
+
+// =========================================================
+// CONSULTA PROTOCOLO (NFeConsultaProtocolo4 / CTeConsultaV4) - "TUDÃO" (EVENTOS)
+// =========================================================
+
+export const NFE_CONSULTA_PROTOCOLO_URLS: Record<'1' | '2', Record<string, string>> = {
+  '1': { // Produção
+    '11': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // RO
+    '12': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // AC
+    '13': 'https://nfe.sefaz.am.gov.br/services2/services/NfeConsulta4', // AM
+    '14': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // RR
+    '15': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // PA
+    '16': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // AP
+    '17': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // TO
+    '21': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // MA
+    '22': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // PI
+    '23': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // CE
+    '24': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // RN
+    '25': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // PB
+    '26': 'https://nfe.sefaz.pe.gov.br/nfe-service/services/NFeConsultaProtocolo4', // PE
+    '27': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // AL
+    '28': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // SE
+    '29': 'https://nfe.sefaz.ba.gov.br/webservices/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx', // BA
+    '31': 'https://nfe.fazenda.mg.gov.br/nfe2/services/NFeConsultaProtocolo4', // MG
+    '32': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // ES
+    '33': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // RJ
+    '35': 'https://nfe.fazenda.sp.gov.br/ws/nfeconsultaprotocolo4.asmx', // SP
+    '41': 'https://nfe.fazenda.pr.gov.br/nfe/NFeConsultaProtocolo4', // PR
+    '42': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // SC
+    '43': 'https://nfe.sefazrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // RS
+    '50': 'https://nfe.sefaz.ms.gov.br/ws/NFeConsultaProtocolo4', // MS
+    '51': 'https://nfe.sefaz.mt.gov.br/nfews/v2/services/NfeConsulta4', // MT
+    '52': 'https://nfe.sefaz.go.gov.br/nfe/services/NFeConsultaProtocolo4', // GO
+    '53': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx', // DF
+    'SVRS': 'https://nfe.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+  },
+  '2': { // Homologação
+    '11': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '12': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '13': 'https://homnfe.sefaz.am.gov.br/services2/services/NfeConsulta4',
+    '14': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '15': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '16': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '17': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '21': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '22': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '23': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '24': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '25': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '26': 'https://nfehomolog.sefaz.pe.gov.br/nfe-service/services/NFeConsultaProtocolo4',
+    '27': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '28': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '29': 'https://hnfe.sefaz.ba.gov.br/webservices/NFeConsultaProtocolo4/NFeConsultaProtocolo4.asmx',
+    '31': 'https://hnfe.fazenda.mg.gov.br/nfe2/services/NFeConsultaProtocolo4',
+    '32': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '33': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '35': 'https://homologacao.nfe.fazenda.sp.gov.br/ws/nfeconsultaprotocolo4.asmx',
+    '41': 'https://homologacao.nfe.fazenda.pr.gov.br/nfe/NFeConsultaProtocolo4',
+    '42': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '43': 'https://nfe-homologacao.sefazrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    '50': 'https://homologacao.nfe.ms.gov.br/ws/NFeConsultaProtocolo4',
+    '51': 'https://homologacao.sefaz.mt.gov.br/nfews/v2/services/NfeConsulta4',
+    '52': 'https://homolog.sefaz.go.gov.br/nfe/services/NFeConsultaProtocolo4',
+    '53': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+    'SVRS': 'https://nfe-homologacao.svrs.rs.gov.br/ws/NfeConsulta/NfeConsulta4.asmx',
+  }
+};
+
+export const CTE_CONSULTA_PROTOCOLO_URLS: Record<'1' | '2', Record<string, string>> = {
+  '1': {
+    '35': 'https://nfe.fazenda.sp.gov.br/cteConsulta/cteConsulta.asmx', // SP
+    '41': 'https://cte.fazenda.pr.gov.br/cte/CTeConsultaV4', // PR
+    '31': 'https://cte.fazenda.mg.gov.br/cte/services/CTeConsultaV4', // MG
+    '51': 'https://cte.sefaz.mt.gov.br/ctews2/services/CteConsultaV4', // MT
+    '50': 'https://cte.fazenda.ms.gov.br/ws/CTeConsultaV4', // MS
+    'SVRS': 'https://cte.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
+  },
+  '2': {
+    '35': 'https://homologacao.nfe.fazenda.sp.gov.br/cteConsulta/cteConsulta.asmx',
+    '41': 'https://homologacao.cte.fazenda.pr.gov.br/cte/CTeConsultaV4',
+    '31': 'https://hcte.fazenda.mg.gov.br/cte/services/CTeConsultaV4',
+    '51': 'https://homologacao.sefaz.mt.gov.br/ctews2/services/CteConsultaV4',
+    '50': 'https://homologacao.cte.fazenda.ms.gov.br/ws/CTeConsultaV4',
+    'SVRS': 'https://cte-homologacao.svrs.rs.gov.br/ws/CTeConsultaV4/CTeConsultaV4.asmx',
+  }
+};
+
+function getNomeEventoPadrao(codigoEvento: string, descEvento?: string): string {
+  if (descEvento && descEvento.trim()) return descEvento.trim();
+  const map: Record<string, string> = {
+    '100': 'Autorização de Uso do DF-e',
+    '110110': 'Carta de Correção Eletrônica (CC-e)',
+    '110111': 'Cancelamento Homologado',
+    '110112': 'Cancelamento por Substituição',
+    '110114': 'Confirmação de Serviços CT-e',
+    '110130': 'Comprovante de Entrega do DF-e',
+    '110131': 'Cancelamento de Comprovante de Entrega',
+    '110140': 'EPEC (Contingência Prévia)',
+    '110150': 'Averbação de Exportação',
+    '210200': 'Confirmação da Operação (Manifestação)',
+    '210210': 'Ciência da Emissão (Manifestação)',
+    '210220': 'Desconhecimento da Operação (Manifestação)',
+    '210240': 'Operação não Realizada (Manifestação)',
+    '610600': 'Registro de Passagem (Posto Fiscal / Barreira)',
+    '610501': 'Registro de Passagem Automático (RFID / Câmera)',
+    '610550': 'Registro de Passagem NF-e a CT-e',
+    '610552': 'Registro de Passagem em Posto Fiscal',
+    '610554': 'Registro de Passagem MDF-e',
+    '990900': 'Vistoria SUFRAMA',
+    '990910': 'Internalização SUFRAMA',
+  };
+  return map[codigoEvento] || `Evento SEFAZ ${codigoEvento}`;
+}
+
+export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeRequest): Promise<ConsultaProtocoloDfeResponse> {
+  const { tpAmb, empresaId, cnpj } = params;
+  const cleanChave = params.chaveAcesso.replace(/\D/g, '');
+  
+  if (cleanChave.length !== 44) {
+    throw new Error('Chave de acesso inválida (deve conter 44 dígitos).');
+  }
+
+  // Identificação do Modelo (NFe/CTe) pela Chave (posições 20-21, 0-indexed)
+  const modeloStr = cleanChave.substring(20, 22);
+  const isCte = (modeloStr === '57' || modeloStr === '67' || params.tipoDoc === 'CTe');
+  const tipoDocReal = isCte ? 'CTe' : 'NFe';
+  
+  // Identificação da UF Autorizadora pela Chave (posições 0-1)
+  const cUF = cleanChave.substring(0, 2);
+
+  // Seleção de URL baseada no Tipo e UF
+  let url = '';
+  let soapActionUrl = '';
+  let soapEnvelope = '';
+
+  if (isCte) {
+    const urlsUF = CTE_CONSULTA_PROTOCOLO_URLS[tpAmb];
+    url = urlsUF[cUF] || urlsUF['SVRS'];
+    soapActionUrl = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4';
+    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><cteDadosMsg xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4"><consSitCTe versao="4.00" xmlns="http://www.portalfiscal.inf.br/cte"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chCTe>${cleanChave}</chCTe></consSitCTe></cteDadosMsg></soap12:Body></soap12:Envelope>`;
+  } else {
+    const urlsUF = NFE_CONSULTA_PROTOCOLO_URLS[tpAmb];
+    url = urlsUF[cUF] || urlsUF['SVRS'];
+    soapActionUrl = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4';
+    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4"><consSitNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${cleanChave}</chNFe></consSitNFe></nfeDadosMsg></soap12:Body></soap12:Envelope>`;
+  }
+
+  // Certificado Digital
+  const certificado = await descriptografarCertificado(empresaId, cnpj);
+
+  if (!certificado) {
+    return {
+      success: false,
+      cStat: '999',
+      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
+      chaveAcesso: cleanChave,
+      tipoDoc: tipoDocReal,
+      tpAmb,
+      eventos: [],
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: '',
+    };
+  }
+
+  try {
+    console.log(`📡 [${getBrasiliaTimestamp()}] Consultando Situação Completa ${tipoDocReal} (chave: ${cleanChave}, UF: ${cUF})...`);
+    
+    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha, soapActionUrl);
+    
+    // Parse da Resposta
+    const bodyStr = response.body;
+    const cStatGeral = extractTagRegex(bodyStr, 'cStat') || '999';
+    const xMotivoGeral = extractTagRegex(bodyStr, 'xMotivo') || 'Sem resposta da SEFAZ';
+
+    const dhRecbtoGeral = extractTagRegex(bodyStr, 'dhRecbto');
+    
+    const eventos: ConsultaProtocoloEventoItem[] = [];
+
+    // 1. Extrair Protocolo de Autorização de Uso (100)
+    const protTag = isCte ? 'protCTe' : 'protNFe';
+    const protBlock = extractTagRegex(bodyStr, protTag);
+    let nProtAut = '';
+    let dhRecbtoAut = dhRecbtoGeral;
+    let situacaoDoc = 'pendente';
+
+    if (protBlock) {
+      const cStatProt = extractTagRegex(protBlock, 'cStat') || cStatGeral;
+      const xMotivoProt = extractTagRegex(protBlock, 'xMotivo') || xMotivoGeral;
+      nProtAut = extractTagRegex(protBlock, 'nProt') || '';
+      if (!dhRecbtoAut) {
+        dhRecbtoAut = extractTagRegex(protBlock, 'dhRecbto');
+      }
+
+      if (cStatProt === '100' || cStatProt === '101' || cStatProt === '150') {
+        situacaoDoc = cStatProt === '101' || cStatProt === '150' ? 'cancelado' : 'autorizado';
+        eventos.push({
+          codigoEvento: '100',
+          nomeEvento: `Autorização de Uso ${tipoDocReal}`,
+          nSeqEvento: 1,
+          dataHora: dhRecbtoAut || getBrasiliaTimestamp(),
+          protocolo: nProtAut,
+          cStat: cStatProt,
+          xMotivo: xMotivoProt,
+          origemEvento: 'proprio'
+        });
+      }
+    }
+
+    // Se cStatGeral indica que não existe, retorna de cara
+    if (cStatGeral === '217' || cStatGeral === '656' || cStatGeral === '562') {
+      return {
+        success: false,
+        cStat: cStatGeral,
+        xMotivo: xMotivoGeral,
+        chaveAcesso: cleanChave,
+        tipoDoc: tipoDocReal,
+        tpAmb,
+        eventos: [],
+        xmlEnvio: soapEnvelope,
+        xmlRetorno: bodyStr,
+      };
+    }
+
+    // 2. Extrair Lista de Eventos (Cancelamento, CC-e, Manifestação, Barreiras)
+    const procEventoTag = isCte ? 'procEventoCTe' : 'procEventoNFe';
+    const procEventoRegex = new RegExp(`<${procEventoTag}[\\s\\S]*?<\\/${procEventoTag}>`, 'gi');
+    let match;
+
+    while ((match = procEventoRegex.exec(bodyStr)) !== null) {
+      const xmlEvt = match[0];
+      const parsedEvt = parseEventoSefazXml(xmlEvt, cnpj);
+      
+      if (parsedEvt) {
+        // Extrair detalhes específicos de cada evento
+        const detalhes: any = {};
+        
+        // CC-e
+        const xCorrecao = extractTagRegex(xmlEvt, 'xCorrecao');
+        if (xCorrecao) detalhes.xCorrecao = xCorrecao;
+        
+        // Cancelamento / Desacordo
+        const xJust = extractTagRegex(xmlEvt, 'xJust');
+        if (xJust) detalhes.xJust = xJust;
+
+        // Barreiras Fiscais (Postos Fiscais)
+        const xPostoFiscal = extractTagRegex(xmlEvt, 'xPostoFiscal');
+        const placa = extractTagRegex(xmlEvt, 'placa');
+        const dhPass = extractTagRegex(xmlEvt, 'dhPass');
+        if (xPostoFiscal) detalhes.postoFiscal = xPostoFiscal;
+        if (placa) detalhes.placa = placa;
+        if (dhPass) detalhes.dhPass = dhPass;
+
+        let origemEvt = parsedEvt.origemEvento;
+        let categoria = 'emitente';
+
+        if (parsedEvt.codigoEvento.startsWith('2102') || parsedEvt.codigoEvento.startsWith('6101')) {
+          categoria = 'destinatario';
+          // Se o CNPJ autor for diferente do CNPJ do emitente da chave, é terceiro_destinatario
+          // Como não temos a empresa completa aqui, confia no parser
+        } else if (parsedEvt.codigoEvento.startsWith('610') || parsedEvt.codigoEvento.startsWith('990')) {
+          categoria = 'fisco';
+          origemEvt = 'fisco';
+        }
+
+        const nomeDoEvento = getNomeEventoPadrao(parsedEvt.codigoEvento, parsedEvt.nomeEvento);
+
+        eventos.push({
+          codigoEvento: parsedEvt.codigoEvento,
+          nomeEvento: nomeDoEvento,
+          nSeqEvento: parsedEvt.nSeqEvento,
+          dataHora: parsedEvt.dhEvento,
+          protocolo: parsedEvt.protocolo,
+          cStat: parsedEvt.cStat,
+          xMotivo: parsedEvt.xMotivo,
+          autorCnpj: parsedEvt.autorCnpj,
+          justificativa: parsedEvt.justificativa || xPostoFiscal || '',
+          detalhes,
+          origemEvento: origemEvt as 'proprio' | 'terceiro_destinatario' | 'fisco' | 'sefaz',
+          xmlRetorno: xmlEvt
+        });
+      }
+    }
+
+    // Ordenar eventos por DataHora DESC
+    eventos.sort((a, b) => new Date(b.dataHora).getTime() - new Date(a.dataHora).getTime());
+
+    // 3. Persistência de Eventos Retornados e Atualização da NF-e
+    const db = getDatabase();
+    const nowBrasilia = getBrasiliaTimestamp();
+    const docDbId = `doc-${tipoDocReal.toLowerCase()}-${cleanChave}`;
+
+    db.transaction(() => {
+      let situacaoManifestacao = '';
+      let eventoUltimo = '';
+
+      for (const evt of eventos) {
+        // Atualiza a tabela mãe (dfe_documentos) com base nos eventos
+        if (evt.codigoEvento === '110111' || evt.codigoEvento === '110112' || evt.codigoEvento === 'cte-110111') {
+          situacaoDoc = 'cancelado';
+          eventoUltimo = 'Cancelamento Homologado';
+        } else if (evt.codigoEvento === '110110') {
+          if (!eventoUltimo) eventoUltimo = 'Carta de Correção Registrada';
+        } else if (evt.codigoEvento === '610600' || evt.codigoEvento === '610501' || evt.codigoEvento === '610552') {
+          if (!eventoUltimo) eventoUltimo = 'Passagem de Barreira Registrada';
+        } else if (evt.codigoEvento === '990900' || evt.codigoEvento === '990910') {
+          if (!eventoUltimo) eventoUltimo = 'Vistoria SUFRAMA Registrada';
+        }
+
+        // Regras de Manifestação
+        if (evt.codigoEvento === '210200') situacaoManifestacao = 'confirmada';
+        else if (evt.codigoEvento === '210210' && situacaoManifestacao !== 'confirmada') situacaoManifestacao = 'ciencia_emitida';
+        else if (evt.codigoEvento === '210220') situacaoManifestacao = 'desconhecida_pelo_destinatario';
+        else if (evt.codigoEvento === '210240') situacaoManifestacao = 'operacao_nao_realizada';
+
+        // Tentar gravar no eventos_transmitidos
+        const evtId = `evt-${cleanChave}-${evt.codigoEvento}-${evt.nSeqEvento}-${Date.now()}`;
+        
+        db.prepare(`
+          INSERT OR IGNORE INTO eventos_transmitidos (
+            id, empresa_id, usuario_id, documento_id, chave_acesso, tipo_dfe, codigo_evento,
+            nome_evento, categoria, autor_cnpj, origem_evento, justificativa, ambiente,
+            protocolo_sefaz, xml_retorno, codigo_retorno, motivo_retorno,
+            status, detalhes_reforma, data_hora, created_at
+          ) VALUES (
+            ?, ?, 'system', ?, ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            'processado', ?, ?, ?
+          )
+        `).run(
+          evtId,
+          empresaId,
+          docDbId,
+          cleanChave,
+          tipoDocReal,
+          evt.codigoEvento,
+          evt.nomeEvento,
+          evt.codigoEvento.startsWith('210') || evt.codigoEvento.startsWith('6101') ? 'destinatario' : 
+            (evt.codigoEvento.startsWith('610') || evt.codigoEvento.startsWith('990') ? 'fisco' : 'emitente'),
+          evt.autorCnpj || '',
+          evt.origemEvento,
+          evt.justificativa || '',
+          tpAmb,
+          evt.protocolo || '',
+          evt.xmlRetorno || '',
+          evt.cStat,
+          evt.xMotivo,
+          JSON.stringify(evt.detalhes || {}),
+          evt.dataHora,
+          nowBrasilia
+        );
+      }
+
+      if (!eventoUltimo && situacaoDoc === 'autorizado') {
+        eventoUltimo = 'Autorizado o uso do DF-e';
+      }
+
+      // Atualiza o dfe_documentos com a situação recém descoberta
+      db.prepare(`
+        UPDATE dfe_documentos
+        SET situacao_doc = CASE WHEN ? != '' THEN ? ELSE situacao_doc END,
+            evento_ultimo = CASE WHEN ? != '' THEN ? ELSE evento_ultimo END,
+            situacao_manifestacao = CASE WHEN ? != '' THEN ? ELSE situacao_manifestacao END,
+            status_sefaz = 'autorizado',
+            protocolo_sefaz = CASE WHEN ? != '' THEN ? ELSE protocolo_sefaz END,
+            updated_at = ?
+        WHERE chave_acesso = ?
+      `).run(
+        situacaoDoc, situacaoDoc,
+        eventoUltimo, eventoUltimo,
+        situacaoManifestacao, situacaoManifestacao,
+        nProtAut, nProtAut,
+        nowBrasilia,
+        cleanChave
+      );
+    })();
+
+    // Integração Supabase opcional
+    if (isSupabaseConfigured()) {
+      // (a rotina de sync automática pelo webhook tratará do envio caso necessário)
+    }
+
+    return {
+      success: true,
+      cStat: cStatGeral,
+      xMotivo: xMotivoGeral,
+      chaveAcesso: cleanChave,
+      tipoDoc: tipoDocReal,
+      tpAmb,
+      cUF,
+      dhRecbto: dhRecbtoGeral,
+      protocoloAutorizacao: nProtAut,
+      situacaoDoc,
+      eventos,
+      xmlEnvio: soapEnvelope,
+      xmlRetorno: bodyStr,
+    };
+  } catch (err: any) {
+    console.error(`[SEFAZ] Falha em consultarSituacaoCompletaDFe: ${err.message}`);
+    return {
+      success: false,
+      cStat: '998',
+      xMotivo: `Erro local: ${err.message}`,
+      chaveAcesso: cleanChave,
+      tipoDoc: tipoDocReal,
+      tpAmb,
+      eventos: [],
       xmlEnvio: soapEnvelope,
       xmlRetorno: '',
     };

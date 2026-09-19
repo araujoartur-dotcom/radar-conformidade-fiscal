@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import {
   Key, ShieldCheck, Lock, Upload, CheckCircle2, AlertTriangle,
-  X, Eye, EyeOff, FileCheck, RefreshCw, Shield, Server, ArrowRight
+  X, Eye, EyeOff, FileCheck, Shield, Server, ArrowRight
 } from 'lucide-react';
 import { CertificadoA1 } from '../types';
 import { useApi } from '../hooks/useApi';
@@ -27,14 +27,12 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
   certificado,
   onCertificadoUpdated,
 }) => {
-  const { uploadFile, get } = useApi();
+  const { uploadFile } = useApi();
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPassword, setCertPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
-  const [testResult, setTestResult] = useState<{ tipo: 'sucesso' | 'erro'; msg: string; latency?: number } | null>(null);
-  const [isTesting, setIsTesting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen || !empresa) return null;
@@ -43,36 +41,6 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
     certificado?.valido ||
     (certificado?.status === 'valido' && certificado?.validade && new Date(certificado.validade) >= new Date())
   );
-
-  const handleTestConnection = async () => {
-    setIsTesting(true);
-    setTestResult(null);
-    const start = Date.now();
-    try {
-      const res = await get<{ success: boolean; status?: string; message?: string; latencyMs?: number }>('/sefaz/status');
-      const latency = res.data?.latencyMs || (Date.now() - start);
-      if (res.ok && res.data?.success) {
-        setTestResult({
-          tipo: 'sucesso',
-          msg: res.data?.message || 'Serviço em Operação — Comunicação com SEFAZ Autorizadora 100% Homologada.',
-          latency
-        });
-      } else {
-        setTestResult({
-          tipo: 'erro',
-          msg: res.data?.message || res.error || 'Falha temporária ao comunicar com o WebService da SEFAZ.',
-          latency
-        });
-      }
-    } catch (err: any) {
-      setTestResult({
-        tipo: 'erro',
-        msg: err.message || 'Erro de conexão com o servidor SEFAZ.'
-      });
-    } finally {
-      setIsTesting(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,10 +72,7 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
         setCertFile(null);
         setCertPassword('');
         setIsReplacing(false);
-        setTestResult({
-          tipo: 'sucesso',
-          msg: 'Certificado A1 vinculado e ativado com sucesso!'
-        });
+        alert('Certificado A1 vinculado e ativado com sucesso no cofre seguro!');
       } else {
         alert(res.error || res.data?.error || 'Erro ao enviar e validar certificado digital.');
       }
@@ -208,45 +173,12 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
                 </div>
               </div>
 
-              {/* Feedback de Teste SEFAZ */}
-              {testResult && (
-                <div className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 ${
-                  testResult.tipo === 'sucesso'
-                    ? 'bg-emerald-950/40 border-emerald-600/60 text-emerald-200'
-                    : 'bg-rose-950/40 border-rose-600/60 text-rose-200'
-                }`}>
-                  {testResult.tipo === 'sucesso' ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <div className="font-bold">{testResult.msg}</div>
-                    {testResult.latency && (
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                        Tempo de resposta: {testResult.latency}ms
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Botões de Ação para Certificado Existente */}
-              <div className="flex items-center justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={handleTestConnection}
-                  disabled={isTesting}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 font-bold text-xs flex items-center gap-2 border border-slate-700 hover:border-cyan-500/40 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin text-cyan-400' : ''}`} />
-                  <span>{isTesting ? 'Testando SEFAZ...' : 'Testar Comunicação SEFAZ'}</span>
-                </button>
-
+              {/* Botão de Ação para Certificado Existente */}
+              <div className="flex items-center justify-end pt-2">
                 <button
                   type="button"
                   onClick={() => setIsReplacing(true)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white font-bold text-xs border border-slate-700 transition-all cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm"
                 >
                   Substituir .PFX
                 </button>
