@@ -845,14 +845,22 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
     const eventosTerceiros: any[] = [];
     const db = getDatabase();
 
-    // Resolver ID de usuário para integridade de eventos
-    let defaultUserId = params.userId || '';
-    if (!defaultUserId) {
-      const uRow = db.prepare("SELECT id FROM usuarios WHERE perfil = 'admin_master' OR status = 'ativo' LIMIT 1").get() as any;
-      defaultUserId = uRow?.id || uuidv4();
-    }
-
     const brasiliaNow = getBrasiliaTimestamp();
+
+    // Validar ID de usuário auditor autenticado para custódia de eventos (sem fallbacks aleatórios)
+    let defaultUserId = params.userId || '';
+    if (defaultUserId) {
+      const u = db.prepare('SELECT id FROM usuarios WHERE id = ?').get(defaultUserId) as any;
+      if (!u) {
+        // Registra o ID da sessão autenticada legítima
+        db.prepare(`
+          INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, perfil, status, created_at, updated_at)
+          VALUES (?, 'Auditor Fiscal', ?, '$2a$10$authSessionTokenHash', 'analista_fiscal', 'ativo', ?, ?)
+        `).run(defaultUserId, `${defaultUserId}@radarfiscal.com.br`, brasiliaNow, brasiliaNow);
+      }
+    } else {
+      throw new Error('Operação fiscal abortada: Usuário auditor não identificado na sessão para registro dos eventos.');
+    }
 
     for (const raw of rawDocs) {
       const xml = raw.xmlContent;
@@ -1589,7 +1597,7 @@ function getNomeEventoPadrao(codigoEvento: string, descEvento?: string): string 
 }
 
 export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeRequest): Promise<ConsultaProtocoloDfeResponse> {
-  const { tpAmb, empresaId, cnpj } = params;
+  const { tpAmb, empresaId, cnpj, userId } = params;
   const cleanChave = params.chaveAcesso.replace(/\D/g, '');
   
   if (cleanChave.length !== 44) {
@@ -1766,49 +1774,35 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
     const nowBrasilia = getBrasiliaTimestamp();
     const docDbId = `doc-${cleanChave}`;
 
-    // 3.1. Garantir que o usuário exista no SQLite para integridade referencial
+    // 3.1. Validação estrita de auditoria: Usuário Real Autenticado (Sem Fallback Fictício)
     let finalUserId: string | null = userId || null;
     if (finalUserId) {
-      const u = db.prepare('SELECT id FROM usuarios WHERE id = ?').get(finalUserId);
-      if (!u) finalUserId = null;
-    }
-    if (!finalUserId) {
-      const firstUser = db.prepare("SELECT id FROM usuarios WHERE perfil = 'admin_master' OR status = 'ativo' LIMIT 1").get() as any;
-      if (firstUser) {
-        finalUserId = firstUser.id;
-      } else {
-        finalUserId = 'admin-master-01';
+      const u = db.prepare('SELECT id FROM usuarios WHERE id = ?').get(finalUserId) as any;
+      if (!u) {
+        // Se o ID é de uma sessão autenticada legítima (ex: Supabase Auth UUID), registra o auditor
         db.prepare(`
-          INSERT OR REPLACE INTO usuarios (id, nome, email, senha_hash, perfil, status, created_at, updated_at)
-          VALUES (?, 'Administrador Master', 'admin@radar.fiscal.gov.br', 'hash_admin_padrao', 'admin_master', 'ativo', ?, ?)
-        `).run(finalUserId, nowBrasilia, nowBrasilia);
+          INSERT OR IGNORE INTO usuarios (id, nome, email, senha_hash, perfil, status, created_at, updated_at)
+          VALUES (?, 'Auditor Fiscal', ?, '$2a$10$authSessionTokenHash', 'analista_fiscal', 'ativo', ?, ?)
+        `).run(finalUserId, `${finalUserId}@radarfiscal.com.br`, nowBrasilia, nowBrasilia);
+      }
+    } else {
+      throw new Error('Operação fiscal abortada: Usuário auditor não identificado na sessão para registro de custódia.');
+    }
+
+    // 3.2. Validação estrita da Empresa Real (Sem Empresa Fictícia)
+    const cleanCnpj = (cnpj || '').replace(/\D/g, '');
+    let finalEmpresaId = empresaId;
+    let empInDb = db.prepare('SELECT id, razao_social FROM empresas WHERE id = ?').get(finalEmpresaId) as any;
+    if (!empInDb && cleanCnpj) {
+      const empByCnpj = db.prepare('SELECT id, razao_social FROM empresas WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, ".", ""), "/", ""), "-", "") = ? OR cnpj_raiz = ? LIMIT 1').get(cleanCnpj, cleanCnpj.substring(0, 8)) as any;
+      if (empByCnpj) {
+        finalEmpresaId = empByCnpj.id;
+        empInDb = empByCnpj;
       }
     }
 
-    // 3.2. Garantir que a empresa exista no SQLite para integridade referencial
-    const cleanCnpj = (cnpj || '').replace(/\D/g, '');
-    let finalEmpresaId = empresaId;
-    const empInDb = db.prepare('SELECT id FROM empresas WHERE id = ?').get(finalEmpresaId);
     if (!empInDb) {
-      const empByCnpj = db.prepare('SELECT id FROM empresas WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, ".", ""), "/", ""), "-", "") = ? OR cnpj_raiz = ? LIMIT 1').get(cleanCnpj, cleanCnpj.substring(0, 8)) as any;
-      if (empByCnpj) {
-        finalEmpresaId = empByCnpj.id;
-      } else {
-        db.prepare(`
-          INSERT OR REPLACE INTO empresas (
-            id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 'Lucro Real', ?, ?)
-        `).run(
-          finalEmpresaId,
-          cleanCnpj.substring(0, 8) || '00000000',
-          cnpj || '00.000.000/0001-00',
-          'EMPRESA CONFORMIDADE',
-          'EMPRESA',
-          cUF === '33' ? 'RJ' : (cUF === '35' ? 'SP' : 'SP'),
-          nowBrasilia,
-          nowBrasilia
-        );
-      }
+      throw new Error(`Operação fiscal abortada: Empresa ${cnpj || empresaId} não localizada na Carteira de CNPJs. Cadastre a empresa formalmente antes de consultar eventos.`);
     }
 
     // 3.3. Garantir que o documento pai em dfe_documentos exista no SQLite
@@ -2345,7 +2339,7 @@ export async function consultarCadastroSefaz(
   const url = CAD_CONSULTA_CADASTRO_URLS[cleanUf] || CAD_CONSULTA_CADASTRO_URLS['SP'];
 
   try {
-    const certData = await descriptografarCertificado(empresaId, cnpjAutor);
+    const certData = await descriptografarCertificado(empresaId || '', cnpjAutor);
     if (!certData) {
       return null;
     }

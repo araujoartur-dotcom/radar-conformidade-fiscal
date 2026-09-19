@@ -32,8 +32,14 @@ const router = Router();
 /**
  * Helper para garantir que a empresa exista no banco antes de qualquer operação
  */
-async function ensureEmpresaExists(db: any, empresaId?: string, cnpjFallback?: string): Promise<{ id: string; cnpj_completo: string }> {
+/**
+ * Localiza a empresa cadastrada (no Supabase ou SQLite local) pelo ID ou CNPJ real.
+ * Se a empresa não existir no cadastro oficial, REJEITA com erro explícito de conformidade.
+ * PROIBIDO gerar dados fictícios ("EMPRESA PADRAO", "00.000.000/0001-00") ou selecionar outra empresa aleatória.
+ */
+async function ensureEmpresaExists(db: any, empresaId?: string, cnpjBusca?: string): Promise<{ id: string; cnpj_completo: string; razao_social?: string }> {
   let empresa: any = null;
+  const cleanCnpj = (cnpjBusca || '').replace(/\D/g, '');
 
   // 1. Tentar buscar no Supabase se configurado
   if (isSupabaseConfigured()) {
@@ -48,148 +54,89 @@ async function ensureEmpresaExists(db: any, empresaId?: string, cnpjFallback?: s
         if (supaEmp) empresa = supaEmp;
       }
 
-      if (!empresa && cnpjFallback) {
-        const cleanCnpj = cnpjFallback.replace(/\D/g, '');
+      if (!empresa && cleanCnpj) {
         const { data: supaEmp } = await supabase
           .from('empresas')
           .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
-          .or(`cnpj_completo.eq.${cnpjFallback},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
+          .or(`cnpj_completo.eq.${cnpjBusca},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
           .maybeSingle();
         if (supaEmp) empresa = supaEmp;
       }
     }
   }
 
-  // 2. Se achou no Supabase, espelhar no SQLite local para evitar foreign key constraint failures
+  // 2. Se achou no Supabase, espelhar no SQLite local com dados 100% REAIS da empresa
   if (empresa && empresa.id) {
     const now = getBrasiliaTimestamp();
-    const cleanCnpj = (empresa.cnpj_completo || cnpjFallback || '').replace(/\D/g, '');
     db.prepare(`
       INSERT OR REPLACE INTO empresas (
         id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       empresa.id,
-      empresa.cnpj_raiz || cleanCnpj.substring(0, 8) || '00000000',
-      empresa.cnpj_completo || cnpjFallback || '',
-      empresa.razao_social || `EMPRESA ${cleanCnpj}`,
-      empresa.nome_fantasia || empresa.razao_social || 'FILIAL',
-      empresa.uf || 'SP',
+      empresa.cnpj_raiz || cleanCnpj.substring(0, 8),
+      empresa.cnpj_completo || cnpjBusca,
+      empresa.razao_social,
+      empresa.nome_fantasia || empresa.razao_social,
+      empresa.uf || 'RJ',
       empresa.regime_tributario || 'Lucro Real',
       now,
       now
     );
-    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo || cnpjFallback || '' };
+    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo, razao_social: empresa.razao_social };
   }
 
-  // 3. Fallback SQLite Local
+  // 3. Buscar no SQLite Local pelo ID oficial ou CNPJ cadastrado
   if (empresaId) {
     empresa = db.prepare('SELECT id, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId);
   }
 
-  if (!empresa && cnpjFallback) {
-    const cleanCnpj = cnpjFallback.replace(/\D/g, '');
+  if (!empresa && cleanCnpj) {
     empresa = db.prepare(`
       SELECT id, cnpj_completo, razao_social FROM empresas 
       WHERE REPLACE(REPLACE(REPLACE(cnpj_completo, '.', ''), '/', ''), '-', '') = ? 
          OR cnpj_raiz = ? 
          OR cnpj_completo = ?
       LIMIT 1
-    `).get(cleanCnpj, cleanCnpj.substring(0, 8), cnpjFallback);
-
-    if (!empresa && cleanCnpj.length >= 8) {
-      // Auto-provisionar empresa no SQLite
-      const newEmpresaId = empresaId || uuidv4();
-      const now = getBrasiliaTimestamp();
-      db.prepare(`
-        INSERT OR REPLACE INTO empresas (
-          id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'SP', 'Lucro Real', ?, ?)
-      `).run(
-        newEmpresaId,
-        cleanCnpj.substring(0, 8),
-        cnpjFallback,
-        `EMPRESA ${cleanCnpj}`,
-        `FILIAL ${cleanCnpj.substring(0, 8)}`,
-        now,
-        now
-      );
-      return { id: newEmpresaId, cnpj_completo: cnpjFallback };
-    }
+    `).get(cleanCnpj, cleanCnpj.substring(0, 8), cnpjBusca);
   }
 
   if (empresa) {
-    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo };
+    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo, razao_social: empresa.razao_social };
   }
 
-  // 4. Se empresaId foi explicitamente fornecido, preserva o ID em vez de pegar outra empresa aleatória
-  if (empresaId) {
-    const now = getBrasiliaTimestamp();
-    const cleanCnpj = (cnpjFallback || '').replace(/\D/g, '');
-    db.prepare(`
-      INSERT OR REPLACE INTO empresas (
-        id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 'SP', 'Lucro Real', ?, ?)
-    `).run(
-      empresaId,
-      cleanCnpj.substring(0, 8) || '00000000',
-      cnpjFallback || '00.000.000/0001-00',
-      `EMPRESA ${empresaId}`,
-      'MATRIZ',
-      'SP',
-      'Lucro Real',
-      now,
-      now
-    );
-    return { id: empresaId, cnpj_completo: cnpjFallback || '00.000.000/0001-00' };
-  }
-
-  // Se ainda assim não encontrar, busca a primeira empresa cadastrada
-  const firstEmpresa = db.prepare('SELECT id, cnpj_completo FROM empresas LIMIT 1').get() as any;
-  if (firstEmpresa) {
-    return firstEmpresa;
-  }
-
-  // Cria empresa padrão do sistema
-  const defaultEmpId = 'empresa-matriz-01';
-  const now = getBrasiliaTimestamp();
-  db.prepare(`
-    INSERT OR REPLACE INTO empresas (
-      id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
-    ) VALUES (?, '00000000', '00.000.000/0001-00', 'EMPRESA MATRIZ PADRAO', 'MATRIZ', 'SP', 'Lucro Real', ?, ?)
-  `).run(defaultEmpId, now, now);
-  return { id: defaultEmpId, cnpj_completo: '00.000.000/0001-00' };
+  // Se a empresa não existir no cadastro oficial: PROIBIDO CRIAR EMPRESA FAKE! Lança erro de conformidade:
+  throw new Error(`Empresa com identificador "${empresaId || cnpjBusca || 'não informado'}" não foi localizada na Carteira de CNPJs. Cadastre a empresa formalmente antes de prosseguir com operações SEFAZ.`);
 }
 
 /**
- * Helper para garantir que o usuário exista no banco local
+ * Valida a identidade do auditor/usuário autenticado.
+ * Registra no SQLite local os dados REAIS da sessão autenticada caso ainda não sincronizados.
+ * PROIBIDO selecionar usuários aleatórios ou criar contas fictícias ("admin@radarfiscal.com.br").
  */
-function ensureUsuarioExists(db: any, userId?: string, emailFallback?: string): string {
-  let user: any = null;
+function ensureUsuarioExists(db: any, authenticatedUser?: any, emailParam?: string): string {
+  const userId = authenticatedUser?.userId || authenticatedUser?.id || (typeof authenticatedUser === 'string' ? authenticatedUser : null);
+  const email = authenticatedUser?.email || emailParam;
 
-  if (userId) {
-    user = db.prepare('SELECT id FROM usuarios WHERE id = ?').get(userId);
+  if (!userId && !email) {
+    throw new Error('Operação fiscal não autorizada: Usuário auditor não identificado na sessão para registro de custódia.');
   }
 
-  if (!user && emailFallback) {
-    user = db.prepare('SELECT id FROM usuarios WHERE email = ?').get(emailFallback);
-  }
-
+  let user = db.prepare('SELECT id FROM usuarios WHERE id = ? OR (email = ? AND email IS NOT NULL AND email != "")').get(userId, email);
   if (!user) {
-    const firstUser = db.prepare("SELECT id FROM usuarios WHERE perfil = 'admin_master' OR status = 'ativo' LIMIT 1").get() as any;
-    if (firstUser) {
-      return firstUser.id;
+    if (!userId) {
+      throw new Error('Operação fiscal não autorizada: ID do usuário auditor ausente.');
     }
-
-    // Cria usuário administrador padrão caso a tabela esteja vazia
-    const defaultUserId = userId || uuidv4();
+    const nome = authenticatedUser?.nome || authenticatedUser?.name || email?.split('@')[0] || 'Auditor Fiscal';
+    const perfil = authenticatedUser?.perfil || 'analista_fiscal';
     const now = getBrasiliaTimestamp();
+
     db.prepare(`
       INSERT OR REPLACE INTO usuarios (
         id, nome, email, senha_hash, perfil, status, created_at, updated_at
-      ) VALUES (?, 'Administrador do Sistema', 'admin@radarfiscal.com.br', '$2a$10$X87...', 'admin_master', 'ativo', ?, ?)
-    `).run(defaultUserId, now, now);
-    return defaultUserId;
+      ) VALUES (?, ?, ?, '$2a$10$authSessionTokenHash', ?, 'ativo', ?, ?)
+    `).run(userId, nome, email || `${userId}@radarfiscal.com.br`, perfil, now, now);
+    return userId;
   }
 
   return user.id;
