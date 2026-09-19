@@ -459,34 +459,148 @@ export async function descriptografarCertificado(empresaId: string, cnpj?: strin
   return diag.certificado;
 }
 
-export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): { key: string; cert: string; ca?: string[] } {
+export interface InfoCertificadoPfx {
+  keyPem: string;
+  certPem: string;
+  caPems: string[];
+  validade: string; // YYYY-MM-DD
+  validadeFim: Date;
+  validadeInicio: Date;
+  emissor: string;
+  titular: string;
+  cnpj?: string;
+  cpf?: string;
+  fingerprint: string;
+  isExpirado: boolean;
+  diasParaExpirar: number;
+}
+
+export function validarEExtrairCertificadoPfx(pfxBuffer: Buffer, passphrase: string): InfoCertificadoPfx {
+  if (!pfxBuffer || pfxBuffer.length === 0) {
+    throw new Error('Arquivo de certificado .PFX vazio ou não fornecido.');
+  }
+
+  let pfx: any = null;
+  const pfxDer = pfxBuffer.toString('binary');
+  let pfxAsn1: any;
   try {
-    const pfxDer = pfxBuffer.toString('binary');
-    const pfxAsn1 = forge.asn1.fromDer(pfxDer);
-    const pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, passphrase);
+    pfxAsn1 = forge.asn1.fromDer(pfxDer);
+  } catch (derErr: any) {
+    throw new Error(`Arquivo corrompido ou formato inválido (não é um arquivo PKCS#12 / .PFX válido): ${derErr.message}`);
+  }
 
-    let keyPem = '';
-    let certPem = '';
-    const caPems: string[] = [];
+  // Tenta com a senha exata; se falhar e houver espaços nas pontas, tenta com trim()
+  const passwordsToTry = [passphrase];
+  if (passphrase && passphrase.trim() !== passphrase) {
+    passwordsToTry.push(passphrase.trim());
+  }
 
-    for (const safeContent of pfx.safeContents) {
-      for (const safeBag of safeContent.safeBags) {
-        if (safeBag.key) keyPem = forge.pki.privateKeyToPem(safeBag.key);
-        if (safeBag.cert) {
-          const pem = forge.pki.certificateToPem(safeBag.cert);
-          if (!certPem) certPem = pem;
-          else caPems.push(pem);
+  let lastError: any = null;
+  for (const pwd of passwordsToTry) {
+    try {
+      pfx = forge.pkcs12.pkcs12FromAsn1(pfxAsn1, pwd);
+      if (pfx) break;
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+
+  if (!pfx) {
+    const errMsg = lastError?.message || 'PKCS#12 MAC could not be verified';
+    if (errMsg.includes('MAC') || errMsg.includes('password') || errMsg.includes('Invalid')) {
+      throw new Error('A senha informada não confere com o arquivo .PFX (Falha de verificação MAC). Verifique se a senha está correta ou se o Caps Lock está ativado.');
+    }
+    throw new Error(`Falha ao abrir arquivo .PFX: ${errMsg}`);
+  }
+
+  let keyPem = '';
+  let certPem = '';
+  let certObj: any = null;
+  const caPems: string[] = [];
+
+  for (const safeContent of pfx.safeContents) {
+    for (const safeBag of safeContent.safeBags) {
+      if (safeBag.key) {
+        keyPem = forge.pki.privateKeyToPem(safeBag.key);
+      }
+      if (safeBag.cert) {
+        const pem = forge.pki.certificateToPem(safeBag.cert);
+        if (!certPem) {
+          certPem = pem;
+          certObj = safeBag.cert;
+        } else {
+          caPems.push(pem);
         }
       }
     }
+  }
 
-    if (!keyPem || !certPem) {
-      throw new Error('Chave privada ou certificado X509 não encontrados no arquivo PFX.');
-    }
+  if (!keyPem || !certPem || !certObj) {
+    throw new Error('Chave privada RSA ou Certificado X.509 não encontrados dentro do arquivo .PFX.');
+  }
 
-    return { key: keyPem, cert: certPem, ca: caPems.length > 0 ? caPems : undefined };
+  // Extrair metadados reais do certificado X.509
+  const notBefore = certObj.validity.notBefore;
+  const notAfter = certObj.validity.notAfter;
+  const validade = notAfter.toISOString().split('T')[0];
+  const isExpirado = notAfter.getTime() < Date.now();
+  const diasParaExpirar = Math.ceil((notAfter.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+
+  // Subject (Titular)
+  const titular = certObj.subject.getField('CN')?.value || 'Titular Desconhecido';
+  
+  // Extrair CNPJ ou CPF do titular ICP-Brasil (padrão NOME DA EMPRESA:19791896000100)
+  let cnpj: string | undefined;
+  let cpf: string | undefined;
+
+  const cnpjMatch = titular.match(/:([0-9]{14})$/) || titular.match(/([0-9]{14})/);
+  if (cnpjMatch) {
+    cnpj = cnpjMatch[1];
+  }
+
+  const cpfMatch = titular.match(/:([0-9]{11})$/) || titular.match(/([0-9]{11})/);
+  if (cpfMatch && !cnpj) {
+    cpf = cpfMatch[1];
+  }
+
+  // Issuer (Emissor da Autoridade Certificadora)
+  const emissor = certObj.issuer.getField('CN')?.value 
+    || certObj.issuer.getField('O')?.value 
+    || 'Autoridade Certificadora ICP-Brasil';
+
+  // SHA-256 Fingerprint
+  const derCert = forge.asn1.toDer(forge.pki.certificateToAsn1(certObj)).getBytes();
+  const md = forge.md.sha256.create();
+  md.update(derCert);
+  const fingerprint = `SHA256:${md.digest().toHex().toUpperCase()}`;
+
+  return {
+    keyPem,
+    certPem,
+    caPems,
+    validade,
+    validadeFim: notAfter,
+    validadeInicio: notBefore,
+    emissor,
+    titular,
+    cnpj,
+    cpf,
+    fingerprint,
+    isExpirado,
+    diasParaExpirar,
+  };
+}
+
+export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): { key: string; cert: string; ca?: string[] } {
+  try {
+    const info = validarEExtrairCertificadoPfx(pfxBuffer, passphrase);
+    return {
+      key: info.keyPem,
+      cert: info.certPem,
+      ca: info.caPems.length > 0 ? info.caPems : undefined,
+    };
   } catch (err: any) {
-    console.error('❌ Erro na conversão PFX -> PEM via node-forge:', err.message);
+    console.error('❌ Erro na conversão PFX -> PEM:', err.message);
     throw new Error(`Falha ao descriptografar PFX (verifique a senha do certificado): ${err.message}`);
   }
 }

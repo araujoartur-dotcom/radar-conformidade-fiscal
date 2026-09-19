@@ -9,6 +9,7 @@ import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, logAuditAction } from '../middleware/auth';
 import { CERTIFICADO } from '../config';
+import { validarEExtrairCertificadoPfx, descriptografarCertificadoComDiagnostico } from '../services/sefazService';
 
 const router = Router();
 
@@ -98,7 +99,31 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
       return;
     }
 
-    // Criptografar a senha do PFX
+    const fileBuffer = fs.readFileSync(file.path);
+
+    // 1. Validação estrita do arquivo .PFX e da senha ANTES de salvar qualquer registro
+    let certInfo: any;
+    try {
+      certInfo = validarEExtrairCertificadoPfx(fileBuffer, senha);
+    } catch (valErr: any) {
+      if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      res.status(400).json({
+        success: false,
+        error: valErr.message || 'A senha informada não confere com o arquivo .PFX (Falha de verificação MAC).'
+      });
+      return;
+    }
+
+    if (certInfo.isExpirado) {
+      if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+      res.status(400).json({
+        success: false,
+        error: `Este Certificado Digital expirou em ${new Date(certInfo.validade).toLocaleDateString('pt-BR')}. Não é permitido vincular certificados vencidos para transmissão SEFAZ.`
+      });
+      return;
+    }
+
+    // 2. Criptografar a senha do PFX de forma persistente com AES-256-GCM
     const keyBuffer = Buffer.from(keyHex, 'hex');
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', keyBuffer, iv);
@@ -109,12 +134,10 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
     const ivHex = iv.toString('hex');
 
     const id = uuid();
-    const validade = '2028-12-31';
-    const emissor = 'AC Certificadora A1';
-    const fingerprint = `SHA256:${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+    const validade = certInfo.validade;
+    const emissor = certInfo.emissor;
+    const fingerprint = certInfo.fingerprint;
     const status = 'ok';
-
-    const fileBuffer = fs.readFileSync(file.path);
     const base64Enc = `base64:${fileBuffer.toString('base64')}`;
 
     // 3. Salvar no Supabase (se configurado)
@@ -127,7 +150,7 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
           .update({ status_alerta: 'substituido' })
           .eq('empresa_id', empresa.id);
 
-        // Inserir novo certificado
+        // Inserir novo certificado com metadados reais
         const { error: insErr } = await supabase
           .from('certificados')
           .insert({
@@ -168,18 +191,21 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
       console.warn('Aviso ao espelhar certificado no SQLite:', sqliteErr.message);
     }
 
-    logAuditAction(req, 'CERTIFICADO_UPLOAD', `Certificado A1 atrelado ao CNPJ ${empresa.cnpj_completo}`);
+    logAuditAction(req, 'CERTIFICADO_UPLOAD', `Certificado A1 (${certInfo.titular}) atrelado ao CNPJ ${empresa.cnpj_completo}`);
 
     res.status(201).json({
       success: true,
-      message: 'Certificado enviado e configurado com sucesso.',
+      message: 'Certificado A1 validado e configurado com sucesso no cofre.',
       data: {
         id,
         fileName: file.originalname,
-        validade,
+        validade: certInfo.validade,
         status: 'valido',
-        emissor,
-        impressaoDigital: fingerprint
+        emissor: certInfo.emissor,
+        titular: certInfo.titular,
+        cnpj: certInfo.cnpj,
+        impressaoDigital: certInfo.fingerprint,
+        diasParaExpirar: certInfo.diasParaExpirar
       }
     });
 
@@ -368,7 +394,75 @@ router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, 
       return;
     }
 
-    const isValido = cert.status_alerta === 'ok' || cert.status_alerta === 'valido' || !cert.status_alerta;
+    // 3. Validação real em tempo de execução: checar se a senha do cofre de fato abre o PFX
+    const diag = await descriptografarCertificadoComDiagnostico(empresa.id, empresa.cnpj_completo);
+    if (!diag.certificado) {
+      res.json({
+        success: true,
+        hasCertificate: false,
+        certificado: {
+          id: cert.id,
+          fileName: cert.arquivo_nome || 'certificado.pfx',
+          validade: cert.validade || '',
+          status: 'pendente',
+          valido: false,
+          emissor: cert.emissor || '',
+          impressaoDigital: cert.impressao_digital || '',
+          cnpj: empresa?.cnpj_completo || '',
+          razãoSocial: empresa?.razao_social || '',
+          tipo: 'e-CNPJ A1',
+          mensagemAlerta: diag.motivoErro || 'Certificado pendente ou inacessível no cofre.'
+        }
+      });
+      return;
+    }
+
+    // 4. Testar se o PFX abre com a senha descriptografada
+    let infoPfx: any;
+    try {
+      infoPfx = validarEExtrairCertificadoPfx(diag.certificado.pfxBuffer, diag.certificado.senha);
+    } catch (testErr: any) {
+      console.warn(`⚠️ Certificado ${cert.id} possui senha gravada que não abre o PFX:`, testErr.message);
+      res.json({
+        success: true,
+        hasCertificate: false,
+        certificado: {
+          id: cert.id,
+          fileName: cert.arquivo_nome || 'certificado.pfx',
+          validade: cert.validade || '',
+          status: 'pendente',
+          valido: false,
+          emissor: cert.emissor || '',
+          impressaoDigital: cert.impressao_digital || '',
+          cnpj: empresa?.cnpj_completo || '',
+          razãoSocial: empresa?.razao_social || '',
+          tipo: 'e-CNPJ A1',
+          mensagemAlerta: `A senha do Certificado gravada no cofre não abre o arquivo .PFX (${testErr.message}). Por favor, recadastre o arquivo .PFX e a senha.`
+        }
+      });
+      return;
+    }
+
+    if (infoPfx.isExpirado) {
+      res.json({
+        success: true,
+        hasCertificate: false,
+        certificado: {
+          id: cert.id,
+          fileName: cert.arquivo_nome || 'certificado.pfx',
+          validade: infoPfx.validade,
+          status: 'expirado',
+          valido: false,
+          emissor: infoPfx.emissor,
+          impressaoDigital: infoPfx.fingerprint,
+          cnpj: empresa?.cnpj_completo || '',
+          razãoSocial: empresa?.razao_social || '',
+          tipo: 'e-CNPJ A1',
+          mensagemAlerta: `Certificado expirou em ${new Date(infoPfx.validade).toLocaleDateString('pt-BR')}.`
+        }
+      });
+      return;
+    }
 
     res.json({
       success: true,
@@ -376,12 +470,13 @@ router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, 
       certificado: {
         id: cert.id,
         fileName: cert.arquivo_nome || 'certificado.pfx',
-        validade: cert.validade || '2028-12-31',
-        status: isValido ? 'valido' : 'pendente',
-        valido: isValido,
-        emissor: cert.emissor || 'AC Certificadora A1',
-        impressaoDigital: cert.impressao_digital || '',
-        cnpj: empresa?.cnpj_completo || '',
+        validade: infoPfx.validade,
+        status: 'valido',
+        valido: true,
+        emissor: infoPfx.emissor,
+        impressaoDigital: infoPfx.fingerprint,
+        titular: infoPfx.titular,
+        cnpj: infoPfx.cnpj || empresa?.cnpj_completo || '',
         razãoSocial: empresa?.razao_social || '',
         tipo: 'e-CNPJ A1'
       }

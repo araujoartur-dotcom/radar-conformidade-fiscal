@@ -61,9 +61,9 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
           fileName: certData.fileName || certFile.name,
           status: 'valido',
           valido: true,
-          validade: certData.validade || '2028-12-31',
-          cnpj: empresa.cnpjCompleto,
-          razãoSocial: empresa.razaoSocial,
+          validade: certData.validade,
+          cnpj: certData.cnpj || empresa.cnpjCompleto,
+          razãoSocial: certData.titular || empresa.razaoSocial,
           tipo: 'e-CNPJ A1',
           emissor: certData.emissor || 'AC Certificadora A1',
           impressaoDigital: certData.impressaoDigital || ''
@@ -73,12 +73,13 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
         setCertFile(null);
         setCertPassword('');
         setIsReplacing(false);
-        alert('Certificado A1 vinculado e ativado com sucesso no cofre seguro!');
+        alert(`✅ Certificado A1 validado e ativado com sucesso no cofre!\n\nTitular: ${certData.titular || empresa.razaoSocial}\nEmissor: ${certData.emissor || 'ICP-Brasil'}\nValidade: ${new Date(certData.validade).toLocaleDateString('pt-BR')} (${certData.diasParaExpirar || 365} dias restantes)`);
       } else {
-        alert(res.error || res.data?.error || 'Erro ao enviar e validar certificado digital.');
+        const errMsg = res.error || (res.data as any)?.error || 'Erro ao validar e vincular certificado digital.';
+        alert(`⚠️ Falha na validação do Certificado:\n\n${errMsg}`);
       }
     } catch (err: any) {
-      alert(err.message || 'Erro inesperado ao processar certificado.');
+      alert(`⚠️ Erro ao processar certificado: ${err.message || 'Falha de comunicação'}`);
     } finally {
       setIsSubmitting(false);
     }

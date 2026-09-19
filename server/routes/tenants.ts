@@ -47,7 +47,12 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
           const cert = certList.find((c: any) => c.status_alerta === 'ok') ||
                        certList.slice().sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0];
           
-          const isValido = cert && (cert.status_alerta === 'ok' || (cert.validade && new Date(cert.validade) >= new Date()));
+          const isValido = Boolean(
+            cert &&
+            cert.status_alerta === 'ok' &&
+            cert.validade &&
+            new Date(cert.validade) >= new Date()
+          );
 
           if (cert) {
             try {
@@ -123,31 +128,40 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
       `).all(userId) as any[];
     }
 
-    const formatted = rows.map((r: any) => ({
-      id: r.id,
-      cnpjRaiz: r.cnpj_raiz,
-      cnpjCompleto: r.cnpj_completo,
-      razaoSocial: r.razao_social,
-      nomeFantasia: r.nome_fantasia || r.razao_social,
-      grupoContabilCliente: 'Carteira Geral',
-      uf: r.uf,
-      regimeTributario: r.regime_tributario,
-      naturezaJuridica: r.natureza_juridica_desc,
-      codigoNaturezaJuridica: r.natureza_juridica_codigo,
-      manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
-      ultimoNsu: r.ultimo_nsu || '000000000000000',
-      maxNsu: r.max_nsu || '000000000000000',
-      certificadoA1: r.cert_file_name ? {
-        fileName: r.cert_file_name,
-        validade: r.cert_validade,
-        status: r.cert_status === 'ok' ? 'valido' : (r.cert_status === 'expirado' ? 'expirado' : 'pendente'),
-        emissor: r.cert_emissor || 'AC Certificadora A1',
-        impressaoDigital: r.cert_fingerprint || ''
-      } : undefined,
-      totalDocumentosCapturados: 0,
-      statusConexaoSefaz: r.cert_file_name ? 'ativo' : 'sem_certificado',
-      ultimaSincronizacao: r.cert_file_name ? 'Certificado Ativo' : 'Sem Certificado'
-    }));
+    const formatted = rows.map((r: any) => {
+      const isValido = Boolean(
+        r.cert_file_name &&
+        r.cert_status === 'ok' &&
+        r.cert_validade &&
+        new Date(r.cert_validade) >= new Date()
+      );
+
+      return {
+        id: r.id,
+        cnpjRaiz: r.cnpj_raiz,
+        cnpjCompleto: r.cnpj_completo,
+        razaoSocial: r.razao_social,
+        nomeFantasia: r.nome_fantasia || r.razao_social,
+        grupoContabilCliente: 'Carteira Geral',
+        uf: r.uf,
+        regimeTributario: r.regime_tributario,
+        naturezaJuridica: r.natureza_juridica_desc,
+        codigoNaturezaJuridica: r.natureza_juridica_codigo,
+        manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
+        ultimoNsu: r.ultimo_nsu || '000000000000000',
+        maxNsu: r.max_nsu || '000000000000000',
+        certificadoA1: r.cert_file_name ? {
+          fileName: r.cert_file_name,
+          validade: r.cert_validade,
+          status: isValido ? 'valido' : (r.cert_status === 'expirado' ? 'expirado' : 'pendente'),
+          emissor: r.cert_emissor || 'AC Certificadora A1',
+          impressaoDigital: r.cert_fingerprint || ''
+        } : undefined,
+        totalDocumentosCapturados: 0,
+        statusConexaoSefaz: isValido ? 'ativo' : (r.cert_file_name ? 'pendente' : 'sem_certificado'),
+        ultimaSincronizacao: isValido ? 'Certificado Ativo' : (r.cert_file_name ? 'Certificado Pendente' : 'Sem Certificado')
+      };
+    });
 
     res.json({ success: true, data: formatted });
   } catch (err: any) {

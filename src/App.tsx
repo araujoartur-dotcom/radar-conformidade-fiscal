@@ -175,7 +175,7 @@ export default function App() {
     onNavigateToLote: () => setActiveMode('lote'),
   });
 
-  // Sincronização unificada do certificado da empresa ativa
+  // Sincronização unificada do certificado da empresa ativa com validação real
   const syncCertificado = useCallback(async () => {
     if (!empresaAtiva) {
       setCertificado({
@@ -191,28 +191,28 @@ export default function App() {
     }
 
     try {
-      const res = await get<{ success: boolean; data: any[] }>('/tenants');
-      if (res.ok && res.data?.data) {
-        const tenant = res.data.data.find((t: any) =>
-          t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto
-        );
-        if (tenant && tenant.certificadoA1) {
-          const isValido = tenant.certificadoA1.status === 'valido' ||
-            (tenant.certificadoA1.validade && new Date(tenant.certificadoA1.validade) >= new Date());
-          setCertificado({
-            fileName: tenant.certificadoA1.fileName,
-            cnpj: tenant.cnpjCompleto,
-            razãoSocial: tenant.razaoSocial,
-            tipo: 'e-CNPJ A1',
-            validade: tenant.certificadoA1.validade,
-            status: isValido ? 'valido' : 'pendente',
-            valido: isValido,
-            emissor: tenant.certificadoA1.emissor,
-            impressaoDigital: tenant.certificadoA1.impressaoDigital
-          });
-          return;
-        }
+      const empParam = empresaAtiva.id || empresaAtiva.cnpjCompleto || '';
+      const statusRes = await get<{ success: boolean; hasCertificate: boolean; certificado: any }>(
+        `/config/certificate/status/${encodeURIComponent(empParam)}`
+      );
+
+      if (statusRes.ok && statusRes.data?.certificado) {
+        const c = statusRes.data.certificado;
+        setCertificado({
+          id: c.id,
+          fileName: c.fileName || '',
+          cnpj: c.cnpj || empresaAtiva.cnpjCompleto || '',
+          razãoSocial: c.razãoSocial || empresaAtiva.razaoSocial || '',
+          tipo: c.tipo || 'e-CNPJ A1',
+          validade: c.validade || '',
+          status: c.valido ? 'valido' : 'pendente',
+          valido: Boolean(c.valido),
+          emissor: c.emissor || '',
+          impressaoDigital: c.impressaoDigital || ''
+        });
+        return;
       }
+
       setCertificado({
         fileName: '',
         cnpj: empresaAtiva.cnpjCompleto || '',
@@ -225,7 +225,7 @@ export default function App() {
     } catch (err) {
       console.error('Erro ao sincronizar certificado:', err);
     }
-  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, get]);
+  }, [empresaAtiva?.id, empresaAtiva?.cnpjCompleto, empresaAtiva?.razaoSocial, get]);
 
   // Carregamento paginado/otimizado de documentos (limite padrão seguro: 1000)
   const loadDocumentos = useCallback(async () => {
