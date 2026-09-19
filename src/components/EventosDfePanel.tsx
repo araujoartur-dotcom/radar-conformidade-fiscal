@@ -217,7 +217,8 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           empresaId: empresaAtiva?.id,
           cnpj: empresaAtiva?.cnpjCompleto || (empresaAtiva as any)?.cnpj,
           chNFe: activeChave,
-          tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe'
+          tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe',
+          tpAmb: '1'
         })
       });
 

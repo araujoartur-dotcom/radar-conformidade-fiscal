@@ -1613,12 +1613,12 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
     const urlsUF = CTE_CONSULTA_PROTOCOLO_URLS[tpAmb];
     url = urlsUF[cUF] || urlsUF['SVRS'];
     soapActionUrl = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4/cteConsultaCT';
-    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><cteDadosMsg xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4"><consSitCTe versao="4.00" xmlns="http://www.portalfiscal.inf.br/cte"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chCTe>${cleanChave}</chCTe></consSitCTe></cteDadosMsg></soap12:Body></soap12:Envelope>`;
+    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Header/><soap12:Body><cteDadosMsg xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4"><consSitCTe versao="4.00" xmlns="http://www.portalfiscal.inf.br/cte"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chCTe>${cleanChave}</chCTe></consSitCTe></cteDadosMsg></soap12:Body></soap12:Envelope>`;
   } else {
     const urlsUF = NFE_CONSULTA_PROTOCOLO_URLS[tpAmb];
     url = urlsUF[cUF] || urlsUF['SVRS'];
     soapActionUrl = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeConsultaNF';
-    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4"><consSitNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${cleanChave}</chNFe></consSitNFe></nfeDadosMsg></soap12:Body></soap12:Envelope>`;
+    soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Header/><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4"><consSitNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${cleanChave}</chNFe></consSitNFe></nfeDadosMsg></soap12:Body></soap12:Envelope>`;
   }
 
   // Certificado Digital

@@ -291,10 +291,14 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
     const cnpjTarget = req.body.cnpj || req.user?.empresaCnpj;
     const empresa = await ensureEmpresaExists(db, empresaIdTarget, cnpjTarget);
 
+    const tpAmb = (req.body.tpAmb === '1' || req.body.tpAmb === '2') 
+      ? req.body.tpAmb 
+      : (process.env.SEFAZ_TP_AMB || '1'); // Default para Produção ('1') para dados reais
+
     const resultado = await consultarSituacaoCompletaDFe({
       chaveAcesso: chNFe,
       tipoDoc: tipoDoc as 'NFe' | 'CTe',
-      tpAmb: SEFAZ.TP_AMB as '1' | '2',
+      tpAmb: tpAmb as '1' | '2',
       empresaId: empresa.id,
       cnpj: empresa.cnpj_completo,
       userId: req.user?.userId
