@@ -170,11 +170,12 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
     }
 
     const certName = certificado?.fileName || 'Cofre Seguro Nuvem';
+    const isCte = modeloDfe === 'CTe';
     addLog(`Autenticando CNPJ ${currentCnpj} no ambiente ${ambLabel}`);
-    addLog(`WebService: NFeDistribuicaoDFe (Ambiente Nacional AN) | Certificado: ${certName}`);
+    addLog(`WebService: ${isCte ? 'CTeDistribuicaoDFe (Ambiente SVRS / Nacional)' : 'NFeDistribuicaoDFe (Ambiente Nacional AN)'} | Certificado: ${certName}`);
 
     if (isByChave) {
-      addLog(`Tipo de Consulta: consChNFe (Chave: ${cleanChave})`);
+      addLog(`Tipo de Consulta: ${isCte ? 'consChCTe' : 'consChNFe'} (Chave: ${cleanChave})`);
     } else if (targetNsuEspecifico) {
       addLog(`Tipo de Consulta: consNSU (NSU Específico: ${targetNsuEspecifico})`);
     } else {
@@ -189,8 +190,10 @@ export const ConsultaNsuModal: React.FC<ConsultaNsuModalProps> = ({
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${effectiveToken}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || '',
         },
         body: JSON.stringify({
+          empresaId: empresaAtiva?.id,
           cnpj: currentCnpj.replace(/\D/g, ''),
           ultNSU: (isByChave || targetNsuEspecifico) ? undefined : ultNSU,
           nsuEspecifico: targetNsuEspecifico,

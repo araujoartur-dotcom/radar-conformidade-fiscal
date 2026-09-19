@@ -47,20 +47,21 @@ async function ensureEmpresaExists(db: any, empresaId?: string, cnpjBusca?: stri
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
-      if (empresaId) {
+      // Se CNPJ específico foi informado, priorizar busca pela empresa dona do CNPJ
+      if (cleanCnpj) {
+        const { data: supaEmpByCnpj } = await supabase
+          .from('empresas')
+          .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
+          .or(`cnpj_completo.eq.${cnpjBusca},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
+          .maybeSingle();
+        if (supaEmpByCnpj) empresa = supaEmpByCnpj;
+      }
+
+      if (!empresa && empresaId) {
         const { data: supaEmp } = await supabase
           .from('empresas')
           .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
           .eq('id', empresaId)
-          .maybeSingle();
-        if (supaEmp) empresa = supaEmp;
-      }
-
-      if (!empresa && cleanCnpj) {
-        const { data: supaEmp } = await supabase
-          .from('empresas')
-          .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
-          .or(`cnpj_completo.eq.${cnpjBusca},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
           .maybeSingle();
         if (supaEmp) empresa = supaEmp;
       }

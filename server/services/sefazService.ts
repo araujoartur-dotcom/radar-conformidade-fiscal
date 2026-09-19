@@ -2029,7 +2029,8 @@ export async function consultarDistribuicaoCTe(params: DistribucaoDfeRequest): P
 
   try {
     console.log(`📡 [${getBrasiliaTimestamp()}] Consultando CTeDistribuicaoDFe para CNPJ ${cnpj} (ultNSU=${params.ultNSU})...`);
-    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha);
+    const soapActionCte = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeDistribuicaoDFe/cteDistDFeInteresse';
+    const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha, soapActionCte);
 
     const cStat = extractTagRegex(response.body, 'cStat') || '999';
     const xMotivo = extractTagRegex(response.body, 'xMotivo') || 'Sem resposta';
