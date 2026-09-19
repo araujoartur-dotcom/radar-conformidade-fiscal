@@ -16,7 +16,6 @@ import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
 import { SimuladorRegimesPanel } from './components/SimuladorRegimesPanel';
-import { CertificadoModal } from './components/CertificadoModal';
 import { QueryMode, CertificadoA1, DfeXmlItem, AmbienteSefaz } from './types';
 import { formatCNPJ, onlyNumbers } from './utils/cnpj';
 import { Search } from 'lucide-react';
@@ -105,43 +104,8 @@ export default function App() {
     setSelectedDfeForEvents(null);
   }, [empresaAtiva?.id]);
 
-  // Sincroniza o status persistente do Certificado A1 da empresa ativa (persiste após login/logout)
-  useEffect(() => {
-    if (!empresaAtiva?.id) return;
-    const fetchCertStatus = async () => {
-      try {
-        const token = localStorage.getItem('@RadarFiscal:token');
-        const res = await fetch(`${getApiBaseUrl()}/config/certificate/status/${empresaAtiva.id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.hasCertificate && data.certificado) {
-            setCertificado(data.certificado);
-          } else {
-            setCertificado({
-              fileName: '',
-              cnpj: empresaAtiva.cnpjCompleto || '',
-              razãoSocial: empresaAtiva.razaoSocial || '',
-              tipo: 'e-CNPJ A1',
-              validade: '',
-              status: 'pendente',
-              valido: false
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Aviso ao carregar status do certificado:', e);
-      }
-    };
-    fetchCertStatus();
-  }, [empresaAtiva?.id]);
-
   // Modal State for Turbo Fiscal .ZIP Export
   const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
-
-  // Modal State for Digital Certificate (e-CNPJ A1)
-  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   // Settings
   const [rateLimit, setRateLimit] = useState<number>(8); // 8 req/s default
@@ -344,7 +308,6 @@ export default function App() {
         onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
-        onOpenCertModal={() => setIsCertModalOpen(true)}
       />
 
       {/* Connectivity & Cold-Start Recovery Banner */}
@@ -443,7 +406,7 @@ export default function App() {
                   setDfeList(prev => prev.map(d => d.chaveAcesso === chave ? { ...d, eventoUltimo: evt as any } : d));
                 }}
                 certificado={certificado}
-                onOpenCertModal={() => setIsCertModalOpen(true)}
+                onNavigateToCarteira={() => setActiveMode('carteira_cnpjs')}
               />
             )}
 
@@ -574,17 +537,6 @@ export default function App() {
         isOpen={isExportFiscalModalOpen}
         onClose={() => setIsExportFiscalModalOpen(false)}
         totalDocsAvailable={currentKpis?.totalDocs || dfeList.length || 21345}
-      />
-
-      {/* Certificado Digital A1 Modal */}
-      <CertificadoModal
-        isOpen={isCertModalOpen}
-        onClose={() => setIsCertModalOpen(false)}
-        empresa={empresaAtiva}
-        certificado={certificado}
-        onCertificadoUpdated={(novoCert) => {
-          setCertificado(novoCert);
-        }}
       />
 
     </div>

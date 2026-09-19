@@ -19,7 +19,7 @@ interface EventosDfePanelProps {
   dfeList: DfeXmlItem[];
   onEventProcessed?: (chaveAcesso: string, eventoTipo: string) => void;
   certificado?: CertificadoA1;
-  onOpenCertModal?: () => void;
+  onNavigateToCarteira?: () => void;
 }
 
 export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
@@ -27,7 +27,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   dfeList,
   onEventProcessed,
   certificado,
-  onOpenCertModal
+  onNavigateToCarteira
 }) => {
   const { token, empresaAtiva } = useAuth();
   const { kpis, totalGeral } = useKpis();
@@ -484,19 +484,19 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           </button>
         </div>
 
-        {/* Botão de Status do Certificado A1 da Empresa Ativa */}
+        {/* Botão de Status do Certificado A1 da Empresa Ativa (Centralizado no Cadastro de Empresas) */}
         <button
           type="button"
-          onClick={() => onOpenCertModal && onOpenCertModal()}
+          onClick={() => onNavigateToCarteira && onNavigateToCarteira()}
           className={`hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-xl border text-xs shadow-inner cursor-pointer transition-all ${
-            certificado?.valido || (certificado?.status === 'valido' && certificado?.validade && new Date(certificado.validade) >= new Date())
+            certificado?.valido
               ? 'bg-emerald-950/50 border-emerald-700/60 hover:bg-emerald-900/60'
               : 'bg-amber-950/50 border-amber-700/60 hover:bg-amber-900/60'
           }`}
           title={
             certificado?.valido
-              ? `Certificado Digital A1 Ativo (Validade: ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Ativo'}) — Clique para gerenciar`
-              : 'Certificado Digital A1 Pendente — Clique para vincular arquivo .PFX'
+              ? `Certificado Digital A1 Ativo (Validade: ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Ativo'}) — Gerenciar no Cadastro de Empresas`
+              : 'Certificado Digital A1 Pendente — Clique para vincular no Cadastro de Empresas'
           }
         >
           <Key className={`w-4 h-4 shrink-0 ${certificado?.valido ? 'text-emerald-400' : 'text-amber-400'}`} />

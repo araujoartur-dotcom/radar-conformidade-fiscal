@@ -28,7 +28,6 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExportFiscal,
   ambienteSefaz,
   setAmbienteSefaz,
-  onOpenCertModal,
 }) => {
   const { user, empresaAtiva, empresasDisponiveis, logout, switchEmpresa, token } = useAuth();
   const { post } = useApi();
@@ -252,13 +251,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Certificate Status (Compact Icon Button with Hover Tooltip) */}
           <div className="relative group">
             <button
-              onClick={() => {
-                if (onOpenCertModal) {
-                  onOpenCertModal();
-                } else {
-                  setActiveMode('carteira_cnpjs');
-                }
-              }}
+              onClick={() => setActiveMode('carteira_cnpjs')}
               className={`p-2 rounded-xl border text-xs font-semibold flex items-center justify-center transition-all cursor-pointer shadow-sm relative ${
                 certificado?.valido
                   ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300 hover:bg-emerald-900/60'
@@ -266,8 +259,8 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
               title={
                 certificado?.valido
-                  ? `Certificado Digital A1 Ativo: Válido até ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Período Ativo'} (${certificado.emissor || 'AC'}) — Clique para gerenciar`
-                  : 'Certificado Digital Pendente — Clique para vincular arquivo .PFX'
+                  ? `Certificado Digital A1 Ativo: Válido até ${certificado.validade ? new Date(certificado.validade).toLocaleDateString('pt-BR') : 'Período Ativo'} (${certificado.emissor || 'AC'}) — Gerenciar no Cadastro de Empresas`
+                  : 'Certificado Digital Pendente — Clique para vincular arquivo .PFX no Cadastro de Empresas'
               }
               aria-label="Certificado Digital A1"
             >
