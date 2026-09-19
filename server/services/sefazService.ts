@@ -19,6 +19,7 @@ import crypto from 'crypto';
 import zlib from 'zlib';
 import forge from 'node-forge';
 import { v4 as uuidv4 } from 'uuid';
+import { SignedXml } from 'xml-crypto';
 import { SEFAZ, CERTIFICADO } from '../config';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
@@ -169,7 +170,16 @@ export interface DistribucaoDfeResponse {
 // CONSTRUÇÃO DO ENVELOPE XML SOAP
 // =========================================================
 
-function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
+const MAPA_DESC_EVENTO: Record<string, string> = {
+  '210200': 'Confirmacao da Operacao',
+  '210210': 'Ciencia da Operacao',
+  '210220': 'Desconhecimento da Operacao',
+  '210240': 'Operacao nao Realizada',
+  '110110': 'Carta de Correcao',
+  '110111': 'Cancelamento',
+};
+
+function buildEventoXml(params: EventoSefazRequest, nSeq: number): { rawEventoXml: string; idEvento: string } {
   const {
     chaveAcesso,
     codigoEvento,
@@ -184,42 +194,53 @@ function buildEventoXml(params: EventoSefazRequest, nSeq: number): string {
   const dhEvento = getBrasiliaTimestamp(); // Padrão SEFAZ YYYY-MM-DDThh:mm:ss-03:00
   const idEvento = `ID${codigoEvento}${chaveAcesso}${String(nSeq).padStart(2, '0')}`;
 
+  const descEvento = MAPA_DESC_EVENTO[codigoEvento] || (params.nomeEvento || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
   let detEvento = '';
   if (justificativa) {
-    detEvento = `<xJust>${justificativa}</xJust>`;
+    const cleanJust = justificativa.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    detEvento = `<xJust>${cleanJust}</xJust>`;
   }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-  <idLote>${Date.now()}</idLote>
-  <evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-    <infEvento Id="${idEvento}">
-      <cOrgao>${orgaoUf}</cOrgao>
-      <tpAmb>${tpAmb}</tpAmb>
-      <CNPJ>${cnpjAutor.replace(/\D/g, '')}</CNPJ>
-      <chNFe>${chaveAcesso}</chNFe>
-      <dhEvento>${dhEvento}</dhEvento>
-      <tpEvento>${codigoEvento}</tpEvento>
-      <nSeqEvento>${nSeq}</nSeqEvento>
-      <verEvento>1.00</verEvento>
-      <detEvento versao="1.00">
-        <descEvento>${params.nomeEvento}</descEvento>
-        ${detEvento}
-      </detEvento>
-    </infEvento>
-  </evento>
-</envEvento>`;
+  // XML base do elemento <evento> (sem prólogo <?xml...?>) para assinatura enveloped XMLDSig
+  const rawEventoXml = `<evento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><infEvento Id="${idEvento}"><cOrgao>${orgaoUf}</cOrgao><tpAmb>${tpAmb}</tpAmb><CNPJ>${cnpjAutor.replace(/\D/g, '')}</CNPJ><chNFe>${chaveAcesso}</chNFe><dhEvento>${dhEvento}</dhEvento><tpEvento>${codigoEvento}</tpEvento><nSeqEvento>${nSeq}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao="1.00"><descEvento>${descEvento}</descEvento>${detEvento}</detEvento></infEvento></evento>`;
+
+  return { rawEventoXml, idEvento };
 }
 
-function buildSoapEnvelope(xmlEvento: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <soap12:Body>
-    <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">
-      ${xmlEvento}
-    </nfeDadosMsg>
-  </soap12:Body>
-</soap12:Envelope>`;
+export function assinarEventoXml(
+  rawEventoXml: string,
+  pfxBuffer: Buffer,
+  senhaPfx: string,
+  idEvento: string
+): string {
+  const pem = converterPfxParaPem(pfxBuffer, senhaPfx);
+
+  const sig = new SignedXml({ privateKey: pem.key, publicCert: pem.cert });
+  sig.signatureAlgorithm = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
+  sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
+  sig.addReference({
+    xpath: `//*[@Id='${idEvento}']`,
+    transforms: [
+      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+      'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+    ],
+    digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1'
+  });
+  sig.computeSignature(rawEventoXml, {
+    location: { reference: `//*[@Id='${idEvento}']`, action: 'after' }
+  });
+
+  return sig.getSignedXml();
+}
+
+function buildEnvEventoXml(signedEventoXml: string): string {
+  const idLote = Date.now().toString().slice(-15);
+  return `<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>${idLote}</idLote>${signedEventoXml}</envEvento>`;
+}
+
+function buildSoapEnvelope(envEventoXml: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">${envEventoXml}</nfeDadosMsg></soap12:Body></soap12:Envelope>`;
 }
 
 function buildDistDFeSoapEnvelope(params: DistribucaoDfeRequest): string {
@@ -552,14 +573,9 @@ function extrairDocZips(xmlRetorno: string): Array<{ schema: string; nsu: string
 // =========================================================
 
 export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise<EventoSefazResponse> {
-  const { tpAmb, empresaId } = params;
-  const endpoints = tpAmb === '1' ? SEFAZ.SVRS_PRODUCAO : SEFAZ.SVRS_HOMOLOGACAO;
-  const url = endpoints.RECEPCAO_EVENTO;
+  const { tpAmb, empresaId, codigoEvento } = params;
 
-  const nSeq = params.nSeqEvento || 1;
-  const xmlEvento = buildEventoXml(params, nSeq);
-  const soapEnvelope = buildSoapEnvelope(xmlEvento);
-
+  // 1. Diagnóstico e descriptografia do Certificado A1
   const diag = await descriptografarCertificadoComDiagnostico(empresaId, params.cnpjAutor);
   const certificado = diag.certificado;
 
@@ -568,27 +584,64 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
       success: false,
       cStat: '999',
       xMotivo: diag.motivoErro || '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para transmitir à SEFAZ oficial, cadastre o Certificado A1 e a senha.',
-      xmlEnvio: xmlEvento,
+      xmlEnvio: '',
       xmlRetorno: '',
       tpAmb,
     };
   }
 
+  // 2. Determinação da URL do autorizador competente
+  // Eventos de Manifestação do Destinatário (210200, 210210, 210220, 210240) exigem obrigatoriamente o Ambiente Nacional (RFB) com cOrgao=91
+  const isManifestacaoDest = ['210200', '210210', '210220', '210240'].includes(codigoEvento);
+  let url = '';
+  if (isManifestacaoDest) {
+    url = tpAmb === '1'
+      ? (SEFAZ.AN_PRODUCAO?.RECEPCAO_EVENTO || 'https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx')
+      : (SEFAZ.AN_HOMOLOGACAO?.RECEPCAO_EVENTO || 'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx');
+  } else {
+    const endpoints = tpAmb === '1' ? SEFAZ.SVRS_PRODUCAO : SEFAZ.SVRS_HOMOLOGACAO;
+    url = endpoints.RECEPCAO_EVENTO;
+  }
+
+  // 3. Montagem e Assinatura Digital do Evento XML com XMLDSig ICP-Brasil
+  const nSeq = params.nSeqEvento || 1;
+  const { rawEventoXml, idEvento } = buildEventoXml(params, nSeq);
+
+  let signedEventoXml: string;
+  try {
+    signedEventoXml = assinarEventoXml(rawEventoXml, certificado.pfxBuffer, certificado.senha, idEvento);
+  } catch (signErr: any) {
+    console.error('❌ Falha ao assinar digitalmente o evento com certificado A1:', signErr.message);
+    return {
+      success: false,
+      cStat: '999',
+      xMotivo: `Falha na assinatura digital do XML: ${signErr.message}`,
+      xmlEnvio: rawEventoXml,
+      xmlRetorno: '',
+      tpAmb,
+    };
+  }
+
+  const envEventoXml = buildEnvEventoXml(signedEventoXml);
+  const soapEnvelope = buildSoapEnvelope(envEventoXml);
+
   try {
     console.log(`📡 [${getBrasiliaTimestamp()}] Transmitindo evento ${params.codigoEvento} para SEFAZ (${url})...`);
-    const soapAction = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4';
+    const soapAction = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento';
     const response = await enviarParaSefaz(url, soapEnvelope, certificado.pfxBuffer, certificado.senha, soapAction);
 
-    // 1. Extração profunda de cStat e xMotivo específicos do evento (dentro de <infEvento>)
+    // 4. Extração profunda de cStat e xMotivo específicos do evento (dentro de <infEvento>)
     const cStatEvento = extractSubTagRegex(response.body, 'infEvento', 'cStat');
     const xMotivoEvento = extractSubTagRegex(response.body, 'infEvento', 'xMotivo');
 
-    // 2. Extração do lote geral ou raiz (se o lote como um todo foi rejeitado antes dos eventos)
+    // 5. Extração do lote geral ou raiz (se o lote como um todo foi rejeitado antes dos eventos)
     const cStatLote = extractTagRegex(response.body, 'cStat');
     const xMotivoLote = extractTagRegex(response.body, 'xMotivo');
 
-    // 3. Extração de mensagem de erro SOAP Fault caso tenha ocorrido falha de validação no envelope
-    const faultString = extractTagRegex(response.body, 'faultstring') || extractTagRegex(response.body, 'Text');
+    // 6. Extração de mensagem de erro SOAP Fault caso tenha ocorrido falha de validação no envelope
+    const faultString = extractTagRegex(response.body, 'faultstring') 
+      || extractTagRegex(response.body, 'Text')
+      || extractTagRegex(response.body, 'Reason');
 
     // Prioridade máxima para o código específico do evento, depois lote, depois status HTTP
     const cStat = cStatEvento || cStatLote || (response.statusCode !== 200 ? String(response.statusCode) : '999');
@@ -618,7 +671,7 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
       xMotivo,
       nProt: nProt || undefined,
       dhRegEvento,
-      xmlEnvio: xmlEvento,
+      xmlEnvio: envEventoXml,
       xmlRetorno: response.body,
       tpAmb,
     };
@@ -628,7 +681,7 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
       success: false,
       cStat: '999',
       xMotivo: `Erro de comunicação com a SEFAZ: ${err.message}`,
-      xmlEnvio: xmlEvento,
+      xmlEnvio: envEventoXml,
       xmlRetorno: '',
       tpAmb,
     };

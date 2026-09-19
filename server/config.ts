@@ -13,9 +13,10 @@ import path from 'path';
 dotenv.config();
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-// Gera CERT_ENCRYPTION_KEY em memória se não existir
+// Deriva CERT_ENCRYPTION_KEY de forma estável e determinística se não existir no ambiente
 if (!process.env.CERT_ENCRYPTION_KEY) {
-  process.env.CERT_ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+  const seed = process.env.JWT_SECRET || 'radar_fiscal_default_secure_key_2026';
+  process.env.CERT_ENCRYPTION_KEY = crypto.createHash('sha256').update(seed).digest('hex');
 }
 
 function requireEnv(key: string, fallback?: string): string {
@@ -94,6 +95,12 @@ export const SEFAZ = {
   },
   CTE_SVRS_PRODUCAO: {
     DISTRIBUICAO_DFE: process.env.CTE_SVRS_PROD_DIST || 'https://cte.svrs.rs.gov.br/ws/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx',
+  },
+  AN_HOMOLOGACAO: {
+    RECEPCAO_EVENTO: process.env.SEFAZ_AN_HOM_EVENTO || 'https://hom1.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+  },
+  AN_PRODUCAO: {
+    RECEPCAO_EVENTO: process.env.SEFAZ_AN_PROD_EVENTO || 'https://www.nfe.fazenda.gov.br/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
   },
   NFSE_NACIONAL: process.env.SEFAZ_NFSE_URL || 'https://www.nfse.gov.br/SINDNFe/api/v1',
 } as const;
