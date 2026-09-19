@@ -84,7 +84,8 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   };
 
   const currentDocument = useMemo(() => {
-    return dfeList.find(d => d.chaveAcesso?.trim() === activeChave?.trim()) || selectedDfe || dfeList[0];
+    const cleanActive = (activeChave || '').replace(/\D/g, '');
+    return dfeList.find(d => (d.chaveAcesso || '').replace(/\D/g, '') === cleanActive) || selectedDfe || dfeList[0];
   }, [dfeList, activeChave, selectedDfe]);
 
   // Define colors for specific event categories/badges
@@ -232,9 +233,10 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
         // Injetar imediatamente os eventos da SEFAZ no histórico em tela
         if (Array.isArray(data.eventos) && data.eventos.length > 0) {
+          const cleanTargetChave = (activeChave || '').replace(/\D/g, '');
           const mappedSefaz: EventoDfeRequest[] = data.eventos.map((evt: any) => ({
-            id: `evt-${activeChave}-${evt.codigoEvento}-${evt.protocolo || Date.now()}`,
-            chaveAcesso: activeChave,
+            id: `evt-${cleanTargetChave}-${evt.codigoEvento}-${evt.protocolo || Date.now()}`,
+            chaveAcesso: (evt.chaveAcesso || cleanTargetChave).replace(/\D/g, ''),
             tipoDfe: selectedTipoDfe,
             tipoEventoId: '',
             codigoEvento: evt.codigoEvento,
@@ -250,7 +252,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
             autorCnpj: evt.autorCnpj || '',
           }));
           setTransmittedLog(prev => {
-            const existingKeys = new Set(prev.map(p => `${p.chaveAcesso}_${p.codigoEvento}_${p.protocoloSeFaz}`));
+            const existingKeys = new Set(prev.map(p => `${(p.chaveAcesso || '').replace(/\D/g, '')}_${p.codigoEvento}_${p.protocoloSeFaz}`));
             const newOnes = mappedSefaz.filter(m => !existingKeys.has(`${m.chaveAcesso}_${m.codigoEvento}_${m.protocoloSeFaz}`));
             return [...newOnes, ...prev];
           });
@@ -275,9 +277,10 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
   };
 
   const displayedEventos = useMemo(() => {
+    const cleanActive = (activeChave || '').replace(/\D/g, '');
     return transmittedLog.filter(log => {
       if (historicoFiltro === 'nota_ativa') {
-        return log.chaveAcesso?.trim() === activeChave?.trim();
+        return (log.chaveAcesso || '').replace(/\D/g, '') === cleanActive;
       }
       if (historicoFiltro === 'terceiros') {
         return log.origemEvento === 'terceiro_destinatario' || 
@@ -1556,7 +1559,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                         : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                     }`}
                   >
-                    Desta Nota ({transmittedLog.filter(l => l.chaveAcesso?.trim() === activeChave?.trim()).length})
+                    Desta Nota ({transmittedLog.filter(l => (l.chaveAcesso || '').replace(/\D/g, '') === (activeChave || '').replace(/\D/g, '')).length})
                   </button>
 
                   <button

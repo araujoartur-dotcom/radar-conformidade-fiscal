@@ -261,6 +261,7 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
       console.log(`🔍 [Monitor 360°] Consultando Ambiente Nacional (consChNFe) para chave ${cleanChave}...`);
       const empDetails = db.prepare('SELECT uf FROM empresas WHERE id = ?').get(empresa.id) as any;
       const ufAutor = empDetails?.uf || (cleanChave.substring(0, 2) === '33' ? 'RJ' : 'SP');
+      const validUserId = ensureUsuarioExists(db, req.user?.userId, req.user?.email);
 
       const distResultado = isCte
         ? await consultarDistribuicaoCTe({
@@ -269,7 +270,7 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
             tpAmb: tpAmb as '1' | '2',
             empresaId: empresa.id,
             ufAutor,
-            userId: req.user?.userId,
+            userId: validUserId,
           })
         : await consultarDistribuicaoDFe({
             cnpj: empresa.cnpj_completo.replace(/\D/g, ''),
@@ -277,7 +278,7 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
             tpAmb: tpAmb as '1' | '2',
             empresaId: empresa.id,
             ufAutor,
-            userId: req.user?.userId,
+            userId: validUserId,
             manifestarCienciaAutomatica: false,
           });
 
