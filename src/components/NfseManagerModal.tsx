@@ -410,10 +410,22 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
           onSuccessSync();
         }
       } else {
-        addLog(`❌ Erro na sincronização: ${res.error || 'Falha na comunicação com o webservice.'}`);
+        const errDesc = res.error || 'Falha na comunicação com o webservice.';
+        if (res.status === 504 || errDesc.includes('504')) {
+          addLog(`❌ Erro 504 (Tempo Limite Excedido pelo Gateway do Servidor):`);
+          addLog(`   💡 Os webservices consultados (ADN Nacional ou Prefeituras) demoraram mais de 25s para responder.`);
+          addLog(`   🔧 Sugestão: Use a aba "Consulta por Prefeitura" para consultar diretamente a cidade desejada de forma cirúrgica.`);
+        } else {
+          addLog(`❌ Erro na sincronização: ${errDesc}`);
+        }
       }
     } catch (err: any) {
-      addLog(`❌ Falha inesperada: ${err.message}`);
+      if (err.message?.includes('504')) {
+        addLog(`❌ Erro 504 (Timeout de Conexão): O servidor excedeu o tempo máximo de espera.`);
+        addLog(`   🔧 Sugestão: Utilize a aba "Consulta por Prefeitura" para realizar consultas pontuais.`);
+      } else {
+        addLog(`❌ Falha inesperada: ${err.message}`);
+      }
     } finally {
       setIsSyncing(false);
     }
@@ -456,10 +468,21 @@ export const NfseManagerModal: React.FC<NfseManagerModalProps> = ({
           onSuccessSync();
         }
       } else {
-        addLog(`❌ Erro na consulta de ${nomePrefeitura}: ${res.error || 'Falha na comunicação com o webservice municipal.'}`);
+        const errDesc = res.error || 'Falha na comunicação com o webservice municipal.';
+        if (res.status === 504 || errDesc.includes('504')) {
+          addLog(`❌ Erro 504 (Timeout na Prefeitura [${nomePrefeitura}]):`);
+          addLog(`   💡 O servidor da Secretaria de Fazenda desta cidade não respondeu dentro do prazo.`);
+          addLog(`   🔧 Sugestão: Tente novamente em alguns minutos ou em horário de menor tráfego.`);
+        } else {
+          addLog(`❌ Erro na consulta de ${nomePrefeitura}: ${errDesc}`);
+        }
       }
     } catch (err: any) {
-      addLog(`❌ Falha inesperada: ${err.message}`);
+      if (err.message?.includes('504')) {
+        addLog(`❌ Erro 504 (Timeout na Prefeitura [${nomePrefeitura}]): O servidor municipal não respondeu a tempo.`);
+      } else {
+        addLog(`❌ Falha inesperada: ${err.message}`);
+      }
     } finally {
       setIsSyncingIndividual(false);
     }

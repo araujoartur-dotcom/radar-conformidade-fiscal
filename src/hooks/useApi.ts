@@ -67,11 +67,23 @@ export function useApi() {
       }
 
       if (!response.ok) {
+        let errDesc = data?.error || data?.message;
+        if (!errDesc) {
+          if (response.status === 504) {
+            errDesc = 'Erro 504 (Gateway Timeout): Os webservices governamentais demoraram mais de 25 segundos para responder.';
+          } else if (response.status === 502) {
+            errDesc = 'Erro 502 (Bad Gateway): O servidor intermediário ou webservice governamental está temporariamente indisponível.';
+          } else if (response.status === 503) {
+            errDesc = 'Erro 503 (Serviço Indisponível): O serviço está temporariamente sobrecarregado ou em manutenção.';
+          } else {
+            errDesc = `Erro ${response.status}`;
+          }
+        }
         return {
           ok: false,
           status: response.status,
           data,
-          error: data?.error || data?.message || `Erro ${response.status}`,
+          error: errDesc,
         };
       }
 

@@ -97,38 +97,65 @@ router.post('/sincronizar', requireAuth, async (req: AuthenticatedRequest, res: 
       return;
     }
 
-    let syncResult;
-    if (conector === 'individual' || conector === 'municipal_individual' || (req.body.municipioIbge && conector !== 'unificado')) {
-      const targetIbge = req.body.municipioIbge || req.body.ibge || conector;
-      syncResult = await sincronizarPrefeituraIndividual({
-        empresaId,
-        cnpj: cleanCnpj,
-        ibge: targetIbge,
-        tpAmb,
-        dataInicio: req.body.dataInicio,
-        dataFim: req.body.dataFim
-      });
-    } else if (conector === 'unificado' || conector === 'todos' || !conector) {
-      // Modo Topo de Linha: Varredura Automática Completa (ADN Nacional Matriz + Filiais + Prefeituras)
-      syncResult = await sincronizarNfseUnificada({
-        empresaId,
-        tpAmb,
-        incluirPrefeituras: true
-      });
-    } else if (conector === 'pmsp') {
-      syncResult = await sincronizarNfsePMSP({
-        empresaId,
-        cnpj: cleanCnpj,
-        tpAmb
-      });
-    } else {
-      syncResult = await sincronizarNfseNacional({
-        empresaId,
-        cnpj: cleanCnpj,
-        tpAmb,
-        ultNSU
-      });
-    }
+    const runSync = async () => {
+      if (conector === 'individual' || conector === 'municipal_individual' || (req.body.municipioIbge && conector !== 'unificado')) {
+        const targetIbge = req.body.municipioIbge || req.body.ibge || conector;
+        return await sincronizarPrefeituraIndividual({
+          empresaId,
+          cnpj: cleanCnpj,
+          ibge: targetIbge,
+          tpAmb,
+          dataInicio: req.body.dataInicio,
+          dataFim: req.body.dataFim
+        });
+      } else if (conector === 'unificado' || conector === 'todos' || !conector) {
+        // Modo Topo de Linha: Varredura Automática Completa (ADN Nacional Matriz + Filiais + Prefeituras)
+        return await sincronizarNfseUnificada({
+          empresaId,
+          tpAmb,
+          incluirPrefeituras: true
+        });
+      } else if (conector === 'pmsp') {
+        return await sincronizarNfsePMSP({
+          empresaId,
+          cnpj: cleanCnpj,
+          tpAmb
+        });
+      } else {
+        return await sincronizarNfseNacional({
+          empresaId,
+          cnpj: cleanCnpj,
+          tpAmb,
+          ultNSU
+        });
+      }
+    };
+
+    let timeoutHandle: any;
+    const timeoutPromise = new Promise((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        resolve({
+          isTimeout: true,
+          success: false,
+          provedor: 'Radar Fiscal - Timeout de Segurança Anti-504',
+          tpAmb: tpAmb === '1' ? 'Produção (tpAmb=1)' : 'Homologação (tpAmb=2)',
+          ultNSU: ultNSU || '0',
+          maxNSU: ultNSU || '0',
+          documentosNovos: 0,
+          documentosExistentes: 0,
+          totalValorServicos: 0,
+          totalRetencoes: { iss: 0, irrf: 0, inss: 0, pis: 0, cofins: 0, csll: 0 },
+          mensagens: [
+            '⏱️ Tempo de segurança de 22s atingido antes da conclusão de todos os webservices fiscais.',
+            '💡 O portal da Receita Federal (ADN) ou as Secretarias Municipais de Fazenda estão com lentidão/sobrecarga extrema.',
+            '🔧 Recomendação: Use a aba "Consulta por Prefeitura" para buscar diretamente na cidade desejada sem estourar o limite de tempo.'
+          ]
+        });
+      }, 22000);
+    });
+
+    const syncResult: any = await Promise.race([runSync(), timeoutPromise]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
 
     res.json(syncResult);
   } catch (err: any) {

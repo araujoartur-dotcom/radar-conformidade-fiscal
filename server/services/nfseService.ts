@@ -182,7 +182,7 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
     key: pem.key,
     ca: pem.ca && pem.ca.length > 0 ? pem.ca : undefined,
     rejectUnauthorized: false,
-    timeout: 30000,
+    timeout: 6000,
   });
 
   try {
@@ -204,7 +204,7 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 6000
       }, (res) => {
         let body = '';
         res.on('data', chunk => body += chunk);
@@ -252,7 +252,7 @@ export async function sincronizarNfseNacional(params: NfseSyncParams): Promise<N
 
       req.on('timeout', () => {
         req.destroy();
-        result.mensagens.push(`⏱️ Timeout de 30s excedido. O servidor do ADN não respondeu a tempo.`);
+        result.mensagens.push(`⏱️ Timeout de 6s excedido. O servidor do ADN não respondeu a tempo.`);
         resolve({ connError: 'TIMEOUT', timeout: true });
       });
 
@@ -760,7 +760,7 @@ async function enviarSoapMunicipal(params: {
             key: params.pem.key,
             ca: params.pem.ca && params.pem.ca.length > 0 ? params.pem.ca : undefined,
             rejectUnauthorized: false,
-            timeout: params.timeoutMs || 25000,
+            timeout: params.timeoutMs || 6000,
           })
         : undefined;
 
@@ -776,7 +776,7 @@ async function enviarSoapMunicipal(params: {
           'Content-Length': Buffer.byteLength(params.soapEnvelope, 'utf8'),
         },
         agent,
-        timeout: params.timeoutMs || 25000,
+        timeout: params.timeoutMs || 6000,
       };
 
       const client = isHttps ? https : http;
@@ -794,7 +794,7 @@ async function enviarSoapMunicipal(params: {
 
       req.on('timeout', () => {
         req.destroy();
-        reject(new Error('Timeout de 25s excedido na comunicação com a prefeitura'));
+        reject(new Error('Timeout de 6s excedido na comunicação com a prefeitura'));
       });
 
       req.write(params.soapEnvelope);
@@ -903,9 +903,9 @@ export function traduzirDiagnosticoPrefeitura(params: {
   if (err.includes('timeout') || err.includes('etimedout') || err.includes('esockettimedout')) {
     return {
       status: 'timeout',
-      titulo: `Tempo Limite Excedido (> 25 segundos)`,
-      explicacao: `O servidor municipal não respondeu a tempo devido a sobrecarga ou lentidão extrema no portal da prefeitura.`,
-      acaoRecomendada: `Aguardar normalização ou tentar a consulta em horário de menor tráfego comercial.`
+      titulo: `Tempo Limite Excedido (> 6 segundos)`,
+      explicacao: `O servidor municipal não respondeu no tempo limite de 6s devido a instabilidade ou lentidão no portal da prefeitura.`,
+      acaoRecomendada: `Aguardar normalização ou tentar a consulta individualizada na aba de prefeituras.`
     };
   }
   if (err.includes('econnreset') || err.includes('econnrefused')) {
@@ -1073,7 +1073,7 @@ export async function sincronizarConectorMunicipalSoap(params: {
             key: pem.key,
             ca: pem.ca && pem.ca.length > 0 ? pem.ca : undefined,
             rejectUnauthorized: false,
-            timeout: 25000
+            timeout: 6000
           })
         : undefined;
 
@@ -1085,7 +1085,7 @@ export async function sincronizarConectorMunicipalSoap(params: {
             method: 'GET',
             headers,
             agent,
-            timeout: 25000
+            timeout: 6000
           },
           (res) => {
             let body = '';
@@ -1096,7 +1096,7 @@ export async function sincronizarConectorMunicipalSoap(params: {
         req.on('error', reject);
         req.on('timeout', () => {
           req.destroy();
-          reject(new Error('Timeout de 25s excedido na conexão REST com a prefeitura'));
+          reject(new Error('Timeout de 6s excedido na conexão REST com a prefeitura'));
         });
         req.end();
       });
@@ -1613,35 +1613,45 @@ export async function sincronizarNfseUnificada(params: {
   result.mensagens.push(`⚡ Localizados ${cnpjsParaVarrer.size} estabelecimento(s) vinculados ao CNPJ Base.`);
 
   // 2. Varredura no Ambiente de Dados Nacional (ADN) para todos os CNPJs com o e-CNPJ da matriz
-  result.mensagens.push(`🌐 [Ambiente Nacional] Executando varredura sequencial no ADN da Receita Federal...`);
+  result.mensagens.push(`🌐 [Ambiente Nacional] Executando varredura no ADN da Receita Federal...`);
 
-  for (const cnpjItem of Array.from(cnpjsParaVarrer)) {
+  const adnTasks = Array.from(cnpjsParaVarrer).map(async (cnpjItem) => {
     const isMatriz = cnpjItem === cleanCnpj;
     const label = isMatriz ? `Matriz (${cnpjItem})` : `Filial (${cnpjItem})`;
-    result.mensagens.push(`   ▶ Consultando ADN para ${label}...`);
-
     try {
       const adnRes = await sincronizarNfseNacional({
         empresaId,
         cnpj: cnpjItem,
         tpAmb
       });
-
-      result.documentosNovos += adnRes.documentosNovos;
-      result.documentosExistentes += adnRes.documentosExistentes;
-      result.totalValorServicos += adnRes.totalValorServicos;
-      result.totalRetencoes.iss += adnRes.totalRetencoes.iss;
-      result.totalRetencoes.irrf += adnRes.totalRetencoes.irrf;
-      result.totalRetencoes.inss += adnRes.totalRetencoes.inss;
-      result.totalRetencoes.pis += adnRes.totalRetencoes.pis;
-      result.totalRetencoes.cofins += adnRes.totalRetencoes.cofins;
-      result.totalRetencoes.csll += adnRes.totalRetencoes.csll;
-
-      for (const m of adnRes.mensagens) {
-        result.mensagens.push(`   └ ${m}`);
-      }
+      return { success: true, label, adnRes };
     } catch (err: any) {
-      result.mensagens.push(`   └ ⚠️ Erro na consulta de ${label}: ${err.message}`);
+      return { success: false, label, error: err.message };
+    }
+  });
+
+  const adnSettled = await Promise.allSettled(adnTasks);
+  for (const item of adnSettled) {
+    if (item.status === 'fulfilled') {
+      const val = item.value;
+      if (val.adnRes) {
+        const adnRes = val.adnRes;
+        result.documentosNovos += adnRes.documentosNovos;
+        result.documentosExistentes += adnRes.documentosExistentes;
+        result.totalValorServicos += adnRes.totalValorServicos;
+        result.totalRetencoes.iss += adnRes.totalRetencoes.iss;
+        result.totalRetencoes.irrf += adnRes.totalRetencoes.irrf;
+        result.totalRetencoes.inss += adnRes.totalRetencoes.inss;
+        result.totalRetencoes.pis += adnRes.totalRetencoes.pis;
+        result.totalRetencoes.cofins += adnRes.totalRetencoes.cofins;
+        result.totalRetencoes.csll += adnRes.totalRetencoes.csll;
+
+        for (const m of adnRes.mensagens) {
+          result.mensagens.push(`   └ ${m}`);
+        }
+      } else if (val.error) {
+        result.mensagens.push(`   └ ⚠️ Erro na consulta de ${val.label}: ${val.error}`);
+      }
     }
   }
 
@@ -1696,12 +1706,27 @@ export async function sincronizarNfseUnificada(params: {
       ];
     }
 
-    totalPrefeiturasConsultadas = conectoresAtivos.length;
-    result.mensagens.push(`   ⚡ ${totalPrefeiturasConsultadas} prefeitura(s) ativa(s) configurada(s) para varredura de serviços tomados.`);
+    // Filtrar prefeituras prioritárias para a empresa (UF da Matriz e Filiais) para tempo de resposta veloz (< 12s)
+    const ufsEmpresa = new Set([
+      empresaPrincipal.uf,
+      ...filiaisVinculadas.map(f => f.uf)
+    ].filter(Boolean).map(u => String(u).toUpperCase()));
+
+    let conectoresAlvo = conectoresAtivos;
+    if (ufsEmpresa.size > 0) {
+      const filtrados = conectoresAtivos.filter(c => ufsEmpresa.has((c.uf || '').toUpperCase()));
+      if (filtrados.length > 0) {
+        conectoresAlvo = filtrados;
+      }
+    }
+
+    // Limitar no máximo 3 prefeituras simultâneas na varredura unificada para garantir tempo de resposta seguro (< 15s)
+    conectoresAlvo = conectoresAlvo.slice(0, 3);
+    totalPrefeiturasConsultadas = conectoresAlvo.length;
+    result.mensagens.push(`   ⚡ ${totalPrefeiturasConsultadas} prefeitura(s) prioritária(s) selecionada(s) para varredura de serviços tomados (UF: ${Array.from(ufsEmpresa).join(', ') || 'Nacional'}).`);
     
-    for (const conector of conectoresAtivos) {
-      result.mensagens.push(`   ▶ [${conector.municipio} - ${conector.uf} (${conector.provedor})]: Consultando notas tomadas para CNPJ ${cleanCnpj}...`);
-      
+    const tasks = conectoresAlvo.map(async (conector) => {
+      const logPrefix = `[${conector.municipio} - ${conector.uf} (${conector.provedor})]`;
       try {
         const munRes = await sincronizarConectorMunicipalSoap({
           empresaId,
@@ -1709,62 +1734,61 @@ export async function sincronizarNfseUnificada(params: {
           conector,
           tpAmb
         });
-        result.documentosNovos += munRes.documentosNovos;
-        result.documentosExistentes += munRes.documentosExistentes;
-        result.totalValorServicos += munRes.totalValorServicos;
-        result.totalRetencoes.iss += munRes.totalRetencoes.iss;
-        result.totalRetencoes.irrf += munRes.totalRetencoes.irrf;
-        result.totalRetencoes.inss += munRes.totalRetencoes.inss;
-        result.totalRetencoes.pis += munRes.totalRetencoes.pis;
-        result.totalRetencoes.cofins += munRes.totalRetencoes.cofins;
-        result.totalRetencoes.csll += munRes.totalRetencoes.csll;
-        for (const m of munRes.mensagens) {
-          result.mensagens.push(`      └ ${m}`);
-        }
-
-        // Se não capturou nenhuma nota nova nem existente, registrar ocorrência com diagnóstico fiscal traduzido
-        if (munRes.documentosNovos === 0 && munRes.documentosExistentes === 0 && result.prefeiturasSemCaptura) {
-          const rawMsgs = munRes.mensagens.join(' ');
-          const diag = traduzirDiagnosticoPrefeitura({
-            rawError: rawMsgs,
-            municipio: conector.municipio,
-            provedor: conector.provedor
-          });
-
-          result.prefeiturasSemCaptura.push({
-            ibge: conector.ibge,
-            municipio: conector.municipio,
-            uf: conector.uf,
-            provedor: conector.provedor,
-            tecnologia: conector.tecnologia || 'SOAP',
-            status: diag.status,
-            mensagem: diag.titulo,
-            detalheTecnico: diag.explicacao,
-            acaoSugerida: diag.acaoRecomendada
-          });
-        }
+        return { success: true, conector, munRes, logPrefix };
       } catch (err: any) {
-        const diag = traduzirDiagnosticoPrefeitura({
-          rawError: err.message,
-          municipio: conector.municipio,
-          provedor: conector.provedor
-        });
-        result.mensagens.push(`      └ ⚠️ ${diag.titulo}`);
-        result.mensagens.push(`         💡 Motivo: ${diag.explicacao}`);
-        result.mensagens.push(`         🔧 Orientação: ${diag.acaoRecomendada}`);
+        return { success: false, conector, error: err.message, logPrefix };
+      }
+    });
 
-        if (result.prefeiturasSemCaptura) {
-          result.prefeiturasSemCaptura.push({
-            ibge: conector.ibge,
-            municipio: conector.municipio,
-            uf: conector.uf,
-            provedor: conector.provedor,
-            tecnologia: conector.tecnologia || 'SOAP',
-            status: diag.status,
-            mensagem: diag.titulo,
-            detalheTecnico: diag.explicacao,
-            acaoSugerida: diag.acaoRecomendada
+    const settled = await Promise.allSettled(tasks);
+    for (const item of settled) {
+      if (item.status === 'fulfilled') {
+        const val = item.value;
+        if (val.munRes) {
+          const munRes = val.munRes;
+          result.documentosNovos += munRes.documentosNovos;
+          result.documentosExistentes += munRes.documentosExistentes;
+          result.totalValorServicos += munRes.totalValorServicos;
+          result.totalRetencoes.iss += munRes.totalRetencoes.iss;
+          result.totalRetencoes.irrf += munRes.totalRetencoes.irrf;
+          result.totalRetencoes.inss += munRes.totalRetencoes.inss;
+          result.totalRetencoes.pis += munRes.totalRetencoes.pis;
+          result.totalRetencoes.cofins += munRes.totalRetencoes.cofins;
+          result.totalRetencoes.csll += munRes.totalRetencoes.csll;
+
+          result.mensagens.push(`   ▶ ${val.logPrefix}: ${munRes.documentosNovos} nova(s) NFS-e.`);
+          for (const m of munRes.mensagens) {
+            result.mensagens.push(`      └ ${m}`);
+          }
+
+          if (munRes.documentosNovos === 0 && munRes.documentosExistentes === 0 && result.prefeiturasSemCaptura) {
+            const rawMsgs = munRes.mensagens.join(' ');
+            const diag = traduzirDiagnosticoPrefeitura({
+              rawError: rawMsgs,
+              municipio: val.conector.municipio,
+              provedor: val.conector.provedor
+            });
+
+            result.prefeiturasSemCaptura.push({
+              ibge: val.conector.ibge,
+              municipio: val.conector.municipio,
+              uf: val.conector.uf,
+              provedor: val.conector.provedor,
+              tecnologia: val.conector.tecnologia || 'SOAP',
+              status: diag.status,
+              mensagem: diag.titulo,
+              detalheTecnico: diag.explicacao,
+              acaoSugerida: diag.acaoRecomendada
+            });
+          }
+        } else if (val.error) {
+          const diag = traduzirDiagnosticoPrefeitura({
+            rawError: val.error,
+            municipio: val.conector.municipio,
+            provedor: val.conector.provedor
           });
+          result.mensagens.push(`   ▶ ${val.logPrefix}: ⚠️ ${diag.titulo}`);
+          result.mensagens.push(`      └ Motivo: ${diag.explicacao}`);
         }
       }
     }
