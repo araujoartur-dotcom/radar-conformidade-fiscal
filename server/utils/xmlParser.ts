@@ -755,10 +755,12 @@ export function parseEventoSefazXml(xmlString: string, cnpjTenant?: string): Par
   const sanitized = sanitizeXmlAntiXXE(xmlString);
   if (!sanitized) return null;
 
-  const isEvento = sanitized.includes('<procEventoNFe') 
-    || sanitized.includes('<evento') 
-    || sanitized.includes('<resEvento')
-    || sanitized.includes('<retEvento');
+  const isEvento = sanitized.includes('procEventoNFe') 
+    || sanitized.includes('procEventoCTe')
+    || sanitized.includes('resEvento')
+    || sanitized.includes('retEvento')
+    || sanitized.includes('infEvento')
+    || sanitized.includes('evento');
 
   if (!isEvento) return null;
 

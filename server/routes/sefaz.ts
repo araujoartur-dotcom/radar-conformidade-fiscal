@@ -570,6 +570,40 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
       );
     })();
 
+    // 5.1. Espelhar evento transmitido no Supabase se configurado
+    if (isSupabaseConfigured()) {
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          await supabase.from('eventos_transmitidos').upsert({
+            id: eventoId,
+            empresa_id: empresaId,
+            usuario_id: userId,
+            documento_id: docDbId,
+            chave_acesso: cleanChave,
+            tipo_dfe: tipoDfe || 'NFe',
+            codigo_evento: codigoEvento,
+            nome_evento: nomeEvento,
+            categoria: categoria || 'destinatario',
+            autor_cnpj: empresa.cnpj_completo.replace(/\D/g, ''),
+            origem_evento: 'proprio',
+            justificativa: justificativa || '',
+            ambiente: sefazRequest.tpAmb,
+            protocolo_sefaz: resultado.nProt || '',
+            xml_envio: resultado.xmlEnvio,
+            xml_retorno: resultado.xmlRetorno,
+            codigo_retorno: resultado.cStat,
+            motivo_retorno: resultado.xMotivo,
+            status: resultado.success ? 'processado' : 'rejeitado',
+            data_hora: resultado.dhRegEvento || nowBrasilia,
+            created_at: nowBrasilia
+          }, { onConflict: 'id' });
+        }
+      } catch (supaErr: any) {
+        console.warn('⚠️ Falha ao espelhar evento transmitido no Supabase:', supaErr.message);
+      }
+    }
+
     // 6. Log de auditoria
     logAuditAction(
       req,
@@ -596,14 +630,26 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
 });
 
 // =========================================================
-// GET /api/sefaz/eventos — Histórico de eventos (Multi-Tenant)
+// GET /api/sefaz/eventos — Histórico de eventos (Multi-Tenant & Multi-Filial)
 // =========================================================
-router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.get('/eventos', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const db = getDatabase();
-  const { limit, offset, chaveAcesso, status, origem } = req.query;
+  const { limit, offset, chaveAcesso, status, origem, cnpj } = req.query;
 
   const empresaId = (req.headers['x-empresa-ativa-id'] as string) || (req.query.empresaId as string) || req.user?.empresaAtivaId;
   const isSuperadmin = req.user?.perfil === 'admin_master';
+
+  // Buscar CNPJ Raiz da empresa ativa para contemplar matriz e filiais
+  let cnpjRaiz = '';
+  if (cnpj) {
+    cnpjRaiz = (cnpj as string).replace(/\D/g, '').substring(0, 8);
+  }
+  if (!cnpjRaiz && empresaId) {
+    const emp = db.prepare('SELECT cnpj_raiz, cnpj_completo FROM empresas WHERE id = ?').get(empresaId) as any;
+    if (emp) {
+      cnpjRaiz = emp.cnpj_raiz || (emp.cnpj_completo || '').replace(/\D/g, '').substring(0, 8);
+    }
+  }
 
   let query = `
     SELECT et.*, u.nome as usuario_nome, u.email as usuario_email, e.razao_social as empresa_nome
@@ -614,10 +660,15 @@ router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) =
   `;
   const params: any[] = [];
 
-  // Se houver empresa ativa especificada, isola estritamente por ela
+  // Se houver empresa ativa especificada, isola por ela ou por seu grupo (CNPJ raiz)
   if (empresaId) {
-    query += ' AND et.empresa_id = ?';
-    params.push(empresaId);
+    if (cnpjRaiz) {
+      query += ' AND (et.empresa_id = ? OR e.cnpj_raiz = ? OR et.autor_cnpj LIKE ?)';
+      params.push(empresaId, cnpjRaiz, `${cnpjRaiz}%`);
+    } else {
+      query += ' AND et.empresa_id = ?';
+      params.push(empresaId);
+    }
   } else if (!isSuperadmin) {
     query += ' AND 1=0';
   }
@@ -637,10 +688,50 @@ router.get('/eventos', requireAuth, (req: AuthenticatedRequest, res: Response) =
 
   query += ' ORDER BY et.data_hora DESC';
   query += ` LIMIT ? OFFSET ?`;
-  params.push(parseInt(limit as string) || 100);
-  params.push(parseInt(offset as string) || 0);
+  const parsedLimit = parseInt(limit as string) || 100;
+  const parsedOffset = parseInt(offset as string) || 0;
+  params.push(parsedLimit);
+  params.push(parsedOffset);
 
-  const rows = db.prepare(query).all(...params);
+  let rows = db.prepare(query).all(...params);
+
+  // Se Supabase estiver configurado, buscar também de lá e combinar os eventos
+  if (isSupabaseConfigured()) {
+    try {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        let supaQuery = supabase.from('eventos_transmitidos').select('*');
+        if (chaveAcesso) {
+          supaQuery = supaQuery.eq('chave_acesso', chaveAcesso);
+        } else if (empresaId) {
+          if (cnpjRaiz) {
+            supaQuery = supaQuery.or(`empresa_id.eq.${empresaId},autor_cnpj.ilike.${cnpjRaiz}%`);
+          } else {
+            supaQuery = supaQuery.eq('empresa_id', empresaId);
+          }
+        }
+        if (status) supaQuery = supaQuery.eq('status', status);
+        if (origem) supaQuery = supaQuery.eq('origem_evento', origem);
+
+        supaQuery = supaQuery.order('data_hora', { ascending: false }).limit(parsedLimit);
+
+        const { data: supaRows } = await supaQuery;
+        if (supaRows && supaRows.length > 0) {
+          const mapById = new Map();
+          for (const r of rows) mapById.set(r.id, r);
+          for (const sr of supaRows) {
+            if (!mapById.has(sr.id)) {
+              mapById.set(sr.id, sr);
+            }
+          }
+          rows = Array.from(mapById.values()).sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
+        }
+      }
+    } catch (supaErr: any) {
+      console.warn('⚠️ Falha ao buscar eventos no Supabase:', supaErr.message);
+    }
+  }
+
   res.json({ success: true, eventos: rows });
 });
 

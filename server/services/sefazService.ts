@@ -1612,12 +1612,12 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
   if (isCte) {
     const urlsUF = CTE_CONSULTA_PROTOCOLO_URLS[tpAmb];
     url = urlsUF[cUF] || urlsUF['SVRS'];
-    soapActionUrl = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4';
+    soapActionUrl = 'http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4/cteConsultaCT';
     soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><cteDadosMsg xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeConsultaV4"><consSitCTe versao="4.00" xmlns="http://www.portalfiscal.inf.br/cte"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chCTe>${cleanChave}</chCTe></consSitCTe></cteDadosMsg></soap12:Body></soap12:Envelope>`;
   } else {
     const urlsUF = NFE_CONSULTA_PROTOCOLO_URLS[tpAmb];
     url = urlsUF[cUF] || urlsUF['SVRS'];
-    soapActionUrl = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4';
+    soapActionUrl = 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeConsultaNF';
     soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?><soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap12:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4"><consSitNFe versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe"><tpAmb>${tpAmb}</tpAmb><xServ>CONSULTAR</xServ><chNFe>${cleanChave}</chNFe></consSitNFe></nfeDadosMsg></soap12:Body></soap12:Envelope>`;
   }
 
@@ -1700,7 +1700,7 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
 
     // 2. Extrair Lista de Eventos (Cancelamento, CC-e, Manifestação, Barreiras)
     const procEventoTag = isCte ? 'procEventoCTe' : 'procEventoNFe';
-    const procEventoRegex = new RegExp(`<${procEventoTag}[\\s\\S]*?<\\/${procEventoTag}>`, 'gi');
+    const procEventoRegex = new RegExp(`<(?:[a-zA-Z0-9_-]+:)?${procEventoTag}[\\s\\S]*?<\\/(?:[a-zA-Z0-9_-]+:)?${procEventoTag}>`, 'gi');
     let match;
 
     while ((match = procEventoRegex.exec(bodyStr)) !== null) {
@@ -1852,9 +1852,39 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
       );
     })();
 
-    // Integração Supabase opcional
+    // Integração Supabase
     if (isSupabaseConfigured()) {
-      // (a rotina de sync automática pelo webhook tratará do envio caso necessário)
+      try {
+        const supabase = getSupabaseAdmin();
+        if (supabase && eventos.length > 0) {
+          const supabaseRows = eventos.map(evt => ({
+            id: `evt-${cleanChave}-${evt.codigoEvento}-${evt.nSeqEvento}`,
+            empresa_id: empresaId,
+            documento_id: docDbId,
+            chave_acesso: cleanChave,
+            tipo_dfe: tipoDocReal,
+            codigo_evento: evt.codigoEvento,
+            nome_evento: evt.nomeEvento,
+            categoria: evt.codigoEvento.startsWith('210') || evt.codigoEvento.startsWith('6101') ? 'destinatario' : 
+              (evt.codigoEvento.startsWith('610') || evt.codigoEvento.startsWith('990') ? 'fisco' : 'emitente'),
+            autor_cnpj: evt.autorCnpj || '',
+            origem_evento: evt.origemEvento,
+            justificativa: evt.justificativa || '',
+            ambiente: tpAmb,
+            protocolo_sefaz: evt.protocolo || '',
+            xml_retorno: evt.xmlRetorno || '',
+            codigo_retorno: evt.cStat,
+            motivo_retorno: evt.xMotivo,
+            status: 'processado',
+            detalhes_reforma: evt.detalhes || null,
+            data_hora: evt.dataHora,
+            created_at: nowBrasilia
+          }));
+          await supabase.from('eventos_transmitidos').upsert(supabaseRows, { onConflict: 'id' });
+        }
+      } catch (supaErr: any) {
+        console.warn('⚠️ Falha ao sincronizar eventos consultados no Supabase:', supaErr.message);
+      }
     }
 
     return {

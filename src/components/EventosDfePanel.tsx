@@ -155,7 +155,10 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
   const loadEventos = async () => {
     try {
-      const res = await get<{ success: boolean; eventos: any[] }>(`/sefaz/eventos?limit=150`);
+      const cnpjParam = (empresaAtiva?.cnpjCompleto || (empresaAtiva as any)?.cnpj)
+        ? `&cnpj=${encodeURIComponent(empresaAtiva?.cnpjCompleto || (empresaAtiva as any)?.cnpj)}`
+        : '';
+      const res = await get<{ success: boolean; eventos: any[] }>(`/sefaz/eventos?limit=150${cnpjParam}`);
       const payload = (res as any)?.data || res;
       const evts = payload?.eventos || payload?.data || [];
       if (Array.isArray(evts)) {
@@ -176,7 +179,14 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           autorCnpj: evt.autor_cnpj || '',
           detalhesReforma: evt.detalhes_reforma ? (typeof evt.detalhes_reforma === 'string' ? JSON.parse(evt.detalhes_reforma) : evt.detalhes_reforma) : undefined
         }));
-        setTransmittedLog(mapped);
+        setTransmittedLog(prev => {
+          const existingIds = new Set(mapped.map(m => m.id));
+          const keepInMem = prev.filter(p => 
+            !existingIds.has(p.id) && 
+            mapped.every(m => !(m.chaveAcesso === p.chaveAcesso && m.codigoEvento === p.codigoEvento && m.protocoloSeFaz === p.protocoloSeFaz))
+          );
+          return [...keepInMem, ...mapped];
+        });
       }
     } catch {
       // Fallback
@@ -185,7 +195,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
 
   useEffect(() => {
     loadEventos();
-  }, [empresaAtiva?.id, currentDocument?.id]);
+  }, [empresaAtiva?.id, (empresaAtiva as any)?.cnpjCompleto, currentDocument?.id]);
 
   // Consulta Completa ao WebService SEFAZ de Situação (Tudão: NFeConsultaProtocolo4 / CTeConsultaV4)
   const handleConsultarEventosSefaz = async () => {
@@ -205,7 +215,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         },
         body: JSON.stringify({
           empresaId: empresaAtiva?.id,
-          cnpj: empresaAtiva?.cnpjCompleto || empresaAtiva?.cnpj,
+          cnpj: empresaAtiva?.cnpjCompleto || (empresaAtiva as any)?.cnpj,
           chNFe: activeChave,
           tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe'
         })
@@ -218,6 +228,33 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
           tipo: 'success',
           msg: `Consulta SEFAZ concluída (cStat ${data.cStat}: ${data.xMotivo}). ${totalEvt} evento(s) vinculado(s) baixado(s) com sucesso.`
         });
+
+        // Injetar imediatamente os eventos da SEFAZ no histórico em tela
+        if (Array.isArray(data.eventos) && data.eventos.length > 0) {
+          const mappedSefaz: EventoDfeRequest[] = data.eventos.map((evt: any) => ({
+            id: `evt-${activeChave}-${evt.codigoEvento}-${evt.protocolo || Date.now()}`,
+            chaveAcesso: activeChave,
+            tipoDfe: selectedTipoDfe,
+            tipoEventoId: '',
+            codigoEvento: evt.codigoEvento,
+            nomeEvento: evt.nomeEvento,
+            categoria: evt.codigoEvento.startsWith('210') || evt.codigoEvento.startsWith('6101') ? 'destinatario' : 
+              (evt.codigoEvento.startsWith('610') || evt.codigoEvento.startsWith('990') ? 'fisco' : 'emitente'),
+            dataHora: evt.dataHora,
+            protocoloSeFaz: evt.protocolo || '',
+            status: 'processado',
+            justificativa: evt.justificativa,
+            dadosEstruturados: evt.detalhes,
+            origemEvento: evt.origemEvento || 'proprio',
+            autorCnpj: evt.autorCnpj || '',
+          }));
+          setTransmittedLog(prev => {
+            const existingKeys = new Set(prev.map(p => `${p.chaveAcesso}_${p.codigoEvento}_${p.protocoloSeFaz}`));
+            const newOnes = mappedSefaz.filter(m => !existingKeys.has(`${m.chaveAcesso}_${m.codigoEvento}_${m.protocoloSeFaz}`));
+            return [...newOnes, ...prev];
+          });
+        }
+
         await loadEventos();
       } else {
         setConsultaSefazResult({
@@ -1532,7 +1569,7 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
                   >
                     <span>🚨 Recebidos de Terceiros</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-950 text-amber-200 border border-amber-800">
-                      {transmittedLog.filter(l => l.origemEvento === 'terceiro_destinatario' || ['210220', '210240', '210200'].includes(l.codigoEvento)).length}
+                      {transmittedLog.filter(l => l.origemEvento === 'terceiro_destinatario' || ['210220', '210240', '210200', '210210'].includes(l.codigoEvento)).length}
                     </span>
                   </button>
                 </div>
