@@ -32,9 +32,57 @@ const router = Router();
 /**
  * Helper para garantir que a empresa exista no banco antes de qualquer operação
  */
-function ensureEmpresaExists(db: any, empresaId?: string, cnpjFallback?: string): { id: string; cnpj_completo: string } {
+async function ensureEmpresaExists(db: any, empresaId?: string, cnpjFallback?: string): Promise<{ id: string; cnpj_completo: string }> {
   let empresa: any = null;
 
+  // 1. Tentar buscar no Supabase se configurado
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      if (empresaId) {
+        const { data: supaEmp } = await supabase
+          .from('empresas')
+          .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
+          .eq('id', empresaId)
+          .maybeSingle();
+        if (supaEmp) empresa = supaEmp;
+      }
+
+      if (!empresa && cnpjFallback) {
+        const cleanCnpj = cnpjFallback.replace(/\D/g, '');
+        const { data: supaEmp } = await supabase
+          .from('empresas')
+          .select('id, cnpj_completo, cnpj_raiz, razao_social, nome_fantasia, uf, regime_tributario')
+          .or(`cnpj_completo.eq.${cnpjFallback},cnpj_raiz.eq.${cleanCnpj.substring(0, 8)}`)
+          .maybeSingle();
+        if (supaEmp) empresa = supaEmp;
+      }
+    }
+  }
+
+  // 2. Se achou no Supabase, espelhar no SQLite local para evitar foreign key constraint failures
+  if (empresa && empresa.id) {
+    const now = getBrasiliaTimestamp();
+    const cleanCnpj = (empresa.cnpj_completo || cnpjFallback || '').replace(/\D/g, '');
+    db.prepare(`
+      INSERT OR REPLACE INTO empresas (
+        id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      empresa.id,
+      empresa.cnpj_raiz || cleanCnpj.substring(0, 8) || '00000000',
+      empresa.cnpj_completo || cnpjFallback || '',
+      empresa.razao_social || `EMPRESA ${cleanCnpj}`,
+      empresa.nome_fantasia || empresa.razao_social || 'FILIAL',
+      empresa.uf || 'SP',
+      empresa.regime_tributario || 'Lucro Real',
+      now,
+      now
+    );
+    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo || cnpjFallback || '' };
+  }
+
+  // 3. Fallback SQLite Local
   if (empresaId) {
     empresa = db.prepare('SELECT id, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId);
   }
@@ -70,24 +118,47 @@ function ensureEmpresaExists(db: any, empresaId?: string, cnpjFallback?: string)
     }
   }
 
-  if (!empresa) {
-    // Se ainda assim não encontrar, busca a primeira empresa cadastrada
-    const firstEmpresa = db.prepare('SELECT id, cnpj_completo FROM empresas LIMIT 1').get() as any;
-    if (firstEmpresa) {
-      return firstEmpresa;
-    }
-    // Cria empresa padrão do sistema
-    const defaultEmpId = empresaId || 'empresa-matriz-01';
+  if (empresa) {
+    return { id: empresa.id, cnpj_completo: empresa.cnpj_completo };
+  }
+
+  // 4. Se empresaId foi explicitamente fornecido, preserva o ID em vez de pegar outra empresa aleatória
+  if (empresaId) {
     const now = getBrasiliaTimestamp();
+    const cleanCnpj = (cnpjFallback || '').replace(/\D/g, '');
     db.prepare(`
       INSERT OR REPLACE INTO empresas (
         id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
-      ) VALUES (?, '00000000', '00.000.000/0001-00', 'EMPRESA MATRIZ PADRAO', 'MATRIZ', 'SP', 'Lucro Real', ?, ?)
-    `).run(defaultEmpId, now, now);
-    return { id: defaultEmpId, cnpj_completo: '00.000.000/0001-00' };
+      ) VALUES (?, ?, ?, ?, ?, 'SP', 'Lucro Real', ?, ?)
+    `).run(
+      empresaId,
+      cleanCnpj.substring(0, 8) || '00000000',
+      cnpjFallback || '00.000.000/0001-00',
+      `EMPRESA ${empresaId}`,
+      'MATRIZ',
+      'SP',
+      'Lucro Real',
+      now,
+      now
+    );
+    return { id: empresaId, cnpj_completo: cnpjFallback || '00.000.000/0001-00' };
   }
 
-  return empresa;
+  // Se ainda assim não encontrar, busca a primeira empresa cadastrada
+  const firstEmpresa = db.prepare('SELECT id, cnpj_completo FROM empresas LIMIT 1').get() as any;
+  if (firstEmpresa) {
+    return firstEmpresa;
+  }
+
+  // Cria empresa padrão do sistema
+  const defaultEmpId = 'empresa-matriz-01';
+  const now = getBrasiliaTimestamp();
+  db.prepare(`
+    INSERT OR REPLACE INTO empresas (
+      id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, created_at, updated_at
+    ) VALUES (?, '00000000', '00.000.000/0001-00', 'EMPRESA MATRIZ PADRAO', 'MATRIZ', 'SP', 'Lucro Real', ?, ?)
+  `).run(defaultEmpId, now, now);
+  return { id: defaultEmpId, cnpj_completo: '00.000.000/0001-00' };
 }
 
 /**
@@ -140,7 +211,9 @@ router.post('/distribui-dfe', requireAuth, async (req: AuthenticatedRequest, res
     const db = getDatabase();
 
     // 1. Garantir que a empresa exista
-    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, cnpj);
+    const empresaIdTarget = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    const cnpjTarget = cnpj || req.user?.empresaCnpj;
+    const empresa = await ensureEmpresaExists(db, empresaIdTarget, cnpjTarget);
     const empresaId = empresa.id;
 
     // Buscar dados complementares da empresa
@@ -214,7 +287,9 @@ router.post('/consulta-situacao', requireAuth, async (req: AuthenticatedRequest,
     }
 
     const db = getDatabase();
-    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, req.user?.empresaCnpj);
+    const empresaIdTarget = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    const cnpjTarget = req.body.cnpj || req.user?.empresaCnpj;
+    const empresa = await ensureEmpresaExists(db, empresaIdTarget, cnpjTarget);
 
     const resultado = await consultarSituacaoCompletaDFe({
       chaveAcesso: chNFe,
@@ -256,7 +331,9 @@ router.post('/distribui-cte', requireAuth, async (req: AuthenticatedRequest, res
     const cleanCnpj = cnpj.replace(/\D/g, '');
     const db = getDatabase();
 
-    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, cnpj);
+    const empresaIdTarget = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    const cnpjTarget = cnpj || req.user?.empresaCnpj;
+    const empresa = await ensureEmpresaExists(db, empresaIdTarget, cnpjTarget);
     const empresaId = empresa.id;
 
     const empDetails = db.prepare('SELECT uf FROM empresas WHERE id = ?').get(empresaId) as any;
@@ -327,7 +404,9 @@ router.post('/evento', requireAuth, requirePerfil('admin_master', 'contador_gest
     const db = getDatabase();
 
     // 1. Resolução segura de Empresa e Usuário (Elimina FOREIGN KEY constraint failed)
-    const empresa = ensureEmpresaExists(db, req.user?.empresaAtivaId, req.user?.empresaCnpj);
+    const empresaIdTarget = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    const cnpjTarget = req.body.cnpj || req.user?.empresaCnpj;
+    const empresa = await ensureEmpresaExists(db, empresaIdTarget, cnpjTarget);
     const empresaId = empresa.id;
     const userId = ensureUsuarioExists(db, req.user?.userId, req.user?.email);
 

@@ -271,46 +271,65 @@ export interface CertificadoDescriptografado {
   senha: string;
 }
 
-export async function descriptografarCertificado(empresaId: string, cnpj?: string): Promise<CertificadoDescriptografado | null> {
+export interface DiagnosticoCertificado {
+  certificado: CertificadoDescriptografado | null;
+  motivoErro?: string;
+  origem?: 'supabase' | 'sqlite' | 'nenhuma';
+}
+
+export async function descriptografarCertificadoComDiagnostico(empresaId: string, cnpj?: string): Promise<DiagnosticoCertificado> {
   let cert: any = null;
+  let origem: 'supabase' | 'sqlite' | 'nenhuma' = 'nenhuma';
+  const cleanCnpj = (cnpj || '').replace(/\D/g, '');
+  const cleanEmpId = (empresaId || '').replace(/\D/g, '');
 
   // 1. Tentar buscar no Supabase se configurado
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
+      // 1.1 Busca direta por empresa_id
       if (empresaId) {
         const { data: supaCert } = await supabase
           .from('certificados')
           .select('*')
           .eq('empresa_id', empresaId)
           .neq('status_alerta', 'expirado')
+          .neq('status_alerta', 'substituido')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (supaCert) cert = supaCert;
+        if (supaCert) {
+          cert = supaCert;
+          origem = 'supabase';
+        }
       }
 
-      if (!cert && cnpj) {
-        const clean = cnpj.replace(/\D/g, '');
-        const { data: empByCnpj } = await supabase
+      // 1.2 Se não achou por empresa_id direto, busca via empresas vinculadas por CNPJ ou CNPJ Raiz
+      if (!cert && (cleanCnpj || cleanEmpId)) {
+        const targetClean = cleanCnpj || cleanEmpId;
+        const { data: empList } = await supabase
           .from('empresas')
           .select('id')
-          .eq('cnpj_raiz', clean.substring(0, 8))
+          .or(`cnpj_completo.eq.${cnpj || empresaId},cnpj_raiz.eq.${targetClean.substring(0, 8)}`)
           .limit(5);
 
-        if (empByCnpj && empByCnpj.length > 0) {
-          const empIds = empByCnpj.map(e => e.id);
+        if (empList && empList.length > 0) {
+          const empIds = empList.map(e => e.id);
           const { data: certByEmp } = await supabase
             .from('certificados')
             .select('*')
             .in('empresa_id', empIds)
             .neq('status_alerta', 'expirado')
+            .neq('status_alerta', 'substituido')
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
-          if (certByEmp) cert = certByEmp;
+          if (certByEmp) {
+            cert = certByEmp;
+            origem = 'supabase';
+          }
         }
       }
     }
@@ -321,28 +340,69 @@ export async function descriptografarCertificado(empresaId: string, cnpj?: strin
     const db = getDatabase();
     if (empresaId) {
       cert = db.prepare(`
-        SELECT arquivo_path_enc, senha_enc, iv, auth_tag
+        SELECT arquivo_path_enc, senha_enc, iv, auth_tag, status_alerta, id
         FROM certificados
-        WHERE empresa_id = ? AND status_alerta != 'expirado'
-        ORDER BY validade DESC LIMIT 1
+        WHERE empresa_id = ? AND status_alerta NOT IN ('expirado', 'substituido')
+        ORDER BY created_at DESC, validade DESC LIMIT 1
       `).get(empresaId) as any;
+      if (cert) origem = 'sqlite';
     }
 
-    if (!cert && cnpj) {
-      const clean = cnpj.replace(/\D/g, '');
+    if (!cert && (cleanCnpj || cleanEmpId)) {
+      const targetClean = cleanCnpj || cleanEmpId;
       cert = db.prepare(`
-        SELECT c.arquivo_path_enc, c.senha_enc, c.iv, c.auth_tag
+        SELECT c.arquivo_path_enc, c.senha_enc, c.iv, c.auth_tag, c.status_alerta, c.id
         FROM certificados c
         JOIN empresas e ON e.id = c.empresa_id
-        WHERE (e.cnpj_raiz = ? OR REPLACE(REPLACE(REPLACE(e.cnpj_completo, '.', ''), '/', ''), '-', '') = ?)
-          AND c.status_alerta != 'expirado'
-        ORDER BY c.validade DESC LIMIT 1
-      `).get(clean.substring(0, 8), clean) as any;
+        WHERE (e.cnpj_raiz = ? 
+            OR REPLACE(REPLACE(REPLACE(e.cnpj_completo, '.', ''), '/', ''), '-', '') = ? 
+            OR c.empresa_id = ?)
+          AND c.status_alerta NOT IN ('expirado', 'substituido')
+        ORDER BY c.created_at DESC, c.validade DESC LIMIT 1
+      `).get(targetClean.substring(0, 8), targetClean, empresaId) as any;
+      if (cert) origem = 'sqlite';
     }
   }
 
-  if (!cert) return null;
+  // Se nenhum registro de certificado foi encontrado no banco
+  if (!cert) {
+    return {
+      certificado: null,
+      motivoErro: `⚠️ Certificado Digital A1 não encontrado para esta empresa (CNPJ: ${cnpj || empresaId || 'Não Identificado'}). Para transmitir à SEFAZ oficial, cadastre o Certificado A1 e a senha.`,
+      origem: 'nenhuma'
+    };
+  }
 
+  // 3. Extração e Decodificação do Buffer PFX
+  let pfxBuffer: Buffer | null = null;
+  const rawPath = (cert.arquivo_path_enc || '').trim();
+
+  if (rawPath.startsWith('base64:')) {
+    pfxBuffer = Buffer.from(rawPath.replace('base64:', '').trim(), 'base64');
+  } else if (rawPath.startsWith('data:')) {
+    const base64Data = rawPath.split(',')[1] || '';
+    pfxBuffer = Buffer.from(base64Data.trim(), 'base64');
+  } else if (rawPath.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(rawPath)) {
+    // String base64 pura (PKCS#12 codificado sem prefixo)
+    pfxBuffer = Buffer.from(rawPath.replace(/\s+/g, ''), 'base64');
+  } else if (rawPath && fs.existsSync(rawPath)) {
+    try {
+      pfxBuffer = fs.readFileSync(rawPath);
+    } catch (e: any) {
+      console.warn(`Aviso ao ler PFX em disco (${rawPath}):`, e.message);
+    }
+  }
+
+  if (!pfxBuffer || pfxBuffer.length === 0) {
+    console.error(`❌ Certificado ${cert.id} localizado em ${origem}, porém o binário PFX está inacessível:`, rawPath.slice(0, 40));
+    return {
+      certificado: null,
+      motivoErro: '⚠️ Certificado A1 registrado no sistema, porém o arquivo .PFX físico está inacessível (armazenamento efêmero antigo). Por favor, reenvie o arquivo .PFX e a senha no botão de Certificado.',
+      origem
+    };
+  }
+
+  // 4. Descriptografia da Senha AES-256-GCM
   let encryptionKey = CERTIFICADO.ENCRYPTION_KEY;
   if (!encryptionKey || encryptionKey.length !== 64) {
     encryptionKey = crypto.createHash('sha256').update(process.env.JWT_SECRET || 'radar_fiscal_default_secure_key_2026').digest('hex');
@@ -359,23 +419,23 @@ export async function descriptografarCertificado(empresaId: string, cnpj?: strin
     let senhaPfx = decipher.update(cert.senha_enc, 'hex', 'utf8');
     senhaPfx += decipher.final('utf8');
 
-    let pfxBuffer: Buffer | null = null;
-    if (cert.arquivo_path_enc && cert.arquivo_path_enc.startsWith('base64:')) {
-      pfxBuffer = Buffer.from(cert.arquivo_path_enc.replace('base64:', ''), 'base64');
-    } else if (cert.arquivo_path_enc && fs.existsSync(cert.arquivo_path_enc)) {
-      pfxBuffer = fs.readFileSync(cert.arquivo_path_enc);
-    }
-
-    if (!pfxBuffer) {
-      console.error(`❌ Arquivo PFX não encontrado: ${cert.arquivo_path_enc}`);
-      return null;
-    }
-
-    return { pfxBuffer, senha: senhaPfx };
+    return {
+      certificado: { pfxBuffer, senha: senhaPfx },
+      origem
+    };
   } catch (err: any) {
-    console.error('❌ Falha ao descriptografar certificado:', err.message);
-    return null;
+    console.error('❌ Falha ao descriptografar senha do certificado:', err.message);
+    return {
+      certificado: null,
+      motivoErro: `⚠️ Falha ao descriptografar a senha do Certificado A1 no cofre (${err.message}). Por favor, recadastre o arquivo .PFX e a senha.`,
+      origem
+    };
   }
+}
+
+export async function descriptografarCertificado(empresaId: string, cnpj?: string): Promise<CertificadoDescriptografado | null> {
+  const diag = await descriptografarCertificadoComDiagnostico(empresaId, cnpj);
+  return diag.certificado;
 }
 
 export function converterPfxParaPem(pfxBuffer: Buffer, passphrase: string): { key: string; cert: string; ca?: string[] } {
@@ -500,13 +560,14 @@ export async function transmitirEventoSefaz(params: EventoSefazRequest): Promise
   const xmlEvento = buildEventoXml(params, nSeq);
   const soapEnvelope = buildSoapEnvelope(xmlEvento);
 
-  const certificado = await descriptografarCertificado(empresaId, params.cnpjAutor);
+  const diag = await descriptografarCertificadoComDiagnostico(empresaId, params.cnpjAutor);
+  const certificado = diag.certificado;
 
   if (!certificado) {
     return {
       success: false,
       cStat: '999',
-      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para transmitir à SEFAZ oficial, cadastre o Certificado A1 e a senha.',
+      xMotivo: diag.motivoErro || '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para transmitir à SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       xmlEnvio: xmlEvento,
       xmlRetorno: '',
       tpAmb,
@@ -586,13 +647,14 @@ export async function consultarDistribuicaoDFe(params: DistribucaoDfeRequest): P
     : (SEFAZ.SVRS_HOMOLOGACAO.DISTRIBUICAO_DFE || 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx');
 
   const soapEnvelope = buildDistDFeSoapEnvelope(params);
-  const certificado = await descriptografarCertificado(empresaId, cnpj);
+  const diag = await descriptografarCertificadoComDiagnostico(empresaId, cnpj);
+  const certificado = diag.certificado;
 
   if (!certificado) {
     return {
       success: false,
       cStat: '999',
-      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
+      xMotivo: diag.motivoErro || '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       ultNSU: params.ultNSU || '000000000000000',
       maxNSU: '000000000000000',
       tpAmb,
@@ -1393,13 +1455,14 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
   }
 
   // Certificado Digital
-  const certificado = await descriptografarCertificado(empresaId, cnpj);
+  const diag = await descriptografarCertificadoComDiagnostico(empresaId, cnpj);
+  const certificado = diag.certificado;
 
   if (!certificado) {
     return {
       success: false,
       cStat: '999',
-      xMotivo: '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
+      xMotivo: diag.motivoErro || '⚠️ Certificado Digital A1 não encontrado para esta empresa. Para consultar a SEFAZ oficial, cadastre o Certificado A1 e a senha.',
       chaveAcesso: cleanChave,
       tipoDoc: tipoDocReal,
       tpAmb,
@@ -1497,7 +1560,7 @@ export async function consultarSituacaoCompletaDFe(params: ConsultaProtocoloDfeR
         if (placa) detalhes.placa = placa;
         if (dhPass) detalhes.dhPass = dhPass;
 
-        let origemEvt = parsedEvt.origemEvento;
+        let origemEvt: 'proprio' | 'terceiro_destinatario' | 'fisco' | 'sefaz' = parsedEvt.origemEvento;
         let categoria = 'emitente';
 
         if (parsedEvt.codigoEvento.startsWith('2102') || parsedEvt.codigoEvento.startsWith('6101')) {

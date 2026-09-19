@@ -200,9 +200,12 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || ''
         },
         body: JSON.stringify({
+          empresaId: empresaAtiva?.id,
+          cnpj: empresaAtiva?.cnpjCompleto || empresaAtiva?.cnpj,
           chNFe: activeChave,
           tipoDoc: selectedTipoDfe === 'CTe' ? 'CTe' : 'NFe'
         })
@@ -331,9 +334,12 @@ export const EventosDfePanel: React.FC<EventosDfePanelProps> = ({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || ''
         },
         body: JSON.stringify({
+          empresaId: empresaAtiva?.id,
+          cnpj: empresaAtiva?.cnpjCompleto || empresaAtiva?.cnpj,
           chaveAcesso: activeChave,
           codigoEvento: activeEventoDef.codigoEvento,
           nomeEvento: activeEventoDef.nome,

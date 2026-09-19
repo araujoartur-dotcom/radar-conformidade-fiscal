@@ -38,7 +38,7 @@ const upload = multer({ storage });
  */
 router.post('/upload', requireAuth, upload.single('certificado'), async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { tenantId, senha } = req.body;
+    const { tenantId, senha, cnpj } = req.body;
     const file = req.file;
 
     if (!tenantId || !senha || !file) {
@@ -53,6 +53,9 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
     }
 
     let empresa: any = null;
+    const cleanTenant = (tenantId || '').replace(/\D/g, '');
+    const cleanCnpj = (cnpj || '').replace(/\D/g, '');
+    const targetClean = cleanCnpj || cleanTenant;
 
     // 1. Buscar Empresa no Supabase se configurado
     if (isSupabaseConfigured()) {
@@ -67,12 +70,12 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
 
         if (byId) {
           empresa = byId;
-        } else {
+        } else if (targetClean) {
           // Tenta buscar por CNPJ Completo ou Raiz
           const { data: byCnpj } = await supabase
             .from('empresas')
             .select('id, razao_social, cnpj_completo, cnpj_raiz')
-            .or(`cnpj_completo.eq.${tenantId},cnpj_raiz.eq.${tenantId}`)
+            .or(`cnpj_completo.eq.${cnpj || tenantId},cnpj_raiz.eq.${targetClean.slice(0, 8)}`)
             .maybeSingle();
           if (byCnpj) empresa = byCnpj;
         }
@@ -82,7 +85,11 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
     // 2. Fallback para SQLite Local se não encontrou no Supabase
     if (!empresa) {
       const db = getDatabase();
-      empresa = db.prepare('SELECT id, razao_social, cnpj_completo, cnpj_raiz FROM empresas WHERE id = ? OR cnpj_completo = ? OR cnpj_raiz = ?').get(tenantId, tenantId, tenantId) as any;
+      empresa = db.prepare(`
+        SELECT id, razao_social, cnpj_completo, cnpj_raiz 
+        FROM empresas 
+        WHERE id = ? OR cnpj_completo = ? OR cnpj_raiz = ?
+      `).get(tenantId, cnpj || tenantId, targetClean.slice(0, 8)) as any;
     }
 
     if (!empresa) {
@@ -110,7 +117,7 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
     const fileBuffer = fs.readFileSync(file.path);
     const base64Enc = `base64:${fileBuffer.toString('base64')}`;
 
-    // 3. Salvar no Supabase ou SQLite
+    // 3. Salvar no Supabase (se configurado)
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
@@ -142,11 +149,14 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
           throw insErr;
         }
       }
-    } else {
+    }
+
+    // Sempre salvar/espelhar no SQLite local para garantir redundância
+    try {
       const db = getDatabase();
       db.prepare('UPDATE certificados SET status_alerta = ? WHERE empresa_id = ?').run('substituido', empresa.id);
       db.prepare(`
-        INSERT INTO certificados (
+        INSERT OR REPLACE INTO certificados (
           id, empresa_id, arquivo_path_enc, arquivo_nome, senha_enc, 
           iv, auth_tag, validade, status_alerta, emissor, impressao_digital
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -154,6 +164,8 @@ router.post('/upload', requireAuth, upload.single('certificado'), async (req: Au
         id, empresa.id, base64Enc, file.originalname, senhaEnc,
         ivHex, authTag, validade, status, emissor, fingerprint
       );
+    } catch (sqliteErr: any) {
+      console.warn('Aviso ao espelhar certificado no SQLite:', sqliteErr.message);
     }
 
     logAuditAction(req, 'CERTIFICADO_UPLOAD', `Certificado A1 atrelado ao CNPJ ${empresa.cnpj_completo}`);
@@ -275,7 +287,7 @@ router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, 
         if (empresa) {
           const { data: supaCert } = await supabase
             .from('certificados')
-            .select('id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at')
+            .select('id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at, arquivo_path_enc')
             .eq('empresa_id', empresa.id)
             .neq('status_alerta', 'expirado')
             .neq('status_alerta', 'substituido')
@@ -301,7 +313,7 @@ router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, 
 
       if (empresa) {
         cert = db.prepare(`
-          SELECT id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at
+          SELECT id, arquivo_nome, validade, status_alerta, emissor, impressao_digital, created_at, arquivo_path_enc
           FROM certificados
           WHERE empresa_id = ? AND status_alerta NOT IN ('expirado', 'substituido')
           ORDER BY validade DESC, created_at DESC
@@ -322,6 +334,35 @@ router.get('/status/:tenantId?', requireAuth, async (req: AuthenticatedRequest, 
           validade: '',
           status: 'pendente',
           valido: false
+        }
+      });
+      return;
+    }
+
+    // Validação estrita: Checar se o binário .PFX está de fato acessível no cofre (evita falso positivo na UI)
+    const rawPath = (cert.arquivo_path_enc || '').trim();
+    const hasPfxBinario = rawPath.startsWith('base64:') || 
+                          rawPath.startsWith('data:') || 
+                          (rawPath.length > 200 && /^[A-Za-z0-9+/=\s]+$/.test(rawPath)) || 
+                          (rawPath.length > 0 && fs.existsSync(rawPath));
+
+    if (!hasPfxBinario) {
+      console.warn(`⚠️ Certificado ${cert.id} cadastrado, mas sem binário PFX acessível (armazenamento efêmero antigo).`);
+      res.json({
+        success: true,
+        hasCertificate: false,
+        certificado: {
+          id: cert.id,
+          fileName: cert.arquivo_nome || 'certificado.pfx',
+          validade: cert.validade || '',
+          status: 'pendente',
+          valido: false,
+          emissor: cert.emissor || '',
+          impressaoDigital: cert.impressao_digital || '',
+          cnpj: empresa?.cnpj_completo || '',
+          razãoSocial: empresa?.razao_social || '',
+          tipo: 'e-CNPJ A1',
+          mensagemAlerta: 'Arquivo .PFX físico não encontrado (armazenamento temporário legado). Por favor, recadastre o Certificado A1.'
         }
       });
       return;

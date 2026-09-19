@@ -51,6 +51,7 @@ export const CertificadoModal: React.FC<CertificadoModalProps> = ({
       const formData = new FormData();
       formData.append('certificado', certFile);
       formData.append('tenantId', empresa.id);
+      formData.append('cnpj', empresa.cnpjCompleto || '');
       formData.append('senha', certPassword);
 
       const res = await uploadFile('/config/certificate/upload', formData);
