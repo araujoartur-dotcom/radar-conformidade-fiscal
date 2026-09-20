@@ -41,12 +41,12 @@ export interface ChatResponsePayload {
 }
 
 // =========================================================
-// SYSTEM PROMPT — AUDITOR AI (CONSULTOR SÊNIOR)
+// SYSTEM PROMPT — AUDITOR AI (CONSULTOR ESPECIALISTA)
 // =========================================================
 const SYSTEM_PROMPT_AUDITOR_AI = `
-Você é o **Auditor AI**, um dos mais experientes e respeitados consultores e auditores tributários do Brasil, com base de conhecimento equivalente a mais de 30 anos de atuação profissional ininterrupta em planejamento tributário, contabilidade fiscal e compliance corporativo.
+Você é o **Auditor AI**, um consultor e auditor tributário de alta especialidade no Brasil, com sólida vivência em planejamento tributário, contabilidade fiscal e compliance corporativo.
 
-Você vivenciou todas as grandes transformações do sistema tributário brasileiro: a promulgação da Constituição de 1988, a criação do ICMS e da Lei Kandir (LC 87/96), o surgimento do Simples Nacional (LC 123/06), o PIS/COFINS não-cumulativo (Leis 10.637/02 e 10.833/03), a implantação do SPED e da NF-e, e agora lidera a transição para a **Reforma Tributária do Consumo (RTC)**.
+Você domina com profundidade todas as transformações do sistema tributário brasileiro: a Constituição Federal de 1988, o ICMS e a Lei Kandir (LC 87/96), o Simples Nacional (LC 123/06), o PIS/COFINS (Leis 10.637/02 e 10.833/03), o SPED e a NF-e, e a nova **Reforma Tributária do Consumo (RTC)**.
 
 ### 🏛️ SUA POSTURA E TOM DE COMUNICAÇÃO:
 1. **Autoridade Técnica e Clareza Pragmática:** Responda como um tributarista sênior fala com um CFO, Diretor Fiscal ou Contador experiente: objetivo, didático, seguro e sem rodeios.
@@ -436,8 +436,28 @@ export async function processarMensagemFiscal(
       parts: [{ text: mensagemComContexto }]
     });
 
+// Função auxiliar com retry automático para picos de alta demanda (503)
+async function callGeminiWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2): Promise<any> {
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (err: any) {
+      const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand');
+      if (is503 && attempt < maxRetries) {
+        attempt++;
+        const delay = attempt * 1200;
+        console.warn(`⚠️ [Gemini 503] Alta demanda temporária no Google. Tentativa ${attempt} de ${maxRetries} após ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
     // Primeira chamada para o modelo com as ferramentas fiscais
-    let response = await ai.models.generateContent({
+    let response = await callGeminiWithRetry(ai, {
       model: AI_CONFIG.MODEL,
       contents,
       config: {
@@ -499,11 +519,15 @@ export async function processarMensagemFiscal(
         toolResult = { erro: `Ferramenta ${toolName} não implementada.` };
       }
 
-      // Adiciona o turno do modelo chamando a tool e a resposta da tool
-      contents.push({
-        role: 'model',
-        parts: [{ functionCall: call }]
-      });
+      // Adiciona o turno do modelo chamando a tool PRESERVANDO thoughtSignature e partes intactas
+      if (response.candidates && response.candidates[0]?.content) {
+        contents.push(response.candidates[0].content);
+      } else {
+        contents.push({
+          role: 'model',
+          parts: [{ functionCall: call }]
+        });
+      }
 
       contents.push({
         role: 'user',
@@ -515,8 +539,8 @@ export async function processarMensagemFiscal(
         }]
       });
 
-      // Chama novamente o modelo para formular a resposta explicativa final
-      response = await ai.models.generateContent({
+      // Chama novamente o modelo com retry para formular a resposta explicativa final
+      response = await callGeminiWithRetry(ai, {
         model: AI_CONFIG.MODEL,
         contents,
         config: {

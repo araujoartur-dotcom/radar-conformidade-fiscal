@@ -70,7 +70,7 @@ export const CopilotoFiscalDrawer: React.FC<CopilotoFiscalDrawerProps> = ({
       const saudacao = {
         id: 'msg-welcome',
         role: 'model' as const,
-        content: `Olá, ${user?.nome ? user.nome.split(' ')[0] : 'colega'}! Sou o **Auditor AI**, seu Consultor & Auditor Tributário Sênior com base de conhecimento equivalente a mais de 30 anos de prática na legislação brasileira.\n\nEstou conectado aos dados da empresa **${empresaAtiva?.razaoSocial || 'ativa na sua sessão'}** (${empresaAtiva?.cnpjCompleto || 'CNPJ'}).\n\nPosso orientar sobre:\n* **Reforma Tributária do Consumo:** Regras da **LC 214/2025**, **EC 132/2023**, IBS, CBS, Imposto Seletivo e Split Payment.\n* **Tributos Vigentes & Transição Convivente (2026-2032):** ICMS (LC 87/96, DIFAL), ISS (LC 116/03), IPI e Retenções Federais (CSRF 4,65%, IRRF, INSS).\n* **Auditoria de Notas & Parâmetros Fiscais:** Verificação de XMLs, alíquotas de referência e regras de elegibilidade.\n\nComo posso apoiar a sua estratégia fiscal hoje?`,
+        content: `Olá, ${user?.nome ? user.nome.split(' ')[0] : 'colega'}! Sou o **Auditor AI**, seu Consultor & Auditor Tributário especializado na legislação fiscal brasileira.\n\nEstou conectado aos dados da empresa **${empresaAtiva?.razaoSocial || 'ativa na sua sessão'}** (${empresaAtiva?.cnpjCompleto || 'CNPJ'}).\n\nPosso orientar sobre:\n* **Reforma Tributária do Consumo:** Regras da **LC 214/2025**, **EC 132/2023**, IBS, CBS, Imposto Seletivo e Split Payment.\n* **Tributos Vigentes & Transição Convivente (2026-2032):** ICMS (LC 87/96, DIFAL), ISS (LC 116/03), IPI e Retenções Federais (CSRF 4,65%, IRRF, INSS).\n* **Auditoria de Notas & Parâmetros Fiscais:** Verificação de XMLs, alíquotas de referência e regras de elegibilidade.\n\nComo posso apoiar a sua estratégia fiscal hoje?`,
         timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       };
       setMessages([saudacao]);
@@ -288,9 +288,6 @@ export const CopilotoFiscalDrawer: React.FC<CopilotoFiscalDrawerProps> = ({
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5">
                   Auditor AI
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                    Sênior 30+ Anos
-                  </span>
                 </h2>
               </div>
               <p className="text-[11px] text-slate-400 font-medium truncate max-w-[260px] sm:max-w-[320px]">
