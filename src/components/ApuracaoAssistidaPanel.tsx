@@ -41,9 +41,10 @@ import {
 
 interface ApuracaoAssistidaPanelProps {
   empresaAtiva?: any;
+  onNavigateToCarteira?: (tab?: 'integracoes') => void;
 }
 
-export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ empresaAtiva }) => {
+export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ empresaAtiva, onNavigateToCarteira }) => {
   const { get, post } = useApi();
 
   // Estados principais
@@ -87,13 +88,9 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
   const [flagConsultaDemanda, setFlagConsultaDemanda] = useState<boolean>(true);
   const [consultandoDemanda, setConsultandoDemanda] = useState<boolean>(false);
 
-  // Isolamento Multi-Tenant de Credenciais por CNPJ
+  // Isolamento Multi-Tenant de Credenciais por CNPJ (Indicador e Governança Centralizada)
   const [credencialInfo, setCredencialInfo] = useState<any>(null);
   const [isModalCredenciaisOpen, setIsModalCredenciaisOpen] = useState<boolean>(false);
-  const [formClientId, setFormClientId] = useState<string>('');
-  const [formClientSecret, setFormClientSecret] = useState<string>('');
-  const [formWebhookUrl, setFormWebhookUrl] = useState<string>('');
-  const [salvandoCreds, setSalvandoCreds] = useState<boolean>(false);
 
   const cnpjClean = (empresaAtiva?.cnpjCompleto || '').replace(/\D/g, '');
   const cnpjRaizAtivo = empresaAtiva?.cnpjRaiz || cnpjClean.substring(0, 8);
@@ -123,8 +120,6 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
         setCredencialInfo(credRes.data);
         if (credRes.data.flagWebhook !== undefined) setFlagWebhook(credRes.data.flagWebhook);
         if (credRes.data.flagConsultaDemanda !== undefined) setFlagConsultaDemanda(credRes.data.flagConsultaDemanda);
-        if (credRes.data.clientId) setFormClientId(credRes.data.clientId);
-        if (credRes.data.webhookUrl) setFormWebhookUrl(credRes.data.webhookUrl);
       }
     } catch (err: any) {
       console.error('Erro ao carregar dados da apuração:', err);
@@ -255,35 +250,6 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
     }
   };
 
-  // Salvar credenciais próprias para empresa multi-tenant
-  const handleSalvarCredenciaisEmpresa = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSalvandoCreds(true);
-      const empId = empresaAtiva?.id || 'default-empresa';
-      const res = await post<any>('/apuracao/credenciais', {
-        empresaId: empId,
-        clientId: formClientId,
-        clientSecret: formClientSecret,
-        webhookUrl: formWebhookUrl,
-        flagWebhook,
-        flagConsultaDemanda
-      });
-
-      if (res.ok && res.data?.success) {
-        setAcaoStatus({ msg: res.data.mensagem || 'Credenciais registradas com sucesso para a empresa!', tipo: 'sucesso' });
-        setIsModalCredenciaisOpen(false);
-        carregarDados();
-      } else {
-        setAcaoStatus({ msg: res.data?.error || 'Erro ao registrar credenciais.', tipo: 'erro' });
-      }
-    } catch (err: any) {
-      setAcaoStatus({ msg: `Falha: ${err.message}`, tipo: 'erro' });
-    } finally {
-      setSalvandoCreds(false);
-    }
-  };
-
   return (
     <div className="w-full flex flex-col gap-6 pb-12">
       
@@ -330,19 +296,14 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               </select>
             </div>
 
-            {/* Botão Configurar Credenciais com Status Integrado */}
+            {/* Status das Credenciais CGIBS / SEFIN */}
             <button
-              onClick={() => {
-                setFormClientId(credencialInfo?.clientId || '');
-                setFormClientSecret('');
-                setFormWebhookUrl(credencialInfo?.webhookUrl || '');
-                setIsModalCredenciaisOpen(true);
-              }}
+              onClick={() => setIsModalCredenciaisOpen(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/40 text-slate-200 text-xs font-semibold transition-all cursor-pointer shadow-sm"
               title={credencialInfo?.configurado ? "Credenciais CGIBS / SEFIN Conectadas" : "Credenciais CGIBS / SEFIN Pendentes para este CNPJ"}
             >
-              <Settings className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Credenciais</span>
+              <ShieldCheck className={`w-3.5 h-3.5 ${credencialInfo?.configurado ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <span>Credenciais Fisco</span>
               <span className={`w-2 h-2 rounded-full ${credencialInfo?.configurado ? 'bg-emerald-400 shadow-sm shadow-emerald-400/50' : 'bg-amber-400 animate-pulse shadow-sm shadow-amber-400/50'}`} />
             </button>
 
@@ -1176,20 +1137,20 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
         </div>
       )}
 
-      {/* Modal de Configuração de Credenciais Multi-Tenant CGIBS */}
+      {/* Modal de Status e Governança de Credenciais CGIBS */}
       {isModalCredenciaisOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
             {/* Header */}
             <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                  <Settings className="w-5 h-5" />
+                <div className={`p-2.5 rounded-xl ${credencialInfo?.configurado ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Credenciais CGIBS / SEFIN Nacional</h3>
+                  <h3 className="text-base font-bold text-white">Governança de Credenciais CGIBS</h3>
                   <p className="text-xs text-slate-400">
-                    {empresaAtiva?.razaoSocial || 'Empresa'} — CNPJ raiz: <span className="font-mono text-cyan-400">{cnpjRaizAtivo}</span>
+                    {empresaAtiva?.razaoSocial || 'Empresa Ativa'} — CNPJ: <span className="font-mono text-cyan-400">{empresaAtiva?.cnpjCompleto || cnpjRaizAtivo}</span>
                   </p>
                 </div>
               </div>
@@ -1201,78 +1162,82 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               </button>
             </div>
 
-            {/* Aviso de Isolamento */}
-            <div className="p-4 bg-slate-950/40 border-b border-slate-800/80 text-xs">
-              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30 text-cyan-300">
-                <p className="font-bold flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4" /> Segregação e Isolamento Multi-Tenant Garantidos
+            <div className="p-5 space-y-4">
+              {/* Card Centralização */}
+              <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-indigo-200">
+                <p className="font-bold flex items-center gap-1.5 text-indigo-300">
+                  <Lock className="w-4 h-4 text-indigo-400" /> Centralização no Cadastro da Empresa
                 </p>
                 <p className="mt-1 text-[11px] text-slate-300 leading-relaxed">
-                  Informe as credenciais OAuth 2.0 (Client ID e Client Secret) emitidas pelo Comitê Gestor para este CNPJ raiz ({cnpjRaizAtivo}). As chaves pertencem e são visualizadas estritamente por este CNPJ.
+                  Para conformidade fiscal estrita, segurança jurídica e evitar informações divergentes, as credenciais oficiais do Comitê Gestor (CGIBS), SEFIN Nacional e Webhooks de ERP são gerenciadas <strong className="text-white">exclusivamente no Cadastro da Empresa (Carteira de CNPJs)</strong>.
                 </p>
               </div>
-            </div>
 
-            {/* Form */}
-            <form onSubmit={handleSalvarCredenciaisEmpresa} className="p-5 flex flex-col gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Client ID (CGIBS / SEFIN)
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formClientId}
-                  onChange={(e) => setFormClientId(e.target.value)}
-                  placeholder="Ex: 5c37db2e924740449c621b2d95afeef2"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
-                />
+              {/* Status Atual */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-400">Status de Conexão:</span>
+                  {credencialInfo?.configurado ? (
+                    <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Habilitado / Conectado
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Pendente de Configuração
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-800/80 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Client ID:</span>
+                    <span className="font-mono text-slate-200 font-medium">
+                      {credencialInfo?.clientId ? `${credencialInfo.clientId.substring(0, 8)}...` : 'Não configurado'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Client Secret:</span>
+                    <span className="font-mono text-slate-200 font-medium">
+                      {credencialInfo?.clientSecretMascarado || (credencialInfo?.configurado ? '••••••••••••' : 'Não informado')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Conector ERP:</span>
+                    <span className="font-medium text-slate-200">{credencialInfo?.tipoErp || 'GENÉRICO'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Webhook / Retorno:</span>
+                    <span className="font-medium text-slate-200">
+                      {credencialInfo?.webhookUrl ? 'Configurado' : 'Não informado'}
+                    </span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Client Secret (Chave Privada de Acesso)
-                </label>
-                <input
-                  type="password"
-                  required={!credencialInfo?.configurado}
-                  value={formClientSecret}
-                  onChange={(e) => setFormClientSecret(e.target.value)}
-                  placeholder={credencialInfo?.clientSecretMascarado ? `Atual: ${credencialInfo.clientSecretMascarado}` : 'Informe o Client Secret emitido'}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  URL de Retorno Webhook (Opcional)
-                </label>
-                <input
-                  type="url"
-                  value={formWebhookUrl}
-                  onChange={(e) => setFormWebhookUrl(e.target.value)}
-                  placeholder="https://seu-dominio.com/api/apuracao/webhook"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-slate-600 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              {/* Botões de Ação */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setIsModalCredenciaisOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer text-center"
                 >
                   Fechar
                 </button>
                 <button
-                  type="submit"
-                  disabled={salvandoCreds}
-                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/20 transition-all cursor-pointer disabled:opacity-50"
+                  type="button"
+                  onClick={() => {
+                    setIsModalCredenciaisOpen(false);
+                    if (onNavigateToCarteira) {
+                      onNavigateToCarteira('integracoes');
+                    }
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 via-indigo-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white text-xs font-bold shadow-lg shadow-purple-500/20 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {salvandoCreds ? 'Salvando...' : 'Salvar Credenciais'}
+                  <span>Configurar no Cadastro da Empresa</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

@@ -8,6 +8,7 @@ import {
 } from '../services/apuracaoAssistidaService';
 import { calcularTributosRtc, ParametrosCalculoRtc } from '../services/calculadoraRfbService';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth, requirePerfil } from '../middleware/auth';
 
 const router = Router();
@@ -187,7 +188,24 @@ router.post('/calcular-tributos', async (req: Request, res: Response) => {
 // 8. CREDENCIAIS & INTEGRAÇÕES CGIBS / RFB (ISOLAMENTO MULTI-TENANT POR CNPJ)
 // =========================================================
 
-function getEmpresaContexto(empresaId: string) {
+async function getEmpresaContexto(empresaId: string) {
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      const { data: emp } = await supabase
+        .from('empresas')
+        .select('id, cnpj_raiz, cnpj_completo, razao_social')
+        .eq('id', empresaId)
+        .maybeSingle();
+
+      if (emp) {
+        const cnpjClean = (emp.cnpj_completo || '').replace(/\D/g, '');
+        const cnpjRaiz = emp.cnpj_raiz || cnpjClean.substring(0, 8);
+        return { emp, targetEmpId: emp.id, cnpjRaiz, razaoSocial: emp.razao_social || '' };
+      }
+    }
+  }
+
   const db = getDatabase();
   let emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId) as any;
   if (!emp && empresaId === 'default-empresa') {
@@ -198,27 +216,61 @@ function getEmpresaContexto(empresaId: string) {
   return { emp, targetEmpId: emp?.id || empresaId, cnpjRaiz, razaoSocial: emp?.razao_social || '' };
 }
 
-function canUserAccessEmpresa(req: AuthenticatedRequest, empresaId: string): boolean {
+async function canUserAccessEmpresa(req: AuthenticatedRequest, empresaId: string): Promise<boolean> {
   if (!req.user) return false;
   if (req.user.perfil === 'admin_master') return true;
+  if (req.user.empresaAtivaId === empresaId) return true;
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      const { data } = await supabase
+        .from('usuario_empresa')
+        .select('id')
+        .eq('usuario_id', req.user.userId)
+        .eq('empresa_id', empresaId)
+        .maybeSingle();
+      if (data) return true;
+    }
+  }
+
   const db = getDatabase();
   const vinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(req.user.userId, empresaId);
-  return !!vinculo || req.user.empresaAtivaId === empresaId;
+  return !!vinculo;
 }
 
 // GET /api/apuracao/credenciais — Consulta credenciais e endpoints da empresa
 router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const empresaId = (req.query.empresaId as string) || req.user?.empresaAtivaId || 'default-empresa';
-    const { targetEmpId, cnpjRaiz, razaoSocial } = getEmpresaContexto(empresaId);
+    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId);
 
-    if (!canUserAccessEmpresa(req, targetEmpId)) {
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
       res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta empresa.' });
       return;
     }
 
-    const db = getDatabase();
-    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+    let cred: any = null;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data } = await supabase
+          .from('apuracao_credenciais_cgibs')
+          .select('*')
+          .eq('empresa_id', targetEmpId)
+          .maybeSingle();
+        if (data) {
+          cred = data;
+        }
+      }
+    }
+
+    if (!cred) {
+      const db = getDatabase();
+      cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+    }
 
     if (!cred) {
       res.json({
@@ -246,13 +298,13 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
         flagConsultaDemanda: false,
         status: 'pendente_configuracao',
         ambiente: 'Pendente de Configuração',
-        aviso: 'Nenhuma credencial configurada para esta empresa. Um administrador pode configurá-la na Ficha Cadastral.'
+        aviso: 'Nenhuma credencial configurada para esta empresa. Configure no Cadastro da Empresa (Carteira de CNPJs).'
       });
       return;
     }
 
     res.json({
-      configurado: true,
+      configurado: Boolean(cred.client_id),
       empresaId: targetEmpId,
       cnpjRaiz,
       razaoSocial,
@@ -272,8 +324,8 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
       despacharNfeAuto: cred.despachar_nfe_auto !== 0,
       despacharNfseAuto: cred.despachar_nfse_auto !== 0,
       notificarManifestacao: cred.notificar_manifestacao !== 0,
-      flagWebhook: cred.flag_webhook === 1,
-      flagConsultaDemanda: cred.flag_consulta_demanda === 1,
+      flagWebhook: cred.flag_webhook === 1 || cred.flag_webhook === true,
+      flagConsultaDemanda: cred.flag_consulta_demanda === 1 || cred.flag_consulta_demanda === true,
       status: cred.status || 'habilitado',
       ambiente: 'Homologado / Produção',
       dataHabilitacao: cred.data_habilitacao
@@ -284,7 +336,7 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
 });
 
 // POST /api/apuracao/credenciais — Salvar credenciais e endpoints (Admin Master, Suporte TI e Contador Gestor)
-router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'contador_gestor', 'auditor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
       empresaId,
@@ -308,71 +360,132 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       flagConsultaDemanda
     } = req.body;
 
-    const { targetEmpId, cnpjRaiz } = getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
 
-    if (!canUserAccessEmpresa(req, targetEmpId)) {
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
       res.status(403).json({ error: 'Acesso negado: Você não pode gerenciar credenciais desta empresa.' });
       return;
     }
 
-    const db = getDatabase();
-    const existing = db.prepare('SELECT client_secret FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+    // Busca client_secret existente caso não tenha sido informado
+    let existingSecret = '';
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: supaCred } = await supabase
+          .from('apuracao_credenciais_cgibs')
+          .select('client_secret')
+          .eq('empresa_id', targetEmpId)
+          .maybeSingle();
+        if (supaCred?.client_secret) existingSecret = supaCred.client_secret;
+      }
+    }
 
-    const finalClientSecret = (clientSecret && clientSecret.trim()) ? clientSecret.trim() : (existing?.client_secret || '');
+    if (!existingSecret) {
+      try {
+        const db = getDatabase();
+        const localCred = db.prepare('SELECT client_secret FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+        if (localCred?.client_secret) existingSecret = localCred.client_secret;
+      } catch {}
+    }
 
-    db.prepare(`
-      INSERT INTO apuracao_credenciais_cgibs (
-        id, empresa_id, client_id, client_secret, webhook_url,
-        cgibs_url, rfb_url, svrs_url, nfse_nacional_url, api_key_cgibs, bearer_token_rfb,
-        token_contrib, tipo_erp, formato_payload, erp_auth_token,
-        despachar_nfe_auto, despachar_nfse_auto, notificar_manifestacao,
-        flag_webhook, flag_consulta_demanda, status, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
-      ON CONFLICT(empresa_id) DO UPDATE SET
-        client_id = excluded.client_id,
-        client_secret = excluded.client_secret,
-        webhook_url = excluded.webhook_url,
-        cgibs_url = excluded.cgibs_url,
-        rfb_url = excluded.rfb_url,
-        svrs_url = excluded.svrs_url,
-        nfse_nacional_url = excluded.nfse_nacional_url,
-        api_key_cgibs = excluded.api_key_cgibs,
-        bearer_token_rfb = excluded.bearer_token_rfb,
-        token_contrib = excluded.token_contrib,
-        tipo_erp = excluded.tipo_erp,
-        formato_payload = excluded.formato_payload,
-        erp_auth_token = excluded.erp_auth_token,
-        despachar_nfe_auto = excluded.despachar_nfe_auto,
-        despachar_nfse_auto = excluded.despachar_nfse_auto,
-        notificar_manifestacao = excluded.notificar_manifestacao,
-        flag_webhook = excluded.flag_webhook,
-        flag_consulta_demanda = excluded.flag_consulta_demanda,
-        status = 'habilitado',
-        updated_at = datetime('now')
-    `).run(
-      `cred-${targetEmpId}`,
-      targetEmpId,
-      (clientId || '').trim(),
-      finalClientSecret,
-      webhookUrl || '',
-      cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync',
-      rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
-      svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
-      nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
-      apiKeyCgibs || '',
-      bearerTokenRfb || '',
-      tokenContrib || '',
-      tipoErp || 'GENERICO',
-      formatoPayload || 'json',
-      erpAuthToken || '',
-      despacharNfeAuto !== false ? 1 : 0,
-      despacharNfseAuto !== false ? 1 : 0,
-      notificarManifestacao !== false ? 1 : 0,
-      flagWebhook !== false ? 1 : 0,
-      flagConsultaDemanda !== false ? 1 : 0
-    );
+    const finalClientSecret = (clientSecret && clientSecret.trim()) ? clientSecret.trim() : existingSecret;
 
-    res.json({ success: true, mensagem: `Configurações de APIs, ERP e Credenciais salvas com sucesso para a empresa (CNPJ8 ${cnpjRaiz}).` });
+    // 1. Grava no Supabase (se configurado)
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const supaPayload: any = {
+          id: `cred-${targetEmpId}`,
+          empresa_id: targetEmpId,
+          client_id: (clientId || '').trim(),
+          client_secret: finalClientSecret,
+          token_contrib: tokenContrib || '',
+          webhook_url: webhookUrl || '',
+          flag_webhook: flagWebhook !== false,
+          flag_consulta_demanda: flagConsultaDemanda !== false,
+          status: 'habilitado',
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: supaErr } = await supabase
+          .from('apuracao_credenciais_cgibs')
+          .upsert(supaPayload, { onConflict: 'empresa_id' });
+
+        if (supaErr) {
+          console.error('❌ [Supabase Credenciais] Erro ao salvar:', supaErr);
+          res.status(500).json({ error: 'Falha ao gravar credenciais no banco: ' + supaErr.message });
+          return;
+        }
+      }
+    }
+
+    // 2. Grava espelho no SQLite local de forma segura
+    try {
+      const db = getDatabase();
+      // Assegura que o registro da empresa existe no espelho local para não violar FK
+      db.prepare(`
+        INSERT OR IGNORE INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, status)
+        VALUES (?, ?, ?, ?, 'ativo')
+      `).run(targetEmpId, cnpjRaiz || '', (cnpjRaiz || '') + '000100', razaoSocial || 'EMPRESA CARTEIRA');
+
+      db.prepare(`
+        INSERT INTO apuracao_credenciais_cgibs (
+          id, empresa_id, client_id, client_secret, webhook_url,
+          cgibs_url, rfb_url, svrs_url, nfse_nacional_url, api_key_cgibs, bearer_token_rfb,
+          token_contrib, tipo_erp, formato_payload, erp_auth_token,
+          despachar_nfe_auto, despachar_nfse_auto, notificar_manifestacao,
+          flag_webhook, flag_consulta_demanda, status, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
+        ON CONFLICT(empresa_id) DO UPDATE SET
+          client_id = excluded.client_id,
+          client_secret = excluded.client_secret,
+          webhook_url = excluded.webhook_url,
+          cgibs_url = excluded.cgibs_url,
+          rfb_url = excluded.rfb_url,
+          svrs_url = excluded.svrs_url,
+          nfse_nacional_url = excluded.nfse_nacional_url,
+          api_key_cgibs = excluded.api_key_cgibs,
+          bearer_token_rfb = excluded.bearer_token_rfb,
+          token_contrib = excluded.token_contrib,
+          tipo_erp = excluded.tipo_erp,
+          formato_payload = excluded.formato_payload,
+          erp_auth_token = excluded.erp_auth_token,
+          despachar_nfe_auto = excluded.despachar_nfe_auto,
+          despachar_nfse_auto = excluded.despachar_nfse_auto,
+          notificar_manifestacao = excluded.notificar_manifestacao,
+          flag_webhook = excluded.flag_webhook,
+          flag_consulta_demanda = excluded.flag_consulta_demanda,
+          status = 'habilitado',
+          updated_at = datetime('now')
+      `).run(
+        `cred-${targetEmpId}`,
+        targetEmpId,
+        (clientId || '').trim(),
+        finalClientSecret,
+        webhookUrl || '',
+        cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync',
+        rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+        svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+        nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
+        apiKeyCgibs || '',
+        bearerTokenRfb || '',
+        tokenContrib || '',
+        tipoErp || 'GENERICO',
+        formatoPayload || 'json',
+        erpAuthToken || '',
+        despacharNfeAuto !== false ? 1 : 0,
+        despacharNfseAuto !== false ? 1 : 0,
+        notificarManifestacao !== false ? 1 : 0,
+        flagWebhook !== false ? 1 : 0,
+        flagConsultaDemanda !== false ? 1 : 0
+      );
+    } catch (localErr: any) {
+      console.warn('⚠️ [SQLite Credenciais] Aviso de sincronização local:', localErr.message);
+    }
+
+    res.json({ success: true, mensagem: `Credenciais e endpoints do CGIBS / SEFIN salvos com sucesso para a empresa (${razaoSocial || cnpjRaiz}).` });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -382,9 +495,10 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
 router.post('/test-erp-webhook', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, webhookUrl, tipoErp, formatoPayload, erpAuthToken } = req.body;
-    const { targetEmpId, cnpjRaiz, razaoSocial } = getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
 
-    if (!canUserAccessEmpresa(req, targetEmpId)) {
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
       res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta empresa.' });
       return;
     }
@@ -467,25 +581,58 @@ router.post('/test-erp-webhook', requireAuth, async (req: AuthenticatedRequest, 
 router.post('/credenciais/flags', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, flagWebhook, flagConsultaDemanda } = req.body;
-    const { targetEmpId } = getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const { targetEmpId } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
 
-    if (!canUserAccessEmpresa(req, targetEmpId)) {
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
       res.status(403).json({ error: 'Acesso negado: Você não pode gerenciar preferências desta empresa.' });
       return;
     }
 
-    const db = getDatabase();
-    const cred = db.prepare('SELECT id FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId);
-    if (!cred) {
+    let foundCred = false;
+
+    // Atualiza Supabase se configurado
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: supaCred } = await supabase
+          .from('apuracao_credenciais_cgibs')
+          .select('id')
+          .eq('empresa_id', targetEmpId)
+          .maybeSingle();
+
+        if (supaCred) {
+          foundCred = true;
+          await supabase
+            .from('apuracao_credenciais_cgibs')
+            .update({
+              flag_webhook: Boolean(flagWebhook),
+              flag_consulta_demanda: Boolean(flagConsultaDemanda),
+              updated_at: new Date().toISOString()
+            })
+            .eq('empresa_id', targetEmpId);
+        }
+      }
+    }
+
+    // Atualiza SQLite local
+    try {
+      const db = getDatabase();
+      const localCred = db.prepare('SELECT id FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId);
+      if (localCred) {
+        foundCred = true;
+        db.prepare(`
+          UPDATE apuracao_credenciais_cgibs
+          SET flag_webhook = ?, flag_consulta_demanda = ?, updated_at = datetime('now')
+          WHERE empresa_id = ?
+        `).run(flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0, targetEmpId);
+      }
+    } catch {}
+
+    if (!foundCred) {
       res.status(400).json({ error: 'Configure as credenciais desta empresa na Ficha Cadastral antes de ativar os canais de ingestão.' });
       return;
     }
-
-    db.prepare(`
-      UPDATE apuracao_credenciais_cgibs
-      SET flag_webhook = ?, flag_consulta_demanda = ?, updated_at = datetime('now')
-      WHERE empresa_id = ?
-    `).run(flagWebhook ? 1 : 0, flagConsultaDemanda ? 1 : 0, targetEmpId);
 
     res.json({ success: true, flagWebhook: Boolean(flagWebhook), flagConsultaDemanda: Boolean(flagConsultaDemanda) });
   } catch (err: any) {
@@ -500,36 +647,60 @@ router.post('/credenciais/flags', requireAuth, requirePerfil('admin_master', 'su
 router.post('/consultar-demanda', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, competencia } = req.body;
-    const { targetEmpId, cnpjRaiz } = getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const { targetEmpId, cnpjRaiz } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
 
-    if (!canUserAccessEmpresa(req, targetEmpId)) {
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
       res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta empresa.' });
       return;
     }
 
-    const db = getDatabase();
-    const cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+    let cred: any = null;
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: supaCred } = await supabase
+          .from('apuracao_credenciais_cgibs')
+          .select('*')
+          .eq('empresa_id', targetEmpId)
+          .maybeSingle();
+        if (supaCred) {
+          cred = supaCred;
+        }
+      }
+    }
+
+    if (!cred) {
+      try {
+        const db = getDatabase();
+        cred = db.prepare('SELECT * FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+      } catch {}
+    }
 
     if (!cred || !cred.client_id) {
-      res.status(400).json({ error: 'Nenhuma credencial CGIBS configurada para esta empresa. Um gestor pode cadastrá-la na Ficha Cadastral da Empresa.' });
+      res.status(400).json({ error: 'Nenhuma credencial CGIBS configurada para esta empresa. Um gestor pode cadastrá-la na Ficha Cadastral da Empresa (Carteira de CNPJs).' });
       return;
     }
 
-    if (cred.flag_consulta_demanda === 0) {
+    if (cred.flag_consulta_demanda === false || cred.flag_consulta_demanda === 0) {
       res.status(400).json({ error: 'A flag de consulta por demanda está desativada nas configurações desta empresa.' });
       return;
     }
 
     console.log(`🔍 [CGIBS Demanda] Disparando solicitação de arquivos para empresa ${targetEmpId} (CNPJ8: ${cnpjRaiz}), competência ${competencia || 'atual'}`);
 
-    // Registra a solicitação na auditoria
-    db.prepare(`
-      INSERT INTO audit_log (nivel, servico, acao, descricao, dados_extras)
-      VALUES ('INFO', 'CGIBS_DEMANDA', 'SOLICITACAO_ARQUIVO', ?, ?)
-    `).run(
-      `Consulta manual por demanda GET /v1/aassist/solicitacao para empresa ${cnpjRaiz}, competência ${competencia || 'atual'}`,
-      JSON.stringify({ targetEmpId, cnpjRaiz, competencia, timestamp: new Date().toISOString() })
-    );
+    // Registra a solicitação na auditoria local se possível
+    try {
+      const db = getDatabase();
+      db.prepare(`
+        INSERT INTO audit_log (nivel, servico, acao, descricao, dados_extras)
+        VALUES ('INFO', 'CGIBS_DEMANDA', 'SOLICITACAO_ARQUIVO', ?, ?)
+      `).run(
+        `Consulta manual por demanda GET /v1/aassist/solicitacao para empresa ${cnpjRaiz}, competência ${competencia || 'atual'}`,
+        JSON.stringify({ targetEmpId, cnpjRaiz, competencia, timestamp: new Date().toISOString() })
+      );
+    } catch {}
 
     res.json({
       success: true,

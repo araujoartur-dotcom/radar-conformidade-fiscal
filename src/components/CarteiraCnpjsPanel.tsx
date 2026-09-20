@@ -29,6 +29,8 @@ interface CarteiraCnpjsPanelProps {
   onSelectTenantCnpj: (cnpj: string) => void;
   certificado: CertificadoA1;
   setCertificado: (cert: CertificadoA1) => void;
+  initialTab?: 'identificacao' | 'endereco' | 'contador' | 'integracoes' | 'equipe';
+  onClearInitialTab?: () => void;
 }
 
 export const INITIAL_TENANTS: ClienteEmpresaTenant[] = [];
@@ -43,7 +45,9 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   selectedTenantCnpj,
   onSelectTenantCnpj,
   certificado,
-  setCertificado
+  setCertificado,
+  initialTab,
+  onClearInitialTab
 }) => {
   const { get, post, put, del, uploadFile } = useApi();
   const {
@@ -408,6 +412,18 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   useEffect(() => {
     loadTenants();
   }, []);
+
+  useEffect(() => {
+    if (initialTab && tenants.length > 0) {
+      const target = (empresaAtiva && tenants.find(t => t.id === empresaAtiva.id || t.cnpjCompleto === empresaAtiva.cnpjCompleto))
+        || (selectedTenantCnpj && tenants.find(t => t.cnpjCompleto === selectedTenantCnpj || t.cnpjRaiz === selectedTenantCnpj))
+        || tenants[0];
+      if (target) {
+        handleOpenEdit(target, initialTab);
+        onClearInitialTab?.();
+      }
+    }
+  }, [initialTab, tenants, empresaAtiva, selectedTenantCnpj]);
 
   // ── FAST LOOKUP VIA RECEITA / BRASILAPI / MINHARECEITA ──
   const handlePerformCnpjLookup = async (cnpjInput: string, ufInput: string) => {

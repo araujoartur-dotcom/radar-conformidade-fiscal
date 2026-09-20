@@ -81,6 +81,7 @@ export default function App() {
 
   // Corporate Access & User State
   const [selectedTenantCnpj, setSelectedTenantCnpj] = useState<string>('');
+  const [carteiraInitialTab, setCarteiraInitialTab] = useState<'identificacao' | 'endereco' | 'contador' | 'integracoes' | 'equipe' | undefined>(undefined);
 
   // SEFAZ Environment State (Homologação = tpAmb 2, Produção = tpAmb 1)
   const [ambienteSefaz, setAmbienteSefaz] = useState<AmbienteSefaz>('producao');
@@ -449,7 +450,13 @@ export default function App() {
 
             {/* Mode: Apuração Assistida IBS / CBS & Conta Corrente Fiscal (CGIBS / RTC) */}
             {activeMode === 'apuracao_assistida' && (
-              <ApuracaoAssistidaPanel empresaAtiva={empresaAtiva} />
+              <ApuracaoAssistidaPanel
+                empresaAtiva={empresaAtiva}
+                onNavigateToCarteira={(tab) => {
+                  setCarteiraInitialTab(tab || 'integracoes');
+                  setActiveMode('carteira_cnpjs');
+                }}
+              />
             )}
 
             {/* Mode: Modelador Estratégico de Regimes & Ponto de Equilíbrio CPP */}
@@ -471,6 +478,8 @@ export default function App() {
             {activeMode === 'carteira_cnpjs' && (
               <CarteiraCnpjsPanel
                 selectedTenantCnpj={selectedTenantCnpj}
+                initialTab={carteiraInitialTab}
+                onClearInitialTab={() => setCarteiraInitialTab(undefined)}
                 onSelectTenantCnpj={(cnpj) => {
                   setSelectedTenantCnpj(cnpj);
                   // Update current active certificate display
