@@ -4,7 +4,7 @@ import {
   AlertTriangle, FileText, Scale, Save, Percent, ShieldCheck, Search, Filter, X,
   Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt,
   Pencil, Calculator, Building2, Briefcase, TrendingUp, Users, ChevronDown, ChevronUp,
-  FileCode, MapPin, ExternalLink
+  FileCode, MapPin, ExternalLink, Eye
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
@@ -94,7 +94,7 @@ const UniversalTableActions: React.FC<UniversalTableActionsProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleExport = async (format: 'xlsx' | 'json') => {
+  const handleExport = async (format: 'xlsx' | 'json' | 'csv') => {
     setIsExporting(true);
     try {
       const token = localStorage.getItem('token') || '';
@@ -129,6 +129,47 @@ const UniversalTableActions: React.FC<UniversalTableActionsProps> = ({
         const text = await file.text();
         const parsed = JSON.parse(text);
         rows = Array.isArray(parsed) ? parsed : (parsed.itens || parsed.data || []);
+      } else if (fileName.endsWith('.csv')) {
+        const text = await file.text();
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        if (lines.length > 0) {
+          const firstLine = lines[0];
+          const delimiter = firstLine.includes(';') ? ';' : ',';
+          const parseCSVLine = (line: string) => {
+            const result: string[] = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              if (char === '"') {
+                if (inQuotes && line[i + 1] === '"') {
+                  current += '"';
+                  i++;
+                } else {
+                  inQuotes = !inQuotes;
+                }
+              } else if (char === delimiter && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            result.push(current.trim());
+            return result;
+          };
+          const headers = parseCSVLine(lines[0]).map(h => h.replace(/^\uFEFF/, '').trim());
+          rows = [];
+          for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length === 0 || values.every(v => v === '')) continue;
+            const row: any = {};
+            headers.forEach((h, idx) => {
+              row[h] = values[idx] !== undefined ? values[idx] : '';
+            });
+            rows.push(row);
+          }
+        }
       } else {
         const buffer = await file.arrayBuffer();
         const wb = XLSX.read(buffer, { type: 'buffer' });
@@ -196,6 +237,16 @@ const UniversalTableActions: React.FC<UniversalTableActionsProps> = ({
         </button>
 
         <button
+          onClick={() => handleExport('csv')}
+          disabled={isExporting}
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+          title="Exportar dados em formato CSV delimitado por ponto e vírgula"
+        >
+          <FileText className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Exportar CSV</span>
+        </button>
+
+        <button
           onClick={() => handleExport('json')}
           disabled={isExporting}
           className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
@@ -209,10 +260,10 @@ const UniversalTableActions: React.FC<UniversalTableActionsProps> = ({
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
           className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
-          title="Importar registros em massa a partir de arquivo .xlsx ou .json"
+          title="Importar registros em massa a partir de arquivo .csv, .xlsx ou .json"
         >
           <Upload className="w-3.5 h-3.5 text-cyan-400" />
-          <span>{isUploading ? 'Importando...' : 'Importar (JSON / XLSX)'}</span>
+          <span>{isUploading ? 'Importando...' : 'Importar (CSV / XLSX / JSON)'}</span>
         </button>
 
         {onAddNew && (
@@ -372,17 +423,35 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const [ncmList, setNcmList] = useState<NcmRegraAnexoItem[]>([]);
   const [ncmSearch, setNcmSearch] = useState('');
   const [ncmFilterTipo, setNcmFilterTipo] = useState('todos');
+  const [ncmFilterTributo, setNcmFilterTributo] = useState('todos');
+  const [ncmFilterAnexo, setNcmFilterAnexo] = useState('todos');
+  const [selectedNcmDetails, setSelectedNcmDetails] = useState<NcmRegraAnexoItem | null>(null);
   const [showModalNcm, setShowModalNcm] = useState(false);
   const [editingNcm, setEditingNcm] = useState<NcmRegraAnexoItem | null>(null);
   const [ncmForm, setNcmForm] = useState<Partial<NcmRegraAnexoItem>>({
+    id_codigo: null,
+    id_item_anexo: null,
+    anexo: 'I',
+    titulo_anexo: 'Anexo I Cesta Básica Nacional',
+    item_anexo: '',
+    descritivo: '',
+    tratamento: 'Cesta Básica (Alíquota Zero / 100% Redução)',
+    percentual_reducao: 100,
+    perc_aliquota_aplicavel: 0,
+    tributo: 'IBS e CBS',
+    tipo_classificacao: 'NCM/SH',
+    codigo: '',
+    codigo_normalizado: '',
+    nivel_codigo: '8 digitos',
+    base_legal: 'Art. 8º LC 214/2025',
+    linha_agrupadora: 'Nao',
+    condicionantes_observacoes: '',
     ncm: '',
     nbs: '',
     cclasstrib: '',
     descricao: '',
     tipo_tratamento: 'cesta_basica_zero',
-    percentual_reducao: 100,
     anexo_lei: 'Anexo I Cesta Básica Nacional',
-    base_legal: 'Art. 8º LC 214/2025',
     vigencia_inicio: '2026-01-01',
     vigencia_fim: '2033-12-31'
   });
@@ -871,14 +940,29 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const handleOpenNewNcm = () => {
     setEditingNcm(null);
     setNcmForm({
+      id_codigo: null,
+      id_item_anexo: null,
+      anexo: 'I',
+      titulo_anexo: 'Anexo I Cesta Básica Nacional',
+      item_anexo: '',
+      descritivo: '',
+      tratamento: 'Cesta Básica (Alíquota Zero / 100% Redução)',
+      percentual_reducao: 100,
+      perc_aliquota_aplicavel: 0,
+      tributo: 'IBS e CBS',
+      tipo_classificacao: 'NCM/SH',
+      codigo: '',
+      codigo_normalizado: '',
+      nivel_codigo: '8 digitos',
+      base_legal: 'Art. 8º LC 214/2025',
+      linha_agrupadora: 'Nao',
+      condicionantes_observacoes: '',
       ncm: '',
       nbs: '',
       cclasstrib: '',
       descricao: '',
       tipo_tratamento: 'cesta_basica_zero',
-      percentual_reducao: 100,
       anexo_lei: 'Anexo I Cesta Básica Nacional',
-      base_legal: 'Art. 8º LC 214/2025',
       vigencia_inicio: '2026-01-01',
       vigencia_fim: '2033-12-31'
     });
@@ -888,14 +972,30 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const handleEditNcm = (item: NcmRegraAnexoItem) => {
     setEditingNcm(item);
     setNcmForm({
-      ncm: item.ncm,
+      id: item.id,
+      id_codigo: item.id_codigo,
+      id_item_anexo: item.id_item_anexo,
+      anexo: item.anexo || item.anexo_lei || '',
+      titulo_anexo: item.titulo_anexo || item.anexo_lei || '',
+      item_anexo: item.item_anexo || '',
+      descritivo: item.descritivo || item.descricao || '',
+      tratamento: item.tratamento || '',
+      percentual_reducao: item.percentual_reducao,
+      perc_aliquota_aplicavel: item.perc_aliquota_aplicavel,
+      tributo: item.tributo || 'IBS e CBS',
+      tipo_classificacao: item.tipo_classificacao || 'NCM/SH',
+      codigo: item.codigo || item.ncm,
+      codigo_normalizado: item.codigo_normalizado || (item.codigo || item.ncm || '').replace(/\D/g, ''),
+      nivel_codigo: item.nivel_codigo || '8 digitos',
+      base_legal: item.base_legal || 'LC 214/2025',
+      linha_agrupadora: item.linha_agrupadora || 'Nao',
+      condicionantes_observacoes: item.condicionantes_observacoes || '',
+      ncm: item.ncm || item.codigo || '',
       nbs: item.nbs || '',
       cclasstrib: item.cclasstrib || '',
-      descricao: item.descricao,
+      descricao: item.descricao || item.descritivo || '',
       tipo_tratamento: item.tipo_tratamento,
-      percentual_reducao: item.percentual_reducao,
-      anexo_lei: item.anexo_lei || '',
-      base_legal: item.base_legal || '',
+      anexo_lei: item.anexo_lei || item.anexo || '',
       vigencia_inicio: item.vigencia_inicio,
       vigencia_fim: item.vigencia_fim
     });
@@ -1148,12 +1248,46 @@ export const TabelasFiscaisPanel: React.FC = () => {
     }
   };
 
-  // ── FILTERED NCMS ────────────────────────────────────────
+  // ── FILTERED NCMS & ANEXOS LIST ─────────────────────────
+  const uniqueAnexos = Array.from(
+    new Set(ncmList.map(n => (n.anexo || n.anexo_lei || '').trim()).filter(Boolean))
+  ).sort();
+
   const filteredNcms = ncmList.filter(n => {
-    if (ncmFilterTipo !== 'todos' && n.tipo_tratamento !== ncmFilterTipo) return false;
+    const isIS = n.tributo === 'IS' || n.tipo_tratamento === 'imposto_seletivo' || (n.anexo && n.anexo.toUpperCase().includes('XVII'));
+
+    if (ncmFilterTributo !== 'todos') {
+      if (ncmFilterTributo === 'IS' && !isIS) return false;
+      if (ncmFilterTributo === 'IBS_CBS' && isIS) return false;
+    }
+
+    if (ncmFilterTipo !== 'todos') {
+      if (ncmFilterTipo === 'imposto_seletivo' && !isIS) return false;
+      if (ncmFilterTipo !== 'imposto_seletivo' && n.tipo_tratamento !== ncmFilterTipo) return false;
+    }
+
+    if (ncmFilterAnexo !== 'todos') {
+      const anexoVal = (n.anexo || n.anexo_lei || '').trim();
+      if (anexoVal !== ncmFilterAnexo) return false;
+    }
+
     if (ncmSearch) {
       const s = ncmSearch.toLowerCase();
-      return n.ncm.toLowerCase().includes(s) || n.descricao.toLowerCase().includes(s) || (n.cclasstrib && n.cclasstrib.includes(s));
+      return (
+        (n.ncm && n.ncm.toLowerCase().includes(s)) ||
+        (n.codigo && n.codigo.toLowerCase().includes(s)) ||
+        (n.codigo_normalizado && n.codigo_normalizado.toLowerCase().includes(s)) ||
+        (n.descricao && n.descricao.toLowerCase().includes(s)) ||
+        (n.descritivo && n.descritivo.toLowerCase().includes(s)) ||
+        (n.anexo && n.anexo.toLowerCase().includes(s)) ||
+        (n.anexo_lei && n.anexo_lei.toLowerCase().includes(s)) ||
+        (n.titulo_anexo && n.titulo_anexo.toLowerCase().includes(s)) ||
+        (n.tratamento && n.tratamento.toLowerCase().includes(s)) ||
+        (n.tributo && n.tributo.toLowerCase().includes(s)) ||
+        (n.base_legal && n.base_legal.toLowerCase().includes(s)) ||
+        (n.condicionantes_observacoes && n.condicionantes_observacoes.toLowerCase().includes(s)) ||
+        (n.cclasstrib && n.cclasstrib.includes(s))
+      );
     }
     return true;
   });
@@ -1589,79 +1723,150 @@ export const TabelasFiscaisPanel: React.FC = () => {
       )}
 
       {/* ═══════════════════════════════════════════════════════
-          TAB 3: ANEXOS DA LEI & NCMs (Reduções e Isenções)
+          TAB 3: ANEXOS DA LEI & NCMs (17 Colunas Oficiais LC 214/2025)
       ═══════════════════════════════════════════════════════ */}
       {activeTab === 'anexos_ncm' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
-              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-emerald-400" />
-                Catálogo de Anexos da Lei & Regimes Especiais (NCM / NBS)
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-emerald-400" />
+                  Catálogo Oficial de Anexos da Lei LC 214/2025 (NCM / NBS / cClassTrib)
+                </h3>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {ncmList.length} Itens Catalogados
+                </span>
+              </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Mapeamento de NCMs com Alíquota Zero (Cesta Básica), Reduções de 60%, 30% e Regimes Específicos.
+                Acervo íntegro das 17 colunas da Lei Complementar nº 214/2025: Cesta Básica, Reduções de 60%/30%, Monofásicos Ad Rem e Imposto Seletivo (Art. 409+).
               </p>
+            </div>
+
+            {/* Quick counters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                IS: {ncmList.filter(n => n.tributo === 'IS' || n.tipo_tratamento === 'imposto_seletivo' || (n.anexo && n.anexo.includes('XVII'))).length}
+              </span>
+              <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                Cesta 0%: {ncmList.filter(n => n.tipo_tratamento === 'cesta_basica_zero').length}
+              </span>
+              <span className="px-2.5 py-1 rounded-xl text-xs font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                Redução 60%: {ncmList.filter(n => n.tipo_tratamento === 'reducao_60').length}
+              </span>
             </div>
           </div>
 
           <UniversalTableActions
             endpoint="anexos-ncm"
-            baseFilename="Anexos_NCM_LC214_2025"
+            baseFilename="LC214_2025_Itens_x_Codigo_v2"
             onUploadSuccess={reloadData}
             onAddNew={handleOpenNewNcm}
             addNewLabel="Novo NCM / Anexo"
-            searchPlaceholder="Buscar por NCM, descrição ou cClassTrib..."
+            searchPlaceholder="Buscar por NCM, código, descrição, anexo, tratamento..."
             searchTerm={ncmSearch}
             onSearchChange={setNcmSearch}
           />
 
-          {/* Filtro por Tipo */}
-          <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
+          {/* Filtros em Linha: Tributo, Regime e Anexo */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+              <Filter className="w-3.5 h-3.5 text-cyan-400" />
+              Filtros Rápidos ({filteredNcms.length} de {ncmList.length})
+            </span>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Filter className="w-4 h-4 text-slate-400" />
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filtro por Tributo */}
+              <select
+                value={ncmFilterTributo}
+                onChange={(e) => setNcmFilterTributo(e.target.value)}
+                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+              >
+                <option value="todos">Todos os Tributos</option>
+                <option value="IBS_CBS">Apenas IBS e CBS</option>
+                <option value="IS">Apenas Imposto Seletivo (IS)</option>
+              </select>
+
+              {/* Filtro por Regime/Tratamento */}
               <select
                 value={ncmFilterTipo}
                 onChange={(e) => setNcmFilterTipo(e.target.value)}
-                className="bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
               >
-                <option value="todos">Todos os Regimes ({ncmList.length})</option>
-                <option value="cesta_basica_zero">Cesta Básica Nacional (Alíquota Zero / 100% Redução)</option>
+                <option value="todos">Todos os Tratamentos</option>
+                <option value="imposto_seletivo">Imposto Seletivo (Incidência / Sem Redução)</option>
+                <option value="cesta_basica_zero">Cesta Básica Nacional (Alíquota Zero / 100%)</option>
                 <option value="reducao_60">Redução de 60% (Saúde / Medicamentos / Insumos)</option>
                 <option value="reducao_30">Redução de 30% (Serviços / Educação)</option>
                 <option value="ad_rem">Regime Monofásico Ad Rem (GLP / Combustíveis)</option>
                 <option value="padrao">Tributação Normal</option>
               </select>
+
+              {/* Filtro por Anexo */}
+              {uniqueAnexos.length > 0 && (
+                <select
+                  value={ncmFilterAnexo}
+                  onChange={(e) => setNcmFilterAnexo(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="todos">Todos os Anexos ({uniqueAnexos.length})</option>
+                  {uniqueAnexos.map(anx => (
+                    <option key={anx} value={anx}>Anexo {anx}</option>
+                  ))}
+                </select>
+              )}
+
+              {(ncmFilterTipo !== 'todos' || ncmFilterTributo !== 'todos' || ncmFilterAnexo !== 'todos' || ncmSearch) && (
+                <button
+                  onClick={() => {
+                    setNcmFilterTipo('todos');
+                    setNcmFilterTributo('todos');
+                    setNcmFilterAnexo('todos');
+                    setNcmSearch('');
+                  }}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+                  title="Limpar todos os filtros"
+                >
+                  Limpar
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Tabela de NCMs */}
+          {/* Tabela de NCMs com as 17 Colunas */}
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
                 <tr>
-                  <th className="py-3 px-4">NCM / Código</th>
+                  <th className="py-3 px-3">Código / NCM</th>
+                  <th className="py-3 px-3 text-center">Tributo</th>
+                  <th className="py-3 px-3">Anexo / Item</th>
                   <th className="py-3 px-4">Descrição do Item</th>
-                  <th className="py-3 px-4">Tratamento Tributário</th>
-                  <th className="py-3 px-4">Redução (%)</th>
-                  <th className="py-3 px-4">Anexo / Base Legal</th>
-                  <th className="py-3 px-4">Vigência</th>
-                  <th className="py-3 px-4 text-center">Ações</th>
+                  <th className="py-3 px-3">Tratamento Tributário</th>
+                  <th className="py-3 px-3 text-center">Redução (%)</th>
+                  <th className="py-3 px-3 text-center">Alíq. (%)</th>
+                  <th className="py-3 px-3">Base Legal</th>
+                  <th className="py-3 px-3 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {filteredNcms.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-500">
+                    <td colSpan={9} className="py-8 text-center text-slate-500">
                       Nenhum NCM encontrado com os filtros selecionados.
                     </td>
                   </tr>
                 ) : (
                   filteredNcms.map((item) => {
+                    const isIS = item.tributo === 'IS' || item.tipo_tratamento === 'imposto_seletivo' || (item.anexo && item.anexo.toUpperCase().includes('XVII'));
+                    
                     let badgeColor = 'bg-slate-800 text-slate-300 border-slate-700';
-                    let label = 'Tributação Normal';
-                    if (item.tipo_tratamento === 'cesta_basica_zero') {
+                    let label = item.tratamento || 'Tributação Normal';
+
+                    if (isIS) {
+                      badgeColor = 'bg-rose-500/20 text-rose-300 border-rose-500/40';
+                      label = 'Imposto Seletivo (Incidência)';
+                    } else if (item.tipo_tratamento === 'cesta_basica_zero') {
                       badgeColor = 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
                       label = 'Cesta Básica (0% / 100% Redução)';
                     } else if (item.tipo_tratamento === 'reducao_60') {
@@ -1675,26 +1880,104 @@ export const TabelasFiscaisPanel: React.FC = () => {
                       label = 'Ad Rem Monofásico';
                     }
 
+                    const displayCode = item.codigo || item.ncm;
+                    const displayDesc = item.descritivo || item.descricao;
+                    const displayAnexo = item.anexo || item.anexo_lei;
+
                     return (
                       <tr key={item.id || item.ncm} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3 px-4 font-mono font-bold text-emerald-400">{item.ncm}</td>
-                        <td className="py-3 px-4 font-bold text-slate-200 max-w-sm truncate">{item.descricao}</td>
-                        <td className="py-3 px-4">
+                        {/* Código / NCM */}
+                        <td className="py-3 px-3 font-mono font-bold text-emerald-400">
+                          <div className="flex items-center gap-1.5">
+                            <span>{displayCode}</span>
+                            {item.nivel_codigo && (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 font-sans font-normal border border-slate-700">
+                                {item.nivel_codigo}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Tributo */}
+                        <td className="py-3 px-3 text-center">
+                          {isIS ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
+                              IS
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono">
+                              IBS / CBS
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Anexo / Item */}
+                        <td className="py-3 px-3 text-slate-300 font-medium">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-200">
+                              {displayAnexo ? (displayAnexo.startsWith('Anexo') ? displayAnexo : `Anexo ${displayAnexo}`) : '-'}
+                            </span>
+                            {item.item_anexo && (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                Item {item.item_anexo}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Descrição */}
+                        <td className="py-3 px-4 font-bold text-slate-200 max-w-xs truncate" title={displayDesc}>
+                          {displayDesc}
+                        </td>
+
+                        {/* Tratamento */}
+                        <td className="py-3 px-3">
                           <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold border ${badgeColor}`}>
                             {label}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-mono font-bold text-cyan-300">
-                          {item.percentual_reducao > 0 ? `-${item.percentual_reducao}%` : '0%'}
+
+                        {/* Redução */}
+                        <td className="py-3 px-3 text-center font-mono font-bold">
+                          {isIS ? (
+                            <span className="text-rose-400 text-[11px]">N/A (Incidência IS)</span>
+                          ) : item.tipo_tratamento === 'cesta_basica_zero' || item.percentual_reducao === 100 ? (
+                            <span className="text-emerald-400">-100%</span>
+                          ) : item.percentual_reducao > 0 ? (
+                            <span className="text-cyan-300">-{item.percentual_reducao}%</span>
+                          ) : (
+                            <span className="text-slate-500">0%</span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 text-slate-400 text-[11px]">
-                          {item.anexo_lei || item.base_legal || 'LC 214/2025'}
+
+                        {/* Alíquota Aplicável */}
+                        <td className="py-3 px-3 text-center font-mono font-bold text-slate-300">
+                          {isIS ? (
+                            <span className="text-slate-500">-</span>
+                          ) : item.perc_aliquota_aplicavel !== null && item.perc_aliquota_aplicavel !== undefined ? (
+                            <span className="text-cyan-300">{item.perc_aliquota_aplicavel}%</span>
+                          ) : item.percentual_reducao ? (
+                            <span className="text-cyan-300">{100 - item.percentual_reducao}%</span>
+                          ) : (
+                            <span>100%</span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 font-mono text-[11px] text-slate-400">
-                          {item.vigencia_inicio.slice(0, 4)} a {item.vigencia_fim.slice(0, 4)}
+
+                        {/* Base Legal */}
+                        <td className="py-3 px-3 text-slate-400 text-[11px] max-w-[140px] truncate" title={item.base_legal || 'LC 214/2025'}>
+                          {item.base_legal || 'LC 214/2025'}
                         </td>
-                        <td className="py-3 px-4 text-center">
+
+                        {/* Ações */}
+                        <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => setSelectedNcmDetails(item)}
+                              className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-cyan-400 transition-colors cursor-pointer"
+                              title="Ver as 17 Colunas Oficiais"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => handleEditNcm(item)}
                               className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer"
@@ -3028,74 +3311,157 @@ export const TabelasFiscaisPanel: React.FC = () => {
       )}
 
       {/* ═══════════════════════════════════════════════════════
-          MODAL: NOVO NCM / ANEXO
+          MODAL: NOVO / EDITAR NCM (17 COLUNAS OFICIAIS LC 214/2025)
       ═══════════════════════════════════════════════════════ */}
       {showModalNcm && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Layers className="w-5 h-5 text-emerald-400" />
-                {editingNcm ? `Editar NCM ${ncmForm.ncm}` : 'Novo NCM / Anexo de Redução'}
+                {editingNcm ? `Editar Regra NCM ${ncmForm.codigo || ncmForm.ncm}` : 'Nova Regra NCM / Anexo LC 214/2025'}
               </h3>
-              <button onClick={() => setShowModalNcm(false)} className="text-slate-400 hover:text-white text-xs font-bold">✕</button>
+              <button onClick={() => setShowModalNcm(false)} className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer">✕</button>
             </div>
 
             <form onSubmit={handleSaveNcm} className="space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+              {/* Código, Tributo e Nível */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Código NCM *</label>
+                  <label className="font-bold text-slate-300 block mb-1">12. Código / NCM *</label>
                   <input
                     type="text"
-                    placeholder="Ex: 1006.10.92 ou 2711.19.10"
-                    value={ncmForm.ncm}
-                    onChange={(e) => setNcmForm({ ...ncmForm, ncm: e.target.value })}
+                    placeholder="Ex: 2401 ou 1006.10.92"
+                    value={ncmForm.codigo || ncmForm.ncm || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNcmForm({
+                        ...ncmForm,
+                        codigo: val,
+                        ncm: val,
+                        codigo_normalizado: val.replace(/\D/g, '')
+                      });
+                    }}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
                     required
                   />
                 </div>
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">cClassTrib Vinculado</label>
+                  <label className="font-bold text-slate-300 block mb-1">10. Tributo *</label>
+                  <select
+                    value={ncmForm.tributo || 'IBS e CBS'}
+                    onChange={(e) => {
+                      const trib = e.target.value;
+                      const isIS = trib === 'IS';
+                      setNcmForm({
+                        ...ncmForm,
+                        tributo: trib,
+                        tipo_tratamento: isIS ? 'imposto_seletivo' : ncmForm.tipo_tratamento === 'imposto_seletivo' ? 'padrao' : ncmForm.tipo_tratamento,
+                        percentual_reducao: isIS ? 0 : ncmForm.percentual_reducao
+                      });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="IBS e CBS">IBS e CBS (Regra Geral / Benefícios)</option>
+                    <option value="IS">IS (Imposto Seletivo - LC 214 Art. 409+)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">14. Nível do Código</label>
                   <input
                     type="text"
-                    placeholder="Ex: 030001 ou 900001"
-                    value={ncmForm.cclasstrib}
-                    onChange={(e) => setNcmForm({ ...ncmForm, cclasstrib: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+                    placeholder="Ex: 8 digitos, 4 digitos"
+                    value={ncmForm.nivel_codigo || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, nivel_codigo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
+              {/* Descritivo do Item */}
               <div>
-                <label className="font-bold text-slate-300 block mb-1">Descrição do Item / Mercadoria *</label>
+                <label className="font-bold text-slate-300 block mb-1">6. Descritivo / Descrição do Item *</label>
                 <input
                   type="text"
-                  placeholder="Ex: Arroz em grãos, Medicamentos essenciais, GLP..."
-                  value={ncmForm.descricao}
-                  onChange={(e) => setNcmForm({ ...ncmForm, descricao: e.target.value })}
+                  placeholder="Ex: Produtos fumígenos, Arroz em grãos..."
+                  value={ncmForm.descritivo || ncmForm.descricao || ''}
+                  onChange={(e) => setNcmForm({ ...ncmForm, descritivo: e.target.value, descricao: e.target.value })}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                   required
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Anexo, Título do Anexo e Item do Anexo */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Tratamento Tributário</label>
+                  <label className="font-bold text-slate-300 block mb-1">3. Anexo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: XVII ou I"
+                    value={ncmForm.anexo || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, anexo: e.target.value, anexo_lei: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">4. Título do Anexo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Bens e servicos sujeitos ao Imposto Seletivo"
+                    value={ncmForm.titulo_anexo || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, titulo_anexo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">5. Item do Anexo</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 1.1 ou 2"
+                    value={ncmForm.item_anexo || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, item_anexo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              {/* Tratamento Tributário & Redução (%) & Alíquota Aplicável (%) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">7. Tratamento Tributário</label>
                   <select
-                    value={ncmForm.tipo_tratamento}
+                    value={ncmForm.tipo_tratamento || 'padrao'}
                     onChange={(e) => {
                       const tipo = e.target.value as any;
                       let red = 0;
-                      if (tipo === 'cesta_basica_zero') red = 100;
-                      else if (tipo === 'reducao_60') red = 60;
-                      else if (tipo === 'reducao_30') red = 30;
-                      setNcmForm({ ...ncmForm, tipo_tratamento: tipo, percentual_reducao: red });
+                      let aliq: number | null = 100;
+                      if (tipo === 'imposto_seletivo') {
+                        red = 0;
+                        aliq = null;
+                      } else if (tipo === 'cesta_basica_zero') {
+                        red = 100;
+                        aliq = 0;
+                      } else if (tipo === 'reducao_60') {
+                        red = 60;
+                        aliq = 40;
+                      } else if (tipo === 'reducao_30') {
+                        red = 30;
+                        aliq = 70;
+                      }
+                      setNcmForm({
+                        ...ncmForm,
+                        tipo_tratamento: tipo,
+                        percentual_reducao: red,
+                        perc_aliquota_aplicavel: aliq,
+                        tributo: tipo === 'imposto_seletivo' ? 'IS' : (ncmForm.tributo === 'IS' ? 'IBS e CBS' : ncmForm.tributo)
+                      });
                     }}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                   >
+                    <option value="imposto_seletivo">Imposto Seletivo (Incidência / Sem Redução)</option>
                     <option value="cesta_basica_zero">Cesta Básica Nacional (Alíquota Zero / 100%)</option>
-                    <option value="reducao_60">Redução de 60% (Saúde / Dispositivos)</option>
-                    <option value="reducao_30">Redução de 30% (Educação / Serviços)</option>
+                    <option value="reducao_60">Redução de 60% (Saúde / Medicamentos)</option>
+                    <option value="reducao_30">Redução de 30% (Serviços / Educação)</option>
                     <option value="ad_rem">Regime Monofásico Ad Rem (GLP / Combustíveis)</option>
                     <option value="padrao">Tributação Normal (Sem Redução)</option>
                     <option value="isento">Isenção / Imunidade</option>
@@ -3103,44 +3469,238 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="font-bold text-slate-300 block mb-1">Percentual de Redução (%)</label>
+                  <label className="font-bold text-slate-300 block mb-1">8. Percentual Redução (%)</label>
                   <input
                     type="number"
-                    value={ncmForm.percentual_reducao}
-                    onChange={(e) => setNcmForm({ ...ncmForm, percentual_reducao: Number(e.target.value) })}
+                    step="0.01"
+                    disabled={ncmForm.tributo === 'IS' || ncmForm.tipo_tratamento === 'imposto_seletivo'}
+                    value={ncmForm.percentual_reducao ?? 0}
+                    onChange={(e) => {
+                      const red = Number(e.target.value);
+                      setNcmForm({
+                        ...ncmForm,
+                        percentual_reducao: red,
+                        perc_aliquota_aplicavel: red > 0 ? (100 - red) : 100
+                      });
+                    }}
+                    className={`w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500 ${
+                      ncmForm.tributo === 'IS' ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  />
+                  {ncmForm.tributo === 'IS' && (
+                    <span className="text-[10px] text-rose-400 mt-0.5 block">Zero para IS (não há redução)</span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">9. Alíquota Aplicável (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    disabled={ncmForm.tributo === 'IS'}
+                    value={ncmForm.perc_aliquota_aplicavel ?? ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, perc_aliquota_aplicavel: e.target.value === '' ? null : Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
+                    placeholder={ncmForm.tributo === 'IS' ? 'A Definir (IS)' : '100'}
+                  />
+                </div>
+              </div>
+
+              {/* Base Legal, Linha Agrupadora e cClassTrib */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">15. Base Legal</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Art. 409 LC 214/2025"
+                    value={ncmForm.base_legal || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, base_legal: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">16. Linha Agrupadora</label>
+                  <select
+                    value={ncmForm.linha_agrupadora || 'Nao'}
+                    onChange={(e) => setNcmForm({ ...ncmForm, linha_agrupadora: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="Nao">Não (Código Específico)</option>
+                    <option value="Sim">Sim (Capítulo / Posição Agrupadora)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">cClassTrib Sugerido</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: 000001 ou 620006"
+                    value={ncmForm.cclasstrib || ncmForm.cclasstrib_sugerido || ''}
+                    onChange={(e) => setNcmForm({ ...ncmForm, cclasstrib: e.target.value, cclasstrib_sugerido: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-300 block mb-1">Anexo da Lei</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Anexo I Cesta Básica Nacional"
-                    value={ncmForm.anexo_lei}
-                    onChange={(e) => setNcmForm({ ...ncmForm, anexo_lei: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-300 block mb-1">Base Legal</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: Art. 8º LC 214/2025"
-                    value={ncmForm.base_legal}
-                    onChange={(e) => setNcmForm({ ...ncmForm, base_legal: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+              {/* Condicionantes / Observações */}
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">17. Condicionantes / Observações</label>
+                <textarea
+                  rows={2}
+                  placeholder="Ex: Exige destinação exclusiva para uso em saúde humana..."
+                  value={ncmForm.condicionantes_observacoes || ''}
+                  onChange={(e) => setNcmForm({ ...ncmForm, condicionantes_observacoes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button type="button" onClick={() => setShowModalNcm(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold">Cancelar</button>
-                <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">Salvar NCM</button>
+                <button type="submit" className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">Salvar Regra NCM</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: DETALHES COMPLETOS DAS 17 COLUNAS OFICIAIS LC 214/2025
+      ═══════════════════════════════════════════════════════ */}
+      {selectedNcmDetails && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    NCM / Código {selectedNcmDetails.codigo || selectedNcmDetails.ncm}
+                  </h3>
+                  <p className="text-xs text-slate-400">Ficha Oficial da Lei Complementar nº 214/2025 (17 Colunas Canônicas)</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedNcmDetails(null)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* ID_Codigo & ID */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">1. ID_Codigo</span>
+                <span className="font-mono text-cyan-300 font-bold">{selectedNcmDetails.id_codigo ?? '-'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">2. ID (Item Anexo)</span>
+                <span className="font-mono text-cyan-300 font-bold">{selectedNcmDetails.id_item_anexo ?? '-'}</span>
+              </div>
+
+              {/* Anexo & Titulo_Anexo */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">3. Anexo</span>
+                <span className="font-bold text-slate-200">{selectedNcmDetails.anexo || selectedNcmDetails.anexo_lei || '-'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">4. Titulo_Anexo</span>
+                <span className="text-slate-200">{selectedNcmDetails.titulo_anexo || selectedNcmDetails.anexo_lei || '-'}</span>
+              </div>
+
+              {/* Item_Anexo & Descritivo */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">5. Item_Anexo</span>
+                <span className="font-mono text-slate-200">{selectedNcmDetails.item_anexo || '-'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">6. Descritivo</span>
+                <span className="font-bold text-slate-100">{selectedNcmDetails.descritivo || selectedNcmDetails.descricao || '-'}</span>
+              </div>
+
+              {/* Tratamento & Tributo */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">7. Tratamento</span>
+                <span className="font-bold text-amber-300">{selectedNcmDetails.tratamento || selectedNcmDetails.tipo_tratamento}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">10. Tributo</span>
+                <span className={`font-mono font-bold ${selectedNcmDetails.tributo === 'IS' ? 'text-rose-400' : 'text-cyan-400'}`}>
+                  {selectedNcmDetails.tributo || 'IBS e CBS'}
+                </span>
+              </div>
+
+              {/* Perc_Reducao & Perc_Aliquota_Aplicavel */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">8. Perc_Reducao (%)</span>
+                <span className="font-mono text-cyan-300 font-bold">
+                  {selectedNcmDetails.tributo === 'IS' || selectedNcmDetails.tipo_tratamento === 'imposto_seletivo'
+                    ? '0.0% (N/A - Incidência IS)'
+                    : `${selectedNcmDetails.percentual_reducao}%`}
+                </span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">9. Perc_Aliquota_Aplicavel (%)</span>
+                <span className="font-mono text-cyan-300 font-bold">
+                  {selectedNcmDetails.perc_aliquota_aplicavel !== null && selectedNcmDetails.perc_aliquota_aplicavel !== undefined
+                    ? `${selectedNcmDetails.perc_aliquota_aplicavel}%`
+                    : selectedNcmDetails.tributo === 'IS' ? 'A Definir' : '-'}
+                </span>
+              </div>
+
+              {/* Tipo_Classificacao & Codigo */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">11. Tipo_Classificacao</span>
+                <span className="text-slate-200">{selectedNcmDetails.tipo_classificacao || 'NCM/SH'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">12. Codigo & 13. Normalizado</span>
+                <span className="font-mono font-bold text-emerald-400">{selectedNcmDetails.codigo || selectedNcmDetails.ncm}</span>
+                <span className="text-[11px] text-slate-500 block font-mono">Norm: {selectedNcmDetails.codigo_normalizado || '-'}</span>
+              </div>
+
+              {/* Nivel_Codigo & Base_Legal */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">14. Nivel_Codigo</span>
+                <span className="text-slate-200">{selectedNcmDetails.nivel_codigo || '8 digitos'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">15. Base_Legal</span>
+                <span className="text-slate-200 font-medium">{selectedNcmDetails.base_legal || 'LC 214/2025'}</span>
+              </div>
+
+              {/* Linha_Agrupadora & Condicionantes_Observacoes */}
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">16. Linha_Agrupadora</span>
+                <span className="text-slate-200">{selectedNcmDetails.linha_agrupadora || 'Nao'}</span>
+              </div>
+              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">17. Condicionantes_Observacoes</span>
+                <span className="text-slate-200">{selectedNcmDetails.condicionantes_observacoes || 'Sem condicionantes'}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-4 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  const itemToEdit = selectedNcmDetails;
+                  setSelectedNcmDetails(null);
+                  handleEditNcm(itemToEdit);
+                }}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Editar Este Item
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedNcmDetails(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

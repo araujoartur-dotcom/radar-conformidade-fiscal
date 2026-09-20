@@ -310,20 +310,39 @@ export function initializeSchema(): void {
     -- REGRAS DE ANEXOS / NCM / NBS / cClassTrib
     -- =========================================================
     CREATE TABLE IF NOT EXISTS ncm_regras_anexos (
-      id                    TEXT PRIMARY KEY,
-      ncm                   TEXT NOT NULL,
-      nbs                   TEXT DEFAULT '',
-      cclasstrib            TEXT DEFAULT '',
-      descricao             TEXT NOT NULL,
-      tipo_tratamento       TEXT NOT NULL DEFAULT 'padrao',
-      percentual_reducao    REAL NOT NULL DEFAULT 0.0,
-      anexo_lei             TEXT DEFAULT '',
-      base_legal            TEXT DEFAULT '',
-      vigencia_inicio       TEXT NOT NULL DEFAULT '2026-01-01',
-      vigencia_fim          TEXT NOT NULL DEFAULT '2033-12-31',
-      ativo                 INTEGER NOT NULL DEFAULT 1,
-      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+      id                          TEXT PRIMARY KEY,
+      id_codigo                   INTEGER DEFAULT NULL,
+      id_item_anexo               INTEGER DEFAULT NULL,
+      anexo                       TEXT DEFAULT '',
+      titulo_anexo                TEXT DEFAULT '',
+      item_anexo                  TEXT DEFAULT '',
+      descritivo                  TEXT DEFAULT '',
+      tratamento                  TEXT DEFAULT '',
+      percentual_reducao          REAL DEFAULT NULL,
+      perc_aliquota_aplicavel     REAL DEFAULT NULL,
+      tributo                     TEXT DEFAULT 'IBS e CBS',
+      tipo_classificacao          TEXT DEFAULT 'NCM/SH',
+      codigo                      TEXT NOT NULL,
+      codigo_normalizado          TEXT NOT NULL,
+      nivel_codigo                TEXT DEFAULT '',
+      base_legal                  TEXT DEFAULT '',
+      linha_agrupadora            TEXT DEFAULT 'Nao',
+      condicionantes_observacoes  TEXT DEFAULT '',
+      ncm                         TEXT NOT NULL,
+      nbs                         TEXT DEFAULT '',
+      cclasstrib                  TEXT DEFAULT '',
+      descricao                   TEXT NOT NULL,
+      tipo_tratamento             TEXT NOT NULL DEFAULT 'padrao',
+      anexo_lei                   TEXT DEFAULT '',
+      permite_credito             TEXT DEFAULT 'Sim',
+      is_combustivel              INTEGER NOT NULL DEFAULT 0,
+      cclasstrib_sugerido         TEXT DEFAULT '',
+      cst_sugerido                TEXT DEFAULT '',
+      vigencia_inicio             TEXT NOT NULL DEFAULT '2026-01-01',
+      vigencia_fim                TEXT NOT NULL DEFAULT '2033-12-31',
+      ativo                       INTEGER NOT NULL DEFAULT 1,
+      created_at                  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at                  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- =========================================================
@@ -749,16 +768,22 @@ export function initializeSchema(): void {
   addColumnIfNotExists('cclasstrib_regras', 'transferencia_credito', 'TEXT DEFAULT "Não"');
   addColumnIfNotExists('cclasstrib_regras', 'dados_completos_json', 'TEXT DEFAULT "{}"');
 
-  // Migrações em ncm_regras_anexos (acervo LC 214/2025)
-  addColumnIfNotExists('ncm_regras_anexos', 'codigo_normalizado', 'TEXT DEFAULT ""');
-  addColumnIfNotExists('ncm_regras_anexos', 'nivel_codigo', 'TEXT DEFAULT ""');
+  // Migrações em ncm_regras_anexos (acervo LC 214/2025 - 17 Colunas Oficiais)
+  addColumnIfNotExists('ncm_regras_anexos', 'id_codigo', 'INTEGER DEFAULT NULL');
+  addColumnIfNotExists('ncm_regras_anexos', 'id_item_anexo', 'INTEGER DEFAULT NULL');
+  addColumnIfNotExists('ncm_regras_anexos', 'anexo', 'TEXT DEFAULT ""');
   addColumnIfNotExists('ncm_regras_anexos', 'titulo_anexo', 'TEXT DEFAULT ""');
   addColumnIfNotExists('ncm_regras_anexos', 'item_anexo', 'TEXT DEFAULT ""');
   addColumnIfNotExists('ncm_regras_anexos', 'descritivo', 'TEXT DEFAULT ""');
   addColumnIfNotExists('ncm_regras_anexos', 'tratamento', 'TEXT DEFAULT ""');
-  addColumnIfNotExists('ncm_regras_anexos', 'perc_aliquota_aplicavel', 'REAL DEFAULT 0');
+  addColumnIfNotExists('ncm_regras_anexos', 'perc_aliquota_aplicavel', 'REAL DEFAULT NULL');
   addColumnIfNotExists('ncm_regras_anexos', 'tributo', 'TEXT DEFAULT "IBS e CBS"');
   addColumnIfNotExists('ncm_regras_anexos', 'tipo_classificacao', 'TEXT DEFAULT "NCM/SH"');
+  addColumnIfNotExists('ncm_regras_anexos', 'codigo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'codigo_normalizado', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'nivel_codigo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'base_legal', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'linha_agrupadora', 'TEXT DEFAULT "Nao"');
   addColumnIfNotExists('ncm_regras_anexos', 'condicionantes_observacoes', 'TEXT DEFAULT ""');
   addColumnIfNotExists('ncm_regras_anexos', 'permite_credito', 'TEXT DEFAULT "Sim"');
   addColumnIfNotExists('ncm_regras_anexos', 'is_combustivel', 'INTEGER DEFAULT 0');

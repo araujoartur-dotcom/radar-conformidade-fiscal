@@ -218,38 +218,50 @@ export function seedTabelasOficiais() {
       };
 
       const header = parseCSVLine(lines[0]);
+
+      // Limpar registros antigos para evitar poluição com dados distorcidos
+      db.prepare("DELETE FROM ncm_regras_anexos WHERE id LIKE 'ncm-lc214-%'").run();
+
       const stmtNcm = db.prepare(`
         INSERT INTO ncm_regras_anexos (
-          id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
-          anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
-          item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
-          tipo_classificacao, condicionantes_observacoes, permite_credito,
-          is_combustivel, cclasstrib_sugerido, cst_sugerido, updated_at
+          id, id_codigo, id_item_anexo, anexo, titulo_anexo, item_anexo, descritivo,
+          tratamento, percentual_reducao, perc_aliquota_aplicavel, tributo, tipo_classificacao,
+          codigo, codigo_normalizado, nivel_codigo, base_legal, linha_agrupadora,
+          condicionantes_observacoes, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+          anexo_lei, permite_credito, is_combustivel, cclasstrib_sugerido, cst_sugerido,
+          vigencia_inicio, vigencia_fim, ativo, updated_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, datetime('now')
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          '2026-01-01', '2033-12-31', 1, datetime('now')
         )
         ON CONFLICT(id) DO UPDATE SET
-          ncm = excluded.ncm,
-          cclasstrib = excluded.cclasstrib,
-          descricao = excluded.descricao,
-          tipo_tratamento = excluded.tipo_tratamento,
-          percentual_reducao = excluded.percentual_reducao,
-          anexo_lei = excluded.anexo_lei,
-          base_legal = excluded.base_legal,
-          codigo_normalizado = excluded.codigo_normalizado,
-          nivel_codigo = excluded.nivel_codigo,
+          id_codigo = excluded.id_codigo,
+          id_item_anexo = excluded.id_item_anexo,
+          anexo = excluded.anexo,
           titulo_anexo = excluded.titulo_anexo,
           item_anexo = excluded.item_anexo,
           descritivo = excluded.descritivo,
           tratamento = excluded.tratamento,
+          percentual_reducao = excluded.percentual_reducao,
           perc_aliquota_aplicavel = excluded.perc_aliquota_aplicavel,
           tributo = excluded.tributo,
           tipo_classificacao = excluded.tipo_classificacao,
+          codigo = excluded.codigo,
+          codigo_normalizado = excluded.codigo_normalizado,
+          nivel_codigo = excluded.nivel_codigo,
+          base_legal = excluded.base_legal,
+          linha_agrupadora = excluded.linha_agrupadora,
           condicionantes_observacoes = excluded.condicionantes_observacoes,
+          ncm = excluded.ncm,
+          nbs = excluded.nbs,
+          cclasstrib = excluded.cclasstrib,
+          descricao = excluded.descricao,
+          tipo_tratamento = excluded.tipo_tratamento,
+          anexo_lei = excluded.anexo_lei,
           permite_credito = excluded.permite_credito,
           is_combustivel = excluded.is_combustivel,
           cclasstrib_sugerido = excluded.cclasstrib_sugerido,
@@ -267,64 +279,118 @@ export function seedTabelasOficiais() {
             row[h] = vals[idx] || '';
           });
 
-          const codigo = (row['Codigo'] || '').trim();
-          const codNorm = (row['Codigo_Normalizado'] || codigo.replace(/\D/g, '')).trim();
+          const idCodigo = row['ID_Codigo'] !== undefined && row['ID_Codigo'] !== '' ? Number(row['ID_Codigo']) : i;
+          const idItem = row['ID'] !== undefined && row['ID'] !== '' ? Number(row['ID']) : null;
+          const anexo = (row['Anexo'] || '').trim();
           const tituloAnexo = (row['Titulo_Anexo'] || '').trim();
+          const itemAnexo = (row['Item_Anexo'] || '').trim();
           const descritivo = (row['Descritivo'] || '').trim();
           const tratamento = (row['Tratamento'] || '').trim();
-          const percAliq = Number(row['Perc_Aliquota_Aplicavel'] || 0);
-          const percRed = Number(row['Perc_Reducao'] || (100 - percAliq));
-          
+          const tributo = (row['Tributo'] || 'IBS e CBS').trim();
+          const tipoClassificacao = (row['Tipo_Classificacao'] || 'NCM/SH').trim();
+          const codigo = (row['Codigo'] || '').trim();
+          const codNorm = (row['Codigo_Normalizado'] || codigo.replace(/\D/g, '')).trim();
+          const nivelCodigo = (row['Nivel_Codigo'] || '').trim();
+          const baseLegal = (row['Base_Legal'] || 'LC 214/2025').trim();
+          const linhaAgrupadora = (row['Linha_Agrupadora'] || 'Nao').trim();
+          const condicionantes = (row['Condicionantes_Observacoes'] || '').trim();
+
+          // Identificação de Imposto Seletivo (Art. 409+ LC 214/2025)
+          const isImpostoSeletivo = tributo === 'IS' || anexo === 'XVII' || tratamento.toLowerCase().includes('seletivo');
+
+          let percRed: number | null = null;
+          if (row['Perc_Reducao'] !== undefined && row['Perc_Reducao'] !== null && String(row['Perc_Reducao']).trim() !== '') {
+            percRed = Number(row['Perc_Reducao']);
+          }
+
+          let percAliq: number | null = null;
+          if (row['Perc_Aliquota_Aplicavel'] !== undefined && row['Perc_Aliquota_Aplicavel'] !== null && String(row['Perc_Aliquota_Aplicavel']).trim() !== '') {
+            percAliq = Number(row['Perc_Aliquota_Aplicavel']);
+          }
+
+          // Para Imposto Seletivo: NÃO é redução de alíquota (incidência tributária monofásica/adicional)
+          if (isImpostoSeletivo) {
+            percRed = 0.0;
+            percAliq = 0.0;
+          } else if (percRed === null) {
+            if (tratamento.toLowerCase().includes('zero') || tratamento.toLowerCase().includes('100%')) {
+              percRed = 100.0;
+            } else if (tratamento.toLowerCase().includes('60%')) {
+              percRed = 60.0;
+            } else if (tratamento.toLowerCase().includes('30%')) {
+              percRed = 30.0;
+            } else if (tratamento.toLowerCase().includes('80%')) {
+              percRed = 80.0;
+            } else if (tratamento.toLowerCase().includes('50%')) {
+              percRed = 50.0;
+            } else if (tratamento.toLowerCase().includes('70%')) {
+              percRed = 70.0;
+            } else if (tratamento.toLowerCase().includes('40%')) {
+              percRed = 40.0;
+            } else {
+              percRed = 0.0;
+            }
+          }
+          if (percAliq === null) percAliq = 0.0;
+
           // Flag de combustível (NCMs 2710, 2711 ou Artigo 172 da LC 214)
           const isCombustivel = (codNorm.startsWith('2710') || codNorm.startsWith('2711') || codNorm.startsWith('2207') || codNorm.startsWith('3826')) ? 1 : 0;
           
           let permiteCredito = (row['Permite_Credito'] || 'Sim').trim();
           let cclassSugerido = '';
           let cstSugerido = '000';
+          let tipoTratamento: string = 'padrao';
           
           if (isCombustivel === 1) {
             cstSugerido = '620';
-            cclassSugerido = '620006'; // Cobrada anteriormente (aquisição por postos/revenda/consumo)
+            cclassSugerido = '620006'; // Cobrada anteriormente
             permiteCredito = 'Não';    // Art. 267 da LC 214/2025
+            tipoTratamento = 'ad_rem';
+          } else if (isImpostoSeletivo) {
+            cstSugerido = '000';
+            cclassSugerido = '';
+            tipoTratamento = 'imposto_seletivo';
           } else if (tratamento.toLowerCase().includes('zero') || percRed === 100) {
             cstSugerido = '200';
             cclassSugerido = '200003'; // Alíquota zero
+            tipoTratamento = 'cesta_basica_zero';
           } else if (tratamento.toLowerCase().includes('60') || percRed === 60) {
             cstSugerido = '200';
             cclassSugerido = '200034'; // Redução de 60%
+            tipoTratamento = 'reducao_60';
           } else if (tratamento.toLowerCase().includes('30') || percRed === 30) {
             cstSugerido = '200';
             cclassSugerido = '200052'; // Redução de 30%
+            tipoTratamento = 'reducao_30';
           }
 
-          let tipoTratamento: string = 'padrao';
-          if (isCombustivel === 1) tipoTratamento = 'ad_rem';
-          else if (tratamento.toLowerCase().includes('zero') || percRed === 100) tipoTratamento = 'cesta_basica_zero';
-          else if (tratamento.toLowerCase().includes('60') || percRed === 60) tipoTratamento = 'reducao_60';
-          else if (tratamento.toLowerCase().includes('30') || percRed === 30) tipoTratamento = 'reducao_30';
-
-          const id = `ncm-lc214-${row['ID_Codigo'] || i}-${codNorm || 'item'}`;
+          const id = `ncm-lc214-${idCodigo}-${codNorm || 'item'}`;
 
           stmtNcm.run(
             id,
+            idCodigo,
+            idItem,
+            anexo,
+            tituloAnexo,
+            itemAnexo,
+            descritivo,
+            tratamento,
+            percRed,
+            percAliq,
+            tributo,
+            tipoClassificacao,
             codigo,
+            codNorm,
+            nivelCodigo,
+            baseLegal,
+            linhaAgrupadora,
+            condicionantes,
+            codigo, // ncm
             row['NBS'] || '',
             cclassSugerido,
             descritivo || tituloAnexo,
             tipoTratamento,
-            percRed,
             tituloAnexo,
-            row['Base_Legal'] || 'LC 214/2025',
-            codNorm,
-            row['Nivel_Codigo'] || '',
-            tituloAnexo,
-            row['Item_Anexo'] || '',
-            descritivo,
-            tratamento,
-            percAliq,
-            row['Tributo'] || 'IBS e CBS',
-            row['Tipo_Classificacao'] || 'NCM/SH',
-            row['Condicionantes_Observacoes'] || '',
             permiteCredito,
             isCombustivel,
             cclassSugerido,
@@ -349,24 +415,29 @@ export function seedTabelasOficiais() {
           const id = `ncm-comb-${c.codNorm}`;
           stmtNcm.run(
             id,
+            null,
+            null,
+            'Monofásico',
+            'Regime Monofásico de Combustíveis (Art. 172 LC 214/2025)',
+            '1',
+            c.desc,
+            'Tributação Monofásica Ad Rem',
+            0.0,
+            0.0,
+            'IBS e CBS',
+            'NCM/SH',
+            c.ncm,
+            c.codNorm,
+            '8 digitos (item completo)',
+            'Art. 172 da LC 214/2025',
+            'Nao',
+            'Alíquota ad rem por unidade de medida. Vedada a apropriação de créditos na revenda/consumo (Art. 267 LC 214/2025).',
             c.ncm,
             '',
             c.cclass,
             c.desc,
             'ad_rem',
-            0,
             'Regime Monofásico de Combustíveis (Art. 172 LC 214/2025)',
-            'Art. 172 da LC 214/2025',
-            c.codNorm,
-            '8 digitos (item completo)',
-            'Monofásico de Combustíveis',
-            '1',
-            c.desc,
-            'Tributação Monofásica Ad Rem',
-            0,
-            'IBS e CBS',
-            'NCM/SH',
-            'Alíquota ad rem por unidade de medida. Vedada a apropriação de créditos na revenda/consumo (Art. 267 LC 214/2025).',
             'Não',
             1,
             c.cclass,

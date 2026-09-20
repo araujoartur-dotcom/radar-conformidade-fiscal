@@ -20,12 +20,19 @@ import * as XLSX from 'xlsx';
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
-/** Helper universal para envio de exportação em JSON ou XLSX */
+/** Helper universal para envio de exportação em JSON, CSV ou XLSX */
 function sendExportFile(res: Response, filename: string, format: string, data: any[]) {
   if (format === 'json') {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return res.send(JSON.stringify(data, null, 2));
+  }
+  if (format === 'csv') {
+    const ws = XLSX.utils.json_to_sheet(data);
+    const csvContent = XLSX.utils.sheet_to_csv(ws, { FS: ';' });
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return res.send('\uFEFF' + csvContent);
   }
   // Formato padrão: XLSX
   const ws = XLSX.utils.json_to_sheet(data);
@@ -476,7 +483,7 @@ router.post('/aliquotas/ad-rem/upload', requireAuth, async (req: AuthenticatedRe
 /** GET /api/tables/anexos-ncm — Listar regras de NCM / Anexos */
 router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { q, busca, tipo_tratamento, is_combustivel, limit, offset } = req.query as any;
+    const { q, busca, tipo_tratamento, tributo, anexo, is_combustivel, limit, offset } = req.query as any;
 
     const db = getDatabase();
     let sql = 'SELECT * FROM ncm_regras_anexos WHERE ativo = 1';
@@ -484,20 +491,32 @@ router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Re
 
     const searchTerm = (busca || q || '').trim();
     if (searchTerm) {
-      sql += ' AND (ncm LIKE ? OR descricao LIKE ? OR cclasstrib LIKE ? OR codigo_normalizado LIKE ? OR titulo_anexo LIKE ?)';
+      sql += ' AND (ncm LIKE ? OR descricao LIKE ? OR cclasstrib LIKE ? OR codigo_normalizado LIKE ? OR titulo_anexo LIKE ? OR descritivo LIKE ? OR anexo LIKE ? OR tratamento LIKE ? OR codigo LIKE ?)';
       const term = `%${searchTerm}%`;
-      params.push(term, term, term, term, term);
+      params.push(term, term, term, term, term, term, term, term, term);
     }
     if (tipo_tratamento && tipo_tratamento !== 'todos') {
-      sql += ' AND tipo_tratamento = ?';
-      params.push(tipo_tratamento);
+      if (tipo_tratamento === 'imposto_seletivo') {
+        sql += ' AND (tipo_tratamento = "imposto_seletivo" OR tributo = "IS")';
+      } else {
+        sql += ' AND tipo_tratamento = ?';
+        params.push(tipo_tratamento);
+      }
+    }
+    if (tributo && tributo !== 'todos') {
+      sql += ' AND tributo = ?';
+      params.push(tributo);
+    }
+    if (anexo && anexo !== 'todos') {
+      sql += ' AND anexo = ?';
+      params.push(anexo);
     }
     if (is_combustivel !== undefined && is_combustivel !== '' && is_combustivel !== 'todos') {
       sql += ' AND is_combustivel = ?';
       params.push(Number(is_combustivel));
     }
 
-    sql += ' ORDER BY is_combustivel DESC, anexo_lei ASC, ncm ASC';
+    sql += ' ORDER BY CASE WHEN tributo = "IS" THEN 0 ELSE 1 END, is_combustivel DESC, anexo ASC, codigo ASC';
     if (limit) {
       sql += ' LIMIT ? OFFSET ?';
       params.push(Number(limit), Number(offset || 0));
@@ -512,30 +531,35 @@ router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Re
   }
 });
 
-/** GET /api/tables/anexos-ncm/export — Exportar NCMs (JSON ou XLSX) */
+/** GET /api/tables/anexos-ncm/export — Exportar NCMs com as 17 colunas oficiais LC 214/2025 */
 router.get('/anexos-ncm/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const format = String(req.query.format || 'xlsx').toLowerCase();
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT 
-        ncm as "NCM",
-        codigo_normalizado as "Código Normalizado",
-        descricao as "Descrição",
-        tipo_tratamento as "Tratamento",
-        percentual_reducao as "Redução (%)",
-        perc_aliquota_aplicavel as "Alíquota Aplicável (%)",
-        anexo_lei as "Anexo",
-        cclasstrib_sugerido as "cClassTrib Sugerido",
-        cst_sugerido as "CST Sugerido",
-        is_combustivel as "Combustível (1/0)",
-        permite_credito as "Permite Crédito",
-        base_legal as "Base Legal"
+        id_codigo as "ID_Codigo",
+        id_item_anexo as "ID",
+        anexo as "Anexo",
+        titulo_anexo as "Titulo_Anexo",
+        item_anexo as "Item_Anexo",
+        descritivo as "Descritivo",
+        tratamento as "Tratamento",
+        percentual_reducao as "Perc_Reducao",
+        perc_aliquota_aplicavel as "Perc_Aliquota_Aplicavel",
+        tributo as "Tributo",
+        tipo_classificacao as "Tipo_Classificacao",
+        codigo as "Codigo",
+        codigo_normalizado as "Codigo_Normalizado",
+        nivel_codigo as "Nivel_Codigo",
+        base_legal as "Base_Legal",
+        linha_agrupadora as "Linha_Agrupadora",
+        condicionantes_observacoes as "Condicionantes_Observacoes"
       FROM ncm_regras_anexos 
       WHERE ativo = 1 
-      ORDER BY is_combustivel DESC, anexo_lei ASC, ncm ASC
+      ORDER BY CASE WHEN tributo = 'IS' THEN 0 ELSE 1 END, is_combustivel DESC, anexo ASC, codigo ASC
     `).all();
-    sendExportFile(res, 'Regras_NCM_Anexos_LC214', format, rows);
+    sendExportFile(res, 'LC214_2025_Itens_x_Codigo_v2', format, rows);
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao exportar NCMs: ' + err.message });
   }
@@ -545,45 +569,139 @@ router.get('/anexos-ncm/export', requireAuth, async (req: AuthenticatedRequest, 
 router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
-      id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
-      anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
-      item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
-      tipo_classificacao, condicionantes_observacoes, permite_credito,
-      is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim
+      id, id_codigo, id_item_anexo, anexo, titulo_anexo, item_anexo, descritivo,
+      tratamento, percentual_reducao, perc_aliquota_aplicavel, tributo,
+      tipo_classificacao, codigo, codigo_normalizado, nivel_codigo, base_legal,
+      linha_agrupadora, condicionantes_observacoes, ncm, nbs, cclasstrib, descricao,
+      tipo_tratamento, anexo_lei, permite_credito, is_combustivel,
+      cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim
     } = req.body;
 
-    if (!ncm && !codigo_normalizado) {
-      res.status(400).json({ success: false, message: 'NCM é obrigatório.' });
+    const codRaw = String(codigo || ncm || codigo_normalizado || '').trim();
+    if (!codRaw) {
+      res.status(400).json({ success: false, message: 'Código/NCM é obrigatório.' });
       return;
     }
 
-    const cod = String(ncm || codigo_normalizado).trim();
-    const codNorm = String(codigo_normalizado || cod.replace(/\D/g, '')).trim();
-    const rowId = id || `ncm-${uuid()}`;
-    const red = Number(percentual_reducao ?? (tipo_tratamento === 'cesta_basica_zero' ? 100 : tipo_tratamento === 'reducao_60' ? 60 : tipo_tratamento === 'reducao_30' ? 30 : 0));
+    const codNorm = String(codigo_normalizado || codRaw.replace(/\D/g, '')).trim();
+    const rowId = id || (id_codigo ? `ncm-lc214-${id_codigo}` : `ncm-${uuid()}`);
+
+    const tributoRaw = String(tributo || 'IBS e CBS').trim();
+    const anexoRaw = String(anexo || anexo_lei || '').trim();
+    const tratRaw = String(tratamento || '').trim();
+    const titRaw = String(titulo_anexo || anexo_lei || '').trim();
+    const descRaw = String(descritivo || descricao || 'Item Fiscal').trim();
+
+    const isImpostoSeletivo = tributoRaw.toUpperCase() === 'IS' ||
+                              anexoRaw.toUpperCase() === 'XVII' ||
+                              tratRaw.toLowerCase().includes('seletivo') ||
+                              titRaw.toLowerCase().includes('seletivo') ||
+                              tipo_tratamento === 'imposto_seletivo';
+
     const isComb = Number(is_combustivel ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
+
+    let percRed = 0.0;
+    let percAliq: number | null = null;
+    let finalTipoTratamento = tipo_tratamento || 'padrao';
+    let cstSugerido = cst_sugerido || '000';
+    let cclassSugerido = cclasstrib_sugerido || cclasstrib || '';
+    let permiteCred = permite_credito || 'Sim';
+
+    if (isImpostoSeletivo) {
+      finalTipoTratamento = 'imposto_seletivo';
+      percRed = 0.0;
+      percAliq = null;
+      cstSugerido = '000';
+      cclassSugerido = '';
+      permiteCred = 'Não';
+    } else if (isComb) {
+      finalTipoTratamento = 'ad_rem';
+      percRed = 0.0;
+      percAliq = null;
+      cstSugerido = '620';
+      cclassSugerido = '620006';
+      permiteCred = 'Não';
+    } else {
+      const rawRed = percentual_reducao;
+      if (rawRed !== undefined && rawRed !== null && rawRed !== '') {
+        percRed = Number(rawRed);
+      } else if (perc_aliquota_aplicavel !== undefined && perc_aliquota_aplicavel !== null) {
+        percRed = 100 - Number(perc_aliquota_aplicavel);
+      } else if (tratRaw.toLowerCase().includes('zero')) {
+        percRed = 100.0;
+      } else if (tratRaw.toLowerCase().includes('60')) {
+        percRed = 60.0;
+      } else if (tratRaw.toLowerCase().includes('30')) {
+        percRed = 30.0;
+      }
+
+      if (perc_aliquota_aplicavel !== undefined && perc_aliquota_aplicavel !== null) {
+        percAliq = Number(perc_aliquota_aplicavel);
+      } else {
+        percAliq = percRed > 0 ? (100 - percRed) : 100.0;
+      }
+
+      if (percRed === 100.0 || tratRaw.toLowerCase().includes('zero')) {
+        finalTipoTratamento = 'cesta_basica_zero';
+        cstSugerido = '000';
+        cclassSugerido = '000001';
+      } else if (percRed === 60.0 || tratRaw.toLowerCase().includes('60')) {
+        finalTipoTratamento = 'reducao_60';
+        cstSugerido = '200';
+      } else if (percRed === 30.0 || tratRaw.toLowerCase().includes('30')) {
+        finalTipoTratamento = 'reducao_30';
+        cstSugerido = '200';
+      }
+    }
 
     const db = getDatabase();
     db.prepare(`
       INSERT OR REPLACE INTO ncm_regras_anexos (
-        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
-        anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
-        item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
-        tipo_classificacao, condicionantes_observacoes, permite_credito,
-        is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim, ativo, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+        id, id_codigo, id_item_anexo, anexo, titulo_anexo, item_anexo, descritivo,
+        tratamento, percentual_reducao, perc_aliquota_aplicavel, tributo, tipo_classificacao,
+        codigo, codigo_normalizado, nivel_codigo, base_legal, linha_agrupadora,
+        condicionantes_observacoes, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+        anexo_lei, permite_credito, is_combustivel, cclasstrib_sugerido, cst_sugerido,
+        vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, 1, datetime('now')
+      )
     `).run(
-      rowId, cod, nbs || '', cclasstrib_sugerido || cclasstrib || (isComb ? '620006' : ''),
-      String(descricao || descritivo || 'Item Fiscal').trim(),
-      tipo_tratamento || (isComb ? 'ad_rem' : red === 100 ? 'cesta_basica_zero' : red === 60 ? 'reducao_60' : 'padrao'),
-      red, anexo_lei || titulo_anexo || '', base_legal || 'LC 214/2025', codNorm,
-      nivel_codigo || '8 digitos', titulo_anexo || anexo_lei || '', item_anexo || '',
-      descritivo || descricao || '', tratamento || '', Number(perc_aliquota_aplicavel || 0),
-      tributo || 'IBS e CBS', tipo_classificacao || 'NCM/SH', condicionantes_observacoes || '',
-      permite_credito || (isComb ? 'Não' : 'Sim'), isComb,
-      cclasstrib_sugerido || cclasstrib || (isComb ? '620006' : ''),
-      cst_sugerido || (isComb ? '620' : '000'),
-      vigencia_inicio || '2026-01-01', vigencia_fim || '2033-12-31'
+      rowId,
+      id_codigo ? Number(id_codigo) : null,
+      id_item_anexo ? Number(id_item_anexo) : null,
+      anexoRaw,
+      titRaw,
+      item_anexo || '',
+      descRaw,
+      tratRaw || (isImpostoSeletivo ? 'Imposto Seletivo' : finalTipoTratamento),
+      percRed,
+      percAliq,
+      isImpostoSeletivo ? 'IS' : tributoRaw,
+      tipo_classificacao || 'NCM/SH',
+      codRaw,
+      codNorm,
+      nivel_codigo || (codRaw.length >= 8 ? '8 digitos' : '4 digitos'),
+      base_legal || 'LC 214/2025',
+      linha_agrupadora || 'Nao',
+      condicionantes_observacoes || '',
+      codRaw,
+      nbs || '',
+      cclassSugerido,
+      descRaw,
+      finalTipoTratamento,
+      titRaw || anexoRaw,
+      permiteCred,
+      isComb,
+      cclassSugerido,
+      cstSugerido,
+      vigencia_inicio || '2026-01-01',
+      vigencia_fim || '2033-12-31'
     );
 
     res.json({ success: true, message: 'Regra de NCM gravada com sucesso.' });
@@ -592,7 +710,7 @@ router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-/** POST /api/tables/anexos-ncm/upload — Upload em massa de NCMs (JSON ou XLSX) */
+/** POST /api/tables/anexos-ncm/upload — Upload em massa de NCMs (17 colunas oficiais LC 214/2025) */
 router.post('/anexos-ncm/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { itens } = req.body as { itens: any[] };
@@ -604,47 +722,141 @@ router.post('/anexos-ncm/upload', requireAuth, async (req: AuthenticatedRequest,
     const db = getDatabase();
     const insertStmt = db.prepare(`
       INSERT OR REPLACE INTO ncm_regras_anexos (
-        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
-        anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
-        item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
-        tipo_classificacao, condicionantes_observacoes, permite_credito,
-        is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim, ativo, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+        id, id_codigo, id_item_anexo, anexo, titulo_anexo, item_anexo, descritivo,
+        tratamento, percentual_reducao, perc_aliquota_aplicavel, tributo, tipo_classificacao,
+        codigo, codigo_normalizado, nivel_codigo, base_legal, linha_agrupadora,
+        condicionantes_observacoes, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+        anexo_lei, permite_credito, is_combustivel, cclasstrib_sugerido, cst_sugerido,
+        vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        '2026-01-01', '2033-12-31', 1, datetime('now')
+      )
     `);
 
     let inseridos = 0;
     const tx = db.transaction((rows: any[]) => {
       for (const it of rows) {
-        const cod = String(it.ncm || it['NCM'] || it['Codigo'] || it.codigo || it['Código'] || '').trim();
-        if (!cod) continue;
-        const codNorm = String(it.codigo_normalizado || it['Codigo_Normalizado'] || cod.replace(/\D/g, '')).trim();
-        const desc = String(it.descricao || it['Descricao'] || it['Descrição'] || it['Descritivo'] || it.descritivo || 'Item').trim();
-        const isComb = Number(it.is_combustivel ?? it['Combustível (1/0)'] ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
-        const red = Number(it.percentual_reducao ?? it['Redução (%)'] ?? it['Perc_Reducao'] ?? (isComb ? 0 : 0));
-        const percAliq = Number(it.perc_aliquota_aplicavel ?? it['Alíquota Aplicável (%)'] ?? it['Perc_Aliquota_Aplicavel'] ?? 0);
-        const anexo = String(it.anexo_lei || it['Anexo'] || it['Titulo_Anexo'] || '').trim();
-        const base = String(it.base_legal || it['Base Legal'] || it['Base_Legal'] || 'LC 214/2025').trim();
+        const idCodigo = it.id_codigo ?? it['ID_Codigo'] ?? null;
+        const idItemAnexo = it.id_item_anexo ?? it['ID'] ?? it.id ?? null;
+        const anexo = String(it.anexo || it['Anexo'] || '').trim();
+        const tituloAnexo = String(it.titulo_anexo || it['Titulo_Anexo'] || it.anexo_lei || '').trim();
+        const itemAnexo = String(it.item_anexo || it['Item_Anexo'] || '').trim();
+        const descritivo = String(it.descritivo || it['Descritivo'] || it.descricao || it['Descricao'] || it['Descrição'] || 'Item Fiscal').trim();
+        const tratamento = String(it.tratamento || it['Tratamento'] || '').trim();
+        const tributoRaw = String(it.tributo || it['Tributo'] || 'IBS e CBS').trim();
+        const tipoClass = String(it.tipo_classificacao || it['Tipo_Classificacao'] || 'NCM/SH').trim();
+        const codigoRaw = String(it.codigo || it['Codigo'] || it['Código'] || it.ncm || it['NCM'] || '').trim();
+        if (!codigoRaw) continue;
 
-        let cclass = String(it.cclasstrib_sugerido || it['cClassTrib Sugerido'] || it['cClassTrib_Sugerido'] || it.cclasstrib || '').trim();
-        let cst = String(it.cst_sugerido || it['CST Sugerido'] || '').trim();
-        let permiteCred = String(it.permite_credito || it['Permite Crédito'] || it['Permite_Credito'] || (isComb ? 'Não' : 'Sim')).trim();
+        const codNorm = String(it.codigo_normalizado || it['Codigo_Normalizado'] || codigoRaw.replace(/\D/g, '')).trim();
+        const nivelCodigo = String(it.nivel_codigo || it['Nivel_Codigo'] || (codigoRaw.length >= 8 ? '8 digitos' : '4 digitos')).trim();
+        const baseLegal = String(it.base_legal || it['Base_Legal'] || it['Base Legal'] || 'LC 214/2025').trim();
+        const linhaAgrupadora = String(it.linha_agrupadora || it['Linha_Agrupadora'] || 'Nao').trim();
+        const condicionantes = String(it.condicionantes_observacoes || it['Condicionantes_Observacoes'] || '').trim();
 
-        if (isComb) {
-          cst = '620';
-          cclass = '620006';
-          permiteCred = 'Não';
+        // Checagem rigorosa de Imposto Seletivo (zero fallback, sem misturar com Cesta Básica)
+        const isImpostoSeletivo = tributoRaw.toUpperCase() === 'IS' || 
+                                  anexo.toUpperCase() === 'XVII' || 
+                                  tratamento.toLowerCase().includes('seletivo') ||
+                                  tituloAnexo.toLowerCase().includes('seletivo') ||
+                                  it.tipo_tratamento === 'imposto_seletivo';
+
+        const isComb = Number(it.is_combustivel ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
+
+        let percRed = 0.0;
+        let percAliq: number | null = null;
+        let tipoTratamento: string = 'padrao';
+        let cstSugerido = '000';
+        let cclassSugerido = '';
+        let permiteCredito = 'Sim';
+
+        if (isImpostoSeletivo) {
+          tipoTratamento = 'imposto_seletivo';
+          percRed = 0.0; // IS tem incidência seletiva extra, NUNCA redução de 100%!
+          percAliq = null;
+          cstSugerido = '000';
+          cclassSugerido = '';
+          permiteCredito = 'Não';
+        } else if (isComb) {
+          tipoTratamento = 'ad_rem';
+          percRed = 0.0;
+          percAliq = null;
+          cstSugerido = '620';
+          cclassSugerido = '620006';
+          permiteCredito = 'Não';
+        } else {
+          // IBS e CBS normais ou com redução
+          const rawRed = it.percentual_reducao ?? it['Perc_Reducao'] ?? it['Redução (%)'];
+          const rawAliq = it.perc_aliquota_aplicavel ?? it['Perc_Aliquota_Aplicavel'] ?? it['Alíquota Aplicável (%)'];
+          
+          if (rawRed !== undefined && rawRed !== null && rawRed !== '') {
+            percRed = Number(rawRed);
+          } else if (rawAliq !== undefined && rawAliq !== null && rawAliq !== '') {
+            percRed = 100 - Number(rawAliq);
+          } else if (tratamento.toLowerCase().includes('zero')) {
+            percRed = 100.0;
+          } else if (tratamento.toLowerCase().includes('60')) {
+            percRed = 60.0;
+          } else if (tratamento.toLowerCase().includes('30')) {
+            percRed = 30.0;
+          }
+
+          if (rawAliq !== undefined && rawAliq !== null && rawAliq !== '') {
+            percAliq = Number(rawAliq);
+          } else {
+            percAliq = percRed > 0 ? (100 - percRed) : 100.0;
+          }
+
+          if (percRed === 100.0 || tratamento.toLowerCase().includes('zero')) {
+            tipoTratamento = 'cesta_basica_zero';
+            cstSugerido = '000';
+            cclassSugerido = '000001';
+          } else if (percRed === 60.0 || tratamento.toLowerCase().includes('60')) {
+            tipoTratamento = 'reducao_60';
+            cstSugerido = '200';
+          } else if (percRed === 30.0 || tratamento.toLowerCase().includes('30')) {
+            tipoTratamento = 'reducao_30';
+            cstSugerido = '200';
+          }
         }
 
-        const rowId = it.id || `ncm-${uuid()}`;
+        const tributoFinal = isImpostoSeletivo ? 'IS' : tributoRaw;
+        const rowId = idCodigo ? `ncm-lc214-${idCodigo}` : (it.id || `ncm-${uuid()}`);
 
         insertStmt.run(
-          rowId, cod, it.nbs || it['NBS'] || '', cclass, desc,
-          it.tipo_tratamento || (isComb ? 'ad_rem' : red === 100 ? 'cesta_basica_zero' : red === 60 ? 'reducao_60' : 'padrao'),
-          red, anexo, base, codNorm, it.nivel_codigo || it['Nivel_Codigo'] || '8 digitos',
-          anexo, it.item_anexo || it['Item_Anexo'] || '', desc, it.tratamento || it['Tratamento'] || '',
-          percAliq, it.tributo || it['Tributo'] || 'IBS e CBS', it.tipo_classificacao || it['Tipo_Classificacao'] || 'NCM/SH',
-          it.condicionantes_observacoes || it['Condicionantes_Observacoes'] || '', permiteCred,
-          isComb, cclass, cst, '2026-01-01', '2033-12-31'
+          rowId,
+          idCodigo ? Number(idCodigo) : null,
+          idItemAnexo ? Number(idItemAnexo) : null,
+          anexo,
+          tituloAnexo,
+          itemAnexo,
+          descritivo,
+          tratamento || (isImpostoSeletivo ? 'Imposto Seletivo' : tipoTratamento),
+          percRed,
+          percAliq,
+          tributoFinal,
+          tipoClass,
+          codigoRaw,
+          codNorm,
+          nivelCodigo,
+          baseLegal,
+          linhaAgrupadora,
+          condicionantes,
+          codigoRaw, // ncm
+          it.nbs || '',
+          cclassSugerido,
+          descritivo,
+          tipoTratamento,
+          tituloAnexo || anexo,
+          permiteCredito,
+          isComb,
+          cclassSugerido,
+          cstSugerido
         );
         inseridos++;
       }
@@ -657,48 +869,155 @@ router.post('/anexos-ncm/upload', requireAuth, async (req: AuthenticatedRequest,
   }
 });
 
-/** POST /api/tables/anexos-ncm/upload-lote — Compatibilidade */
+/** POST /api/tables/anexos-ncm/upload-lote — Compatibilidade (redireciona para o parser das 17 colunas) */
 router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { itens } = req.body as { itens: any[] };
-    if (!Array.isArray(itens) || itens.length === 0) {
-      res.status(400).json({ success: false, message: 'Nenhum item válido enviado para importação.' });
-      return;
-    }
-
-    const db = getDatabase();
-    const insertStmt = db.prepare(`
-      INSERT OR REPLACE INTO ncm_regras_anexos (
-        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-    `);
-
-    let inseridos = 0;
-    const tx = db.transaction((rows: any[]) => {
-      for (const it of rows) {
-        if (!it.ncm) continue;
-        insertStmt.run(
-          it.id || uuid(),
-          String(it.ncm).trim(),
-          it.nbs || '',
-          it.cclasstrib || '',
-          it.descricao || 'Item Importado',
-          it.tipo_tratamento || 'padrao',
-          Number(it.percentual_reducao || 0),
-          it.anexo_lei || '',
-          it.base_legal || 'LC 214/2025',
-          it.vigencia_inicio || '2026-01-01',
-          it.vigencia_fim || '2033-12-31'
-        );
-        inseridos++;
-      }
-    });
-
-    tx(itens);
-    res.json({ success: true, message: `${inseridos} regras de NCM importadas com sucesso.` });
-  } catch (err: any) {
-    res.status(500).json({ success: false, message: 'Erro na importação em lote de NCMs: ' + err.message });
+  // Reutiliza o endpoint oficial de upload das 17 colunas
+  const { itens } = req.body as { itens: any[] };
+  if (!Array.isArray(itens) || itens.length === 0) {
+    res.status(400).json({ success: false, message: 'Nenhum item válido enviado para importação.' });
+    return;
   }
+  const db = getDatabase();
+  const insertStmt = db.prepare(`
+    INSERT OR REPLACE INTO ncm_regras_anexos (
+      id, id_codigo, id_item_anexo, anexo, titulo_anexo, item_anexo, descritivo,
+      tratamento, percentual_reducao, perc_aliquota_aplicavel, tributo, tipo_classificacao,
+      codigo, codigo_normalizado, nivel_codigo, base_legal, linha_agrupadora,
+      condicionantes_observacoes, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+      anexo_lei, permite_credito, is_combustivel, cclasstrib_sugerido, cst_sugerido,
+      vigencia_inicio, vigencia_fim, ativo, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      '2026-01-01', '2033-12-31', 1, datetime('now')
+    )
+  `);
+
+  let inseridos = 0;
+  const tx = db.transaction((rows: any[]) => {
+    for (const it of rows) {
+      const codigoRaw = String(it.codigo || it['Codigo'] || it['Código'] || it.ncm || it['NCM'] || '').trim();
+      if (!codigoRaw) continue;
+      const idCodigo = it.id_codigo ?? it['ID_Codigo'] ?? null;
+      const idItemAnexo = it.id_item_anexo ?? it['ID'] ?? it.id ?? null;
+      const anexo = String(it.anexo || it['Anexo'] || it.anexo_lei || '').trim();
+      const tituloAnexo = String(it.titulo_anexo || it['Titulo_Anexo'] || it.anexo_lei || '').trim();
+      const itemAnexo = String(it.item_anexo || it['Item_Anexo'] || '').trim();
+      const descritivo = String(it.descritivo || it['Descritivo'] || it.descricao || it['Descricao'] || it['Descrição'] || 'Item Fiscal').trim();
+      const tratamento = String(it.tratamento || it['Tratamento'] || '').trim();
+      const tributoRaw = String(it.tributo || it['Tributo'] || 'IBS e CBS').trim();
+      const tipoClass = String(it.tipo_classificacao || it['Tipo_Classificacao'] || 'NCM/SH').trim();
+      const codNorm = String(it.codigo_normalizado || it['Codigo_Normalizado'] || codigoRaw.replace(/\D/g, '')).trim();
+      const nivelCodigo = String(it.nivel_codigo || it['Nivel_Codigo'] || (codigoRaw.length >= 8 ? '8 digitos' : '4 digitos')).trim();
+      const baseLegal = String(it.base_legal || it['Base_Legal'] || it['Base Legal'] || 'LC 214/2025').trim();
+      const linhaAgrupadora = String(it.linha_agrupadora || it['Linha_Agrupadora'] || 'Nao').trim();
+      const condicionantes = String(it.condicionantes_observacoes || it['Condicionantes_Observacoes'] || '').trim();
+
+      const isImpostoSeletivo = tributoRaw.toUpperCase() === 'IS' || 
+                                anexo.toUpperCase() === 'XVII' || 
+                                tratamento.toLowerCase().includes('seletivo') ||
+                                tituloAnexo.toLowerCase().includes('seletivo') ||
+                                it.tipo_tratamento === 'imposto_seletivo';
+
+      const isComb = Number(it.is_combustivel ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
+
+      let percRed = 0.0;
+      let percAliq: number | null = null;
+      let tipoTratamento: string = 'padrao';
+      let cstSugerido = '000';
+      let cclassSugerido = '';
+      let permiteCredito = 'Sim';
+
+      if (isImpostoSeletivo) {
+        tipoTratamento = 'imposto_seletivo';
+        percRed = 0.0;
+        percAliq = null;
+        cstSugerido = '000';
+        cclassSugerido = '';
+        permiteCredito = 'Não';
+      } else if (isComb) {
+        tipoTratamento = 'ad_rem';
+        percRed = 0.0;
+        percAliq = null;
+        cstSugerido = '620';
+        cclassSugerido = '620006';
+        permiteCredito = 'Não';
+      } else {
+        const rawRed = it.percentual_reducao ?? it['Perc_Reducao'] ?? it['Redução (%)'];
+        const rawAliq = it.perc_aliquota_aplicavel ?? it['Perc_Aliquota_Aplicavel'] ?? it['Alíquota Aplicável (%)'];
+        if (rawRed !== undefined && rawRed !== null && rawRed !== '') {
+          percRed = Number(rawRed);
+        } else if (rawAliq !== undefined && rawAliq !== null && rawAliq !== '') {
+          percRed = 100 - Number(rawAliq);
+        } else if (tratamento.toLowerCase().includes('zero')) {
+          percRed = 100.0;
+        } else if (tratamento.toLowerCase().includes('60')) {
+          percRed = 60.0;
+        } else if (tratamento.toLowerCase().includes('30')) {
+          percRed = 30.0;
+        }
+
+        if (rawAliq !== undefined && rawAliq !== null && rawAliq !== '') {
+          percAliq = Number(rawAliq);
+        } else {
+          percAliq = percRed > 0 ? (100 - percRed) : 100.0;
+        }
+
+        if (percRed === 100.0 || tratamento.toLowerCase().includes('zero')) {
+          tipoTratamento = 'cesta_basica_zero';
+          cstSugerido = '000';
+          cclassSugerido = '000001';
+        } else if (percRed === 60.0 || tratamento.toLowerCase().includes('60')) {
+          tipoTratamento = 'reducao_60';
+          cstSugerido = '200';
+        } else if (percRed === 30.0 || tratamento.toLowerCase().includes('30')) {
+          tipoTratamento = 'reducao_30';
+          cstSugerido = '200';
+        }
+      }
+
+      const tributoFinal = isImpostoSeletivo ? 'IS' : tributoRaw;
+      const rowId = idCodigo ? `ncm-lc214-${idCodigo}` : (it.id || `ncm-${uuid()}`);
+
+      insertStmt.run(
+        rowId,
+        idCodigo ? Number(idCodigo) : null,
+        idItemAnexo ? Number(idItemAnexo) : null,
+        anexo,
+        tituloAnexo,
+        itemAnexo,
+        descritivo,
+        tratamento || (isImpostoSeletivo ? 'Imposto Seletivo' : tipoTratamento),
+        percRed,
+        percAliq,
+        tributoFinal,
+        tipoClass,
+        codigoRaw,
+        codNorm,
+        nivelCodigo,
+        baseLegal,
+        linhaAgrupadora,
+        condicionantes,
+        codigoRaw,
+        it.nbs || '',
+        cclassSugerido,
+        descritivo,
+        tipoTratamento,
+        tituloAnexo || anexo,
+        permiteCredito,
+        isComb,
+        cclassSugerido,
+        cstSugerido
+      );
+      inseridos++;
+    }
+  });
+
+  tx(itens);
+  res.json({ success: true, message: `${inseridos} regras de NCM importadas com sucesso.` });
 });
 
 /** DELETE /api/tables/anexos-ncm/:id */

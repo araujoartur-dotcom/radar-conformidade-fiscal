@@ -902,14 +902,33 @@ export interface AliquotaTabelaItem {
 
 export interface NcmRegraAnexoItem {
   id?: string;
+  id_codigo?: number | null;
+  id_item_anexo?: number | null;
+  anexo?: string;
+  titulo_anexo?: string;
+  item_anexo?: string;
+  descritivo?: string;
+  tratamento?: string;
+  percentual_reducao: number;
+  perc_aliquota_aplicavel?: number | null;
+  tributo?: string;
+  tipo_classificacao?: string;
+  codigo?: string;
+  codigo_normalizado?: string;
+  nivel_codigo?: string;
+  base_legal?: string;
+  linha_agrupadora?: string;
+  condicionantes_observacoes?: string;
   ncm: string;
   nbs?: string;
   cclasstrib?: string;
   descricao: string;
-  tipo_tratamento: 'padrao' | 'cesta_basica_zero' | 'reducao_60' | 'reducao_30' | 'ad_rem' | 'isento' | 'monofasico';
-  percentual_reducao: number;
+  tipo_tratamento: 'padrao' | 'cesta_basica_zero' | 'reducao_60' | 'reducao_30' | 'ad_rem' | 'isento' | 'monofasico' | 'imposto_seletivo';
   anexo_lei?: string;
-  base_legal?: string;
+  permite_credito?: string;
+  is_combustivel?: number;
+  cclasstrib_sugerido?: string;
+  cst_sugerido?: string;
   vigencia_inicio: string;
   vigencia_fim: string;
   ativo?: boolean;
