@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # DIRETRIZ FUNDAMENTAL: COMPLIANCE FISCAL ESTRITO - PROIBIÇÃO ABSOLUTA DE FALLBACKS E DADOS FICTÍCIOS
 
 ## 1. Princípio da Realidade e Integridade Tributária
