@@ -659,24 +659,47 @@ export async function processarMensagemFiscal(
       parts: [{ text: mensagemComContexto }]
     });
 
-    // Função auxiliar com retry automático para picos de alta demanda (503)
+    // Lista de modelos com fallback automático contra erros 429 (cota) e 503 (alta demanda)
+    const modelCandidates = [
+      AI_CONFIG.MODEL,
+      ...( ((AI_CONFIG as any).FALLBACK_MODELS as string[]) || ['gemini-flash-latest', 'gemini-3.5-flash-lite'] )
+    ];
+
+    // Função auxiliar com retry e alternância automática de modelos (Fallback resiliente)
     async function callGeminiWithRetry(aiClient: GoogleGenAI, params: any, maxRetries = 2): Promise<any> {
-      let attempt = 0;
-      while (attempt <= maxRetries) {
-        try {
-          return await aiClient.models.generateContent(params);
-        } catch (err: any) {
-          const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand');
-          if (is503 && attempt < maxRetries) {
-            attempt++;
-            const delay = attempt * 1200;
-            console.warn(`⚠️ [Gemini 503] Alta demanda temporária no Google. Tentativa ${attempt} de ${maxRetries} após ${delay}ms...`);
-            await new Promise(r => setTimeout(r, delay));
-            continue;
+      let lastErr: any = null;
+
+      for (const modelToUse of modelCandidates) {
+        let attempt = 0;
+        const currentParams = { ...params, model: modelToUse };
+
+        while (attempt <= maxRetries) {
+          try {
+            return await aiClient.models.generateContent(currentParams);
+          } catch (err: any) {
+            lastErr = err;
+            const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand') || err?.message?.includes('UNAVAILABLE');
+            const is429 = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('Quota exceeded') || err?.message?.includes('RESOURCE_EXHAUSTED');
+
+            if (is503 && attempt < maxRetries) {
+              attempt++;
+              const delay = attempt * 1200;
+              console.warn(`⚠️ [Gemini 503] Alta demanda temporária em ${modelToUse}. Tentativa ${attempt} após ${delay}ms...`);
+              await new Promise(r => setTimeout(r, delay));
+              continue;
+            }
+
+            if (is429 || is503) {
+              console.warn(`⚠️ [Gemini ${err?.status || 'Erro'}] Modelo ${modelToUse} com restrição ou cota excedida. Alternando automaticamente para modelo reserva...`);
+              break; // Tenta o próximo modelo em modelCandidates
+            }
+
+            throw err;
           }
-          throw err;
         }
       }
+
+      throw lastErr;
     }
 
     // Primeira chamada para o modelo com as ferramentas fiscais
@@ -720,9 +743,12 @@ export async function processarMensagemFiscal(
           toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
         } else if (toolName === 'auditar_inconsistencias_notas') {
           toolResult = await executarToolAuditarNotas(empresaAtivaId, toolArgs.limite || 10);
+          const totalInc = toolResult.totalInconsistenciasEncontradas || 0;
           summaryText = toolResult.erro 
             ? `Auditoria de notas: ${toolResult.erro}` 
-            : `Auditoria concluída: ${toolResult.totalInconsistenciasEncontradas || 0} itens analisados.`;
+            : totalInc === 0
+              ? 'Auditoria concluída: nenhuma inconsistência de cClassTrib localizada. Base em conformidade com a NT 2025.002.'
+              : `Auditoria concluída: ${totalInc} itens com inconsistência localizados.`;
           toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
         } else if (toolName === 'consultar_ultimo_status_sefaz') {
           toolResult = await executarToolStatusSefaz(empresaAtivaId);
@@ -809,12 +835,16 @@ export async function processarMensagemFiscal(
     };
   } catch (error: any) {
     console.error('❌ [AI Fiscal Service] Erro ao comunicar com Gemini:', error);
+    let msgAmigavel = 'Ocorreu uma instabilidade temporária ao consultar o modelo de inteligência artificial. Por favor, tente novamente em alguns instantes.';
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('Quota exceeded') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
+      msgAmigavel = 'O limite temporário de requisições da API foi atingido. Aguarde cerca de 1 minuto para que a cota seja restabelecida e tente novamente.';
+    }
     return {
       success: false,
       isConfigured: true,
       model: AI_CONFIG.MODEL,
       toolsUsed,
-      resposta: `Ocorreu uma falha temporária ao consultar o modelo de inteligência artificial: ${error.message || 'Erro interno de processamento fiscal.'}`
+      resposta: msgAmigavel
     };
   }
 }
