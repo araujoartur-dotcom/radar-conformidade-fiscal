@@ -336,9 +336,28 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
     const { id } = req.params;
 
     if (req.user?.perfil !== 'admin_master') {
-      const db = getDatabase();
-      const vinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(req.user!.userId, id);
-      if (!vinculo && req.user?.empresaAtivaId !== id) {
+      let hasAccess = req.user?.empresaAtivaId === id;
+
+      if (!hasAccess && isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          const { data: supaVinculo } = await supabase
+            .from('usuario_empresa')
+            .select('id')
+            .eq('usuario_id', req.user!.userId)
+            .eq('empresa_id', id)
+            .maybeSingle();
+          if (supaVinculo) hasAccess = true;
+        }
+      }
+
+      if (!hasAccess) {
+        const db = getDatabase();
+        const vinculo = db.prepare('SELECT id FROM usuario_empresa WHERE usuario_id = ? AND empresa_id = ?').get(req.user!.userId, id);
+        if (vinculo) hasAccess = true;
+      }
+
+      if (!hasAccess) {
         return res.status(403).json({ success: false, message: 'Você não tem permissão para editar esta empresa (fora do seu escopo).' });
       }
     }

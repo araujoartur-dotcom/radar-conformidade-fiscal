@@ -192,11 +192,34 @@ async function getEmpresaContexto(empresaId: string) {
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
-      const { data: emp } = await supabase
+      // 1. Tenta busca por ID
+      let { data: emp } = await supabase
         .from('empresas')
         .select('id, cnpj_raiz, cnpj_completo, razao_social')
         .eq('id', empresaId)
         .maybeSingle();
+
+      // 2. Se não encontrou por ID, tenta por CNPJ
+      if (!emp && empresaId && empresaId !== 'default-empresa') {
+        const clean = empresaId.replace(/\D/g, '');
+        const { data: empByCnpj } = await supabase
+          .from('empresas')
+          .select('id, cnpj_raiz, cnpj_completo, razao_social')
+          .or(`cnpj_completo.eq.${empresaId},cnpj_completo.eq.${clean},cnpj_raiz.eq.${clean.substring(0, 8)}`)
+          .maybeSingle();
+        if (empByCnpj) emp = empByCnpj;
+      }
+
+      // 3. Fallback se for default-empresa
+      if (!emp && empresaId === 'default-empresa') {
+        const { data: firstEmp } = await supabase
+          .from('empresas')
+          .select('id, cnpj_raiz, cnpj_completo, razao_social')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (firstEmp) emp = firstEmp;
+      }
 
       if (emp) {
         const cnpjClean = (emp.cnpj_completo || '').replace(/\D/g, '');
@@ -208,6 +231,10 @@ async function getEmpresaContexto(empresaId: string) {
 
   const db = getDatabase();
   let emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId) as any;
+  if (!emp && empresaId && empresaId !== 'default-empresa') {
+    const clean = empresaId.replace(/\D/g, '');
+    emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE cnpj_completo = ? OR cnpj_raiz = ?').get(empresaId, clean.substring(0, 8)) as any;
+  }
   if (!emp && empresaId === 'default-empresa') {
     emp = db.prepare("SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE status = 'ativo' ORDER BY created_at ASC LIMIT 1").get() as any;
   }
@@ -303,6 +330,16 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
       return;
     }
 
+    // Desempacota payload estendido de integrações caso armazenado em webhook_url
+    let extraData: any = {};
+    let realWebhookUrl = cred.webhook_url || '';
+    if (realWebhookUrl && realWebhookUrl.startsWith('{')) {
+      try {
+        extraData = JSON.parse(realWebhookUrl);
+        realWebhookUrl = extraData.webhookUrl || '';
+      } catch {}
+    }
+
     res.json({
       configurado: Boolean(cred.client_id),
       empresaId: targetEmpId,
@@ -311,19 +348,19 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
       clientId: cred.client_id || '',
       clientSecretMascarado: cred.client_secret ? `${cred.client_secret.substring(0, 4)}...${cred.client_secret.slice(-4)}` : '',
       tokenContrib: cred.token_contrib || '',
-      webhookUrl: cred.webhook_url || '',
-      cgibsUrl: cred.cgibs_url || 'https://api.cgibs.gov.br/v1/eventos/sync',
-      rfbUrl: cred.rfb_url || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
-      svrsUrl: cred.svrs_url || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
-      nfseNacionalUrl: cred.nfse_nacional_url || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
-      apiKeyCgibs: cred.api_key_cgibs || '',
-      bearerTokenRfb: cred.bearer_token_rfb || '',
-      tipoErp: cred.tipo_erp || 'GENERICO',
-      formatoPayload: cred.formato_payload || 'json',
-      erpAuthToken: cred.erp_auth_token || '',
-      despacharNfeAuto: cred.despachar_nfe_auto !== 0,
-      despacharNfseAuto: cred.despachar_nfse_auto !== 0,
-      notificarManifestacao: cred.notificar_manifestacao !== 0,
+      webhookUrl: realWebhookUrl,
+      cgibsUrl: extraData.cgibsUrl || cred.cgibs_url || 'https://api.cgibs.gov.br/v1/eventos/sync',
+      rfbUrl: extraData.rfbUrl || cred.rfb_url || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+      svrsUrl: extraData.svrsUrl || cred.svrs_url || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+      nfseNacionalUrl: extraData.nfseNacionalUrl || cred.nfse_nacional_url || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
+      apiKeyCgibs: extraData.apiKeyCgibs || cred.api_key_cgibs || '',
+      bearerTokenRfb: extraData.bearerTokenRfb || cred.bearer_token_rfb || '',
+      tipoErp: extraData.tipoErp || cred.tipo_erp || 'GENERICO',
+      formatoPayload: extraData.formatoPayload || cred.formato_payload || 'json',
+      erpAuthToken: extraData.erpAuthToken || cred.erp_auth_token || '',
+      despacharNfeAuto: extraData.despacharNfeAuto !== undefined ? extraData.despacharNfeAuto : (cred.despachar_nfe_auto !== 0),
+      despacharNfseAuto: extraData.despacharNfseAuto !== undefined ? extraData.despacharNfseAuto : (cred.despachar_nfse_auto !== 0),
+      notificarManifestacao: extraData.notificarManifestacao !== undefined ? extraData.notificarManifestacao : (cred.notificar_manifestacao !== 0),
       flagWebhook: cred.flag_webhook === 1 || cred.flag_webhook === true,
       flagConsultaDemanda: cred.flag_consulta_demanda === 1 || cred.flag_consulta_demanda === true,
       status: cred.status || 'habilitado',
@@ -396,13 +433,30 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
+        // Empacota parâmetros de integração em webhook_url para persistência 100% cloud
+        const extraIntegracoes = {
+          webhookUrl: webhookUrl || '',
+          cgibsUrl: cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync',
+          rfbUrl: rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+          svrsUrl: svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
+          nfseNacionalUrl: nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
+          apiKeyCgibs: apiKeyCgibs || '',
+          bearerTokenRfb: bearerTokenRfb || '',
+          tipoErp: tipoErp || 'GENERICO',
+          formatoPayload: formatoPayload || 'json',
+          erpAuthToken: erpAuthToken || '',
+          despacharNfeAuto: despacharNfeAuto !== false,
+          despacharNfseAuto: despacharNfseAuto !== false,
+          notificarManifestacao: notificarManifestacao !== false
+        };
+
         const supaPayload: any = {
           id: `cred-${targetEmpId}`,
           empresa_id: targetEmpId,
           client_id: (clientId || '').trim(),
           client_secret: finalClientSecret,
           token_contrib: tokenContrib || '',
-          webhook_url: webhookUrl || '',
+          webhook_url: JSON.stringify(extraIntegracoes),
           flag_webhook: flagWebhook !== false,
           flag_consulta_demanda: flagConsultaDemanda !== false,
           status: 'habilitado',

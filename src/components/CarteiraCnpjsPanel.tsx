@@ -173,6 +173,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [integracoesSalvo, setIntegracoesSalvo] = useState(false);
   const [tenantClientId, setTenantClientId] = useState('');
   const [tenantClientSecret, setTenantClientSecret] = useState('');
+  const [tenantClientSecretMascarado, setTenantClientSecretMascarado] = useState('');
   const [tenantWebhookUrl, setTenantWebhookUrl] = useState('');
   const [tenantCgibsUrl, setTenantCgibsUrl] = useState('https://api.cgibs.gov.br/v1/eventos/sync');
   const [tenantRfbUrl, setTenantRfbUrl] = useState('https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida');
@@ -250,6 +251,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       if (res.ok && res.data) {
         setTenantClientId(res.data.clientId || '');
         setTenantClientSecret('');
+        setTenantClientSecretMascarado(res.data.clientSecretMascarado || (res.data.configurado ? '••••••••••••' : ''));
         setTenantWebhookUrl(res.data.webhookUrl || '');
         setTenantCgibsUrl(res.data.cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync');
         setTenantRfbUrl(res.data.rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida');
@@ -300,6 +302,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       });
       if (res.ok) {
         setIntegracoesSalvo(true);
+        if (tenantClientSecret && tenantClientSecret.trim()) {
+          setTenantClientSecretMascarado(`${tenantClientSecret.substring(0, 4)}...${tenantClientSecret.slice(-4)}`);
+          setTenantClientSecret('');
+        }
         setTimeout(() => setIntegracoesSalvo(false), 3500);
       } else {
         alert('Erro ao salvar integrações: ' + (res.error || res.data?.error || 'Erro desconhecido'));
@@ -649,6 +655,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     e.preventDefault();
     if (!editingTenant) return;
 
+    // 1. Salva dados cadastrais e fiscais da empresa
     const res = await put(`/tenants/${editingTenant.id}`, {
       razaoSocial: editingTenant.razaoSocial,
       nomeFantasia: editingTenant.nomeFantasia,
@@ -666,6 +673,32 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       contador: editingTenant.contador
     });
 
+    // 2. Salva credenciais e configurações de integração (CGIBS, SEFIN, ERP) de forma integrada
+    try {
+      await post<any>('/apuracao/credenciais', {
+        empresaId: editingTenant.id,
+        clientId: tenantClientId,
+        clientSecret: tenantClientSecret,
+        webhookUrl: tenantWebhookUrl,
+        cgibsUrl: tenantCgibsUrl,
+        rfbUrl: tenantRfbUrl,
+        svrsUrl: tenantSvrsUrl,
+        nfseNacionalUrl: tenantNfseNacionalUrl,
+        apiKeyCgibs: tenantApiKeyCgibs,
+        bearerTokenRfb: tenantBearerTokenRfb,
+        flagWebhook: tenantFlagWebhook,
+        flagConsultaDemanda: tenantFlagConsultaDemanda,
+        tipoErp: tenantTipoErp,
+        formatoPayload: tenantFormatoPayload,
+        erpAuthToken: tenantErpAuthToken,
+        despacharNfeAuto: tenantDespacharNfeAuto,
+        despacharNfseAuto: tenantDespacharNfseAuto,
+        notificarManifestacao: tenantNotificarManifestacao
+      });
+    } catch (errCred: any) {
+      console.warn('Aviso ao sincronizar credenciais da empresa:', errCred.message);
+    }
+
     if (res.ok) {
       setTenants(prev => prev.map(t => t.id === editingTenant.id ? editingTenant : t));
       atualizarEmpresa({
@@ -681,7 +714,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setCertificado({ ...certificado, razãoSocial: editingTenant.razaoSocial });
       }
       setEditingTenant(null);
-      alert('Dados cadastrais e parametrização SPED atualizados com sucesso!');
+      alert('Cadastro da empresa e credenciais fiscais salvos com sucesso!');
     } else {
       alert(res.error || 'Erro ao atualizar empresa.');
     }
@@ -2756,7 +2789,14 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
                         <div>
                           <label className="font-bold text-slate-300 block mb-1 flex items-center justify-between">
-                            <span>Client Secret (Chave Privada)</span>
+                            <span className="flex items-center gap-2">
+                              <span>Client Secret (Chave Privada)</span>
+                              {tenantClientSecretMascarado && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 flex items-center gap-1">
+                                  <Check className="w-3 h-3" /> Configurado: {tenantClientSecretMascarado}
+                                </span>
+                              )}
+                            </span>
                             <button
                               type="button"
                               onClick={() => setShowTenantSecret(!showTenantSecret)}
@@ -2768,7 +2808,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                           </label>
                           <input
                             type={showTenantSecret ? 'text' : 'password'}
-                            placeholder="Deixe em branco para manter a chave atual"
+                            placeholder={tenantClientSecretMascarado ? `Chave já cadastrada (${tenantClientSecretMascarado}). Preencha apenas para alterar.` : "Deixe em branco para manter a chave atual"}
                             value={tenantClientSecret}
                             onChange={(e) => setTenantClientSecret(e.target.value)}
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
@@ -3111,9 +3151,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold cursor-pointer shadow-lg"
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold cursor-pointer shadow-lg shadow-indigo-600/20 flex items-center gap-2"
                   >
-                    Salvar Dados & SPED
+                    <Check className="w-4 h-4" />
+                    <span>Salvar Alterações da Empresa</span>
                   </button>
                 </div>
               </div>
