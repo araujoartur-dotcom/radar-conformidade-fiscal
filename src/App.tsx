@@ -16,6 +16,7 @@ import { ExportacaoFiscalModal } from './components/ExportacaoFiscalModal';
 import { ConectoresMunicipaisPanel } from './components/ConectoresMunicipaisPanel';
 import { ApuracaoAssistidaPanel } from './components/ApuracaoAssistidaPanel';
 import { SimuladorRegimesPanel } from './components/SimuladorRegimesPanel';
+import { CockpitRelatoriosPanel } from './components/CockpitRelatoriosPanel';
 import { CopilotoFiscalDrawer } from './components/CopilotoFiscalDrawer';
 import { QueryMode, CertificadoA1, DfeXmlItem, AmbienteSefaz } from './types';
 import { formatCNPJ, onlyNumbers } from './utils/cnpj';
@@ -42,7 +43,7 @@ export default function App() {
     const saved = localStorage.getItem('@RadarFiscal:activeMode') as QueryMode;
     const validModes: QueryMode[] = [
       'central_kpis', 'lote', 'avulsa', 'detalhada', 'dfe_xml', 'eventos_dfe',
-      'relatorios_xml', 'acesso_corporativo', 'carteira_cnpjs', 'tabelas_fiscais',
+      'relatorios_xml', 'cockpit_relatorios', 'acesso_corporativo', 'carteira_cnpjs', 'tabelas_fiscais',
       'conectores_municipais', 'apuracao_assistida', 'simulador_regimes'
     ];
     return (saved && validModes.includes(saved)) ? saved : 'central_kpis';
@@ -445,7 +446,15 @@ export default function App() {
 
             {/* Mode 8: Relatórios Múltiplos com Base nos XMLs de Entradas */}
             {activeMode === 'relatorios_xml' && (
-              <RelatoriosXmlPanel dfeList={dfeList} />
+              <RelatoriosXmlPanel
+                dfeList={dfeList}
+                onNavigateToCockpit={() => setActiveMode('cockpit_relatorios')}
+              />
+            )}
+
+            {/* Mode: Cockpit Dinâmico Studio (Pivot & Construtor de Consultas Fiscais) */}
+            {activeMode === 'cockpit_relatorios' && (
+              <CockpitRelatoriosPanel />
             )}
 
             {/* Mode: Apuração Assistida IBS / CBS & Conta Corrente Fiscal (CGIBS / RTC) */}

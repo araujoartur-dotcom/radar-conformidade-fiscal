@@ -9,6 +9,8 @@
  */
 
 import { Router, Response } from 'express';
+import crypto from 'crypto';
+import * as XLSX from 'xlsx';
 import { getDatabase } from '../db/database';
 import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
@@ -534,6 +536,45 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       console.warn('⚠️ Não foi possível carregar mapa de apuração assistida:', e?.message || e);
     }
 
+    // Carregar dados de bloqueio de créditos e regras de combustíveis por empresa
+    const empresasMap = new Map<string, any>();
+    try {
+      const empresasList = db.prepare('SELECT id, cnpj, bloquear_credito_combustiveis, ncm_vedados_credito FROM empresas').all() as any[];
+      for (const emp of empresasList) {
+        if (emp.id) empresasMap.set(emp.id, emp);
+        if (emp.cnpj) empresasMap.set(emp.cnpj, emp);
+      }
+    } catch (_) {}
+
+    // Carregar mapa de regras NCM (incluindo combustíveis e cclasstrib sugerido)
+    const ncmRegrasMap = new Map<string, any>();
+    try {
+      const ncmList = db.prepare('SELECT * FROM ncm_regras_anexos').all() as any[];
+      for (const n of ncmList) {
+        if (n.codigo_normalizado) ncmRegrasMap.set(n.codigo_normalizado, n);
+        if (n.ncm_sh) ncmRegrasMap.set(String(n.ncm_sh).replace(/\D/g, ''), n);
+      }
+    } catch (_) {}
+
+    // Carregar mapa oficial de cClassTrib / CST SVRS
+    const cClassMap = new Map<string, any>();
+    try {
+      const cclassList = db.prepare('SELECT * FROM cclasstrib_regras').all() as any[];
+      for (const cc of cclassList) {
+        if (cc.codigo) cClassMap.set(String(cc.codigo).trim(), cc);
+        if (cc.cclasstrib) cClassMap.set(String(cc.cclasstrib).trim(), cc);
+      }
+    } catch (_) {}
+
+    // Carregar mapa oficial de indOper SVRS
+    const indOperMap = new Map<string, any>();
+    try {
+      const indOperList = db.prepare('SELECT * FROM indoper_regras').all() as any[];
+      for (const io of indOperList) {
+        if (io.codigo) indOperMap.set(String(io.codigo).trim(), io);
+      }
+    } catch (_) {}
+
     const mapped = rows.map(r => {
       const itemCfop = r.cfop || (r.tipoDoc === 'NFSe' ? '1933' : '1102');
       const cfopInfo = cfopMap.get(itemCfop) || { tratamento_padrao: 'Elegível', exige_onerosidade: 1 };
@@ -542,14 +583,78 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       const itemValIbs = r.valorIbs !== null && r.valorIbs !== undefined ? Number(r.valorIbs) : (Number(r.docValorIbs) || 0);
       const itemValCbs = r.valorCbs !== null && r.valorCbs !== undefined ? Number(r.valorCbs) : (Number(r.docValorCbs) || 0);
 
-      const creditoEsperadoIbs = itemValIbs;
-      const creditoEsperadoCbs = itemValCbs;
-      const creditoApropriadoIbs = creditoEsperadoIbs;
-      const creditoApropriadoCbs = creditoEsperadoCbs;
+      // Verificação de Combustíveis e Bloqueio de Créditos (Art. 267 da LC 214/2025)
+      const empConfig = empresasMap.get(r.empresaId) || empresasMap.get(r.clienteCnpj);
+      const ncmLimpo = String(r.ncm || '').replace(/\D/g, '');
+      const ncmRegra = ncmRegrasMap.get(ncmLimpo) || ncmRegrasMap.get(ncmLimpo.substring(0, 4));
+      
+      const isCombustivel = Boolean(
+        ncmRegra?.is_combustivel === 1 ||
+        ncmLimpo.startsWith('2710') ||
+        ncmLimpo.startsWith('2711') ||
+        ncmLimpo.startsWith('2707') ||
+        ncmLimpo.startsWith('2709') ||
+        (r.descricaoItem && /gasolina|diesel|etanol|glp|g[aá]s|combust[ií]vel|querosene/i.test(r.descricaoItem))
+      );
+
+      // Checar se NCM consta na lista de vedados da empresa
+      const listaVedados = (empConfig?.ncm_vedados_credito || '').split(',').map((s: string) => s.trim().replace(/\D/g, '')).filter(Boolean);
+      const isNcmVedadoEmpresa = listaVedados.some((v: string) => ncmLimpo.startsWith(v));
+      const bloqueioEmpresaAtivo = empConfig?.bloquear_credito_combustiveis === 1 || isNcmVedadoEmpresa;
+
+      const creditoVedado = (isCombustivel && (bloqueioEmpresaAtivo || empConfig?.bloquear_credito_combustiveis !== 0)) || isNcmVedadoEmpresa;
+
+      // Se o crédito for vedado, o crédito esperado DEVE ser 0.00
+      const creditoEsperadoIbs = creditoVedado ? 0 : itemValIbs;
+      const creditoEsperadoCbs = creditoVedado ? 0 : itemValCbs;
+      const creditoApropriadoIbs = itemValIbs;
+      const creditoApropriadoCbs = itemValCbs;
+
+      // Se o documento tomou crédito indevidamente
+      const tomouCreditoIndevido = creditoVedado && (itemValIbs > 0 || itemValCbs > 0);
+      const alertaApropriacaoIndevida = tomouCreditoIndevido;
+      const motivoAlertaApropriacao = creditoVedado 
+        ? `Vedação legal de crédito sobre combustíveis/itens de consumo (Art. 267 da LC 214/2025). Bloqueio ${bloqueioEmpresaAtivo ? 'ativo na Carteira de CNPJs' : 'legal aplicável'}. Crédito esperado: R$ 0,00.`
+        : null;
+
+      // Diagnóstico e Questionamento de cClassTrib e CST
+      const currentCClass = String(r.cClassTrib || '').trim();
+      const currentCst = String(r.cstCsosn || '').trim();
+      
+      let cclasstribInconsistente = false;
+      let cclasstribSugerido = '';
+      let cstSugerido = '';
+      let motivoInconsistenciaCClassTrib = '';
+
+      if (isCombustivel) {
+        if (currentCClass === '000001' || currentCClass === '900001' || !currentCClass.startsWith('620') || currentCst === '000') {
+          cclasstribInconsistente = true;
+          cclasstribSugerido = ncmRegra?.cclasstrib_sugerido || '620006';
+          cstSugerido = ncmRegra?.cst_sugerido || '620';
+          motivoInconsistenciaCClassTrib = `Combustível classificado incorretamente no XML com cClassTrib ${currentCClass || 'não informado'} e CST ${currentCst}. Conforme o Portal de Conformidade Fácil SVRS e Art. 172/180 da LC 214/2025, o código correto é CST 620 (Tributação Monofásica) e cClassTrib ${cclasstribSugerido} (Combustíveis monofásicos cobrados anteriormente).`;
+        }
+      } else if (currentCClass === '900001') {
+        cclasstribInconsistente = true;
+        cclasstribSugerido = ncmRegra?.cclasstrib_sugerido || '000001';
+        cstSugerido = ncmRegra?.cst_sugerido || '000';
+        motivoInconsistenciaCClassTrib = `Código 900001 é um fallback fictício inexistente no padrão oficial SVRS. Reclassificar para cClassTrib oficial.`;
+      }
+
+      // Detalhes da regra cClassTrib oficial
+      const cclassOficial = cClassMap.get(cclasstribSugerido || currentCClass);
+      
+      // Informações de indOper
+      const indOperCode = String(r.indOper || (r.tipoDoc === 'NFSe' ? '2001' : '1001')).trim();
+      const indOperInfo = indOperMap.get(indOperCode) || {
+        codigo: indOperCode,
+        nome: indOperCode === '1001' ? 'Fornecimento no estabelecimento do fornecedor' : 'Fornecimento geral / Princípio do Destino',
+        dispositivo_legal: 'Art. 11 da LC 214/2025',
+        local: 'Estabelecimento fornecedor'
+      };
 
       let resultadoElegibilidade = 'Elegível';
-      if (cfopInfo.tratamento_padrao === 'Não elegível') resultadoElegibilidade = 'Não elegível';
-      if (cfopInfo.tratamento_padrao === 'Depende') resultadoElegibilidade = 'Pendente';
+      if (cfopInfo.tratamento_padrao === 'Não elegível' || creditoVedado) resultadoElegibilidade = 'Não elegível';
+      if (cfopInfo.tratamento_padrao === 'Depende' && !creditoVedado) resultadoElegibilidade = 'Pendente';
 
       // ========================================================
       // CONCILIAÇÃO DINÂMICA COM APURAÇÃO ASSISTIDA & DECISÃO RAD
@@ -820,11 +925,29 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         usuarioCaptura: 'Processo Automático',
         rotinaCaptura: 'Robô SEFAZ / Upload',
         
-        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO' || diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA' || ehPendenteCgibs,
+        isExcecao: resultadoElegibilidade !== 'Elegível' || Boolean(r.alertaFraude) || diagnosticoRetencao === 'DIVERGENCIA_ALIQUOTA' || diagnosticoRetencao === 'FALTA_RETENCAO' || diagnosticoRetencao === 'SEM_REGRA_PARAMETRIZADA' || ehPendenteCgibs || alertaApropriacaoIndevida || cclasstribInconsistente,
         
-        temEventoAfetaCredito: Boolean(r.alertaFraude),
+        temEventoAfetaCredito: Boolean(r.alertaFraude) || alertaApropriacaoIndevida,
         creditoOriginalTotal: creditoEsperadoIbs + creditoEsperadoCbs,
-        creditoEstornadoTotal: 0,
+        creditoEstornadoTotal: alertaApropriacaoIndevida ? (itemValIbs + itemValCbs) : 0,
+
+        // Diagnóstico e Governança de Combustíveis & Bloqueio de Crédito
+        isCombustivel,
+        creditoVedado,
+        bloqueioEmpresaAtivo,
+        alertaApropriacaoIndevida,
+        motivoAlertaApropriacao,
+
+        // Diagnóstico e Governança RTC cClassTrib / CST (SVRS)
+        cclasstribInconsistente,
+        cclasstribSugerido,
+        cstSugerido,
+        motivoInconsistenciaCClassTrib,
+        cclassOficialDesc: cclassOficial?.descricao || cclassOficial?.desc_cst || '',
+
+        // Indicador de Operação / Local da Operação (indOper SVRS)
+        indOperCode,
+        indOperInfo,
 
         // Campos de Retenção na Fonte (NFS-e / Serviços)
         valorIrrf,
@@ -1022,6 +1145,12 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           'Crédito CBS (R$)': Number(item.creditoEsperadoCbs || 0).toFixed(2)
         }));
         
+        if (req.query.format === 'json') {
+          res.setHeader('Content-Disposition', 'attachment; filename="relatorio_export.json"');
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.send(JSON.stringify(exportData, null, 2));
+        }
+        
         const ws = XLSX.utils.json_to_sheet(exportData);
         XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
         
@@ -1031,8 +1160,8 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         return res.send(buffer);
       } catch (err) {
-        console.error('Erro ao gerar XLSX:', err);
-        return res.status(500).json({ success: false, error: 'Erro ao gerar XLSX' });
+        console.error('Erro ao gerar exportação de relatório:', err);
+        return res.status(500).json({ success: false, error: 'Erro ao gerar exportação' });
       }
     }
 
@@ -1048,6 +1177,354 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
   } catch (err: any) {
     console.error('❌ Erro no endpoint /api/relatorios/xml:', err);
     res.status(500).json({ success: false, error: 'Erro interno ao gerar relatório: ' + err.message });
+  }
+});
+
+/** GET /api/relatorios/xml/export — Rota de conveniência para download do relatório */
+router.get('/xml/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  req.query.isExport = 'true';
+  // Redireciona internamente para o handler /xml
+  const nextHandler = (router as any).stack.find((layer: any) => layer.route && layer.route.path === '/xml')?.route?.stack?.[1]?.handle;
+  if (nextHandler) {
+    return nextHandler(req, res);
+  }
+  res.redirect(`/api/relatorios/xml?${new URLSearchParams(req.query as any).toString()}`);
+});
+
+// ============================================================
+// CRUD & UPLOAD EM MASSA DE RELATÓRIOS (DF-e / Itens)
+// ============================================================
+
+/** POST /api/relatorios/item — Inserir item/documento manual no relatório */
+router.post('/item', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const activeEmpresaId = (req.headers['x-empresa-ativa-id'] as string) || req.body.empresaId || req.user?.empresaAtivaId;
+    if (!activeEmpresaId) {
+      return res.status(400).json({ success: false, error: 'Empresa ativa não identificada para inclusão do item.' });
+    }
+
+    const {
+      tipoDoc = 'NFe',
+      chaveAcesso: rawChave,
+      numeroSerie = '1',
+      dataEmissao = new Date().toISOString().split('T')[0],
+      fornecedorCnpj = '',
+      fornecedorRazao = '',
+      fornecedorUf = 'SP',
+      fornecedorMunicipio = 'São Paulo',
+      clienteCnpj = '',
+      clienteRazao = '',
+      clienteUf = 'SP',
+      situacaoDoc = 'autorizado',
+      itemNro = 1,
+      descricaoItem = 'Item Manual',
+      ncm = '',
+      cfop = '1102',
+      cClassTrib = '000001',
+      cstCsosn = '000',
+      quantidade = 1,
+      unidade = 'UN',
+      valorLiquidoItem = 0,
+      baseIbs = 0,
+      aliquotaIbs = 0,
+      valorIbs = 0,
+      baseCbs = 0,
+      aliquotaCbs = 0,
+      valorCbs = 0
+    } = req.body;
+
+    const docId = `doc-manual-${crypto.randomUUID()}`;
+    const itemId = `item-manual-${crypto.randomUUID()}`;
+    const chaveAcesso = rawChave && rawChave.length === 44 
+      ? rawChave 
+      : `35${new Date().toISOString().slice(2, 4)}${fornecedorCnpj.replace(/\D/g, '').padStart(14, '0')}${tipoDoc === 'NFe' ? '55' : '57'}001${String(Date.now()).slice(-9)}${Math.floor(10000000 + Math.random() * 90000000)}`.slice(0, 44);
+
+    // 1. Inserir ou reaproveitar documento pai
+    let existingDoc = db.prepare('SELECT id FROM dfe_documentos WHERE chave_acesso = ?').get(chaveAcesso) as any;
+    let targetDocId = existingDoc ? existingDoc.id : docId;
+
+    if (!existingDoc) {
+      db.prepare(`
+        INSERT INTO dfe_documentos (
+          id, empresa_id, tipo_doc, chave_acesso, numero_serie, data_emissao, data_entrada,
+          fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio,
+          cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        docId, activeEmpresaId, tipoDoc, chaveAcesso, numeroSerie, dataEmissao, dataEmissao,
+        fornecedorCnpj, fornecedorRazao, fornecedorUf, fornecedorMunicipio,
+        clienteCnpj, clienteRazao, clienteUf, situacaoDoc, Number(valorLiquidoItem)
+      );
+
+      if (isSupabaseConfigured()) {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          await supabase.from('dfe_documentos').upsert({
+            id: docId,
+            empresa_id: activeEmpresaId,
+            tipo_doc: tipoDoc,
+            chave_acesso: chaveAcesso,
+            numero_serie: numeroSerie,
+            data_emissao: dataEmissao,
+            fornecedor_cnpj: fornecedorCnpj,
+            fornecedor_razao: fornecedorRazao,
+            fornecedor_uf: fornecedorUf,
+            fornecedor_municipio: fornecedorMunicipio,
+            cliente_cnpj: clienteCnpj,
+            cliente_razao: clienteRazao,
+            cliente_uf: clienteUf,
+            situacao_doc: situacaoDoc,
+            valor_total: Number(valorLiquidoItem)
+          });
+        }
+      }
+    }
+
+    // 2. Inserir item
+    db.prepare(`
+      INSERT INTO dfe_itens (
+        id, documento_id, item_nro, descricao_item, ncm, cfop, cclasstrib, cst_csosn,
+        quantidade, unidade, valor_bruto_item, valor_liquido_item,
+        base_ibs, aliquota_ibs, valor_ibs, base_cbs, aliquota_cbs, valor_cbs
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      itemId, targetDocId, Number(itemNro), descricaoItem, ncm, cfop, cClassTrib, cstCsosn,
+      Number(quantidade), unidade, Number(valorLiquidoItem), Number(valorLiquidoItem),
+      Number(baseIbs || valorLiquidoItem), Number(aliquotaIbs), Number(valorIbs),
+      Number(baseCbs || valorLiquidoItem), Number(aliquotaCbs), Number(valorCbs)
+    );
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('dfe_itens').upsert({
+          id: itemId,
+          documento_id: targetDocId,
+          item_nro: Number(itemNro),
+          descricao_item: descricaoItem,
+          ncm,
+          cfop,
+          cclasstrib: cClassTrib,
+          cst_csosn: cstCsosn,
+          quantidade: Number(quantidade),
+          unidade,
+          valor_bruto_item: Number(valorLiquidoItem),
+          valor_liquido_item: Number(valorLiquidoItem),
+          base_ibs: Number(baseIbs || valorLiquidoItem),
+          aliquota_ibs: Number(aliquotaIbs),
+          valor_ibs: Number(valorIbs),
+          base_cbs: Number(baseCbs || valorLiquidoItem),
+          aliquota_cbs: Number(aliquotaCbs),
+          valor_cbs: Number(valorCbs)
+        });
+      }
+    }
+
+    res.json({ success: true, message: 'Item registrado com sucesso no relatório fiscal.', itemId, docId: targetDocId });
+  } catch (err: any) {
+    console.error('❌ Erro ao incluir item no relatório:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** PUT /api/relatorios/item/:id — Atualizar item manual do relatório */
+router.put('/item/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    const {
+      descricaoItem,
+      ncm,
+      cfop,
+      cClassTrib,
+      cstCsosn,
+      quantidade,
+      unidade,
+      valorLiquidoItem,
+      baseIbs,
+      aliquotaIbs,
+      valorIbs,
+      baseCbs,
+      aliquotaCbs,
+      valorCbs
+    } = req.body;
+
+    const existing = db.prepare('SELECT id, documento_id FROM dfe_itens WHERE id = ?').get(id) as any;
+    if (existing) {
+      db.prepare(`
+        UPDATE dfe_itens SET
+          descricao_item = COALESCE(?, descricao_item),
+          ncm = COALESCE(?, ncm),
+          cfop = COALESCE(?, cfop),
+          cclasstrib = COALESCE(?, cclasstrib),
+          cst_csosn = COALESCE(?, cst_csosn),
+          quantidade = COALESCE(?, quantidade),
+          unidade = COALESCE(?, unidade),
+          valor_liquido_item = COALESCE(?, valor_liquido_item),
+          base_ibs = COALESCE(?, base_ibs),
+          aliquota_ibs = COALESCE(?, aliquota_ibs),
+          valor_ibs = COALESCE(?, valor_ibs),
+          base_cbs = COALESCE(?, base_cbs),
+          aliquota_cbs = COALESCE(?, aliquota_cbs),
+          valor_cbs = COALESCE(?, valor_cbs)
+        WHERE id = ?
+      `).run(
+        descricaoItem, ncm, cfop, cClassTrib, cstCsosn,
+        quantidade !== undefined ? Number(quantidade) : null,
+        unidade,
+        valorLiquidoItem !== undefined ? Number(valorLiquidoItem) : null,
+        baseIbs !== undefined ? Number(baseIbs) : null,
+        aliquotaIbs !== undefined ? Number(aliquotaIbs) : null,
+        valorIbs !== undefined ? Number(valorIbs) : null,
+        baseCbs !== undefined ? Number(baseCbs) : null,
+        aliquotaCbs !== undefined ? Number(aliquotaCbs) : null,
+        valorCbs !== undefined ? Number(valorCbs) : null,
+        id
+      );
+    }
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('dfe_itens').update({
+          descricao_item: descricaoItem,
+          ncm,
+          cfop,
+          cclasstrib: cClassTrib,
+          cst_csosn: cstCsosn,
+          quantidade: quantidade !== undefined ? Number(quantidade) : undefined,
+          unidade,
+          valor_liquido_item: valorLiquidoItem !== undefined ? Number(valorLiquidoItem) : undefined,
+          base_ibs: baseIbs !== undefined ? Number(baseIbs) : undefined,
+          aliquota_ibs: aliquotaIbs !== undefined ? Number(aliquotaIbs) : undefined,
+          valor_ibs: valorIbs !== undefined ? Number(valorIbs) : undefined,
+          base_cbs: baseCbs !== undefined ? Number(baseCbs) : undefined,
+          aliquota_cbs: aliquotaCbs !== undefined ? Number(aliquotaCbs) : undefined,
+          valor_cbs: valorCbs !== undefined ? Number(valorCbs) : undefined
+        }).eq('id', id);
+      }
+    }
+
+    res.json({ success: true, message: 'Item atualizado com sucesso!' });
+  } catch (err: any) {
+    console.error('❌ Erro ao atualizar item do relatório:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** DELETE /api/relatorios/item/:id — Excluir item do relatório */
+router.delete('/item/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+
+    // Exclui de dfe_itens
+    db.prepare('DELETE FROM dfe_itens WHERE id = ?').run(id);
+
+    // Se o ID tiver padrão doc-*, remove documento correspondente
+    db.prepare('DELETE FROM dfe_documentos WHERE id = ?').run(id);
+
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        await supabase.from('dfe_itens').delete().eq('id', id);
+        await supabase.from('dfe_documentos').delete().eq('id', id);
+      }
+    }
+
+    res.json({ success: true, message: 'Item excluído com sucesso do relatório!' });
+  } catch (err: any) {
+    console.error('❌ Erro ao excluir item do relatório:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/** POST /api/relatorios/upload — Upload em lote de itens para o relatório (JSON ou XLSX) */
+router.post('/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens, empresaId } = req.body;
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({ success: false, error: 'Formato inválido. Envie um array "itens".' });
+    }
+
+    const activeEmpresaId = (req.headers['x-empresa-ativa-id'] as string) || empresaId || req.user?.empresaAtivaId;
+    if (!activeEmpresaId) {
+      return res.status(400).json({ success: false, error: 'Empresa ativa não identificada.' });
+    }
+
+    const db = getDatabase();
+    const insertDoc = db.prepare(`
+      INSERT OR REPLACE INTO dfe_documentos (
+        id, empresa_id, tipo_doc, chave_acesso, numero_serie, data_emissao, data_entrada,
+        fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio,
+        cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, valor_total
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertItem = db.prepare(`
+      INSERT OR REPLACE INTO dfe_itens (
+        id, documento_id, item_nro, descricao_item, ncm, cfop, cclasstrib, cst_csosn,
+        quantidade, unidade, valor_bruto_item, valor_liquido_item,
+        base_ibs, aliquota_ibs, valor_ibs, base_cbs, aliquota_cbs, valor_cbs
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const tx = db.transaction((rows: any[]) => {
+      let inserted = 0;
+      for (const row of rows) {
+        const docId = `doc-up-${crypto.randomUUID()}`;
+        const itemId = `item-up-${crypto.randomUUID()}`;
+        const chaveAcesso = String(row['Chave de Acesso'] || row['chaveAcesso'] || row['chave_acesso'] || `UPLOAD_${Date.now()}_${inserted}`).trim();
+        const tipoDoc = String(row['Documento'] || row['tipoDoc'] || row['tipo_doc'] || 'NFe').trim();
+        const emitCnpj = String(row['CNPJ Emitente'] || row['fornecedorCnpj'] || row['fornecedor_cnpj'] || '').trim();
+        const emitRazao = String(row['Fornecedor / Emitente'] || row['fornecedorRazao'] || row['fornecedor_razao'] || '').trim();
+        const destCnpj = String(row['CNPJ Dest.'] || row['clienteCnpj'] || row['cliente_cnpj'] || '').trim();
+        const destRazao = String(row['Cliente / Dest.'] || row['clienteRazao'] || row['cliente_razao'] || '').trim();
+        const dataEmissao = String(row['Data Emissão'] || row['dataEmissao'] || row['data_emissao'] || new Date().toISOString().split('T')[0]).trim();
+        const valorLiq = Number(row['Valor Total (R$)'] || row['valorLiquidoItem'] || row['valor_liquido_item'] || 0);
+
+        insertDoc.run(
+          docId, activeEmpresaId, tipoDoc, chaveAcesso,
+          String(row['Série'] || row['numeroSerie'] || '1'),
+          dataEmissao, dataEmissao,
+          emitCnpj, emitRazao,
+          String(row['UF Emit.'] || row['fornecedorUf'] || 'SP'),
+          String(row['Município Emit.'] || row['fornecedorMunicipio'] || ''),
+          destCnpj, destRazao,
+          String(row['UF Dest.'] || row['clienteUf'] || 'SP'),
+          String(row['Situação'] || row['situacaoDoc'] || 'autorizado'),
+          valorLiq
+        );
+
+        insertItem.run(
+          itemId, docId,
+          Number(row['itemNro'] || row['item_nro'] || 1),
+          String(row['Descrição'] || row['descricaoItem'] || row['descricao_item'] || 'Item Importado'),
+          String(row['NCM'] || row['ncm'] || ''),
+          String(row['CFOP'] || row['cfop'] || '1102'),
+          String(row['cClassTrib'] || row['cclasstrib'] || '000001'),
+          String(row['cstCsosn'] || row['cst_csosn'] || '000'),
+          Number(row['quantidade'] || 1),
+          String(row['unidade'] || 'UN'),
+          valorLiq, valorLiq,
+          Number(row['Base IBS/CBS (R$)'] || row['baseIbs'] || valorLiq),
+          Number(row['aliquotaIbs'] || 0),
+          Number(row['IBS (R$)'] || row['valorIbs'] || 0),
+          Number(row['Base IBS/CBS (R$)'] || row['baseCbs'] || valorLiq),
+          Number(row['aliquotaCbs'] || 0),
+          Number(row['CBS (R$)'] || row['valorCbs'] || 0)
+        );
+        inserted++;
+      }
+      return inserted;
+    });
+
+    const totalInserted = tx(itens);
+    res.json({ success: true, count: totalInserted, message: `${totalInserted} registros importados com sucesso para os relatórios fiscais.` });
+  } catch (err: any) {
+    console.error('❌ Erro no upload em massa de relatórios:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

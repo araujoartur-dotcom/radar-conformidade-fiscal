@@ -16,10 +16,21 @@ const router = Router();
 // =========================================================
 // 1. RESUMO CONSOLIDADO POR COMPETÊNCIA (3 ABAS OFICIAIS)
 // =========================================================
-router.get('/competencia/:periodo', async (req: Request, res: Response) => {
+router.get('/competencia/:periodo', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { periodo } = req.params; // Ex: '2026-01', '2026-02'
-    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || (req as any).user?.empresaAtivaId || 'default-empresa';
+    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+
+    if (!empresaId) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+
+    const hasAccess = await canUserAccessEmpresa(req, empresaId);
+    if (!hasAccess) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui acesso aos dados fiscais desta empresa.' });
+      return;
+    }
 
     const resumo = await obterResumoCompetencia(empresaId, periodo);
     res.json(resumo);
@@ -32,9 +43,21 @@ router.get('/competencia/:periodo', async (req: Request, res: Response) => {
 // =========================================================
 // 2. LISTAGEM DE OPERAÇÕES DO CONTA CORRENTE FISCAL
 // =========================================================
-router.get('/operacoes', async (req: Request, res: Response) => {
+router.get('/operacoes', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || (req as any).user?.empresaAtivaId || 'default-empresa';
+    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+
+    if (!empresaId) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+
+    const hasAccess = await canUserAccessEmpresa(req, empresaId);
+    if (!hasAccess) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui acesso aos dados fiscais desta empresa.' });
+      return;
+    }
+
     const tipo = req.query.tipo as 'fornecimento' | 'aquisicao' | 'todos' | undefined;
     const busca = req.query.busca as string | undefined;
     const competencia = req.query.competencia as string | undefined;
@@ -59,7 +82,7 @@ router.get('/operacoes', async (req: Request, res: Response) => {
 // =========================================================
 // 3. EXTRATO COMPLETO DE UMA OPERAÇÃO ESPECÍFICA (LEDGER INCREMENTAL)
 // =========================================================
-router.get('/operacao/:id', async (req: Request, res: Response) => {
+router.get('/operacao/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
     const result = await obterExtratoOperacao(id);
@@ -67,6 +90,14 @@ router.get('/operacao/:id', async (req: Request, res: Response) => {
     if (!result) {
       res.status(404).json({ error: `Operação com ID "${id}" não foi localizada.` });
       return;
+    }
+
+    if (result.operacao?.empresa_id) {
+      const hasAccess = await canUserAccessEmpresa(req, result.operacao.empresa_id);
+      if (!hasAccess) {
+        res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta operação fiscal.' });
+        return;
+      }
     }
 
     res.json(result);
@@ -120,16 +151,27 @@ router.post('/webhook', async (req: Request, res: Response) => {
 // =========================================================
 // 5. INGESTÃO DE ARQUIVO JSON DO CGIBS (MANUAL OU DELTA)
 // =========================================================
-router.post('/ingerir', async (req: Request, res: Response) => {
+router.post('/ingerir', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { payload, empresaId, nomeArquivo } = req.body;
+    const { payload, nomeArquivo } = req.body;
+    const empresaId = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+
     if (!payload) {
       res.status(400).json({ error: 'Payload JSON é obrigatório para ingestão.' });
       return;
     }
+    if (!empresaId) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
 
-    const empId = empresaId || 'default-empresa';
-    const result = await ingerirArquivoCgibs(payload, empId, nomeArquivo);
+    const hasAccess = await canUserAccessEmpresa(req, empresaId);
+    if (!hasAccess) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui permissão para esta empresa.' });
+      return;
+    }
+
+    const result = await ingerirArquivoCgibs(payload, empresaId, nomeArquivo);
 
     res.json({
       success: true,
@@ -144,9 +186,20 @@ router.post('/ingerir', async (req: Request, res: Response) => {
 // =========================================================
 // 6. CARGA DOS CENÁRIOS DIDÁTICOS DO MANUAL (Páginas 33 a 43)
 // =========================================================
-router.post('/simular-cenarios', async (req: Request, res: Response) => {
+router.post('/simular-cenarios', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const empresaId = req.body.empresaId || 'default-empresa';
+    const empresaId = req.body.empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!empresaId) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+
+    const hasAccess = await canUserAccessEmpresa(req, empresaId);
+    if (!hasAccess) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui permissão para esta empresa.' });
+      return;
+    }
+
     const mensagens = await carregarCenariosDidaticosOficiais(empresaId);
 
     res.json({
@@ -163,7 +216,7 @@ router.post('/simular-cenarios', async (req: Request, res: Response) => {
 // 7. CÁLCULO DE TRIBUTOS RTC & CONFERÊNCIA DE DIVERGÊNCIAS
 // Ref: Manual RTC Versão I (13/01/2026) - Calculadora RFB
 // =========================================================
-router.post('/calcular-tributos', async (req: Request, res: Response) => {
+router.post('/calcular-tributos', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { params, compararXml } = req.body as {
       params: ParametrosCalculoRtc;
@@ -184,11 +237,14 @@ router.post('/calcular-tributos', async (req: Request, res: Response) => {
 });
 
 // =========================================================
-// =========================================================
 // 8. CREDENCIAIS & INTEGRAÇÕES CGIBS / RFB (ISOLAMENTO MULTI-TENANT POR CNPJ)
 // =========================================================
 
 async function getEmpresaContexto(empresaId: string) {
+  if (!empresaId) {
+    throw new Error('ID ou CNPJ da empresa é obrigatório.');
+  }
+
   if (isSupabaseConfigured()) {
     const supabase = getSupabaseAdmin();
     if (supabase) {
@@ -200,7 +256,7 @@ async function getEmpresaContexto(empresaId: string) {
         .maybeSingle();
 
       // 2. Se não encontrou por ID, tenta por CNPJ
-      if (!emp && empresaId && empresaId !== 'default-empresa') {
+      if (!emp) {
         const clean = empresaId.replace(/\D/g, '');
         const { data: empByCnpj } = await supabase
           .from('empresas')
@@ -208,17 +264,6 @@ async function getEmpresaContexto(empresaId: string) {
           .or(`cnpj_completo.eq.${empresaId},cnpj_completo.eq.${clean},cnpj_raiz.eq.${clean.substring(0, 8)}`)
           .maybeSingle();
         if (empByCnpj) emp = empByCnpj;
-      }
-
-      // 3. Fallback se for default-empresa
-      if (!emp && empresaId === 'default-empresa') {
-        const { data: firstEmp } = await supabase
-          .from('empresas')
-          .select('id, cnpj_raiz, cnpj_completo, razao_social')
-          .order('created_at', { ascending: true })
-          .limit(1)
-          .maybeSingle();
-        if (firstEmp) emp = firstEmp;
       }
 
       if (emp) {
@@ -231,16 +276,18 @@ async function getEmpresaContexto(empresaId: string) {
 
   const db = getDatabase();
   let emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE id = ?').get(empresaId) as any;
-  if (!emp && empresaId && empresaId !== 'default-empresa') {
+  if (!emp) {
     const clean = empresaId.replace(/\D/g, '');
     emp = db.prepare('SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE cnpj_completo = ? OR cnpj_raiz = ?').get(empresaId, clean.substring(0, 8)) as any;
   }
-  if (!emp && empresaId === 'default-empresa') {
-    emp = db.prepare("SELECT id, cnpj_raiz, cnpj_completo, razao_social FROM empresas WHERE status = 'ativo' ORDER BY created_at ASC LIMIT 1").get() as any;
+
+  if (!emp) {
+    throw new Error(`Empresa com identificador "${empresaId}" não foi encontrada no cadastro.`);
   }
+
   const cnpjClean = (emp?.cnpj_completo || '').replace(/\D/g, '');
   const cnpjRaiz = emp?.cnpj_raiz || cnpjClean.substring(0, 8);
-  return { emp, targetEmpId: emp?.id || empresaId, cnpjRaiz, razaoSocial: emp?.razao_social || '' };
+  return { emp, targetEmpId: emp.id, cnpjRaiz, razaoSocial: emp.razao_social || '' };
 }
 
 async function canUserAccessEmpresa(req: AuthenticatedRequest, empresaId: string): Promise<boolean> {
@@ -269,7 +316,11 @@ async function canUserAccessEmpresa(req: AuthenticatedRequest, empresaId: string
 // GET /api/apuracao/credenciais — Consulta credenciais e endpoints da empresa
 router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const empresaId = (req.query.empresaId as string) || req.user?.empresaAtivaId || 'default-empresa';
+    const empresaId = (req.query.empresaId as string) || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!empresaId) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
     const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId);
 
     const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
@@ -307,10 +358,12 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
         razaoSocial,
         clientId: '',
         clientSecretMascarado: '',
+        rfbClientId: '',
+        rfbClientSecretMascarado: '',
         tokenContrib: '',
         webhookUrl: '',
         cgibsUrl: 'https://api.cgibs.gov.br/v1/eventos/sync',
-        rfbUrl: 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+        rfbUrl: 'https://consumo.tributos.gov.br',
         svrsUrl: 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
         nfseNacionalUrl: 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
         apiKeyCgibs: '',
@@ -340,17 +393,22 @@ router.get('/credenciais', requireAuth, async (req: AuthenticatedRequest, res: R
       } catch {}
     }
 
+    const rfbSecret = cred.rfb_client_secret || extraData.rfbClientSecret || '';
+    const rfbClientVal = cred.rfb_client_id || extraData.rfbClientId || '';
+
     res.json({
-      configurado: Boolean(cred.client_id),
+      configurado: Boolean(cred.client_id || cred.rfb_client_id),
       empresaId: targetEmpId,
       cnpjRaiz,
       razaoSocial,
       clientId: cred.client_id || '',
       clientSecretMascarado: cred.client_secret ? `${cred.client_secret.substring(0, 4)}...${cred.client_secret.slice(-4)}` : '',
+      rfbClientId: rfbClientVal || '',
+      rfbClientSecretMascarado: rfbSecret ? `${rfbSecret.substring(0, 4)}...${rfbSecret.slice(-4)}` : '',
       tokenContrib: cred.token_contrib || '',
       webhookUrl: realWebhookUrl,
       cgibsUrl: extraData.cgibsUrl || cred.cgibs_url || 'https://api.cgibs.gov.br/v1/eventos/sync',
-      rfbUrl: extraData.rfbUrl || cred.rfb_url || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+      rfbUrl: extraData.rfbUrl || cred.rfb_url || 'https://consumo.tributos.gov.br',
       svrsUrl: extraData.svrsUrl || cred.svrs_url || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
       nfseNacionalUrl: extraData.nfseNacionalUrl || cred.nfse_nacional_url || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
       apiKeyCgibs: extraData.apiKeyCgibs || cred.api_key_cgibs || '',
@@ -379,6 +437,9 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       empresaId,
       clientId,
       clientSecret,
+      rfbClientId,
+      rfbClientSecret,
+      usarCredenciaisUnificadas,
       webhookUrl,
       cgibsUrl,
       rfbUrl,
@@ -397,7 +458,12 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       flagConsultaDemanda
     } = req.body;
 
-    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const targetEmpParam = empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!targetEmpParam) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(targetEmpParam);
 
     const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
     if (!hasAccess) {
@@ -405,43 +471,49 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       return;
     }
 
-    // Busca client_secret existente caso não tenha sido informado
+    // Busca secrets existentes caso não tenham sido alterados
     let existingSecret = '';
+    let existingRfbSecret = '';
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
         const { data: supaCred } = await supabase
           .from('apuracao_credenciais_cgibs')
-          .select('client_secret')
+          .select('client_secret, rfb_client_secret')
           .eq('empresa_id', targetEmpId)
           .maybeSingle();
         if (supaCred?.client_secret) existingSecret = supaCred.client_secret;
+        if (supaCred?.rfb_client_secret) existingRfbSecret = supaCred.rfb_client_secret;
       }
     }
 
-    if (!existingSecret) {
+    if (!existingSecret || !existingRfbSecret) {
       try {
         const db = getDatabase();
-        const localCred = db.prepare('SELECT client_secret FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
-        if (localCred?.client_secret) existingSecret = localCred.client_secret;
+        const localCred = db.prepare('SELECT client_secret, rfb_client_secret FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+        if (localCred?.client_secret && !existingSecret) existingSecret = localCred.client_secret;
+        if (localCred?.rfb_client_secret && !existingRfbSecret) existingRfbSecret = localCred.rfb_client_secret;
       } catch {}
     }
 
     const finalClientSecret = (clientSecret && clientSecret.trim()) ? clientSecret.trim() : existingSecret;
+    const finalRfbClientId = (rfbClientId !== undefined) ? (rfbClientId || '').trim() : '';
+    const finalRfbClientSecret = (rfbClientSecret && rfbClientSecret.trim()) ? rfbClientSecret.trim() : existingRfbSecret;
 
     // 1. Grava no Supabase (se configurado)
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        // Empacota parâmetros de integração em webhook_url para persistência 100% cloud
         const extraIntegracoes = {
           webhookUrl: webhookUrl || '',
           cgibsUrl: cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync',
-          rfbUrl: rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+          rfbUrl: rfbUrl || 'https://consumo.tributos.gov.br',
           svrsUrl: svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
           nfseNacionalUrl: nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
           apiKeyCgibs: apiKeyCgibs || '',
           bearerTokenRfb: bearerTokenRfb || '',
+          rfbClientId: finalRfbClientId,
+          rfbClientSecret: finalRfbClientSecret,
           tipoErp: tipoErp || 'GENERICO',
           formatoPayload: formatoPayload || 'json',
           erpAuthToken: erpAuthToken || '',
@@ -478,7 +550,6 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
     // 2. Grava espelho no SQLite local de forma segura
     try {
       const db = getDatabase();
-      // Assegura que o registro da empresa existe no espelho local para não violar FK
       db.prepare(`
         INSERT OR IGNORE INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, status)
         VALUES (?, ?, ?, ?, 'ativo')
@@ -486,15 +557,17 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
 
       db.prepare(`
         INSERT INTO apuracao_credenciais_cgibs (
-          id, empresa_id, client_id, client_secret, webhook_url,
-          cgibs_url, rfb_url, svrs_url, nfse_nacional_url, api_key_cgibs, bearer_token_rfb,
+          id, empresa_id, client_id, client_secret, rfb_client_id, rfb_client_secret,
+          webhook_url, cgibs_url, rfb_url, svrs_url, nfse_nacional_url, api_key_cgibs, bearer_token_rfb,
           token_contrib, tipo_erp, formato_payload, erp_auth_token,
           despachar_nfe_auto, despachar_nfse_auto, notificar_manifestacao,
           flag_webhook, flag_consulta_demanda, status, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'habilitado', datetime('now'))
         ON CONFLICT(empresa_id) DO UPDATE SET
           client_id = excluded.client_id,
           client_secret = excluded.client_secret,
+          rfb_client_id = excluded.rfb_client_id,
+          rfb_client_secret = excluded.rfb_client_secret,
           webhook_url = excluded.webhook_url,
           cgibs_url = excluded.cgibs_url,
           rfb_url = excluded.rfb_url,
@@ -518,9 +591,11 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
         targetEmpId,
         (clientId || '').trim(),
         finalClientSecret,
+        finalRfbClientId,
+        finalRfbClientSecret,
         webhookUrl || '',
         cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync',
-        rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida',
+        rfbUrl || 'https://consumo.tributos.gov.br',
         svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx',
         nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos',
         apiKeyCgibs || '',
@@ -539,7 +614,113 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
       console.warn('⚠️ [SQLite Credenciais] Aviso de sincronização local:', localErr.message);
     }
 
-    res.json({ success: true, mensagem: `Credenciais e endpoints do CGIBS / SEFIN salvos com sucesso para a empresa (${razaoSocial || cnpjRaiz}).` });
+    res.json({ success: true, mensagem: `Credenciais de acesso à Reforma Tributária (RTC / RFB / CGIBS) salvas com sucesso para (${razaoSocial || cnpjRaiz}).` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/apuracao/test-oauth-token — Teste de autenticação OAuth 2.0 (consumo.tributos.gov.br)
+router.post('/test-oauth-token', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { empresaId, clientId, clientSecret, rfbUrl } = req.body;
+    const targetEmpParam = empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!targetEmpParam) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+    const { targetEmpId, cnpjRaiz } = await getEmpresaContexto(targetEmpParam);
+
+    const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
+    if (!hasAccess) {
+      res.status(403).json({ error: 'Acesso negado: Você não possui acesso a esta empresa.' });
+      return;
+    }
+
+    let finalClientId = (clientId || '').trim();
+    let finalClientSecret = (clientSecret || '').trim();
+
+    if (!finalClientId || !finalClientSecret) {
+      try {
+        const db = getDatabase();
+        const localCred = db.prepare('SELECT rfb_client_id, rfb_client_secret FROM apuracao_credenciais_cgibs WHERE empresa_id = ?').get(targetEmpId) as any;
+        if (localCred) {
+          if (!finalClientId) finalClientId = (localCred.rfb_client_id || '').trim();
+          if (!finalClientSecret) finalClientSecret = (localCred.rfb_client_secret || '').trim();
+        }
+      } catch {}
+    }
+
+    if (!finalClientId || !finalClientSecret) {
+      res.status(400).json({
+        sucesso: false,
+        statusHttp: 400,
+        mensagem: 'Client ID e Client Secret da Receita Federal (CBS) são obrigatórios para validar a autenticação OAuth 2.0 em consumo.tributos.gov.br.'
+      });
+      return;
+    }
+
+    const baseUrl = (rfbUrl || 'https://consumo.tributos.gov.br').replace(/\/+$/, '');
+    const startTime = Date.now();
+
+    // Compliance Estrito / Zero Mocks: Dispara requisição HTTP real ao endpoint de OAuth 2.0
+    try {
+      const targetEndpoint = `${baseUrl}/oauth/token`;
+      const params = new URLSearchParams();
+      params.append('grant_type', 'client_credentials');
+      params.append('client_id', finalClientId);
+      params.append('client_secret', finalClientSecret);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const rfbRes = await fetch(targetEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'User-Agent': 'RadarConformidadeFiscal/2026.1'
+        },
+        body: params.toString(),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      const latenciaMs = Date.now() - startTime;
+      const responseText = await rfbRes.text();
+      let responseJson: any = null;
+      try {
+        responseJson = JSON.parse(responseText);
+      } catch {}
+
+      if (rfbRes.ok && (responseJson?.access_token || responseJson?.token)) {
+        res.json({
+          sucesso: true,
+          statusHttp: rfbRes.status,
+          latenciaMs,
+          mensagem: `Autenticação OAuth 2.0 validada com sucesso na Receita Federal (CBS) via ${baseUrl}! Token ativo emitido pelo órgão oficial.`,
+          expiresIn: responseJson.expires_in || 3600,
+          tokenType: responseJson.token_type || 'Bearer'
+        });
+      } else {
+        const errMsg = responseJson?.error_description || responseJson?.error || responseJson?.message || responseText || `HTTP ${rfbRes.status}`;
+        res.json({
+          sucesso: false,
+          statusHttp: rfbRes.status,
+          latenciaMs,
+          mensagem: `Servidor governamental respondeu HTTP ${rfbRes.status}: ${errMsg.substring(0, 300)}`,
+          detalhes: responseJson || responseText
+        });
+      }
+    } catch (netErr: any) {
+      const latenciaMs = Date.now() - startTime;
+      res.json({
+        sucesso: false,
+        statusHttp: 503,
+        latenciaMs,
+        mensagem: `Não foi possível conectar ao endpoint oficial (${baseUrl}): ${netErr.message}. Verifique a URL e sua conexão.`
+      });
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -549,7 +730,12 @@ router.post('/credenciais', requireAuth, requirePerfil('admin_master', 'suporte_
 router.post('/test-erp-webhook', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, webhookUrl, tipoErp, formatoPayload, erpAuthToken } = req.body;
-    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const targetEmpParam = empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!targetEmpParam) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+    const { targetEmpId, cnpjRaiz, razaoSocial } = await getEmpresaContexto(targetEmpParam);
 
     const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
     if (!hasAccess) {
@@ -635,7 +821,12 @@ router.post('/test-erp-webhook', requireAuth, async (req: AuthenticatedRequest, 
 router.post('/credenciais/flags', requireAuth, requirePerfil('admin_master', 'suporte_ti'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, flagWebhook, flagConsultaDemanda } = req.body;
-    const { targetEmpId } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const targetEmpParam = empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!targetEmpParam) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+    const { targetEmpId } = await getEmpresaContexto(targetEmpParam);
 
     const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
     if (!hasAccess) {
@@ -701,7 +892,12 @@ router.post('/credenciais/flags', requireAuth, requirePerfil('admin_master', 'su
 router.post('/consultar-demanda', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { empresaId, competencia } = req.body;
-    const { targetEmpId, cnpjRaiz } = await getEmpresaContexto(empresaId || req.user?.empresaAtivaId || 'default-empresa');
+    const targetEmpParam = empresaId || (req.headers['x-empresa-ativa-id'] as string) || req.user?.empresaAtivaId;
+    if (!targetEmpParam) {
+      res.status(400).json({ error: 'Nenhuma empresa ativa informada na requisição ou sessão.' });
+      return;
+    }
+    const { targetEmpId, cnpjRaiz } = await getEmpresaContexto(targetEmpParam);
 
     const hasAccess = await canUserAccessEmpresa(req, targetEmpId);
     if (!hasAccess) {

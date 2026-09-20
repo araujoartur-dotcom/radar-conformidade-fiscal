@@ -20,6 +20,23 @@ import * as XLSX from 'xlsx';
 const upload = multer({ storage: multer.memoryStorage() });
 const router = Router();
 
+/** Helper universal para envio de exportação em JSON ou XLSX */
+function sendExportFile(res: Response, filename: string, format: string, data: any[]) {
+  if (format === 'json') {
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return res.send(JSON.stringify(data, null, 2));
+  }
+  // Formato padrão: XLSX
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Dados');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  return res.send(buffer);
+}
+
 // =========================================================
 // 1. ALÍQUOTAS DE REFERÊNCIA CBS / IBS (por Competência)
 // =========================================================
@@ -220,6 +237,72 @@ router.delete('/aliquotas/ad-valorem/:id', requireAuth, async (req: Authenticate
   }
 });
 
+/** GET /api/tables/aliquotas/ad-valorem/export — Exportar Ad Valorem (JSON ou XLSX) */
+router.get('/aliquotas/ad-valorem/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT 
+        codigo_cadastro as "Código",
+        cbs_federal as "CBS Federal (%)",
+        ibs_estadual as "IBS Estadual (%)",
+        ibs_municipal as "IBS Municipal (%)",
+        is_federal as "IS Federal (%)",
+        unidade_medida as "Unidade",
+        inicio_vigencia as "Início Vigência",
+        final_vigencia as "Fim Vigência",
+        descricao as "Descrição"
+      FROM aliquotas_tabelas 
+      WHERE modalidade = 'ad_valorem' 
+      ORDER BY inicio_vigencia ASC, codigo_cadastro ASC
+    `).all();
+    sendExportFile(res, 'Aliquotas_Ad_Valorem', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar Ad Valorem: ' + err.message });
+  }
+});
+
+/** POST /api/tables/aliquotas/ad-valorem/upload — Upload em massa Ad Valorem (JSON ou XLSX) */
+router.post('/aliquotas/ad-valorem/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum item recebido.' });
+      return;
+    }
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO aliquotas_tabelas (
+        id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
+      ) VALUES (?, ?, 'ad_valorem', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const it of rows) {
+        const rowId = it.id || uuid();
+        stmt.run(
+          rowId,
+          String(it.codigo_cadastro || it['Código'] || `AV_${inseridos + 1}`),
+          Number(it.cbs_federal || it['CBS Federal (%)'] || it['CBS'] || 0),
+          Number(it.ibs_estadual || it['IBS Estadual (%)'] || it['IBS Estadual'] || 0),
+          Number(it.ibs_municipal || it['IBS Municipal (%)'] || it['IBS Municipal'] || 0),
+          Number(it.is_federal || it['IS Federal (%)'] || it['IS'] || 0),
+          String(it.unidade_medida || it['Unidade'] || '%'),
+          String(it.inicio_vigencia || it['Início Vigência'] || '2026-01-01'),
+          String(it.final_vigencia || it['Fim Vigência'] || '2033-12-31'),
+          String(it.descricao || it['Descrição'] || '')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} alíquotas Ad Valorem importadas com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar Ad Valorem: ' + err.message });
+  }
+});
+
 // =========================================================
 // 3. TABELAS DE ALÍQUOTAS AD REM (R$ / UNIDADE)
 // =========================================================
@@ -320,6 +403,72 @@ router.delete('/aliquotas/ad-rem/:id', requireAuth, async (req: AuthenticatedReq
   }
 });
 
+/** GET /api/tables/aliquotas/ad-rem/export — Exportar Ad Rem (JSON ou XLSX) */
+router.get('/aliquotas/ad-rem/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT 
+        codigo_cadastro as "Código",
+        cbs_federal as "CBS Federal (R$)",
+        ibs_estadual as "IBS Estadual (R$)",
+        ibs_municipal as "IBS Municipal (R$)",
+        is_federal as "IS Federal (R$)",
+        unidade_medida as "Unidade",
+        inicio_vigencia as "Início Vigência",
+        final_vigencia as "Fim Vigência",
+        descricao as "Descrição"
+      FROM aliquotas_tabelas 
+      WHERE modalidade = 'ad_rem' 
+      ORDER BY inicio_vigencia ASC, codigo_cadastro ASC
+    `).all();
+    sendExportFile(res, 'Aliquotas_Ad_Rem', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar Ad Rem: ' + err.message });
+  }
+});
+
+/** POST /api/tables/aliquotas/ad-rem/upload — Upload em massa Ad Rem (JSON ou XLSX) */
+router.post('/aliquotas/ad-rem/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum item recebido.' });
+      return;
+    }
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO aliquotas_tabelas (
+        id, codigo_cadastro, modalidade, cbs_federal, ibs_estadual, ibs_municipal, is_federal, unidade_medida, inicio_vigencia, final_vigencia, descricao, updated_at
+      ) VALUES (?, ?, 'ad_rem', ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const it of rows) {
+        const rowId = it.id || uuid();
+        stmt.run(
+          rowId,
+          String(it.codigo_cadastro || it['Código'] || `AR_${inseridos + 1}`),
+          Number(it.cbs_federal || it['CBS Federal (R$)'] || it['CBS'] || 0),
+          Number(it.ibs_estadual || it['IBS Estadual (R$)'] || it['IBS Estadual'] || 0),
+          Number(it.ibs_municipal || it['IBS Municipal (R$)'] || it['IBS Municipal'] || 0),
+          Number(it.is_federal || it['IS Federal (R$)'] || it['IS'] || 0),
+          String(it.unidade_medida || it['Unidade'] || 'kg'),
+          String(it.inicio_vigencia || it['Início Vigência'] || '2026-01-01'),
+          String(it.final_vigencia || it['Fim Vigência'] || '2033-12-31'),
+          String(it.descricao || it['Descrição'] || '')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} alíquotas Ad Rem importadas com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar Ad Rem: ' + err.message });
+  }
+});
+
 // =========================================================
 // 4. CATÁLOGO DE ANEXOS DA LEI & NCMs (Reduções e Isenções)
 // =========================================================
@@ -327,81 +476,115 @@ router.delete('/aliquotas/ad-rem/:id', requireAuth, async (req: AuthenticatedReq
 /** GET /api/tables/anexos-ncm — Listar regras de NCM / Anexos */
 router.get('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { q, tipo_tratamento } = req.query as { q?: string; tipo_tratamento?: string };
+    const { q, busca, tipo_tratamento, is_combustivel, limit, offset } = req.query as any;
 
     const db = getDatabase();
     let sql = 'SELECT * FROM ncm_regras_anexos WHERE ativo = 1';
     const params: any[] = [];
 
+    const searchTerm = (busca || q || '').trim();
+    if (searchTerm) {
+      sql += ' AND (ncm LIKE ? OR descricao LIKE ? OR cclasstrib LIKE ? OR codigo_normalizado LIKE ? OR titulo_anexo LIKE ?)';
+      const term = `%${searchTerm}%`;
+      params.push(term, term, term, term, term);
+    }
     if (tipo_tratamento && tipo_tratamento !== 'todos') {
       sql += ' AND tipo_tratamento = ?';
       params.push(tipo_tratamento);
     }
-    if (q && q.trim()) {
-      sql += ' AND (ncm LIKE ? OR descricao LIKE ? OR cclasstrib LIKE ?)';
-      const term = `%${q.trim()}%`;
-      params.push(term, term, term);
+    if (is_combustivel !== undefined && is_combustivel !== '' && is_combustivel !== 'todos') {
+      sql += ' AND is_combustivel = ?';
+      params.push(Number(is_combustivel));
     }
 
-    sql += ' ORDER BY ncm ASC';
-    const rows = db.prepare(sql).all(...params);
+    sql += ' ORDER BY is_combustivel DESC, anexo_lei ASC, ncm ASC';
+    if (limit) {
+      sql += ' LIMIT ? OFFSET ?';
+      params.push(Number(limit), Number(offset || 0));
+    }
 
-    res.json({ success: true, data: rows, total: rows.length });
+    const rows = db.prepare(sql).all(...params);
+    const totalCount = (db.prepare('SELECT count(*) as total FROM ncm_regras_anexos WHERE ativo = 1').get() as any)?.total || rows.length;
+
+    res.json({ success: true, data: rows, total: totalCount });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao listar anexos NCM: ' + err.message });
+  }
+});
+
+/** GET /api/tables/anexos-ncm/export — Exportar NCMs (JSON ou XLSX) */
+router.get('/anexos-ncm/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT 
+        ncm as "NCM",
+        codigo_normalizado as "Código Normalizado",
+        descricao as "Descrição",
+        tipo_tratamento as "Tratamento",
+        percentual_reducao as "Redução (%)",
+        perc_aliquota_aplicavel as "Alíquota Aplicável (%)",
+        anexo_lei as "Anexo",
+        cclasstrib_sugerido as "cClassTrib Sugerido",
+        cst_sugerido as "CST Sugerido",
+        is_combustivel as "Combustível (1/0)",
+        permite_credito as "Permite Crédito",
+        base_legal as "Base Legal"
+      FROM ncm_regras_anexos 
+      WHERE ativo = 1 
+      ORDER BY is_combustivel DESC, anexo_lei ASC, ncm ASC
+    `).all();
+    sendExportFile(res, 'Regras_NCM_Anexos_LC214', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar NCMs: ' + err.message });
   }
 });
 
 /** POST /api/tables/anexos-ncm — Criar/Atualizar regra NCM */
 router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim } = req.body;
+    const {
+      id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
+      anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
+      item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
+      tipo_classificacao, condicionantes_observacoes, permite_credito,
+      is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim
+    } = req.body;
 
-    if (!ncm || !descricao) {
-      res.status(400).json({ success: false, message: 'NCM e Descrição são obrigatórios.' });
+    if (!ncm && !codigo_normalizado) {
+      res.status(400).json({ success: false, message: 'NCM é obrigatório.' });
       return;
     }
 
-    const rowId = id || uuid();
-    const red = Number(percentual_reducao || 0);
+    const cod = String(ncm || codigo_normalizado).trim();
+    const codNorm = String(codigo_normalizado || cod.replace(/\D/g, '')).trim();
+    const rowId = id || `ncm-${uuid()}`;
+    const red = Number(percentual_reducao ?? (tipo_tratamento === 'cesta_basica_zero' ? 100 : tipo_tratamento === 'reducao_60' ? 60 : tipo_tratamento === 'reducao_30' ? 30 : 0));
+    const isComb = Number(is_combustivel ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
 
     const db = getDatabase();
     db.prepare(`
       INSERT OR REPLACE INTO ncm_regras_anexos (
-        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
+        anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
+        item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
+        tipo_classificacao, condicionantes_observacoes, permite_credito,
+        is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
     `).run(
-      rowId, ncm.trim(), nbs || '', cclasstrib || '', descricao.trim(),
-      tipo_tratamento || 'padrao', red, anexo_lei || '', base_legal || '',
+      rowId, cod, nbs || '', cclasstrib_sugerido || cclasstrib || (isComb ? '620006' : ''),
+      String(descricao || descritivo || 'Item Fiscal').trim(),
+      tipo_tratamento || (isComb ? 'ad_rem' : red === 100 ? 'cesta_basica_zero' : red === 60 ? 'reducao_60' : 'padrao'),
+      red, anexo_lei || titulo_anexo || '', base_legal || 'LC 214/2025', codNorm,
+      nivel_codigo || '8 digitos', titulo_anexo || anexo_lei || '', item_anexo || '',
+      descritivo || descricao || '', tratamento || '', Number(perc_aliquota_aplicavel || 0),
+      tributo || 'IBS e CBS', tipo_classificacao || 'NCM/SH', condicionantes_observacoes || '',
+      permite_credito || (isComb ? 'Não' : 'Sim'), isComb,
+      cclasstrib_sugerido || cclasstrib || (isComb ? '620006' : ''),
+      cst_sugerido || (isComb ? '620' : '000'),
       vigencia_inicio || '2026-01-01', vigencia_fim || '2033-12-31'
     );
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        try {
-          await supabase
-            .from('ncm_regras_anexos')
-            .upsert({
-              id: rowId,
-              ncm: ncm.trim(),
-              nbs: nbs || '',
-              cclasstrib: cclasstrib || '',
-              descricao: descricao.trim(),
-              tipo_tratamento: tipo_tratamento || 'padrao',
-              percentual_reducao: red,
-              anexo_lei: anexo_lei || '',
-              base_legal: base_legal || '',
-              vigencia_inicio: vigencia_inicio || '2026-01-01',
-              vigencia_fim: vigencia_fim || '2033-12-31',
-              ativo: true,
-              updated_at: getBrasiliaTimestamp()
-            });
-        } catch (supaErr: any) {
-          console.warn('⚠️ Supabase ncm_regras_anexos sync warning:', supaErr?.message || supaErr);
-        }
-      }
-    }
 
     res.json({ success: true, message: 'Regra de NCM gravada com sucesso.' });
   } catch (err: any) {
@@ -409,7 +592,72 @@ router.post('/anexos-ncm', requireAuth, async (req: AuthenticatedRequest, res: R
   }
 });
 
-/** POST /api/tables/anexos-ncm/upload-lote — Inserir lote de NCMs importados do Excel */
+/** POST /api/tables/anexos-ncm/upload — Upload em massa de NCMs (JSON ou XLSX) */
+router.post('/anexos-ncm/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum item válido enviado para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const insertStmt = db.prepare(`
+      INSERT OR REPLACE INTO ncm_regras_anexos (
+        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
+        anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
+        item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
+        tipo_classificacao, condicionantes_observacoes, permite_credito,
+        is_combustivel, cclasstrib_sugerido, cst_sugerido, vigencia_inicio, vigencia_fim, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const it of rows) {
+        const cod = String(it.ncm || it['NCM'] || it['Codigo'] || it.codigo || it['Código'] || '').trim();
+        if (!cod) continue;
+        const codNorm = String(it.codigo_normalizado || it['Codigo_Normalizado'] || cod.replace(/\D/g, '')).trim();
+        const desc = String(it.descricao || it['Descricao'] || it['Descrição'] || it['Descritivo'] || it.descritivo || 'Item').trim();
+        const isComb = Number(it.is_combustivel ?? it['Combustível (1/0)'] ?? (codNorm.startsWith('2710') || codNorm.startsWith('2711') ? 1 : 0));
+        const red = Number(it.percentual_reducao ?? it['Redução (%)'] ?? it['Perc_Reducao'] ?? (isComb ? 0 : 0));
+        const percAliq = Number(it.perc_aliquota_aplicavel ?? it['Alíquota Aplicável (%)'] ?? it['Perc_Aliquota_Aplicavel'] ?? 0);
+        const anexo = String(it.anexo_lei || it['Anexo'] || it['Titulo_Anexo'] || '').trim();
+        const base = String(it.base_legal || it['Base Legal'] || it['Base_Legal'] || 'LC 214/2025').trim();
+
+        let cclass = String(it.cclasstrib_sugerido || it['cClassTrib Sugerido'] || it['cClassTrib_Sugerido'] || it.cclasstrib || '').trim();
+        let cst = String(it.cst_sugerido || it['CST Sugerido'] || '').trim();
+        let permiteCred = String(it.permite_credito || it['Permite Crédito'] || it['Permite_Credito'] || (isComb ? 'Não' : 'Sim')).trim();
+
+        if (isComb) {
+          cst = '620';
+          cclass = '620006';
+          permiteCred = 'Não';
+        }
+
+        const rowId = it.id || `ncm-${uuid()}`;
+
+        insertStmt.run(
+          rowId, cod, it.nbs || it['NBS'] || '', cclass, desc,
+          it.tipo_tratamento || (isComb ? 'ad_rem' : red === 100 ? 'cesta_basica_zero' : red === 60 ? 'reducao_60' : 'padrao'),
+          red, anexo, base, codNorm, it.nivel_codigo || it['Nivel_Codigo'] || '8 digitos',
+          anexo, it.item_anexo || it['Item_Anexo'] || '', desc, it.tratamento || it['Tratamento'] || '',
+          percAliq, it.tributo || it['Tributo'] || 'IBS e CBS', it.tipo_classificacao || it['Tipo_Classificacao'] || 'NCM/SH',
+          it.condicionantes_observacoes || it['Condicionantes_Observacoes'] || '', permiteCred,
+          isComb, cclass, cst, '2026-01-01', '2033-12-31'
+        );
+        inseridos++;
+      }
+    });
+
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} regras de NCM importadas com sucesso.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro no upload de NCMs: ' + err.message });
+  }
+});
+
+/** POST /api/tables/anexos-ncm/upload-lote — Compatibilidade */
 router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { itens } = req.body as { itens: any[] };
@@ -447,32 +695,6 @@ router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedReq
     });
 
     tx(itens);
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        try {
-          const supaRows = itens.map(it => ({
-            id: it.id || uuid(),
-            ncm: String(it.ncm).trim(),
-            nbs: it.nbs || '',
-            cclasstrib: it.cclasstrib || '',
-            descricao: it.descricao || 'Item Importado',
-            tipo_tratamento: it.tipo_tratamento || 'padrao',
-            percentual_reducao: Number(it.percentual_reducao || 0),
-            anexo_lei: it.anexo_lei || '',
-            base_legal: it.base_legal || 'LC 214/2025',
-            vigencia_inicio: it.vigencia_inicio || '2026-01-01',
-            vigencia_fim: it.vigencia_fim || '2033-12-31',
-            ativo: true
-          }));
-          await supabase.from('ncm_regras_anexos').upsert(supaRows);
-        } catch (e: any) {
-          console.warn('⚠️ Supabase ncm_regras_anexos batch warning:', e?.message || e);
-        }
-      }
-    }
-
     res.json({ success: true, message: `${inseridos} regras de NCM importadas com sucesso.` });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro na importação em lote de NCMs: ' + err.message });
@@ -483,21 +705,8 @@ router.post('/anexos-ncm/upload-lote', requireAuth, async (req: AuthenticatedReq
 router.delete('/anexos-ncm/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-
     const db = getDatabase();
     db.prepare('DELETE FROM ncm_regras_anexos WHERE id = ?').run(id);
-
-    if (isSupabaseConfigured()) {
-      const supabase = getSupabaseAdmin();
-      if (supabase) {
-        try {
-          await supabase.from('ncm_regras_anexos').delete().eq('id', id);
-        } catch (e: any) {
-          console.warn('⚠️ Supabase ncm_regras_anexos delete warning:', e?.message || e);
-        }
-      }
-    }
-
     res.json({ success: true, message: 'Regra de NCM excluída com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao excluir regra NCM: ' + err.message });
@@ -586,19 +795,95 @@ router.delete('/cfop/:id', requireAuth, requirePerfil('admin_master', 'contador_
   }
 });
 
-// =========================================================
-// 6. MAPA cClassTrib (6 Dígitos)
-// =========================================================
-
-/** GET /api/tables/cclasstrib */
-router.get('/cclasstrib', requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+/** GET /api/tables/cfop/export — Exportar CFOPs (JSON ou XLSX) */
+router.get('/cfop/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const empresaId = req.user!.empresaAtivaId;
     const db = getDatabase();
     const rows = db.prepare(`
-      SELECT * FROM cclasstrib_regras 
-      WHERE ativo = 1
-      ORDER BY cclasstrib
-    `).all();
+      SELECT 
+        cfop as "CFOP",
+        descricao as "Descrição",
+        categoria as "Categoria",
+        tratamento_padrao as "Tratamento Padrão",
+        CASE WHEN exige_onerosidade = 1 THEN 'Sim' ELSE 'Não' END as "Exige Onerosidade",
+        evidencia_minima as "Evidência Mínima"
+      FROM cfop_tratamento 
+      WHERE (empresa_id IS NULL OR empresa_id = ?) AND ativo = 1
+      ORDER BY cfop ASC
+    `).all(empresaId);
+    sendExportFile(res, 'Matriz_CFOP', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar CFOP: ' + err.message });
+  }
+});
+
+/** POST /api/tables/cfop/upload — Upload em massa CFOP (JSON ou XLSX) */
+router.post('/cfop/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum item recebido.' });
+      return;
+    }
+    const empresaId = req.user!.empresaAtivaId;
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO cfop_tratamento (
+        id, empresa_id, cfop, descricao, categoria, tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib, evidencia_minima, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, 1, datetime('now'))
+    `);
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const it of rows) {
+        const cod = String(it.cfop || it['CFOP'] || '').trim();
+        if (!cod) continue;
+        const rowId = it.id || uuid();
+        stmt.run(
+          rowId,
+          empresaId,
+          cod,
+          String(it.descricao || it['Descrição'] || 'Operação').trim(),
+          String(it.categoria || it['Categoria'] || 'Compra'),
+          String(it.tratamento_padrao || it['Tratamento Padrão'] || 'Elegível'),
+          (it.exige_onerosidade === 0 || it['Exige Onerosidade'] === 'Não') ? 0 : 1,
+          String(it.evidencia_minima || it['Evidência Mínima'] || '')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} regras de CFOP importadas com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro no upload de CFOP: ' + err.message });
+  }
+});
+
+// =========================================================
+// 6. MAPA cClassTrib (6 Dígitos) — OFICIAL SVRS (164 Registros)
+// =========================================================
+
+/** GET /api/tables/cclasstrib — Listar códigos oficiais da SVRS */
+router.get('/cclasstrib', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { busca, cst } = req.query as any;
+    const db = getDatabase();
+    let sql = 'SELECT * FROM cclasstrib_regras WHERE ativo = 1';
+    const params: any[] = [];
+
+    if (cst) {
+      sql += ' AND cst = ?';
+      params.push(cst);
+    }
+    if (busca) {
+      sql += ' AND (cclasstrib LIKE ? OR descricao_interna LIKE ? OR descricao LIKE ? OR desc_cst LIKE ?)';
+      const s = `%${busca}%`;
+      params.push(s, s, s, s);
+    }
+
+    sql += ' ORDER BY cclasstrib ASC';
+    const rows = db.prepare(sql).all(...params);
 
     res.json({ success: true, data: rows, total: rows.length });
   } catch (err: any) {
@@ -606,25 +891,239 @@ router.get('/cclasstrib', requireAuth, async (_req: AuthenticatedRequest, res: R
   }
 });
 
-/** POST /api/tables/cclasstrib */
+/** GET /api/tables/cclasstrib/export — Exportar cClassTrib (JSON ou XLSX com cabeçalho oficial) */
+router.get('/cclasstrib/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT 
+        cst as "Código da Situação Tributária",
+        desc_cst as "Descrição da Situação Tributária",
+        exige_tributacao as "Exige Tributação",
+        reducao_bc_cst as "Redução BC CST",
+        reducao_aliquota as "Redução de Alíquota",
+        transferencia_credito as "Transferência de Crédito",
+        diferimento as "Diferimento",
+        monofasica as "Monofásica",
+        cclasstrib as "Código da Classificação Tributária",
+        COALESCE(NULLIF(descricao, ''), descricao_interna) as "Descrição do Código da Classificação Tributária",
+        perc_reducao_ibs as "Percentual Redução IBS",
+        perc_reducao_cbs as "Percentual Redução CBS",
+        tipo_aliquota as "Tipo de Alíquota",
+        permite_credito as "Permite Crédito",
+        tributacao_monofasica_normal as "Tributação Monofásica Normal",
+        tributacao_monofasica_retencao as "Tributação Monofásica sujeita a retenção",
+        tributacao_monofasica_retida_anteriormente as "Tributação Monofásica retida anteriormente",
+        credito_presumido as "Crédito Presumido",
+        estorno_credito as "Estorno de Crédito",
+        numero_anexo as "Número do Anexo",
+        url_legislacao as "Url da Legislação"
+      FROM cclasstrib_regras 
+      WHERE ativo = 1 AND cclasstrib != '900001'
+      ORDER BY cclasstrib ASC
+    `).all();
+    sendExportFile(res, 'Tabela_Oficial_CST_cClassTrib_SVRS', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar cClassTrib: ' + err.message });
+  }
+});
+
+/** POST /api/tables/cclasstrib — Inserir ou Editar manualmente */
 router.post('/cclasstrib', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas } = req.body;
-    if (!cclasstrib || !descricao_interna) {
-      res.status(400).json({ error: 'cclasstrib e descricao_interna são obrigatórios.' });
+    const {
+      id, cclasstrib, descricao_interna, descricao, cst, desc_cst,
+      tratamento_esperado, permite_credito, aliquota_esperada, alertas,
+      exige_tributacao, reducao_bc_cst, reducao_aliquota, diferimento,
+      monofasica, perc_reducao_ibs, perc_reducao_cbs, tipo_aliquota,
+      url_legislacao, numero_anexo
+    } = req.body;
+
+    if (!cclasstrib) {
+      res.status(400).json({ error: 'cclasstrib é obrigatório.' });
+      return;
+    }
+
+    if (cclasstrib === '900001') {
+      res.status(400).json({ error: 'O código 900001 é um fallback inexistente no RTC. Utilize os códigos oficiais da SVRS (620001 a 620007).' });
       return;
     }
 
     const db = getDatabase();
-    const id = uuid();
-    db.prepare(`
-      INSERT OR REPLACE INTO cclasstrib_regras (id, cclasstrib, descricao_interna, tratamento_esperado, permite_credito, aliquota_esperada, alertas, ativo, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
-    `).run(id, cclasstrib, descricao_interna, tratamento_esperado || 'tributado', permite_credito || 'Sim', aliquota_esperada || '27.91%', alertas || '');
+    const rowId = id || `cclass-${cclasstrib}`;
+    const desc = descricao || descricao_interna || 'Classificação Tributária';
+    const cstVal = cst || (cclasstrib.startsWith('620') ? '620' : '000');
 
-    res.status(201).json({ success: true, message: 'cClassTrib cadastrado com sucesso.' });
+    db.prepare(`
+      INSERT INTO cclasstrib_regras (
+        id, cclasstrib, descricao_interna, cst, desc_cst, descricao,
+        exige_tributacao, reducao_bc_cst, reducao_aliquota, diferimento, monofasica,
+        perc_reducao_ibs, perc_reducao_cbs, tipo_aliquota, permite_credito,
+        aliquota_esperada, alertas, url_legislacao, numero_anexo, tratamento_esperado,
+        ativo, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        1, datetime('now')
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        cclasstrib = excluded.cclasstrib,
+        descricao_interna = excluded.descricao_interna,
+        cst = excluded.cst,
+        desc_cst = excluded.desc_cst,
+        descricao = excluded.descricao,
+        exige_tributacao = excluded.exige_tributacao,
+        reducao_bc_cst = excluded.reducao_bc_cst,
+        reducao_aliquota = excluded.reducao_aliquota,
+        diferimento = excluded.diferimento,
+        monofasica = excluded.monofasica,
+        perc_reducao_ibs = excluded.perc_reducao_ibs,
+        perc_reducao_cbs = excluded.perc_reducao_cbs,
+        tipo_aliquota = excluded.tipo_aliquota,
+        permite_credito = excluded.permite_credito,
+        aliquota_esperada = excluded.aliquota_esperada,
+        alertas = excluded.alertas,
+        url_legislacao = excluded.url_legislacao,
+        numero_anexo = excluded.numero_anexo,
+        tratamento_esperado = excluded.tratamento_esperado,
+        ativo = 1,
+        updated_at = datetime('now')
+    `).run(
+      rowId, cclasstrib, desc, cstVal, desc_cst || '', desc,
+      exige_tributacao || 'Sim', reducao_bc_cst || 'Não', reducao_aliquota || 'Não',
+      diferimento || 'Não', monofasica || (cstVal === '620' ? 'Sim' : 'Não'),
+      Number(perc_reducao_ibs || 0), Number(perc_reducao_cbs || 0), tipo_aliquota || '',
+      permite_credito || (cstVal === '620' ? 'Não' : 'Sim'),
+      aliquota_esperada || '', alertas || '', url_legislacao || '', numero_anexo || '',
+      tratamento_esperado || (cstVal === '620' ? 'monofasico' : 'tributado')
+    );
+
+    res.status(201).json({ success: true, message: 'cClassTrib salvo com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao salvar cClassTrib: ' + err.message });
+  }
+});
+
+/** POST /api/tables/cclasstrib/upload — Upload em massa por JSON ou XLSX */
+router.post('/cclasstrib/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    // Expurga fallback fictício 900001
+    db.prepare("DELETE FROM cclasstrib_regras WHERE cclasstrib = '900001'").run();
+
+    const stmt = db.prepare(`
+      INSERT INTO cclasstrib_regras (
+        id, cclasstrib, descricao_interna, cst, desc_cst, descricao,
+        exige_tributacao, reducao_bc_cst, reducao_aliquota, diferimento, monofasica,
+        perc_reducao_ibs, perc_reducao_cbs, tipo_aliquota, permite_credito,
+        url_legislacao, numero_anexo, tributacao_monofasica_normal,
+        tributacao_monofasica_retencao, tributacao_monofasica_retida_anteriormente,
+        tributacao_monofasica_diferimento, credito_presumido, estorno_credito,
+        transferencia_credito, tratamento_esperado, dados_completos_json, ativo, updated_at
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, 1, datetime('now')
+      )
+      ON CONFLICT(id) DO UPDATE SET
+        cclasstrib = excluded.cclasstrib,
+        descricao_interna = excluded.descricao_interna,
+        cst = excluded.cst,
+        desc_cst = excluded.desc_cst,
+        descricao = excluded.descricao,
+        exige_tributacao = excluded.exige_tributacao,
+        reducao_bc_cst = excluded.reducao_bc_cst,
+        reducao_aliquota = excluded.reducao_aliquota,
+        diferimento = excluded.diferimento,
+        monofasica = excluded.monofasica,
+        perc_reducao_ibs = excluded.perc_reducao_ibs,
+        perc_reducao_cbs = excluded.perc_reducao_cbs,
+        tipo_aliquota = excluded.tipo_aliquota,
+        permite_credito = excluded.permite_credito,
+        url_legislacao = excluded.url_legislacao,
+        numero_anexo = excluded.numero_anexo,
+        tributacao_monofasica_normal = excluded.tributacao_monofasica_normal,
+        tributacao_monofasica_retencao = excluded.tributacao_monofasica_retencao,
+        tributacao_monofasica_retida_anteriormente = excluded.tributacao_monofasica_retida_anteriormente,
+        tributacao_monofasica_diferimento = excluded.tributacao_monofasica_diferimento,
+        credito_presumido = excluded.credito_presumido,
+        estorno_credito = excluded.estorno_credito,
+        transferencia_credito = excluded.transferencia_credito,
+        tratamento_esperado = excluded.tratamento_esperado,
+        dados_completos_json = excluded.dados_completos_json,
+        ativo = 1,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código da Classificação Tributária'] || item.cclasstrib || '').trim();
+        if (!cod || cod === '900001') continue;
+        const cst = String(item['Código da Situação Tributária'] || item.cst || '').trim();
+        const desc = String(item['Descrição do Código da Classificação Tributária'] || item.descricao || item.descricao_interna || '').trim();
+        const descCst = String(item['Descrição da Situação Tributária'] || item.desc_cst || '').trim();
+        const monofasica = String(item['Monofásica'] || item.monofasica || (cst === '620' ? 'Sim' : 'Não')).trim();
+        const redIbs = Number(item['Percentual Redução IBS'] || item.perc_reducao_ibs || 0);
+        const redCbs = Number(item['Percentual Redução CBS'] || item.perc_reducao_cbs || 0);
+
+        let tratamento = 'tributado';
+        if (cst === '620') tratamento = 'monofasico';
+        else if (cst === '400') tratamento = 'isento';
+        else if (cst === '410') tratamento = 'imune';
+        else if (cst === '510' || cst === '515') tratamento = 'diferido';
+        else if (cst === '550') tratamento = 'suspenso';
+        else if (redIbs > 0 || redCbs > 0) tratamento = 'reduzido';
+
+        let permiteCredito = String(item['Permite Crédito'] || item.permite_credito || 'Sim');
+        if (cst === '620' || cod === '620006' || cod === '620001' || cod === '620002') {
+          permiteCredito = 'Não';
+        }
+
+        const id = item.id || `cclass-${cod}`;
+
+        stmt.run(
+          id, cod, desc, cst, descCst, desc,
+          String(item['Exige Tributação'] || item.exige_tributacao || 'Sim'),
+          String(item['Redução BC CST'] || item.reducao_bc_cst || 'Não'),
+          String(item['Redução de Alíquota'] || item.reducao_aliquota || 'Não'),
+          String(item['Diferimento'] || item.diferimento || 'Não'),
+          monofasica, redIbs, redCbs,
+          String(item['Tipo de Alíquota'] || item.tipo_aliquota || ''),
+          permiteCredito,
+          String(item['Url da Legislação'] || item.url_legislacao || ''),
+          String(item['Número do Anexo'] || item.numero_anexo || ''),
+          String(item['Tributação Monofásica Normal'] || item.tributacao_monofasica_normal || 'Não'),
+          String(item['Tributação Monofásica sujeita a retenção'] || item.tributacao_monofasica_retencao || 'Não'),
+          String(item['Tributação Monofásica retida anteriormente'] || item.tributacao_monofasica_retida_anteriormente || 'Não'),
+          String(item['Tributação Monofásica de Combustível com diferimento'] || item.tributacao_monofasica_diferimento || 'Não'),
+          String(item['Crédito Presumido'] || item.credito_presumido || 'Não'),
+          String(item['Estorno de Crédito'] || item.estorno_credito || 'Não'),
+          String(item['Transferência de Crédito'] || item.transferencia_credito || 'Não'),
+          tratamento,
+          JSON.stringify(item)
+        );
+        inseridos++;
+      }
+    });
+
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} registros de cClassTrib importados/atualizados com sucesso.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro no upload de cClassTrib: ' + err.message });
   }
 });
 
@@ -633,10 +1132,167 @@ router.delete('/cclasstrib/:id', requireAuth, async (req: AuthenticatedRequest, 
   try {
     const { id } = req.params;
     const db = getDatabase();
-    db.prepare("UPDATE cclasstrib_regras SET ativo = 0, updated_at = datetime('now') WHERE id = ?").run(id);
-    res.json({ success: true, message: 'cClassTrib desativado com sucesso.' });
+    db.prepare("DELETE FROM cclasstrib_regras WHERE id = ? OR cclasstrib = ?").run(id, id);
+    res.json({ success: true, message: 'cClassTrib excluído com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao excluir cClassTrib: ' + err.message });
+  }
+});
+
+// =========================================================
+// TABELA LOCAL DA OPERAÇÃO (indOper - Princípio do Destino)
+// =========================================================
+
+/** GET /api/tables/indoper — Listar códigos indOper */
+router.get('/indoper', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { busca } = req.query as any;
+    const db = getDatabase();
+    let sql = 'SELECT * FROM indoper_regras WHERE 1=1';
+    const params: any[] = [];
+
+    if (busca) {
+      sql += ' AND (codigo LIKE ? OR nome LIKE ? OR local LIKE ? OR caracteristica LIKE ?)';
+      const s = `%${busca}%`;
+      params.push(s, s, s, s);
+    }
+
+    sql += ' ORDER BY codigo ASC';
+    const rows = db.prepare(sql).all(...params);
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao listar indOper: ' + err.message });
+  }
+});
+
+/** GET /api/tables/indoper/export — Exportar indOper (JSON ou XLSX) */
+router.get('/indoper/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT 
+        codigo as "Código",
+        nome as "Nome",
+        dispositivo_legal as "Dispositivo Legal",
+        local as "Local",
+        local_fornecedor as "Local do Fornecedor",
+        caracteristica as "Característica do Fornecedor",
+        data_publicacao as "Data de Publicação",
+        inicio_vigencia as "Início de Vigência",
+        fim_vigencia as "Fim de Vigência"
+      FROM indoper_regras 
+      ORDER BY codigo ASC
+    `).all();
+    sendExportFile(res, 'Tabela_Oficial_indOper_SVRS', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar indOper: ' + err.message });
+  }
+});
+
+/** POST /api/tables/indoper — Criar ou Editar indOper */
+router.post('/indoper', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id, codigo, nome, dispositivo_legal, local, local_fornecedor, caracteristica, data_publicacao, inicio_vigencia, fim_vigencia } = req.body;
+    if (!codigo || !nome) {
+      res.status(400).json({ error: 'codigo e nome são obrigatórios.' });
+      return;
+    }
+
+    const rowId = id || `indoper-${codigo}`;
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO indoper_regras (
+        id, codigo, nome, dispositivo_legal, local, local_fornecedor,
+        caracteristica, data_publicacao, inicio_vigencia, fim_vigencia, dados_completos_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(codigo) DO UPDATE SET
+        nome = excluded.nome,
+        dispositivo_legal = excluded.dispositivo_legal,
+        local = excluded.local,
+        local_fornecedor = excluded.local_fornecedor,
+        caracteristica = excluded.caracteristica,
+        data_publicacao = excluded.data_publicacao,
+        inicio_vigencia = excluded.inicio_vigencia,
+        fim_vigencia = excluded.fim_vigencia,
+        dados_completos_json = excluded.dados_completos_json
+    `).run(
+      rowId, codigo, nome, dispositivo_legal || '', local || '', local_fornecedor || '',
+      caracteristica || '', data_publicacao || '17/11/2025', inicio_vigencia || '17/11/2025',
+      fim_vigencia || '-', JSON.stringify(req.body)
+    );
+
+    res.status(201).json({ success: true, message: 'indOper salvo com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao salvar indOper: ' + err.message });
+  }
+});
+
+/** POST /api/tables/indoper/upload — Upload em massa indOper (JSON ou XLSX) */
+router.post('/indoper/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO indoper_regras (
+        id, codigo, nome, dispositivo_legal, local, local_fornecedor,
+        caracteristica, data_publicacao, inicio_vigencia, fim_vigencia, dados_completos_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(codigo) DO UPDATE SET
+        nome = excluded.nome,
+        dispositivo_legal = excluded.dispositivo_legal,
+        local = excluded.local,
+        local_fornecedor = excluded.local_fornecedor,
+        caracteristica = excluded.caracteristica,
+        data_publicacao = excluded.data_publicacao,
+        inicio_vigencia = excluded.inicio_vigencia,
+        fim_vigencia = excluded.fim_vigencia,
+        dados_completos_json = excluded.dados_completos_json
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código'] || item.codigo || '').trim();
+        if (!cod) continue;
+        const rowId = item.id || `indoper-${cod}`;
+        stmt.run(
+          rowId, cod,
+          String(item['Nome'] || item.nome || ''),
+          String(item['Dispositivo Legal'] || item.dispositivo_legal || ''),
+          String(item['Local'] || item.local || ''),
+          String(item['Local do Fornecedor'] || item.local_fornecedor || ''),
+          String(item['Característica do Fornecedor'] || item.caracteristica || ''),
+          String(item['Data de Publicação'] || item.data_publicacao || '17/11/2025'),
+          String(item['Início de Vigência'] || item.inicio_vigencia || '17/11/2025'),
+          String(item['Fim de Vigência'] || item.fim_vigencia || '-'),
+          JSON.stringify(item)
+        );
+        inseridos++;
+      }
+    });
+
+    tx(itens);
+    res.json({ success: true, message: `${inseridos} registros de indOper importados/atualizados com sucesso.` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro no upload de indOper: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/indoper/:id — Excluir indOper */
+router.delete('/indoper/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare("DELETE FROM indoper_regras WHERE id = ? OR codigo = ?").run(id, id);
+    res.json({ success: true, message: 'indOper excluído com sucesso.' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir indOper: ' + err.message });
   }
 });
 
@@ -679,6 +1335,77 @@ router.post('/regras', requireAuth, async (req: AuthenticatedRequest, res: Respo
     res.status(201).json({ success: true, message: 'Regra cadastrada com sucesso.' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao salvar regra: ' + err.message });
+  }
+});
+
+/** GET /api/tables/regras/export — Exportar regras em JSON ou XLSX */
+router.get('/regras/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal, ativo
+      FROM regras_elegibilidade 
+      WHERE ativo = 1
+      ORDER BY codigo_regra
+    `).all();
+
+    sendExportFile(res, 'Regras_Elegibilidade_Credito', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar regras: ' + err.message });
+  }
+});
+
+/** POST /api/tables/regras/upload — Upload em lote de regras (JSON ou XLSX) */
+router.post('/regras/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO regras_elegibilidade (
+        id, codigo_regra, nome, descricao, tipo_aquisicao, cfops_aplicaveis, resultado_padrao, evidencia_minima, base_legal, ativo, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'))
+      ON CONFLICT(codigo_regra) DO UPDATE SET
+        nome = excluded.nome,
+        descricao = excluded.descricao,
+        tipo_aquisicao = excluded.tipo_aquisicao,
+        cfops_aplicaveis = excluded.cfops_aplicaveis,
+        resultado_padrao = excluded.resultado_padrao,
+        evidencia_minima = excluded.evidencia_minima,
+        base_legal = excluded.base_legal,
+        ativo = 1,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código Regra'] || item.codigo_regra || '').trim();
+        const nome = String(item['Nome'] || item.nome || '').trim();
+        if (!cod || !nome) continue;
+        const rowId = item.id || uuid();
+        stmt.run(
+          rowId, cod, nome,
+          String(item['Descrição'] || item.descricao || ''),
+          String(item['Tipo Aquisição'] || item.tipo_aquisicao || 'Geral'),
+          String(item['CFOPs Aplicáveis'] || item.cfops_aplicaveis || ''),
+          String(item['Resultado Padrão'] || item.resultado_padrao || 'Elegível'),
+          String(item['Evidência Mínima'] || item.evidencia_minima || ''),
+          String(item['Base Legal'] || item.base_legal || '')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+
+    res.json({ success: true, message: `${inseridos} regras de elegibilidade importadas com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar regras: ' + err.message });
   }
 });
 
@@ -764,6 +1491,87 @@ router.post('/inferencia', requireAuth, requirePerfil('admin_master', 'contador_
   }
 });
 
+/** GET /api/tables/inferencia/export — Exportar parâmetros de inferência (JSON ou XLSX) */
+router.get('/inferencia/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT codigo, descricao, icms_medio, pis_medio, cofins_medio, ipi_medio, iss_medio,
+             aplica_simples_nac, aplica_cte, aplica_nfse, inicio_vigencia, final_vigencia
+      FROM parametros_inferencia 
+      ORDER BY codigo
+    `).all();
+
+    sendExportFile(res, 'Parametros_Inferencia_Aliquota_Media', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar parâmetros de inferência: ' + err.message });
+  }
+});
+
+/** POST /api/tables/inferencia/upload — Upload em massa de parâmetros de inferência (JSON ou XLSX) */
+router.post('/inferencia/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO parametros_inferencia (
+        id, codigo, descricao,
+        icms_medio, pis_medio, cofins_medio, ipi_medio, iss_medio,
+        aplica_simples_nac, aplica_cte, aplica_nfse,
+        inicio_vigencia, final_vigencia, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo) DO UPDATE SET
+        descricao = excluded.descricao,
+        icms_medio = excluded.icms_medio,
+        pis_medio = excluded.pis_medio,
+        cofins_medio = excluded.cofins_medio,
+        ipi_medio = excluded.ipi_medio,
+        iss_medio = excluded.iss_medio,
+        aplica_simples_nac = excluded.aplica_simples_nac,
+        aplica_cte = excluded.aplica_cte,
+        aplica_nfse = excluded.aplica_nfse,
+        inicio_vigencia = excluded.inicio_vigencia,
+        final_vigencia = excluded.final_vigencia,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código'] || item.codigo || '').trim();
+        const desc = String(item['Descrição'] || item.descricao || '').trim();
+        if (!cod || !desc) continue;
+        const rowId = item.id || uuid();
+        stmt.run(
+          rowId, cod, desc,
+          Number(item['ICMS Médio (%)'] ?? item.icms_medio ?? 0),
+          Number(item['PIS Médio (%)'] ?? item.pis_medio ?? 0),
+          Number(item['COFINS Médio (%)'] ?? item.cofins_medio ?? 0),
+          Number(item['IPI Médio (%)'] ?? item.ipi_medio ?? 0),
+          Number(item['ISS Médio (%)'] ?? item.iss_medio ?? 0),
+          item.aplica_simples_nac ? 1 : 0,
+          item.aplica_cte ? 1 : 0,
+          item.aplica_nfse ? 1 : 0,
+          String(item['Início Vigência'] || item.inicio_vigencia || '2026-01-01'),
+          String(item['Fim Vigência'] || item.final_vigencia || '2099-12-31')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+
+    res.json({ success: true, message: `${inseridos} parâmetros de inferência importados com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar parâmetros de inferência: ' + err.message });
+  }
+});
+
 /** DELETE /api/tables/inferencia/:id — Excluir parâmetro de inferência */
 router.delete('/inferencia/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -798,6 +1606,18 @@ router.get('/regras-retencao-servicos', requireAuth, async (_req: AuthenticatedR
     res.json({ success: true, data: rows });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao listar regras de retenção: ' + err.message });
+  }
+});
+
+/** GET /api/tables/regras-retencao-servicos/export — Exportar regras de retenção (JSON ou XLSX) */
+router.get('/regras-retencao-servicos/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare('SELECT * FROM regras_retencao_servicos ORDER BY item_lc116 ASC').all();
+    sendExportFile(res, 'Regras_Retencao_Servicos_LC116_LC214', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar regras de retenção: ' + err.message });
   }
 });
 
@@ -1119,6 +1939,104 @@ router.post('/simples-nacional/faixa', requireAuth, requirePerfil('admin_master'
   }
 });
 
+/** DELETE /api/tables/simples-nacional/faixas/:id — Excluir faixa do Simples Nacional */
+router.delete('/simples-nacional/faixas/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare('DELETE FROM simples_nacional_faixas WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Faixa do Simples Nacional excluída com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir faixa: ' + err.message });
+  }
+});
+
+/** GET /api/tables/simples-nacional/export — Exportar faixas do Simples Nacional (JSON ou XLSX) */
+router.get('/simples-nacional/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT anexo, nome_anexo, faixa, limite_superior, aliq_nominal, deducao,
+             reparticao_irpj, reparticao_csll, reparticao_cofins, reparticao_pis,
+             reparticao_cpp, reparticao_icms, reparticao_iss, reparticao_ipi
+      FROM simples_nacional_faixas
+      WHERE ativo = 1
+      ORDER BY anexo, faixa
+    `).all();
+
+    sendExportFile(res, 'Simples_Nacional_Faixas', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar faixas do Simples: ' + err.message });
+  }
+});
+
+/** POST /api/tables/simples-nacional/upload — Upload em massa de faixas do Simples (JSON ou XLSX) */
+router.post('/simples-nacional/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO simples_nacional_faixas (
+        id, anexo, nome_anexo, faixa, limite_superior, aliq_nominal, deducao,
+        reparticao_irpj, reparticao_csll, reparticao_cofins, reparticao_pis,
+        reparticao_cpp, reparticao_icms, reparticao_iss, reparticao_ipi, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(anexo, faixa) DO UPDATE SET
+        nome_anexo = excluded.nome_anexo,
+        limite_superior = excluded.limite_superior,
+        aliq_nominal = excluded.aliq_nominal,
+        deducao = excluded.deducao,
+        reparticao_irpj = excluded.reparticao_irpj,
+        reparticao_csll = excluded.reparticao_csll,
+        reparticao_cofins = excluded.reparticao_cofins,
+        reparticao_pis = excluded.reparticao_pis,
+        reparticao_cpp = excluded.reparticao_cpp,
+        reparticao_icms = excluded.reparticao_icms,
+        reparticao_iss = excluded.reparticao_iss,
+        reparticao_ipi = excluded.reparticao_ipi,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const anexo = String(item['Anexo'] || item.anexo || '').trim();
+        const faixa = Number(item['Faixa'] ?? item.faixa ?? 1);
+        if (!anexo) continue;
+        const rowId = item.id || uuid();
+        stmt.run(
+          rowId, anexo,
+          String(item['Nome Anexo'] || item.nome_anexo || anexo),
+          faixa,
+          Number(item['Limite Superior'] ?? item.limite_superior ?? 0),
+          Number(item['Alíquota Nominal'] ?? item.aliq_nominal ?? 0),
+          Number(item['Dedução'] ?? item.deducao ?? 0),
+          Number(item['IRPJ'] ?? item.reparticao_irpj ?? 0),
+          Number(item['CSLL'] ?? item.reparticao_csll ?? 0),
+          Number(item['COFINS'] ?? item.reparticao_cofins ?? 0),
+          Number(item['PIS'] ?? item.reparticao_pis ?? 0),
+          Number(item['CPP'] ?? item.reparticao_cpp ?? 0),
+          Number(item['ICMS'] ?? item.reparticao_icms ?? 0),
+          Number(item['ISS'] ?? item.reparticao_iss ?? 0),
+          Number(item['IPI'] ?? item.reparticao_ipi ?? 0)
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+
+    res.json({ success: true, message: `${inseridos} faixas do Simples Nacional importadas com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar Simples Nacional: ' + err.message });
+  }
+});
+
 // =========================================================
 // 9. LUCRO PRESUMIDO & PRESUNÇÕES (LEI 9.249/1995)
 // =========================================================
@@ -1136,6 +2054,88 @@ router.get('/lucro-presumido', requireAuth, async (_req: AuthenticatedRequest, r
     res.json({ success: true, data: rows });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao listar parâmetros do Lucro Presumido: ' + err.message });
+  }
+});
+
+/** GET /api/tables/lucro-presumido/export — Exportar Lucro Presumido (JSON ou XLSX) */
+router.get('/lucro-presumido/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT codigo_atividade, nome_atividade, presuncao_irpj, presuncao_csll,
+             aliq_irpj_basico, aliq_irpj_adicional, limite_mensal_adicional, aliq_csll,
+             artigo_legal, detalhe, categoria, anexo_simples_padrao
+      FROM lucro_presumido_parametros
+      WHERE ativo = 1
+      ORDER BY nome_atividade
+    `).all();
+
+    sendExportFile(res, 'Lucro_Presumido_Parametros', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar Lucro Presumido: ' + err.message });
+  }
+});
+
+/** POST /api/tables/lucro-presumido/upload — Upload em massa de Lucro Presumido (JSON ou XLSX) */
+router.post('/lucro-presumido/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO lucro_presumido_parametros (
+        id, codigo_atividade, nome_atividade, presuncao_irpj, presuncao_csll,
+        aliq_irpj_basico, aliq_irpj_adicional, limite_mensal_adicional, aliq_csll,
+        artigo_legal, detalhe, categoria, anexo_simples_padrao, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo_atividade) DO UPDATE SET
+        nome_atividade = excluded.nome_atividade,
+        presuncao_irpj = excluded.presuncao_irpj,
+        presuncao_csll = excluded.presuncao_csll,
+        aliq_irpj_basico = excluded.aliq_irpj_basico,
+        aliq_irpj_adicional = excluded.aliq_irpj_adicional,
+        limite_mensal_adicional = excluded.limite_mensal_adicional,
+        aliq_csll = excluded.aliq_csll,
+        artigo_legal = excluded.artigo_legal,
+        detalhe = excluded.detalhe,
+        categoria = excluded.categoria,
+        anexo_simples_padrao = excluded.anexo_simples_padrao,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código'] || item.codigo_atividade || '').trim();
+        const nome = String(item['Nome'] || item['Atividade'] || item.nome_atividade || '').trim();
+        if (!cod || !nome) continue;
+        const rowId = item.id || uuid();
+        stmt.run(
+          rowId, cod, nome,
+          Number(item['Presunção IRPJ'] ?? item.presuncao_irpj ?? 0.08),
+          Number(item['Presunção CSLL'] ?? item.presuncao_csll ?? 0.12),
+          Number(item['Alíquota IRPJ'] ?? item.aliq_irpj_basico ?? 0.15),
+          Number(item['IRPJ Adicional'] ?? item.aliq_irpj_adicional ?? 0.10),
+          Number(item['Limite Adicional'] ?? item.limite_mensal_adicional ?? 20000.0),
+          Number(item['Alíquota CSLL'] ?? item.aliq_csll ?? 0.09),
+          String(item['Artigo Legal'] || item.artigo_legal || ''),
+          String(item['Detalhe'] || item.detalhe || ''),
+          String(item['Categoria'] || item.categoria || 'servicos'),
+          String(item['Anexo Simples Padrão'] || item.anexo_simples_padrao || 'anexo1')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+
+    res.json({ success: true, message: `${inseridos} parâmetros de Lucro Presumido importados com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar Lucro Presumido: ' + err.message });
   }
 });
 
@@ -1182,6 +2182,18 @@ router.post('/lucro-presumido', requireAuth, requirePerfil('admin_master', 'cont
   }
 });
 
+/** DELETE /api/tables/lucro-presumido/:id — Excluir parâmetro de Lucro Presumido */
+router.delete('/lucro-presumido/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare('DELETE FROM lucro_presumido_parametros WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Parâmetro de Lucro Presumido excluído com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir parâmetro: ' + err.message });
+  }
+});
+
 // =========================================================
 // 10. ENCARGOS PREVIDENCIÁRIOS PATRONAIS
 // =========================================================
@@ -1199,6 +2211,72 @@ router.get('/encargos-patronais', requireAuth, async (_req: AuthenticatedRequest
     res.json({ success: true, data: rows });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao listar encargos patronais: ' + err.message });
+  }
+});
+
+/** GET /api/tables/encargos-patronais/export — Exportar encargos patronais (JSON ou XLSX) */
+router.get('/encargos-patronais/export', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const format = String(req.query.format || 'xlsx').toLowerCase();
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT codigo_atividade, nome_ramo, inss_patronal, rat_fap, sistema_s, entidades_descricao
+      FROM encargos_patronais_parametros
+      WHERE ativo = 1
+      ORDER BY nome_ramo
+    `).all();
+
+    sendExportFile(res, 'Encargos_Previdenciarios_Patronais', format, rows);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao exportar encargos patronais: ' + err.message });
+  }
+});
+
+/** POST /api/tables/encargos-patronais/upload — Upload em massa de encargos (JSON ou XLSX) */
+router.post('/encargos-patronais/upload', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { itens } = req.body as { itens: any[] };
+    if (!Array.isArray(itens) || itens.length === 0) {
+      res.status(400).json({ success: false, message: 'Nenhum registro recebido para importação.' });
+      return;
+    }
+
+    const db = getDatabase();
+    const stmt = db.prepare(`
+      INSERT INTO encargos_patronais_parametros (
+        id, codigo_atividade, nome_ramo, inss_patronal, rat_fap, sistema_s, entidades_descricao, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      ON CONFLICT(codigo_atividade) DO UPDATE SET
+        nome_ramo = excluded.nome_ramo,
+        inss_patronal = excluded.inss_patronal,
+        rat_fap = excluded.rat_fap,
+        sistema_s = excluded.sistema_s,
+        entidades_descricao = excluded.entidades_descricao,
+        updated_at = datetime('now')
+    `);
+
+    let inseridos = 0;
+    const tx = db.transaction((rows: any[]) => {
+      for (const item of rows) {
+        const cod = String(item['Código'] || item.codigo_atividade || '').trim();
+        const nome = String(item['Nome'] || item['Ramo'] || item.nome_ramo || '').trim();
+        if (!cod || !nome) continue;
+        const rowId = item.id || uuid();
+        stmt.run(
+          rowId, cod, nome,
+          Number(item['INSS Patronal'] ?? item.inss_patronal ?? 0.20),
+          Number(item['RAT / FAP'] ?? item.rat_fap ?? 0.02),
+          Number(item['Sistema S'] ?? item.sistema_s ?? 0.058),
+          String(item['Entidades'] || item.entidades_descricao || '')
+        );
+        inseridos++;
+      }
+    });
+    tx(itens);
+
+    res.json({ success: true, message: `${inseridos} encargos patronais importados com sucesso!` });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao importar encargos patronais: ' + err.message });
   }
 });
 
@@ -1225,6 +2303,18 @@ router.post('/encargos-patronais', requireAuth, requirePerfil('admin_master', 'c
     res.json({ success: true, message: 'Encargo patronal gravado com sucesso!' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: 'Erro ao gravar encargos patronais: ' + err.message });
+  }
+});
+
+/** DELETE /api/tables/encargos-patronais/:id — Excluir encargo patronal */
+router.delete('/encargos-patronais/:id', requireAuth, requirePerfil('admin_master', 'contador_gestor'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const db = getDatabase();
+    db.prepare('DELETE FROM encargos_patronais_parametros WHERE id = ?').run(id);
+    res.json({ success: true, message: 'Encargo patronal excluído com sucesso!' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: 'Erro ao excluir encargo patronal: ' + err.message });
   }
 });
 

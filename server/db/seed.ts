@@ -15,6 +15,7 @@ import { AUTH } from '../config';
 
 import { seedRegimesParametros } from './seed_regimes';
 import { seedCategoriaB } from './seed_categoria_b';
+import { seedTabelasOficiais } from './seed_tabelas_oficiais';
 
 export function seedDatabase(): void {
   const db = getDatabase();
@@ -23,6 +24,7 @@ export function seedDatabase(): void {
   seedParametrosInferencia(db);
   seedRegimesParametros(db);
   seedCategoriaB(db);
+  seedTabelasOficiais();
 
   // Verificar se já foi populado
   const existingUsers = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as any;
@@ -180,7 +182,7 @@ export function seedDatabase(): void {
   // CATÁLOGO DE ANEXOS & REGIMES ESPECIAIS (NCM / NBS / cClassTrib)
   // =========================================================
   const ncmRegras = [
-    { ncm: '2711.19.10', nbs: '', cclasstrib: '900001', desc: 'Gás Liquefeito de Petróleo (GLP)', tipo: 'ad_rem', red: 0, anexo: 'Art. 350 LC 214/25', base: 'LC 214/2025' },
+    { ncm: '2711.19.10', nbs: '', cclasstrib: '620006', desc: 'Gás Liquefeito de Petróleo (GLP)', tipo: 'ad_rem', red: 0, anexo: 'Art. 172 LC 214/25', base: 'LC 214/2025' },
     { ncm: '1006.10.92', nbs: '', cclasstrib: '030001', desc: 'Arroz em grãos não parboilizado', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
     { ncm: '0401.20.10', nbs: '', cclasstrib: '030001', desc: 'Leite pasteurizado integral', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
     { ncm: '0713.33.19', nbs: '', cclasstrib: '030001', desc: 'Feijão preto e feijão carioca', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },

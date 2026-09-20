@@ -5,7 +5,7 @@ import {
   Users, Trash2, ArrowUpRight, Database, FolderCheck, Check, Edit3, Eye, EyeOff,
   FileText, MapPin, UserCheck, FileCode, Copy, Download, Zap, Grid, List,
   Shield, Activity, ExternalLink, ArrowRight, Globe, Server, Radio, Cpu,
-  UserPlus, UserMinus, Workflow, Send, Code
+  UserPlus, UserMinus, Workflow, Send, Code, Landmark
 } from 'lucide-react';
 import { ClienteEmpresaTenant, CertificadoA1, UsuarioCorporativo } from '../types';
 import { useApi } from '../hooks/useApi';
@@ -91,18 +91,49 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     setEquipeFeedback(null);
     try {
       const [resMembros, resUsers] = await Promise.all([
-        get<{ success: boolean; data: MembroEmpresa[] }>(`/users/empresa/${empId}/membros`),
-        get<{ success: boolean; data: UsuarioCorporativo[] }>('/users')
+        get<any>(`/users/empresa/${empId}/membros`),
+        get<any>('/users')
       ]);
 
-      if (resMembros.ok && resMembros.data?.data) {
-        setMembrosEmpresa(resMembros.data.data);
+      if (resMembros.ok && resMembros.data) {
+        const rawMembros = Array.isArray(resMembros.data?.data?.membros)
+          ? resMembros.data.data.membros
+          : Array.isArray(resMembros.data?.data)
+            ? resMembros.data.data
+            : Array.isArray(resMembros.data?.membros)
+              ? resMembros.data.membros
+              : [];
+
+        const membrosNormalizados: MembroEmpresa[] = rawMembros.map((m: any) => ({
+          id: m.usuarioId || m.id || '',
+          nome: m.nome || 'Colaborador',
+          email: m.email || '',
+          papel: m.perfil || m.papel || 'analista_fiscal',
+          departamento: m.departamento || '',
+          ativo: m.status !== 'bloqueado',
+          permissao: (m.permissao as any) || 'total',
+          modulosPermitidos: Array.isArray(m.modulosPermitidos) ? m.modulosPermitidos : [m.modulosPermitidos || '*'],
+          vinculadoEm: m.vinculadoEm || m.vinculado_em || m.created_at || ''
+        }));
+        setMembrosEmpresa(membrosNormalizados);
+      } else {
+        setMembrosEmpresa([]);
       }
-      if (resUsers.ok && resUsers.data?.data) {
-        setTodosUsuarios(resUsers.data.data);
+
+      if (resUsers.ok && resUsers.data) {
+        const rawUsers = Array.isArray(resUsers.data?.data)
+          ? resUsers.data.data
+          : Array.isArray(resUsers.data)
+            ? resUsers.data
+            : [];
+        setTodosUsuarios(rawUsers);
+      } else {
+        setTodosUsuarios([]);
       }
     } catch (err: any) {
       console.error('Erro ao carregar equipe da empresa:', err);
+      setMembrosEmpresa([]);
+      setTodosUsuarios([]);
     } finally {
       setMembrosLoading(false);
     }
@@ -181,12 +212,64 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [tenantNfseNacionalUrl, setTenantNfseNacionalUrl] = useState('https://www.nfse.gov.br/dnfse/api/v1/eventos');
   const [tenantApiKeyCgibs, setTenantApiKeyCgibs] = useState('');
   const [tenantBearerTokenRfb, setTenantBearerTokenRfb] = useState('');
+  const [tenantRfbClientId, setTenantRfbClientId] = useState('');
+  const [tenantRfbClientSecret, setTenantRfbClientSecret] = useState('');
+  const [tenantRfbClientSecretMascarado, setTenantRfbClientSecretMascarado] = useState('');
+  const [showRfbSecret, setShowRfbSecret] = useState(false);
+  const [isEditingRfbSecret, setIsEditingRfbSecret] = useState(false);
   const [tenantFlagWebhook, setTenantFlagWebhook] = useState(true);
   const [tenantFlagConsultaDemanda, setTenantFlagConsultaDemanda] = useState(true);
   const [showTenantSecret, setShowTenantSecret] = useState(false);
   const [isEditingSecret, setIsEditingSecret] = useState(false);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
+  const [isTestingOAuth, setIsTestingOAuth] = useState(false);
+  const [oauthTestResult, setOauthTestResult] = useState<{
+    sucesso: boolean;
+    statusHttp: number;
+    mensagem: string;
+    latenciaMs?: number;
+    detalhes?: any;
+  } | null>(null);
+
+  const handleTestOAuthConnection = async () => {
+    if (!editingTenant) return;
+    if (!tenantRfbClientId && !tenantRfbClientSecretMascarado && !tenantRfbClientSecret) {
+      setOauthTestResult({
+        sucesso: false,
+        statusHttp: 400,
+        mensagem: 'Informe o Client ID e o Client Secret emitidos no portal da Receita Federal (consumo.tributos.gov.br) antes de testar a conexão.'
+      });
+      return;
+    }
+    setIsTestingOAuth(true);
+    setOauthTestResult(null);
+    try {
+      const res = await post<any>('/apuracao/test-oauth-token', {
+        empresaId: editingTenant.id,
+        clientId: tenantRfbClientId,
+        clientSecret: tenantRfbClientSecret,
+        rfbUrl: tenantRfbUrl
+      });
+      if (res.ok && res.data) {
+        setOauthTestResult(res.data);
+      } else {
+        setOauthTestResult({
+          sucesso: false,
+          statusHttp: res.status || 400,
+          mensagem: res.error || res.data?.error || 'Falha ao validar autenticação OAuth 2.0 com a Receita Federal.'
+        });
+      }
+    } catch (err: any) {
+      setOauthTestResult({
+        sucesso: false,
+        statusHttp: 500,
+        mensagem: err.message
+      });
+    } finally {
+      setIsTestingOAuth(false);
+    }
+  };
 
   // Integrações ERP específicas da Empresa
   const [tenantTipoErp, setTenantTipoErp] = useState<'TOTVS' | 'SAP' | 'SENIOR' | 'LINX' | 'OMIE' | 'GENERICO'>('GENERICO');
@@ -247,6 +330,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     setPingStatus(null);
     setWebhookTestResult(null);
     setShowWebhookPayloadPreview(false);
+    setOauthTestResult(null);
     try {
       const res = await get<any>(`/apuracao/credenciais?empresaId=${empId}`);
       if (res.ok && res.data) {
@@ -254,9 +338,15 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setTenantClientSecret('');
         setIsEditingSecret(false);
         setTenantClientSecretMascarado(res.data.clientSecretMascarado || (res.data.configurado ? '••••••••••••' : ''));
+
+        setTenantRfbClientId(res.data.rfbClientId || '');
+        setTenantRfbClientSecret('');
+        setIsEditingRfbSecret(false);
+        setTenantRfbClientSecretMascarado(res.data.rfbClientSecretMascarado || '');
+
         setTenantWebhookUrl(res.data.webhookUrl || '');
         setTenantCgibsUrl(res.data.cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync');
-        setTenantRfbUrl(res.data.rfbUrl || 'https://api.receita.fazenda.gov.br/rtc/v1/apuracao-assistida');
+        setTenantRfbUrl(res.data.rfbUrl || 'https://consumo.tributos.gov.br');
         setTenantSvrsUrl(res.data.svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx');
         setTenantNfseNacionalUrl(res.data.nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos');
         setTenantApiKeyCgibs(res.data.apiKeyCgibs || '');
@@ -286,6 +376,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         empresaId: editingTenant.id,
         clientId: tenantClientId,
         clientSecret: tenantClientSecret,
+        rfbClientId: tenantRfbClientId,
+        rfbClientSecret: tenantRfbClientSecret,
         webhookUrl: tenantWebhookUrl,
         cgibsUrl: tenantCgibsUrl,
         rfbUrl: tenantRfbUrl,
@@ -308,7 +400,12 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           setTenantClientSecretMascarado(`${tenantClientSecret.substring(0, 4)}...${tenantClientSecret.slice(-4)}`);
           setTenantClientSecret('');
         }
+        if (tenantRfbClientSecret && tenantRfbClientSecret.trim()) {
+          setTenantRfbClientSecretMascarado(`${tenantRfbClientSecret.substring(0, 4)}...${tenantRfbClientSecret.slice(-4)}`);
+          setTenantRfbClientSecret('');
+        }
         setIsEditingSecret(false);
+        setIsEditingRfbSecret(false);
         setTimeout(() => setIntegracoesSalvo(false), 3500);
       } else {
         alert('Erro ao salvar integrações: ' + (res.error || res.data?.error || 'Erro desconhecido'));
@@ -665,6 +762,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       uf: editingTenant.uf,
       regimeTributario: editingTenant.regimeTributario,
       manifestarCienciaAutomatica: editingTenant.manifestarCienciaAutomatica !== false,
+      bloquearCreditoCombustiveis: editingTenant.bloquearCreditoCombustiveis !== false,
+      bloquear_credito_combustiveis: editingTenant.bloquearCreditoCombustiveis !== false ? 1 : 0,
+      ncmVedadosCredito: editingTenant.ncmVedadosCredito || '',
+      ncm_vedados_credito: editingTenant.ncmVedadosCredito || '',
       ie: editingTenant.ie,
       im: editingTenant.im,
       cnaePrincipal: editingTenant.cnaePrincipal,
@@ -683,6 +784,8 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         empresaId: editingTenant.id,
         clientId: tenantClientId,
         clientSecret: tenantClientSecret,
+        rfbClientId: tenantRfbClientId,
+        rfbClientSecret: tenantRfbClientSecret,
         webhookUrl: tenantWebhookUrl,
         cgibsUrl: tenantCgibsUrl,
         rfbUrl: tenantRfbUrl,
@@ -705,7 +808,12 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           setTenantClientSecretMascarado(`${tenantClientSecret.substring(0, 4)}...${tenantClientSecret.slice(-4)}`);
           setTenantClientSecret('');
         }
+        if (tenantRfbClientSecret && tenantRfbClientSecret.trim()) {
+          setTenantRfbClientSecretMascarado(`${tenantRfbClientSecret.substring(0, 4)}...${tenantRfbClientSecret.slice(-4)}`);
+          setTenantRfbClientSecret('');
+        }
         setIsEditingSecret(false);
+        setIsEditingRfbSecret(false);
       } else {
         credErro = credRes.error || credRes.data?.error || 'Erro ao sincronizar credenciais no banco.';
       }
@@ -2003,7 +2111,12 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
               <button
                 type="button"
-                onClick={() => setModalTab('equipe')}
+                onClick={() => {
+                  setModalTab('equipe');
+                  if (editingTenant) {
+                    loadEmpresaMembros(editingTenant.id);
+                  }
+                }}
                 className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${modalTab === 'equipe'
                     ? 'bg-emerald-950 text-emerald-200 border border-emerald-700 shadow-md'
                     : 'text-slate-400 hover:text-slate-200'
@@ -2011,7 +2124,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               >
                 <Users className="w-4 h-4 text-emerald-400" />
                 5. Equipe & Permissões Desta Empresa
-                {membrosEmpresa.length > 0 && (
+                {Array.isArray(membrosEmpresa) && membrosEmpresa.length > 0 && (
                   <span className="ml-1 px-1.5 py-0.5 rounded-full bg-emerald-800/90 text-[10px] text-emerald-200 font-mono">
                     {membrosEmpresa.length}
                   </span>
@@ -2194,6 +2307,51 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       />
                       <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-600"></div>
                     </label>
+                  </div>
+
+                  {/* Bloqueio de Crédito de Combustíveis (Art. 267 da LC 214/2025) */}
+                  <div className="p-3.5 bg-amber-950/20 border border-amber-800/50 rounded-2xl space-y-2.5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          <span className="font-bold text-slate-100 text-xs">
+                            Vedação Legal de Crédito sobre Combustíveis (Art. 267 LC 214/2025)
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          Quando ativado, zera automaticamente o crédito esperado de IBS/CBS sobre aquisições de combustíveis e derivados de petróleo, apontando divergência caso o ERP aproprie crédito indevido.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={editingTenant.bloquearCreditoCombustiveis !== false}
+                          onChange={(e) => setEditingTenant({
+                            ...editingTenant,
+                            bloquearCreditoCombustiveis: e.target.checked
+                          })}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                      </label>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        NCMs Vedados Adicionais para Crédito (separados por vírgula)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ex: 2710, 2711, 2207 (Deixe vazio para usar apenas regras automáticas da LC 214)"
+                        value={editingTenant.ncmVedadosCredito || ''}
+                        onChange={(e) => setEditingTenant({
+                          ...editingTenant,
+                          ncmVedadosCredito: e.target.value
+                        })}
+                        className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-amber-500/70"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -2785,32 +2943,249 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     )}
                   </div>
 
-                  {/* Grid de Configurações Governamentais */}
+                  {/* Header Explicativo — Segregação Constitucional RFB vs CGIBS */}
+                  <div className="p-4 bg-gradient-to-r from-cyan-950/40 via-slate-900 to-indigo-950/40 border border-cyan-800/40 rounded-xl space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400 mt-0.5 shrink-0">
+                          <Building2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-white text-sm">Segregação de Ambientes Oficiais — Reforma Tributária</h4>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-900/60 text-cyan-300 border border-cyan-700/50">
+                              Receita Federal (CBS / IS)
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-950 border border-indigo-800 text-indigo-300">
+                              Comitê Gestor (IBS)
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                            De acordo com a <strong>EC 132/2023</strong> e a <strong>LC 214/2025</strong>, a apuração e gestão tributária da <strong>CBS e Imposto Seletivo</strong> (competência da União administrada pela RFB via portal <span className="text-cyan-300 font-mono">consumo.tributos.gov.br</span>) e do <strong>IBS</strong> (competência dos Estados e Municípios administrada pelo Comitê Gestor - CGIBS) operam em <strong>ambientes tecnológicos completamente independentes</strong>, com portais, barramentos de API e credenciais próprias.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Grid de Configurações Governamentais Segregadas */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                    {/* Card 1: CGIBS / Apuração Assistida */}
-                    <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
-                      <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2">
-                        <Server className="w-4 h-4 text-cyan-400" />
-                        <span className="font-bold text-white text-xs">Comitê Gestor do IBS (CGIBS / SEFIN)</span>
+                    {/* Card 1: Receita Federal do Brasil (RFB) — CBS & Imposto Seletivo */}
+                    <div className="p-4 bg-slate-950 rounded-xl border border-cyan-800/50 space-y-3 shadow-lg shadow-cyan-950/20">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Landmark className="w-4 h-4 text-cyan-400" />
+                          <div>
+                            <span className="font-bold text-white text-xs block">Receita Federal do Brasil (RFB)</span>
+                            <span className="text-[10px] text-slate-400">Portal Nacional consumo.tributos.gov.br</span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-950 border border-cyan-800 text-cyan-400">
+                          CBS & IS (Federal)
+                        </span>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <div>
-                          <label className="font-bold text-slate-300 block mb-1">Client ID (CGIBS / SEFIN)</label>
+                          <label className="font-bold text-slate-300 block mb-1 text-xs">
+                            Client ID (Receita Federal / CBS)
+                          </label>
                           <input
                             type="text"
-                            placeholder="Ex: 5c37db2e924740449c621b2d95afeef2"
-                            value={tenantClientId}
-                            onChange={(e) => setTenantClientId(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
+                            placeholder="Ex: 9d3984ded2c244b792b22a965d6657f4"
+                            value={tenantRfbClientId}
+                            onChange={(e) => setTenantRfbClientId(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-xs"
                           />
+                          <span className="text-[10px] text-slate-500 mt-0.5 block">
+                            Chave Client ID emitida na área de Desenvolvedores / APIs de consumo.tributos.gov.br.
+                          </span>
                         </div>
 
                         <div>
-                          <label className="font-bold text-slate-300 block mb-1 flex items-center justify-between">
+                          <label className="font-bold text-slate-300 block mb-1 flex items-center justify-between text-xs">
                             <span className="flex items-center gap-2">
-                              <span>Client Secret (Chave Privada)</span>
+                              <span>Client Secret (Receita Federal / Chave Privada)</span>
+                              {tenantRfbClientSecretMascarado && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 flex items-center gap-1">
+                                  <Check className="w-3 h-3" /> Armazenado no Cofre
+                                </span>
+                              )}
+                            </span>
+                            {!isEditingRfbSecret && tenantRfbClientSecretMascarado ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsEditingRfbSecret(true);
+                                  setTenantRfbClientSecret('');
+                                }}
+                                className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer text-[11px] font-bold"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Substituir Chave</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShowRfbSecret(!showRfbSecret)}
+                                className="text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer text-[10px]"
+                              >
+                                {showRfbSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                <span>{showRfbSecret ? 'Ocultar' : 'Exibir'}</span>
+                              </button>
+                            )}
+                          </label>
+
+                          {tenantRfbClientSecretMascarado && !isEditingRfbSecret ? (
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-emerald-600/40 text-xs">
+                              <div className="flex items-center gap-2 font-mono text-emerald-300">
+                                <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>•••••••••••• ({tenantRfbClientSecretMascarado})</span>
+                              </div>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 font-bold">
+                                Ativa & Conectada
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="relative">
+                                <input
+                                  type={showRfbSecret ? 'text' : 'password'}
+                                  placeholder={tenantRfbClientSecretMascarado ? "Digite o novo Client Secret da RFB para substituir" : "Cole o Client Secret emitido no consumo.tributos.gov.br"}
+                                  value={tenantRfbClientSecret}
+                                  onChange={(e) => setTenantRfbClientSecret(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 pr-24 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-xs"
+                                  autoFocus={isEditingRfbSecret}
+                                />
+                                {isEditingRfbSecret && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsEditingRfbSecret(false);
+                                      setTenantRfbClientSecret('');
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-200 px-2 py-1 bg-slate-800 rounded border border-slate-700 cursor-pointer"
+                                  >
+                                    Manter Atual
+                                  </button>
+                                )}
+                              </div>
+                              {isEditingRfbSecret && (
+                                <span className="text-[10px] text-slate-400 block">
+                                  Caso queira manter a chave atual ({tenantRfbClientSecretMascarado}), clique em "Manter Atual".
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-300 text-xs">
+                              URL Base API Receita Federal (CBS / IS)
+                            </label>
+                            <span className="text-[10px] text-cyan-400 font-medium">Ambiente Oficial</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={tenantRfbUrl}
+                            onChange={(e) => setTenantRfbUrl(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-[11px]"
+                          />
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            <span className="text-[10px] text-slate-500">Atalhos:</span>
+                            <button
+                              type="button"
+                              onClick={() => setTenantRfbUrl('https://consumo.tributos.gov.br')}
+                              className="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 cursor-pointer"
+                            >
+                              Oficial (consumo.tributos.gov.br)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTenantRfbUrl('https://piloto-cbs.tributos.gov.br')}
+                              className="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-indigo-400 border border-slate-700 cursor-pointer"
+                            >
+                              Piloto Restrito (piloto-cbs)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Teste de Conexão OAuth 2.0 exclusivo RFB */}
+                        <div className="pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={handleTestOAuthConnection}
+                            disabled={isTestingOAuth}
+                            className="w-full py-2 px-3 bg-gradient-to-r from-cyan-900/40 to-blue-900/40 hover:from-cyan-800/50 hover:to-blue-800/50 border border-cyan-700/50 hover:border-cyan-500 rounded-lg text-xs font-bold text-cyan-200 flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50"
+                          >
+                            {isTestingOAuth ? (
+                              <>
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                <span>Validando Autenticação OAuth 2.0 com a Receita Federal...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>Testar Conexão OAuth 2.0 (consumo.tributos.gov.br)</span>
+                              </>
+                            )}
+                          </button>
+
+                          {oauthTestResult && (
+                            <div className={`mt-2 p-2.5 rounded-lg border text-xs ${
+                              oauthTestResult.sucesso
+                                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
+                                : 'bg-rose-950/40 border-rose-800/60 text-rose-300'
+                            }`}>
+                              <div className="flex items-center justify-between font-bold text-[11px] mb-0.5">
+                                <span>{oauthTestResult.sucesso ? '✓ Autenticação Aprovada (RFB)' : '⚠ Falha na Conexão (RFB)'}</span>
+                                <span className="font-mono">{oauthTestResult.statusHttp ? `HTTP ${oauthTestResult.statusHttp}` : ''} {oauthTestResult.latenciaMs ? `(${oauthTestResult.latenciaMs}ms)` : ''}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-300 leading-relaxed">{oauthTestResult.mensagem}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card 2: Comitê Gestor do IBS (CGIBS / SEFIN) — IBS Estadual & Municipal */}
+                    <div className="p-4 bg-slate-950 rounded-xl border border-indigo-800/50 space-y-3 shadow-lg shadow-indigo-950/20">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Server className="w-4 h-4 text-indigo-400" />
+                          <div>
+                            <span className="font-bold text-white text-xs block">Comitê Gestor do IBS (CGIBS / SEFIN)</span>
+                            <span className="text-[10px] text-slate-400">Ambiente Subnacional Integrado (Estados e Municípios)</span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-950 border border-indigo-800 text-indigo-400">
+                          IBS (Estadual & Municipal)
+                        </span>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="font-bold text-slate-300 block mb-1 text-xs">
+                            Client ID (CGIBS / SEFIN - IBS)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Client ID fornecido pelo Comitê Gestor do IBS"
+                            value={tenantClientId}
+                            onChange={(e) => setTenantClientId(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-xs"
+                          />
+                          <span className="text-[10px] text-slate-500 mt-0.5 block">
+                            Chave pública de identificação do contribuinte no barramento do CGIBS.
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="font-bold text-slate-300 block mb-1 flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-2">
+                              <span>Client Secret (CGIBS / Chave Privada no Cofre)</span>
                               {tenantClientSecretMascarado && (
                                 <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 flex items-center gap-1">
                                   <Check className="w-3 h-3" /> Armazenado no Cofre
@@ -2824,7 +3199,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                                   setIsEditingSecret(true);
                                   setTenantClientSecret('');
                                 }}
-                                className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer text-[11px] font-bold"
+                                className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 cursor-pointer text-[11px] font-bold"
                               >
                                 <Edit3 className="w-3 h-3" />
                                 <span>Substituir Chave</span>
@@ -2856,10 +3231,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                               <div className="relative">
                                 <input
                                   type={showTenantSecret ? 'text' : 'password'}
-                                  placeholder={tenantClientSecretMascarado ? "Digite a nova chave privada para substituir" : "Cole o Client Secret fornecido pelo CGIBS"}
+                                  placeholder={tenantClientSecretMascarado ? "Digite o novo Client Secret do CGIBS para substituir" : "Cole o Client Secret emitido pelo Comitê Gestor"}
                                   value={tenantClientSecret}
                                   onChange={(e) => setTenantClientSecret(e.target.value)}
-                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 pr-24 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-xs"
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 pr-24 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-xs"
                                   autoFocus={isEditingSecret}
                                 />
                                 {isEditingSecret && (
@@ -2885,12 +3260,14 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         </div>
 
                         <div>
-                          <label className="font-bold text-slate-300 block mb-1">URL API CGIBS (Apuração Assistida)</label>
+                          <label className="font-bold text-slate-300 block mb-1 text-xs">
+                            URL API CGIBS (Barramento e Apuração Assistida do IBS)
+                          </label>
                           <input
                             type="text"
                             value={tenantCgibsUrl}
                             onChange={(e) => setTenantCgibsUrl(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-[11px]"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-[11px]"
                           />
                         </div>
 
@@ -2900,9 +3277,9 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                               type="checkbox"
                               checked={tenantFlagWebhook}
                               onChange={(e) => setTenantFlagWebhook(e.target.checked)}
-                              className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
+                              className="rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-0"
                             />
-                            <span className="text-slate-300 text-[11px]">Webhook Push Ativo (receber deltas em tempo real)</span>
+                            <span className="text-slate-300 text-[11px]">Webhook Push Ativo (receber deltas e notificações do IBS em tempo real)</span>
                           </label>
 
                           <label className="flex items-center gap-2 cursor-pointer">
@@ -2910,7 +3287,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                               type="checkbox"
                               checked={tenantFlagConsultaDemanda}
                               onChange={(e) => setTenantFlagConsultaDemanda(e.target.checked)}
-                              className="rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-0"
+                              className="rounded border-slate-700 bg-slate-900 text-indigo-500 focus:ring-0"
                             />
                             <span className="text-slate-300 text-[11px]">Consulta por Demanda Ativa (GET /v1/aassist/solicitacao)</span>
                           </label>
@@ -2918,52 +3295,58 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                       </div>
                     </div>
 
-                    {/* Card 2: Receita Federal & SEFAZ */}
-                    <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
-                      <div className="flex items-center gap-2 border-b border-slate-800/80 pb-2">
-                        <Cpu className="w-4 h-4 text-indigo-400" />
-                        <span className="font-bold text-white text-xs">Receita Federal (RFB) & SEFAZ</span>
+                    {/* Card 3: Serviços Governamentais Complementares (SEFAZ SVRS & NFS-e) */}
+                    <div className="p-4 bg-slate-950 rounded-xl border border-slate-800 space-y-3 md:col-span-2">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <div className="flex items-center gap-2">
+                          <Cpu className="w-4 h-4 text-purple-400" />
+                          <span className="font-bold text-white text-xs">
+                            Serviços Governamentais Complementares (SEFAZ & NFS-e Nacional)
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-950 border border-purple-800 text-purple-400">
+                          SEFAZ SVRS + DNFSE
+                        </span>
                       </div>
 
-                      <div className="space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="font-bold text-slate-300 block mb-1">OAuth2 Token / API Key Receita Federal</label>
-                          <input
-                            type="password"
-                            placeholder="Bearer token para CBS e Imposto Seletivo"
-                            value={tenantBearerTokenRfb}
-                            onChange={(e) => setTenantBearerTokenRfb(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="font-bold text-slate-300 block mb-1">URL API Receita Federal (RFB)</label>
-                          <input
-                            type="text"
-                            value={tenantRfbUrl}
-                            onChange={(e) => setTenantRfbUrl(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-[11px]"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="font-bold text-slate-300 block mb-1">WebService SEFAZ Virtual RS (SVRS Eventos)</label>
+                          <label className="font-bold text-slate-300 block mb-1 text-xs">WebService SEFAZ Virtual RS (SVRS Eventos)</label>
                           <input
                             type="text"
                             value={tenantSvrsUrl}
                             onChange={(e) => setTenantSvrsUrl(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-[11px]"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-purple-500 text-[11px]"
                           />
+                          <span className="text-[10px] text-slate-500 mt-0.5 block">
+                            Recepção nacional de eventos fiscais de NF-e e NFC-e.
+                          </span>
                         </div>
 
                         <div>
-                          <label className="font-bold text-slate-300 block mb-1">Endpoint API NFS-e Padrão Nacional</label>
+                          <label className="font-bold text-slate-300 block mb-1 text-xs">Endpoint API NFS-e Padrão Nacional</label>
                           <input
                             type="text"
                             value={tenantNfseNacionalUrl}
                             onChange={(e) => setTenantNfseNacionalUrl(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-indigo-500 text-[11px]"
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-purple-500 text-[11px]"
+                          />
+                          <span className="text-[10px] text-slate-500 mt-0.5 block">
+                            Ambiente de dados nacional para Notas Fiscais de Serviços eletrônicas.
+                          </span>
+                        </div>
+
+                        <div className="sm:col-span-2 pt-1 border-t border-slate-800/60">
+                          <label className="font-bold text-slate-400 block mb-1 text-[11px] flex items-center justify-between">
+                            <span>OAuth2 Bearer Token Manual (Opcional / Debug Swagger)</span>
+                            <span className="text-[10px] text-slate-500 font-normal">Renovação automática via Client ID ativa</span>
+                          </label>
+                          <input
+                            type="password"
+                            placeholder="Deixe em branco para usar renovação automática via Client Secret"
+                            value={tenantBearerTokenRfb}
+                            onChange={(e) => setTenantBearerTokenRfb(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-purple-500 text-xs"
                           />
                         </div>
                       </div>
@@ -3024,8 +3407,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     {(() => {
-                      const usuariosDisponiveis = todosUsuarios.filter(
-                        u => !membrosEmpresa.some(m => m.id === u.id)
+                      const safeMembros = Array.isArray(membrosEmpresa) ? membrosEmpresa : [];
+                      const safeUsers = Array.isArray(todosUsuarios) ? todosUsuarios : [];
+                      const usuariosDisponiveis = safeUsers.filter(
+                        u => u && u.id && !safeMembros.some(m => (m.id || (m as any).usuarioId) === u.id)
                       );
 
                       if (usuariosDisponiveis.length === 0) {
@@ -3049,11 +3434,14 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-emerald-500"
                             >
                               <option value="">-- Selecione o colaborador --</option>
-                              {usuariosDisponiveis.map(u => (
-                                <option key={u.id} value={u.id}>
-                                  {u.nome} ({u.email}) - {u.papel.replace('_', ' ').toUpperCase()}
-                                </option>
-                              ))}
+                              {usuariosDisponiveis.map(u => {
+                                const perfilFormatado = (u.perfil || (u as any).papel || 'analista_fiscal').replace('_', ' ').toUpperCase();
+                                return (
+                                  <option key={u.id} value={u.id}>
+                                    {u.nome || 'Colaborador'} ({u.email || ''}) - {perfilFormatado}
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
 
@@ -3099,7 +3487,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         <Users className="w-4 h-4 text-cyan-400" />
                         <span className="font-bold text-white text-xs">Colaboradores com Acesso a esta Empresa</span>
                         <span className="px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-300 font-mono text-[10px]">
-                          {membrosEmpresa.length} {membrosEmpresa.length === 1 ? 'membro' : 'membros'}
+                          {Array.isArray(membrosEmpresa) ? membrosEmpresa.length : 0} {(Array.isArray(membrosEmpresa) ? membrosEmpresa.length : 0) === 1 ? 'membro' : 'membros'}
                         </span>
                       </div>
 
@@ -3120,7 +3508,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                         <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
                         <span>Carregando equipe desta empresa...</span>
                       </div>
-                    ) : membrosEmpresa.length === 0 ? (
+                    ) : (!Array.isArray(membrosEmpresa) || membrosEmpresa.length === 0) ? (
                       <div className="py-8 text-center space-y-2">
                         <Users className="w-8 h-8 text-slate-600 mx-auto" />
                         <p className="text-slate-400 text-xs">Nenhum colaborador vinculado a esta empresa ainda.</p>
@@ -3141,61 +3529,69 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/60">
-                            {membrosEmpresa.map((m) => (
-                              <tr key={m.id} className="hover:bg-slate-900/40 transition-colors">
-                                <td className="py-3 pr-3">
-                                  <div className="flex items-center gap-2.5">
-                                    <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs uppercase shrink-0">
-                                      {m.nome.charAt(0)}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="font-bold text-white truncate">{m.nome}</div>
-                                      <div className="text-[10px] text-slate-400 truncate">{m.email}</div>
-                                    </div>
-                                  </div>
-                                </td>
+                            {membrosEmpresa.map((m) => {
+                              const membroId = m.id || (m as any).usuarioId || '';
+                              const membroNome = m.nome || 'Colaborador';
+                              const membroEmail = m.email || '';
+                              const papelDesc = (m.papel || (m as any).perfil || 'analista_fiscal').replace('_', ' ').toUpperCase();
+                              const inicial = membroNome.charAt(0).toUpperCase() || 'C';
 
-                                <td className="py-3 pr-3">
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
-                                    {m.papel.replace('_', ' ').toUpperCase()}
-                                  </span>
-                                </td>
+                              return (
+                                <tr key={membroId || Math.random()} className="hover:bg-slate-900/40 transition-colors">
+                                  <td className="py-3 pr-3">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-slate-200 text-xs uppercase shrink-0">
+                                        {inicial}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="font-bold text-white truncate">{membroNome}</div>
+                                        <div className="text-[10px] text-slate-400 truncate">{membroEmail}</div>
+                                      </div>
+                                    </div>
+                                  </td>
 
-                                <td className="py-3 pr-3">
-                                  <div className="flex items-center gap-2">
-                                    <select
-                                      value={m.permissao}
-                                      onChange={(e) => handleAlterarPermissaoMembro(editingTenant.id, m.id, e.target.value as any)}
-                                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-[11px] focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
+                                  <td className="py-3 pr-3">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                                      {papelDesc}
+                                    </span>
+                                  </td>
+
+                                  <td className="py-3 pr-3">
+                                    <div className="flex items-center gap-2">
+                                      <select
+                                        value={m.permissao || 'total'}
+                                        onChange={(e) => handleAlterarPermissaoMembro(editingTenant.id, membroId, e.target.value as any)}
+                                        className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200 text-[11px] focus:outline-none focus:border-cyan-500 font-medium cursor-pointer"
+                                      >
+                                        <option value="total">Total (Config. & Edição)</option>
+                                        <option value="escrita">Escrita (Operacional)</option>
+                                        <option value="leitura">Leitura (Consulta)</option>
+                                      </select>
+
+                                      <span className={`w-2 h-2 rounded-full ${m.permissao === 'total' ? 'bg-emerald-400' :
+                                          m.permissao === 'escrita' ? 'bg-cyan-400' : 'bg-amber-400'
+                                        }`} title={`Permissão: ${m.permissao || 'total'}`} />
+                                    </div>
+                                  </td>
+
+                                  <td className="py-3 pr-3 text-[11px] text-slate-400 font-mono">
+                                    {m.vinculadoEm ? new Date(m.vinculadoEm).toLocaleDateString('pt-BR') : '—'}
+                                  </td>
+
+                                  <td className="py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDesvincularMembro(editingTenant.id, membroId, membroNome)}
+                                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition-all cursor-pointer inline-flex items-center gap-1 text-[10px]"
+                                      title="Revogar acesso a esta empresa"
                                     >
-                                      <option value="total">Total (Config. & Edição)</option>
-                                      <option value="escrita">Escrita (Operacional)</option>
-                                      <option value="leitura">Leitura (Consulta)</option>
-                                    </select>
-
-                                    <span className={`w-2 h-2 rounded-full ${m.permissao === 'total' ? 'bg-emerald-400' :
-                                        m.permissao === 'escrita' ? 'bg-cyan-400' : 'bg-amber-400'
-                                      }`} title={`Permissão: ${m.permissao}`} />
-                                  </div>
-                                </td>
-
-                                <td className="py-3 pr-3 text-[11px] text-slate-400 font-mono">
-                                  {m.vinculadoEm ? new Date(m.vinculadoEm).toLocaleDateString('pt-BR') : '—'}
-                                </td>
-
-                                <td className="py-3 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDesvincularMembro(editingTenant.id, m.id, m.nome)}
-                                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white transition-all cursor-pointer inline-flex items-center gap-1 text-[10px]"
-                                    title="Revogar acesso a esta empresa"
-                                  >
-                                    <UserMinus className="w-3.5 h-3.5 text-rose-400" />
-                                    <span className="hidden sm:inline">Desvincular</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                                      <UserMinus className="w-3.5 h-3.5 text-rose-400" />
+                                      <span className="hidden sm:inline">Desvincular</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>

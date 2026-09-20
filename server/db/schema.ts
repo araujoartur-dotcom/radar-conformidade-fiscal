@@ -356,9 +356,48 @@ export function initializeSchema(): void {
       permite_credito       TEXT NOT NULL DEFAULT 'Sim',
       aliquota_esperada     TEXT DEFAULT '',
       alertas               TEXT DEFAULT '',
+      cst                   TEXT DEFAULT '',
+      desc_cst              TEXT DEFAULT '',
+      descricao             TEXT DEFAULT '',
+      exige_tributacao      TEXT DEFAULT 'Sim',
+      reducao_bc_cst        TEXT DEFAULT 'Não',
+      reducao_aliquota      TEXT DEFAULT 'Não',
+      diferimento           TEXT DEFAULT 'Não',
+      monofasica            TEXT DEFAULT 'Não',
+      perc_reducao_ibs      REAL DEFAULT 0,
+      perc_reducao_cbs      REAL DEFAULT 0,
+      tipo_aliquota         TEXT DEFAULT '',
+      url_legislacao        TEXT DEFAULT '',
+      numero_anexo          TEXT DEFAULT '',
+      tributacao_monofasica_normal TEXT DEFAULT 'Não',
+      tributacao_monofasica_retencao TEXT DEFAULT 'Não',
+      tributacao_monofasica_retida_anteriormente TEXT DEFAULT 'Não',
+      tributacao_monofasica_diferimento TEXT DEFAULT 'Não',
+      credito_presumido     TEXT DEFAULT 'Não',
+      estorno_credito       TEXT DEFAULT 'Não',
+      transferencia_credito TEXT DEFAULT 'Não',
+      dados_completos_json  TEXT DEFAULT '{}',
       ativo                 INTEGER NOT NULL DEFAULT 1,
       created_at            TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- =========================================================
+    -- INDICADOR DA OPERAÇÃO / LOCAL DA OPERAÇÃO (indOper - Art. 11/12 LC 214/2025)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS indoper_regras (
+      id                    TEXT PRIMARY KEY,
+      codigo                TEXT NOT NULL UNIQUE,
+      nome                  TEXT NOT NULL,
+      dispositivo_legal     TEXT NOT NULL,
+      local                 TEXT NOT NULL,
+      local_fornecedor      TEXT NOT NULL,
+      caracteristica        TEXT NOT NULL,
+      data_publicacao       TEXT DEFAULT '17/11/2025',
+      inicio_vigencia       TEXT DEFAULT '17/11/2025',
+      fim_vigencia          TEXT DEFAULT '-',
+      dados_completos_json  TEXT,
+      created_at            TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     -- =========================================================
@@ -570,6 +609,25 @@ export function initializeSchema(): void {
       created_at            TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- =========================================================
+    -- MODELOS DE RELATÓRIOS DINÂMICOS (COCKPIT FISCAL STUDIO)
+    -- =========================================================
+    CREATE TABLE IF NOT EXISTS relatorios_modelos_dinamicos (
+      id                    TEXT PRIMARY KEY,
+      nome                  TEXT NOT NULL,
+      descricao             TEXT DEFAULT '',
+      categoria             TEXT DEFAULT 'fiscal',          -- fiscal | auditoria | rtc | gerencial
+      escopo                TEXT NOT NULL DEFAULT 'pessoal', -- pessoal | empresa | global
+      usuario_id            TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      empresa_id            TEXT REFERENCES empresas(id) ON DELETE CASCADE,
+      configuracao_json     TEXT NOT NULL,                  -- JSON com fontes, dimensoes, metricas, filtros, ordenacao
+      criado_por_nome       TEXT DEFAULT '',
+      criado_por_email      TEXT DEFAULT '',
+      is_padrao_sistema     INTEGER DEFAULT 0,              -- 1 = Modelo nativo do sistema, 0 = Personalizado
+      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // 2. Migração dinâmica segura: adicionar colunas ausentes
@@ -601,6 +659,9 @@ export function initializeSchema(): void {
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'despachar_nfe_auto', "INTEGER NOT NULL DEFAULT 1");
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'despachar_nfse_auto', "INTEGER NOT NULL DEFAULT 1");
   addColumnIfNotExists('apuracao_credenciais_cgibs', 'notificar_manifestacao', "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'rfb_client_id', "TEXT DEFAULT ''");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'rfb_client_secret', "TEXT DEFAULT ''");
+  addColumnIfNotExists('apuracao_credenciais_cgibs', 'usar_credenciais_unificadas', "INTEGER NOT NULL DEFAULT 1");
 
   // Migrações em empresas
   addColumnIfNotExists('empresas', 'manifestar_ciencia_automatica', 'INTEGER NOT NULL DEFAULT 1');
@@ -661,6 +722,49 @@ export function initializeSchema(): void {
   addColumnIfNotExists('eventos_transmitidos', 'autor_cnpj', 'TEXT DEFAULT ""');
   addColumnIfNotExists('eventos_transmitidos', 'origem_evento', 'TEXT NOT NULL DEFAULT "proprio"');
 
+  // Migrações em empresas (política de crédito de combustíveis)
+  addColumnIfNotExists('empresas', 'bloquear_credito_combustiveis', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfNotExists('empresas', 'ncm_vedados_credito', 'TEXT DEFAULT "2710,2711"');
+
+  // Migrações em cclasstrib_regras (esquema oficial SVRS)
+  addColumnIfNotExists('cclasstrib_regras', 'cst', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'desc_cst', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'descricao', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'exige_tributacao', 'TEXT DEFAULT "Sim"');
+  addColumnIfNotExists('cclasstrib_regras', 'reducao_bc_cst', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'reducao_aliquota', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'diferimento', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'monofasica', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'perc_reducao_ibs', 'REAL DEFAULT 0');
+  addColumnIfNotExists('cclasstrib_regras', 'perc_reducao_cbs', 'REAL DEFAULT 0');
+  addColumnIfNotExists('cclasstrib_regras', 'tipo_aliquota', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'url_legislacao', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'numero_anexo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('cclasstrib_regras', 'tributacao_monofasica_normal', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'tributacao_monofasica_retencao', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'tributacao_monofasica_retida_anteriormente', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'tributacao_monofasica_diferimento', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'credito_presumido', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'estorno_credito', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'transferencia_credito', 'TEXT DEFAULT "Não"');
+  addColumnIfNotExists('cclasstrib_regras', 'dados_completos_json', 'TEXT DEFAULT "{}"');
+
+  // Migrações em ncm_regras_anexos (acervo LC 214/2025)
+  addColumnIfNotExists('ncm_regras_anexos', 'codigo_normalizado', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'nivel_codigo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'titulo_anexo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'item_anexo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'descritivo', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'tratamento', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'perc_aliquota_aplicavel', 'REAL DEFAULT 0');
+  addColumnIfNotExists('ncm_regras_anexos', 'tributo', 'TEXT DEFAULT "IBS e CBS"');
+  addColumnIfNotExists('ncm_regras_anexos', 'tipo_classificacao', 'TEXT DEFAULT "NCM/SH"');
+  addColumnIfNotExists('ncm_regras_anexos', 'condicionantes_observacoes', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'permite_credito', 'TEXT DEFAULT "Sim"');
+  addColumnIfNotExists('ncm_regras_anexos', 'is_combustivel', 'INTEGER DEFAULT 0');
+  addColumnIfNotExists('ncm_regras_anexos', 'cclasstrib_sugerido', 'TEXT DEFAULT ""');
+  addColumnIfNotExists('ncm_regras_anexos', 'cst_sugerido', 'TEXT DEFAULT ""');
+
   // 3. Criar Índices de Performance e View de Compatibilidade (após todas as colunas existirem)
   db.exec(`
     DROP VIEW IF EXISTS dfe_eventos;
@@ -716,7 +820,155 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_apuracao_extrato_operacao ON apuracao_extrato_cc(operacao_id);
     CREATE INDEX IF NOT EXISTS idx_apuracao_extrato_data ON apuracao_extrato_cc(dth_lancto);
     CREATE INDEX IF NOT EXISTS idx_apuracao_competencias_empresa ON apuracao_competencias(empresa_id, competencia);
+    CREATE INDEX IF NOT EXISTS idx_ncm_regras_cod_norm ON ncm_regras_anexos(codigo_normalizado);
+    CREATE INDEX IF NOT EXISTS idx_cclasstrib_cst ON cclasstrib_regras(cst);
+    CREATE INDEX IF NOT EXISTS idx_cclasstrib_cod ON cclasstrib_regras(cclasstrib);
+    CREATE INDEX IF NOT EXISTS idx_indoper_cod ON indoper_regras(codigo);
+    CREATE INDEX IF NOT EXISTS idx_modelos_dinamicos_usuario ON relatorios_modelos_dinamicos(usuario_id);
+    CREATE INDEX IF NOT EXISTS idx_modelos_dinamicos_empresa ON relatorios_modelos_dinamicos(empresa_id);
+    CREATE INDEX IF NOT EXISTS idx_modelos_dinamicos_escopo ON relatorios_modelos_dinamicos(escopo);
   `);
+
+  // Seed de Modelos Dinâmicos Oficiais (Padrão de Fábrica da Plataforma)
+  try {
+    const countModelos = (db.prepare('SELECT COUNT(*) as total FROM relatorios_modelos_dinamicos WHERE is_padrao_sistema = 1').get() as any)?.total || 0;
+    if (countModelos === 0) {
+      const adminUser = db.prepare("SELECT id, email FROM usuarios WHERE perfil = 'admin_master' LIMIT 1").get() as any;
+      const adminId = adminUser?.id || '9e1c175a-94f6-4071-beee-0fef4c142f71';
+      const adminEmail = adminUser?.email || 'admin@radarfiscal.com.br';
+
+      const defaultModelos = [
+        {
+          id: 'mod-combustiveis-monofasicos',
+          nome: 'Auditoria de Monofásicos de Combustíveis (NCM 2710/2711 & CST 620)',
+          descricao: 'Monitoramento de itens sujeitos à tributação monofásica e controle de vedação de créditos (Art. 267 da LC 214/2025).',
+          categoria: 'auditoria',
+          escopo: 'global',
+          usuario_id: adminId,
+          empresa_id: null,
+          criado_por_nome: 'Governança Fiscal',
+          criado_por_email: adminEmail,
+          is_padrao_sistema: 1,
+          configuracao_json: JSON.stringify({
+            fonte_dados: 'dfe_itens_documentos',
+            modo: 'agrupado',
+            dimensoes: ['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao'],
+            metricas: [
+              { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
+              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
+              { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
+              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
+              { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
+              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
+              { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
+            ],
+            filtros: [
+              { campo: 'ncm', operador: 'contains', valor: '271' }
+            ],
+            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+            limite: 1000
+          })
+        },
+        {
+          id: 'mod-matriz-cclasstrib-cst',
+          nome: 'Matriz Cruzada de IBS/CBS por cClassTrib e CST',
+          descricao: 'Consolidação das bases e tributos da Reforma Tributária agrupados por Classificação Tributária SVRS e CST.',
+          categoria: 'rtc',
+          escopo: 'global',
+          usuario_id: adminId,
+          empresa_id: null,
+          criado_por_nome: 'Governança Fiscal',
+          criado_por_email: adminEmail,
+          is_padrao_sistema: 1,
+          configuracao_json: JSON.stringify({
+            fonte_dados: 'dfe_itens_documentos',
+            modo: 'agrupado',
+            dimensoes: ['cclasstrib', 'cst_csosn', 'tipo_operacao'],
+            metricas: [
+              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Total Líquido' },
+              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total' },
+              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total' },
+              { campo: 'id', agregacao: 'count', apelido: 'Contagem de Linhas' }
+            ],
+            filtros: [],
+            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+            limite: 1000
+          })
+        },
+        {
+          id: 'mod-ranking-fornecedores-creditos',
+          nome: 'Ranking de Fornecedores por Volume Financeiro e Créditos',
+          descricao: 'Visão executiva dos principais parceiros comerciais por volume de aquisições e potencial de créditos de IBS/CBS.',
+          categoria: 'fiscal',
+          escopo: 'global',
+          usuario_id: adminId,
+          empresa_id: null,
+          criado_por_nome: 'Governança Fiscal',
+          criado_por_email: adminEmail,
+          is_padrao_sistema: 1,
+          configuracao_json: JSON.stringify({
+            fonte_dados: 'dfe_itens_documentos',
+            modo: 'agrupado',
+            dimensoes: ['fornecedor_cnpj', 'fornecedor_razao', 'fornecedor_uf'],
+            metricas: [
+              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Volume Comprado (R$)' },
+              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'Crédito IBS (R$)' },
+              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'Crédito CBS (R$)' },
+              { campo: 'documento_id', agregacao: 'count_distinct', apelido: 'Qtd Notas' }
+            ],
+            filtros: [
+              { campo: 'tipo_operacao', operador: 'eq', valor: 'Entrada' }
+            ],
+            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+            limite: 500
+          })
+        },
+        {
+          id: 'mod-analise-local-destino',
+          nome: 'Conformidade de Destino e Local da Operação (indOper)',
+          descricao: 'Análise geográfica das operações fiscais por UF de fornecedor, cliente e competência.',
+          categoria: 'fiscal',
+          escopo: 'global',
+          usuario_id: adminId,
+          empresa_id: null,
+          criado_por_nome: 'Governança Fiscal',
+          criado_por_email: adminEmail,
+          is_padrao_sistema: 1,
+          configuracao_json: JSON.stringify({
+            fonte_dados: 'dfe_documentos',
+            modo: 'agrupado',
+            dimensoes: ['fornecedor_uf', 'cliente_uf', 'tipo_operacao'],
+            metricas: [
+              { campo: 'valor_total', agregacao: 'sum', apelido: 'Valor Total dos Documentos' },
+              { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base Acumulada IBS' },
+              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Destino' },
+              { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
+            ],
+            filtros: [],
+            ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
+            limite: 500
+          })
+        }
+      ];
+
+      const stmtModelo = db.prepare(`
+        INSERT OR REPLACE INTO relatorios_modelos_dinamicos (
+          id, nome, descricao, categoria, escopo, usuario_id, empresa_id, configuracao_json,
+          criado_por_nome, criado_por_email, is_padrao_sistema
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const m of defaultModelos) {
+        stmtModelo.run(
+          m.id, m.nome, m.descricao, m.categoria, m.escopo, m.usuario_id, m.empresa_id,
+          m.configuracao_json, m.criado_por_nome, m.criado_por_email, m.is_padrao_sistema
+        );
+      }
+      console.log(`📊 Seed de Modelos Dinâmicos executado: ${defaultModelos.length} modelos de fábrica criados.`);
+    }
+  } catch (err: any) {
+    console.warn('Aviso no seed de modelos dinâmicos:', err.message);
+  }
 
   // Seed automático de Conectores Municipais das principais prefeituras
   try {

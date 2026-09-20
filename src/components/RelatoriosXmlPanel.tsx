@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { XmlItemDetailReport, ReportFilterState, ReportTabType, DfeXmlItem } from '../types';
 import { exportReportToExcel } from '../utils/reportsData';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,14 +21,16 @@ import {
   Layers, CheckCircle2, FileText, ShieldCheck, Calculator, AlertTriangle,
   RotateCcw, BookOpen, Tag, Scale, X, Building2, MapPin, Receipt,
   Sparkles, Clock, ChevronDown, ChevronUp, ExternalLink, Check, Copy,
-  Calendar, Key, Hash
+  Calendar, Key, Hash, Upload, Plus, Edit3, Trash2, Save, FileSpreadsheet, FileCode
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface RelatoriosXmlPanelProps {
   dfeList?: DfeXmlItem[];
+  onNavigateToCockpit?: () => void;
 }
 
-export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList = [] }) => {
+export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList = [], onNavigateToCockpit }) => {
   const { token, empresaAtiva } = useAuth();
   const { kpis: globalKpis, totalGeral: globalTotalGeral, totalFiltrado: globalTotalFiltrado } = useKpis();
   const [activeTab, setActiveTab] = useState<ReportTabType>('consolidado_mercadorias');
@@ -48,6 +50,41 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const [selectedChaveLedger, setSelectedChaveLedger] = useState<string | null>(null);
   const [ledgerData, setLedgerData] = useState<any>(null);
   const [loadingLedger, setLoadingLedger] = useState<boolean>(false);
+
+  // Estados para Upload em Massa e CRUD Manual de Itens/Relatórios
+  const fileInputReportRef = useRef<HTMLInputElement>(null);
+  const [isUploadingReport, setIsUploadingReport] = useState<boolean>(false);
+  const [showAddReportModal, setShowAddReportModal] = useState<boolean>(false);
+  const [editingReportItem, setEditingReportItem] = useState<XmlItemDetailReport | null>(null);
+  const [reportItemForm, setReportItemForm] = useState({
+    tipoDoc: 'NFe',
+    chaveAcesso: '',
+    numeroSerie: '1',
+    dataEmissao: new Date().toISOString().split('T')[0],
+    fornecedorCnpj: '',
+    fornecedorRazao: '',
+    fornecedorUf: 'SP',
+    fornecedorMunicipio: 'São Paulo',
+    clienteCnpj: '',
+    clienteRazao: '',
+    clienteUf: 'SP',
+    situacaoDoc: 'autorizado',
+    itemNro: 1,
+    descricaoItem: '',
+    ncm: '',
+    cfop: '1102',
+    cClassTrib: '000001',
+    cstCsosn: '000',
+    quantidade: 1,
+    unidade: 'UN',
+    valorLiquidoItem: 0,
+    baseIbs: 0,
+    aliquotaIbs: 0.1,
+    valorIbs: 0,
+    baseCbs: 0,
+    aliquotaCbs: 0.9,
+    valorCbs: 0
+  });
 
   const activeKpis = dbKpis?.totalFiltrado || globalTotalFiltrado || globalTotalGeral || globalKpis;
   const activeTotalGeral = dbKpis?.totalGeral || globalTotalGeral || activeKpis;
@@ -434,7 +471,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     }
   }, [empresaAtiva?.id]);
 
-  const handleExportExcel = () => {
+  const buildExportQuery = (format: 'xlsx' | 'json') => {
     const query = new URLSearchParams();
     if (filters.cnpjEmitente) query.append('cnpjEmitente', filters.cnpjEmitente);
     if (filters.cnpjDestinatario) query.append('cnpjDestinatario', filters.cnpjDestinatario);
@@ -450,11 +487,187 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     if (filters.apenasExcecoes) query.append('apenasExcecoes', 'true');
     if (filters.searchTerm) query.append('searchTerm', filters.searchTerm);
     if (empresaAtiva?.id) query.append('empresaId', empresaAtiva.id);
-    
-    // Anexa o token se puder (em produção idealmente usa cookie HTTPOnly para download)
-    query.append('token', token);
+    query.append('format', format);
+    query.append('isExport', 'true');
+    query.append('token', token || '');
+    return query.toString();
+  };
 
-    window.open(`${getApiBaseUrl()}/relatorios/xml/export?${query.toString()}`, '_blank');
+  const handleExportExcel = () => {
+    window.open(`${getApiBaseUrl()}/relatorios/xml?${buildExportQuery('xlsx')}`, '_blank');
+  };
+
+  const handleExportJson = () => {
+    window.open(`${getApiBaseUrl()}/relatorios/xml?${buildExportQuery('json')}`, '_blank');
+  };
+
+  const handleUploadReportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingReport(true);
+    try {
+      const fileName = file.name.toLowerCase();
+      let rows: any[] = [];
+      if (fileName.endsWith('.json')) {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        rows = Array.isArray(parsed) ? parsed : (parsed.itens || parsed.data || []);
+      } else {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'buffer' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws);
+      }
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new Error('Arquivo vazio ou formato não reconhecido.');
+      }
+      const res = await fetch(`${getApiBaseUrl()}/relatorios/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || ''
+        },
+        body: JSON.stringify({ itens: rows, empresaId: empresaAtiva?.id })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Erro ao processar importação');
+      }
+      alert(data.message || 'Importação realizada com sucesso!');
+      await handleSearch();
+    } catch (err: any) {
+      alert('Erro no upload: ' + err.message);
+    } finally {
+      setIsUploadingReport(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleOpenNewReportItem = () => {
+    setEditingReportItem(null);
+    setReportItemForm({
+      tipoDoc: 'NFe',
+      chaveAcesso: '',
+      numeroSerie: '1',
+      dataEmissao: new Date().toISOString().split('T')[0],
+      fornecedorCnpj: '',
+      fornecedorRazao: '',
+      fornecedorUf: 'SP',
+      fornecedorMunicipio: 'São Paulo',
+      clienteCnpj: empresaAtiva?.cnpjCompleto || '',
+      clienteRazao: empresaAtiva?.razaoSocial || '',
+      clienteUf: empresaAtiva?.uf || 'SP',
+      situacaoDoc: 'autorizado',
+      itemNro: 1,
+      descricaoItem: '',
+      ncm: '',
+      cfop: '1102',
+      cClassTrib: '000001',
+      cstCsosn: '000',
+      quantidade: 1,
+      unidade: 'UN',
+      valorLiquidoItem: 0,
+      baseIbs: 0,
+      aliquotaIbs: 0.1,
+      valorIbs: 0,
+      baseCbs: 0,
+      aliquotaCbs: 0.9,
+      valorCbs: 0
+    });
+    setShowAddReportModal(true);
+  };
+
+  const handleEditReportItem = (item: XmlItemDetailReport) => {
+    setEditingReportItem(item);
+    setReportItemForm({
+      tipoDoc: item.tipoDoc || 'NFe',
+      chaveAcesso: item.chaveAcesso || '',
+      numeroSerie: item.numeroSerie || '1',
+      dataEmissao: item.dataEmissao ? item.dataEmissao.split('T')[0] : new Date().toISOString().split('T')[0],
+      fornecedorCnpj: item.fornecedorCnpj || '',
+      fornecedorRazao: item.fornecedorRazao || '',
+      fornecedorUf: item.fornecedorUf || 'SP',
+      fornecedorMunicipio: item.fornecedorMunicipio || '',
+      clienteCnpj: item.clienteCnpj || '',
+      clienteRazao: item.clienteRazao || '',
+      clienteUf: item.clienteUf || 'SP',
+      situacaoDoc: item.situacaoDoc || 'autorizado',
+      itemNro: item.itemNro || 1,
+      descricaoItem: item.descricaoItem || '',
+      ncm: item.ncm || '',
+      cfop: item.cfop || '1102',
+      cClassTrib: item.cClassTrib || '000001',
+      cstCsosn: item.cstCsosn || '000',
+      quantidade: item.quantidade || 1,
+      unidade: item.unidade || 'UN',
+      valorLiquidoItem: item.valorLiquidoItem || 0,
+      baseIbs: item.baseIbs || 0,
+      aliquotaIbs: item.aliquotaIbs || 0.1,
+      valorIbs: item.valorIbs || 0,
+      baseCbs: item.baseCbs || 0,
+      aliquotaCbs: item.aliquotaCbs || 0.9,
+      valorCbs: item.valorCbs || 0
+    });
+    setShowAddReportModal(true);
+  };
+
+  const handleSaveReportItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const isEdit = !!editingReportItem;
+      const targetId = editingReportItem?.itemId || editingReportItem?.id;
+      const url = isEdit 
+        ? `${getApiBaseUrl()}/relatorios/item/${targetId}` 
+        : `${getApiBaseUrl()}/relatorios/item`;
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || ''
+        },
+        body: JSON.stringify({
+          ...reportItemForm,
+          empresaId: empresaAtiva?.id
+        })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao gravar item no relatório');
+      }
+      alert(json.message || 'Registro gravado com sucesso!');
+      setShowAddReportModal(false);
+      setEditingReportItem(null);
+      if (selectedItemForModal) setSelectedItemForModal(null);
+      await handleSearch();
+    } catch (err: any) {
+      alert('Erro ao salvar: ' + err.message);
+    }
+  };
+
+  const handleDeleteReportItem = async (itemId: string) => {
+    if (!confirm('Deseja realmente excluir este registro do relatório?')) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/relatorios/item/${itemId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-empresa-ativa-id': empresaAtiva?.id || ''
+        }
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.error || 'Erro ao excluir item');
+      }
+      alert('Registro excluído com sucesso!');
+      if (selectedItemForModal) setSelectedItemForModal(null);
+      await handleSearch();
+    } catch (err: any) {
+      alert('Erro ao excluir: ' + err.message);
+    }
   };
 
   // Ação de Sincronização em Tempo Real com Apuração Assistida (CGIBS / RTC)
@@ -594,13 +807,61 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               )}
             </button>
 
+            <input
+              type="file"
+              ref={fileInputReportRef}
+              onChange={handleUploadReportFile}
+              accept=".xlsx,.xls,.json,.csv"
+              className="hidden"
+            />
+
             <button
               onClick={handleExportExcel}
-              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Exportar dados do relatório em Microsoft Excel (.xlsx)"
             >
-              <Download className="w-3.5 h-3.5 text-emerald-100" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
               <span>Exportar (.XLSX)</span>
             </button>
+
+            <button
+              onClick={handleExportJson}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Exportar dados do relatório em JSON estruturado"
+            >
+              <FileCode className="w-3.5 h-3.5 text-amber-400" />
+              <span>Exportar (.JSON)</span>
+            </button>
+
+            <button
+              onClick={() => fileInputReportRef.current?.click()}
+              disabled={isUploadingReport}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs border border-slate-700 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Importar documentos e itens para o relatório via XLSX ou JSON"
+            >
+              <Upload className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{isUploadingReport ? 'Importando...' : 'Importar (JSON / XLSX)'}</span>
+            </button>
+
+            <button
+              onClick={handleOpenNewReportItem}
+              className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md shadow-cyan-600/25 flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Registrar manualmente um documento/item no relatório fiscal"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Novo Registro</span>
+            </button>
+
+            {onNavigateToCockpit && (
+              <button
+                onClick={onNavigateToCockpit}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Abrir Cockpit de Montagem Dinâmica de Relatórios & Pivot Studio"
+              >
+                <Layers className="w-3.5 h-3.5 text-amber-400" />
+                <span>Cockpit Dinâmico</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1460,14 +1721,98 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 <div>Lançamento Contábil: {selectedItemForModal.lancamentoContabil || 'N/A'}</div>
               </div>
 
-              <div className="md:col-span-2 p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
-                <div className="text-[10px] text-slate-400 uppercase font-sans font-bold text-indigo-400">
-                  Rastreabilidade & Governança de Captura
+              {/* Seção Governança RTC: Classificação Tributária SVRS & Vedação de Créditos */}
+              <div className="md:col-span-2 p-3.5 bg-slate-950 rounded-xl border border-purple-900/40 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] text-purple-300 uppercase font-sans font-bold flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 text-purple-400" />
+                    Auditoria de Classificação Tributária RTC & Governança de Créditos (LC 214/2025)
+                  </div>
+                  <a
+                    href="https://dfe-portal.svrs.rs.gov.br/CFF/ClassificacaoTributaria"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/50 px-2 py-1 rounded border border-cyan-800/60 transition-colors"
+                  >
+                    <span>Portal da Conformidade Fácil (SVRS)</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
                 </div>
-                <div>Usuário de Captura: {selectedItemForModal.usuarioCaptura}</div>
-                <div>Rotina Automática: {selectedItemForModal.rotinaCaptura}</div>
-                <div>Regra de Elegibilidade Aplicada: {selectedItemForModal.regraAplicadaId} ({selectedItemForModal.resultadoElegibilidade})</div>
-                <div>Critério Onerosidade: {selectedItemForModal.criterioOnerosidade}</div>
+
+                {/* Card de Questionamento de cClassTrib / CST */}
+                {selectedItemForModal.cclasstribInconsistente ? (
+                  <div className="p-3 bg-red-950/30 border border-red-800/60 rounded-lg space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs font-bold text-red-300">
+                      <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                      <span>Questionamento Fiscal: Classificação Tributária Inconsistente no XML</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] pt-1">
+                      <div className="p-2 bg-slate-900/80 rounded border border-red-900/40">
+                        <span className="text-[10px] text-red-400 uppercase font-bold block mb-0.5">Apresentado no XML</span>
+                        <div>cClassTrib: <span className="font-mono text-red-300 font-bold">{selectedItemForModal.cClassTrib || 'Não informado'}</span></div>
+                        <div>CST: <span className="font-mono text-red-300 font-bold">{selectedItemForModal.cstCsosn || '000'}</span></div>
+                      </div>
+                      <div className="p-2 bg-slate-900/80 rounded border border-emerald-900/50">
+                        <span className="text-[10px] text-emerald-400 uppercase font-bold block mb-0.5">Classificação Correta (Tabela Oficial SVRS)</span>
+                        <div>cClassTrib Sugerido: <span className="font-mono text-emerald-300 font-bold">{selectedItemForModal.cclasstribSugerido}</span></div>
+                        <div>CST Sugerido: <span className="font-mono text-emerald-300 font-bold">{selectedItemForModal.cstSugerido}</span> (Monofásica)</div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-300 pt-1 leading-relaxed">
+                      {selectedItemForModal.motivoInconsistenciaCClassTrib}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-slate-900/50 border border-slate-800 rounded-lg flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div>
+                      cClassTrib XML: <span className="font-mono font-bold text-purple-300">{selectedItemForModal.cClassTrib}</span> | CST: <span className="font-mono font-bold text-purple-300">{selectedItemForModal.cstCsosn}</span>
+                      {selectedItemForModal.cclassOficialDesc && <span className="text-slate-400 ml-1.5">({selectedItemForModal.cclassOficialDesc})</span>}
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
+                      ✓ cClassTrib em Conformidade Oficial
+                    </span>
+                  </div>
+                )}
+
+                {/* Vedação de Crédito sobre Combustíveis */}
+                {(selectedItemForModal.isCombustivel || selectedItemForModal.creditoVedado) && (
+                  <div className={`p-2.5 rounded-lg border text-[11px] space-y-1 ${
+                    selectedItemForModal.alertaApropriacaoIndevida
+                      ? 'bg-amber-950/40 border-amber-800/80 text-amber-200'
+                      : 'bg-slate-900/70 border-slate-800 text-slate-300'
+                  }`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                        Vedação Legal de Crédito sobre Combustíveis (Art. 267 da LC 214/2025)
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 text-[10px] font-bold">
+                        Crédito Esperado: R$ 0,00
+                      </span>
+                    </div>
+                    {selectedItemForModal.alertaApropriacaoIndevida ? (
+                      <p className="text-[11px] text-amber-300 leading-relaxed font-semibold">
+                        ⚠️ Alerta de Risco Fiscal: O ERP apropriou crédito de IBS (R$ {selectedItemForModal.creditoApropriadoIbs.toFixed(2)}) e CBS (R$ {selectedItemForModal.creditoApropriadoCbs.toFixed(2)}) sobre aquisição vedada por lei. É obrigatório proceder com o estorno do crédito na escrituração.
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        Aquisição de combustíveis sujeita ao regime monofásico. Conforme Art. 267 da LC 214/2025 e parâmetros da empresa, o crédito de IBS e CBS é vedado para este item.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Indicador de Operação (indOper) / Local da Operação */}
+                <div className="p-2.5 bg-slate-900/60 border border-slate-800 rounded-lg grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Local da Operação (indOper SVRS)</span>
+                    <span className="font-mono text-cyan-300 font-bold">{selectedItemForModal.indOperCode || '1001'}</span> - {selectedItemForModal.indOperInfo?.nome || 'Operação Presencial / Fornecimento Geral'}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Dispositivo Legal / Destino</span>
+                    <span className="text-slate-300">{selectedItemForModal.indOperInfo?.dispositivo_legal || 'Art. 11/12 da LC 214/2025 (Princípio do Destino)'}</span>
+                  </div>
+                </div>
               </div>
 
               {/* Seção Conta Corrente Fiscal & Apuração Assistida: IBS (CGIBS) & CBS (RFB) */}
@@ -1519,7 +1864,25 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-800">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleEditReportItem(selectedItemForModal)}
+                  className="px-3.5 py-1.5 rounded-xl bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 font-bold text-xs border border-cyan-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Editar este registro do relatório"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Editar Item</span>
+                </button>
+                <button
+                  onClick={() => handleDeleteReportItem(selectedItemForModal.itemId || selectedItemForModal.id)}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 font-bold text-xs border border-rose-500/30 flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Excluir este registro do relatório"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir</span>
+                </button>
+              </div>
               <button
                 onClick={() => setSelectedItemForModal(null)}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
@@ -1730,6 +2093,307 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 Fechar Ledger
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: INCLUSÃO / EDIÇÃO MANUAL DE ITEM NO RELATÓRIO
+      ═══════════════════════════════════════════════════════ */}
+      {showAddReportModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <FileText className="w-5 h-5 text-cyan-400" />
+                {editingReportItem ? 'Editar Item no Relatório Fiscal' : 'Novo Registro Manual no Relatório Fiscal'}
+              </h3>
+              <button
+                onClick={() => { setShowAddReportModal(false); setEditingReportItem(null); }}
+                className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReportItem} className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Tipo de Documento *</label>
+                  <select
+                    value={reportItemForm.tipoDoc}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, tipoDoc: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="NFe">NF-e (Mercadorias - Mod. 55)</option>
+                    <option value="CTe">CT-e (Transportes - Mod. 57)</option>
+                    <option value="NFSe">NFS-e (Serviços ADN)</option>
+                    <option value="NFCe">NFC-e (Consumidor - Mod. 65)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Número / Série</label>
+                  <input
+                    type="text"
+                    value={reportItemForm.numeroSerie}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, numeroSerie: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="1"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Data de Emissão *</label>
+                  <input
+                    type="date"
+                    value={reportItemForm.dataEmissao}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, dataEmissao: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Chave de Acesso (44 dígitos - gerada automaticamente se vazia)</label>
+                <input
+                  type="text"
+                  maxLength={44}
+                  value={reportItemForm.chaveAcesso}
+                  onChange={(e) => setReportItemForm({ ...reportItemForm, chaveAcesso: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-cyan-400 font-mono text-xs"
+                  placeholder="35260100000000000000550010000000011000000001"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">CNPJ Fornecedor / Emitente *</label>
+                  <input
+                    type="text"
+                    value={reportItemForm.fornecedorCnpj}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, fornecedorCnpj: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="00.000.000/0000-00"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Razão Social Fornecedor *</label>
+                  <input
+                    type="text"
+                    value={reportItemForm.fornecedorRazao}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, fornecedorRazao: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="Fornecedor S/A"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">UF Fornecedor</label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={reportItemForm.fornecedorUf}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, fornecedorUf: e.target.value.toUpperCase() })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 uppercase"
+                    placeholder="SP"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Município Fornecedor</label>
+                  <input
+                    type="text"
+                    value={reportItemForm.fornecedorMunicipio}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, fornecedorMunicipio: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="São Paulo"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-3">
+                <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-2">Dados do Item</h4>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Descrição do Item *</label>
+                  <input
+                    type="text"
+                    value={reportItemForm.descricaoItem}
+                    onChange={(e) => setReportItemForm({ ...reportItemForm, descricaoItem: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="Descrição da mercadoria ou serviço"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">NCM / NBS *</label>
+                    <input
+                      type="text"
+                      value={reportItemForm.ncm}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, ncm: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono"
+                      placeholder="8471.30.12"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">CFOP *</label>
+                    <input
+                      type="text"
+                      value={reportItemForm.cfop}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, cfop: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono"
+                      placeholder="1102"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">cClassTrib *</label>
+                    <input
+                      type="text"
+                      value={reportItemForm.cClassTrib}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, cClassTrib: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-purple-400 font-mono font-bold"
+                      placeholder="000001"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">CST / CSOSN *</label>
+                    <input
+                      type="text"
+                      value={reportItemForm.cstCsosn}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, cstCsosn: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200 font-mono"
+                      placeholder="000"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mt-2">
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Quantidade</label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={reportItemForm.quantidade}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, quantidade: Number(e.target.value) })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Unidade</label>
+                    <input
+                      type="text"
+                      value={reportItemForm.unidade}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, unidade: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-slate-200"
+                      placeholder="UN"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-300 block mb-1">Valor Líquido (R$) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reportItemForm.valorLiquidoItem}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setReportItemForm({
+                          ...reportItemForm,
+                          valorLiquidoItem: val,
+                          baseIbs: val,
+                          baseCbs: val,
+                          valorIbs: Number((val * (reportItemForm.aliquotaIbs / 100)).toFixed(2)),
+                          valorCbs: Number((val * (reportItemForm.aliquotaCbs / 100)).toFixed(2))
+                        });
+                      }}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-emerald-400 font-bold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 mt-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block font-bold">Aliq. IBS (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reportItemForm.aliquotaIbs}
+                      onChange={(e) => {
+                        const aliq = Number(e.target.value);
+                        setReportItemForm({
+                          ...reportItemForm,
+                          aliquotaIbs: aliq,
+                          valorIbs: Number((reportItemForm.baseIbs * (aliq / 100)).toFixed(2))
+                        });
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block font-bold">Valor IBS (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reportItemForm.valorIbs}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, valorIbs: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-teal-300 font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block font-bold">Aliq. CBS (%)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reportItemForm.aliquotaCbs}
+                      onChange={(e) => {
+                        const aliq = Number(e.target.value);
+                        setReportItemForm({
+                          ...reportItemForm,
+                          aliquotaCbs: aliq,
+                          valorCbs: Number((reportItemForm.baseCbs * (aliq / 100)).toFixed(2))
+                        });
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block font-bold">Valor CBS (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={reportItemForm.valorCbs}
+                      onChange={(e) => setReportItemForm({ ...reportItemForm, valorCbs: Number(e.target.value) })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-blue-300 font-bold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddReportModal(false); setEditingReportItem(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar Registro
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

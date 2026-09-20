@@ -465,6 +465,7 @@ export async function ingerirArquivoCgibs(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(id) DO UPDATE SET
       hash_acumulado = excluded.hash_acumulado,
+      empresa_id = excluded.empresa_id,
       updated_at = datetime('now')
   `);
 

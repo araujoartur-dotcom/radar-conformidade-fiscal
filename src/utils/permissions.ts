@@ -89,6 +89,14 @@ export const GRUPOS_MODULOS: GrupoModulos[] = [
         accent: 'cyan'
       },
       {
+        id: 'cockpit_relatorios',
+        label: 'Cockpit de Relatórios Dinâmicos',
+        grupo: 'Relatórios Fiscais (SAP / ERP)',
+        descricao: 'Construtor dinâmico de relatórios, pivot table, métricas personalizadas e gestão de modelos',
+        accent: 'amber',
+        badge: 'PRO'
+      },
+      {
         id: 'tabelas_fiscais',
         label: 'Parâmetros & Tabelas Fiscais',
         grupo: 'Relatórios Fiscais (SAP / ERP)',

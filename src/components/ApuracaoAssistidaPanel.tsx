@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Clock,
   ArrowRight,
+  ArrowLeft,
   TrendingUp,
   TrendingDown,
   FileText,
@@ -53,6 +54,46 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'resultado' | 'saldo_atualizado' | 'outras_info' | 'operacoes' | 'calculadora'>('resultado');
 
+  // Geração dinâmica de competências: desde 01/2026 até a virada de calendário atual/futura
+  const listaCompetencias = React.useMemo(() => {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth() + 1; // 1-12
+    const anoInicio = 2026;
+
+    const lista: { valor: string; rotulo: string; isVigente: boolean }[] = [];
+    const nomesMeses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+    // Garante no mínimo até setembro/2026 ou até o mês atual/virada de calendário
+    const limiteAno = Math.max(2026, anoAtual);
+    const limiteMes = anoAtual === 2026 ? Math.max(9, mesAtual) : 12;
+
+    for (let a = anoInicio; a <= limiteAno; a++) {
+      const maxMes = (a === limiteAno) ? limiteMes : 12;
+      for (let m = 1; m <= maxMes; m++) {
+        const val = `${a}-${String(m).padStart(2, '0')}`;
+        const mesNome = nomesMeses[m - 1];
+        let detalhe = '';
+
+        if (val === '2026-02') {
+          detalhe = ' — Cenário 1: Aquisição';
+        } else if (val === '2026-04') {
+          detalhe = ' — Cenário 2: Fornecimento';
+        } else if (a === anoAtual && m === mesAtual) {
+          detalhe = ' — Mês Vigente';
+        }
+
+        lista.push({
+          valor: val,
+          rotulo: `${String(m).padStart(2, '0')}/${a} (${mesNome}/${a}${detalhe})`,
+          isVigente: a === anoAtual && m === mesAtual
+        });
+      }
+    }
+
+    return lista;
+  }, []);
+
   // Operações
   const [operacoes, setOperacoes] = useState<OperacaoContaCorrente[]>([]);
   const [totalOperacoes, setTotalOperacoes] = useState<number>(0);
@@ -97,9 +138,17 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
   // Carregar dados da competência
   const carregarDados = async () => {
+    const empId = empresaAtiva?.id;
+    if (!empId) {
+      setLoading(false);
+      setResumo(null);
+      setOperacoes([]);
+      setTotalOperacoes(0);
+      return;
+    }
+
     try {
       setLoading(true);
-      const empId = empresaAtiva?.id || 'default-empresa';
       
       const res = await get<ResumoCompetenciaApuracao>(`/apuracao/competencia/${competencia}?empresaId=${empId}`);
       if (res.ok && res.data) {
@@ -130,8 +179,13 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
   // Alternar flags de Webhook ou Consulta por Demanda
   const handleToggleFlag = async (tipo: 'webhook' | 'demanda', novoValor: boolean) => {
+    const empId = empresaAtiva?.id;
+    if (!empId) {
+      setAcaoStatus({ msg: 'Selecione uma empresa ativa para gerenciar preferências.', tipo: 'erro' });
+      return;
+    }
+
     try {
-      const empId = empresaAtiva?.id || 'default-empresa';
       const novoWebhook = tipo === 'webhook' ? novoValor : flagWebhook;
       const novaDemanda = tipo === 'demanda' ? novoValor : flagConsultaDemanda;
       
@@ -156,10 +210,15 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
   // Disparar consulta manual por demanda GET /v1/aassist/solicitacao/...
   const handleDispararConsultaDemanda = async () => {
+    const empId = empresaAtiva?.id;
+    if (!empId) {
+      setAcaoStatus({ msg: 'Selecione uma empresa ativa para consultar arquivos por demanda.', tipo: 'erro' });
+      return;
+    }
+
     try {
       setConsultandoDemanda(true);
       setAcaoStatus(null);
-      const empId = empresaAtiva?.id || 'default-empresa';
       const res = await post<any>('/apuracao/consultar-demanda', {
         empresaId: empId,
         competencia
@@ -167,9 +226,10 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
       if (res.ok && res.data?.success) {
         setAcaoStatus({
-          msg: `${res.data.mensagem} Protocolo: ${res.data.protocoloSolicitacao}`,
+          msg: `${res.data.mensagem} Protocolo: ${res.data.protocoloSolicitacao}. O processamento no CGIBS é assíncrono; as movimentações oficiais serão integradas via Webhook ou liberação do lote de arquivos.`,
           tipo: 'sucesso'
         });
+        carregarDados();
       } else {
         setAcaoStatus({
           msg: res.data?.error || 'Falha ao comunicar com a SEFIN Nacional.',
@@ -208,10 +268,15 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
 
   // Carregar Cenários Oficiais do CGIBS (Didáticos 1 e 2)
   const handleCarregarCenarios = async () => {
+    const empId = empresaAtiva?.id;
+    if (!empId) {
+      setAcaoStatus({ msg: 'Selecione uma empresa ativa para carregar os cenários didáticos.', tipo: 'erro' });
+      return;
+    }
+
     try {
       setCarregandoCenarios(true);
       setAcaoStatus(null);
-      const empId = empresaAtiva?.id || 'default-empresa';
       const res = await post<{ success: boolean; mensagens: string[] }>('/apuracao/simular-cenarios', {
         empresaId: empId
       });
@@ -288,11 +353,11 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 onChange={(e) => setCompetencia(e.target.value)}
                 className="bg-transparent text-white font-bold cursor-pointer focus:outline-none"
               >
-                <option value="2026-01" className="bg-slate-900 text-white">01/2026 (Jan/2026)</option>
-                <option value="2026-02" className="bg-slate-900 text-white">02/2026 (Fev/2026 — Cenário 1)</option>
-                <option value="2026-03" className="bg-slate-900 text-white">03/2026 (Mar/2026)</option>
-                <option value="2026-04" className="bg-slate-900 text-white">04/2026 (Abr/2026 — Cenário 2)</option>
-                <option value="2026-09" className="bg-slate-900 text-white">09/2026 (Set/2026 — Vigente)</option>
+                {listaCompetencias.map((comp) => (
+                  <option key={comp.valor} value={comp.valor} className="bg-slate-900 text-white">
+                    {comp.rotulo}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -381,6 +446,15 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                 <span>{consultandoDemanda ? 'Solicitando...' : 'Consultar (GET)'}</span>
               </button>
             )}
+
+            {/* Indicador Regulamentar das Janelas Oficiais do Fisco */}
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 text-slate-400 border border-slate-700/70 text-[11px] font-medium"
+              title="Janelas Regulamentares de Transmissão: O CGIBS consolida lotes de conciliação 2 vezes por dia (IBS / Conta Corrente) e a RFB processa eventos fiscais até 4 vezes por dia (CBS / RTC)."
+            >
+              <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span>Janelas Oficiais: <strong className="text-slate-200">CGIBS 2x/dia</strong> &bull; <strong className="text-slate-200">RFB 4x/dia</strong></span>
+            </div>
           </div>
 
           {/* Status do Ciclo & Métricas */}
@@ -561,17 +635,36 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
           <span>Extrato das Operações ({totalOperacoes})</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('calculadora')}
-          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ml-auto ${
-            activeTab === 'calculadora'
-              ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-slate-900'
-          }`}
-        >
-          <Calculator className="w-4 h-4 text-indigo-400" />
-          <span>Calculadora Oficial RFB</span>
-        </button>
+        <div className="flex items-center gap-2 ml-auto">
+          {activeTab === 'calculadora' && (
+            <button
+              onClick={() => setActiveTab('resultado')}
+              className="px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 shadow-sm"
+              title="Voltar para a Apuração Assistida"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Voltar à Apuração</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab(activeTab === 'calculadora' ? 'resultado' : 'calculadora')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+              activeTab === 'calculadora'
+                ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-500/50 shadow-sm ring-1 ring-indigo-500/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-900 border border-transparent'
+            }`}
+            title={activeTab === 'calculadora' ? 'Fechar Calculadora e voltar para a Apuração' : 'Abrir Calculadora Oficial RFB'}
+          >
+            <Calculator className="w-4 h-4 text-indigo-400" />
+            <span>Calculadora Oficial RFB</span>
+            {activeTab === 'calculadora' && (
+              <span className="ml-1 p-0.5 rounded hover:bg-indigo-800/60 text-indigo-300" title="Fechar">
+                <X className="w-3.5 h-3.5" />
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Conteúdo da Aba 1: Resultado da Apuração */}
@@ -922,19 +1015,30 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
       {/* Conteúdo da Aba 5: Calculadora Oficial da RFB */}
       {activeTab === 'calculadora' && (
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <Calculator className="w-5 h-5 text-indigo-400" />
                 <span>Calculadora Oficial de Tributos RTC (Receita Federal)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Conectada ao motor oficial (localhost:8080) com fallback nativo para o banco de dados do Radar Fiscal conforme LC 214/2025.
+                Motor de Simulação Tributária RTC em conformidade com as Leis Complementares nº 214/2025 e 215/2025, com integração nativa ao serviço da Receita Federal.
               </p>
             </div>
-            <span className="px-3 py-1 rounded-lg text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-              API Local & Fallback Ativos
-            </span>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                Motor RTC Homologado (LC 214/2025)
+              </span>
+              <button
+                onClick={() => setActiveTab('resultado')}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                title="Fechar Calculadora e retornar à Apuração Assistida"
+              >
+                <X className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+                <span>Fechar Calculadora</span>
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-slate-950 p-5 rounded-2xl border border-slate-800 text-xs">
@@ -994,8 +1098,10 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
             <div className="p-5 rounded-2xl bg-slate-950 border border-cyan-500/30 space-y-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Resultado da Simulação</span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                  Origem: {calcResult.origem}
+                <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700/60 text-slate-300">
+                  Origem: {calcResult.origem === 'calculadora_rfb_offline'
+                    ? 'Motor Oficial RFB (localhost:8080)'
+                    : 'Motor Homologado Radar Fiscal (LC 214/2025)'}
                 </span>
               </div>
 
@@ -1148,7 +1254,7 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                   <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Governança de Credenciais CGIBS</h3>
+                  <h3 className="text-base font-bold text-white">Governança de Credenciais da Reforma Tributária (RTC)</h3>
                   <p className="text-xs text-slate-400">
                     {empresaAtiva?.razaoSocial || 'Empresa Ativa'} — CNPJ: <span className="font-mono text-cyan-400">{empresaAtiva?.cnpjCompleto || cnpjRaizAtivo}</span>
                   </p>
@@ -1166,20 +1272,20 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
               {/* Card Centralização */}
               <div className="p-3.5 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-xs text-indigo-200">
                 <p className="font-bold flex items-center gap-1.5 text-indigo-300">
-                  <Lock className="w-4 h-4 text-indigo-400" /> Centralização no Cadastro da Empresa
+                  <Lock className="w-4 h-4 text-indigo-400" /> Centralização no Cadastro da Empresa (Carteira de CNPJs)
                 </p>
                 <p className="mt-1 text-[11px] text-slate-300 leading-relaxed">
-                  Para conformidade fiscal estrita, segurança jurídica e evitar informações divergentes, as credenciais oficiais do Comitê Gestor (CGIBS), SEFIN Nacional e Webhooks de ERP são gerenciadas <strong className="text-white">exclusivamente no Cadastro da Empresa (Carteira de CNPJs)</strong>.
+                  Em conformidade fiscal estrita, as credenciais de API da Reforma Tributária (<strong className="text-cyan-300">Portal Nacional RTC: consumo.tributos.gov.br</strong>) para a <strong className="text-white">Receita Federal (CBS/IS)</strong> e <strong className="text-white">Comitê Gestor (IBS)</strong> são armazenadas com cofre criptográfico AES-256 no Cadastro da Empresa.
                 </p>
               </div>
 
               {/* Status Atual */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-400">Status de Conexão:</span>
+                  <span className="text-xs font-semibold text-slate-400">Status da Conexão RTC:</span>
                   {credencialInfo?.configurado ? (
                     <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Habilitado / Conectado
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Credenciais M2M Ativas
                     </span>
                   ) : (
                     <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs font-bold flex items-center gap-1.5">
@@ -1192,24 +1298,24 @@ export const ApuracaoAssistidaPanel: React.FC<ApuracaoAssistidaPanelProps> = ({ 
                   <div>
                     <span className="text-slate-500 block text-[10px] uppercase font-bold">Client ID:</span>
                     <span className="font-mono text-slate-200 font-medium">
-                      {credencialInfo?.clientId ? `${credencialInfo.clientId.substring(0, 8)}...` : 'Não configurado'}
+                      {credencialInfo?.clientId || credencialInfo?.rfbClientId ? `${(credencialInfo.clientId || credencialInfo.rfbClientId).substring(0, 10)}...` : 'Não configurado'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[10px] uppercase font-bold">Client Secret:</span>
                     <span className="font-mono text-slate-200 font-medium">
-                      {credencialInfo?.clientSecretMascarado || (credencialInfo?.configurado ? '••••••••••••' : 'Não informado')}
+                      {credencialInfo?.clientSecretMascarado || credencialInfo?.rfbClientSecretMascarado || (credencialInfo?.configurado ? '••••••••••••' : 'Não informado')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Ambiente RTC:</span>
+                    <span className="font-mono text-slate-300 text-[11px] truncate block">
+                      {credencialInfo?.rfbUrl || 'consumo.tributos.gov.br'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[10px] uppercase font-bold">Conector ERP:</span>
                     <span className="font-medium text-slate-200">{credencialInfo?.tipoErp || 'GENÉRICO'}</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10px] uppercase font-bold">Webhook / Retorno:</span>
-                    <span className="font-medium text-slate-200">
-                      {credencialInfo?.webhookUrl ? 'Configurado' : 'Não informado'}
-                    </span>
                   </div>
                 </div>
               </div>

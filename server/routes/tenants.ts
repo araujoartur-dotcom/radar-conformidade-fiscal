@@ -150,6 +150,10 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
         naturezaJuridica: r.natureza_juridica_desc,
         codigoNaturezaJuridica: r.natureza_juridica_codigo,
         manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
+        bloquearCreditoCombustiveis: Boolean(r.bloquear_credito_combustiveis),
+        bloquear_credito_combustiveis: r.bloquear_credito_combustiveis ?? 0,
+        ncmVedadosCredito: r.ncm_vedados_credito || '',
+        ncm_vedados_credito: r.ncm_vedados_credito || '',
         ultimoNsu: r.ultimo_nsu || '000000000000000',
         maxNsu: r.max_nsu || '000000000000000',
         certificadoA1: r.cert_file_name ? {
@@ -377,9 +381,15 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
       codigoNaturezaJuridica,
       cnaePrincipal,
       suframa,
-      grupoContabilCliente
+      grupoContabilCliente,
+      bloquearCreditoCombustiveis,
+      bloquear_credito_combustiveis,
+      ncmVedadosCredito,
+      ncm_vedados_credito
     } = req.body;
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
+    const bloqComb = (bloquearCreditoCombustiveis === true || bloquearCreditoCombustiveis === 1 || bloquear_credito_combustiveis === 1 || bloquear_credito_combustiveis === true) ? 1 : 0;
+    const ncmVedados = String(ncmVedadosCredito || ncm_vedados_credito || '');
     const brasiliaNow = getBrasiliaTimestamp();
 
     if (isSupabaseConfigured()) {
@@ -398,6 +408,8 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
             inscricao_suframa: suframa || null,
             grupo_contabil: grupoContabilCliente || null,
             manifestar_ciencia_automatica: Boolean(autoCiencia),
+            bloquear_credito_combustiveis: bloqComb,
+            ncm_vedados_credito: ncmVedados,
             updated_at: new Date().toISOString()
           })
           .eq('id', id);
@@ -424,7 +436,7 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
     try {
       db.prepare(`
         UPDATE empresas 
-        SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, natureza_juridica_desc = ?, natureza_juridica_codigo = ?, manifestar_ciencia_automatica = ?, updated_at = ?
+        SET razao_social = ?, nome_fantasia = ?, uf = ?, regime_tributario = ?, natureza_juridica_desc = ?, natureza_juridica_codigo = ?, manifestar_ciencia_automatica = ?, bloquear_credito_combustiveis = ?, ncm_vedados_credito = ?, updated_at = ?
         WHERE id = ?
       `).run(
         (razaoSocial || '').toUpperCase(),
@@ -434,6 +446,8 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
         naturezaJuridica || null,
         codigoNaturezaJuridica || null,
         autoCiencia,
+        bloqComb,
+        ncmVedados,
         brasiliaNow,
         id
       );

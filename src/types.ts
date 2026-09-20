@@ -1,4 +1,4 @@
-export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'relatorios_xml' | 'acesso_corporativo' | 'carteira_cnpjs' | 'tabelas_fiscais' | 'conectores_municipais' | 'apuracao_assistida' | 'simulador_regimes';
+export type QueryMode = 'central_kpis' | 'lote' | 'avulsa' | 'detalhada' | 'dfe_xml' | 'eventos_dfe' | 'relatorios_xml' | 'cockpit_relatorios' | 'acesso_corporativo' | 'carteira_cnpjs' | 'tabelas_fiscais' | 'conectores_municipais' | 'apuracao_assistida' | 'simulador_regimes';
 
 // ==========================================
 // ACESSO CORPORATIVO, PERFIS & MULTI-TENANT CNPJ
@@ -94,6 +94,10 @@ export interface ClienteEmpresaTenant {
   ultimoNsu?: string; // Último NSU sincronizado no WebService SEFAZ
   maxNsu?: string; // Maior NSU disponível na SEFAZ
   ultimaSincronizacao?: string;
+  bloquearCreditoCombustiveis?: boolean;
+  bloquear_credito_combustiveis?: number | boolean;
+  ncmVedadosCredito?: string;
+  ncm_vedados_credito?: string;
 }
 
 export type SituaçãoIE = 'Habilitado' | 'Não Habilitado' | 'Baixado' | 'Suspenso' | 'Isento' | 'Não Contribuinte' | 'Pendente';
@@ -555,6 +559,43 @@ export interface XmlItemDetailReport {
   taxaLiquidacaoItem?: number;               // % de crédito liquidado
   impactoDecisorioRad?: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO';
   motivoDecisaoRad?: string;
+
+  // Governança de Combustíveis & Bloqueio de Crédito (Art. 267 LC 214/2025)
+  isCombustivel?: boolean;
+  creditoVedado?: boolean;
+  bloqueioEmpresaAtivo?: boolean;
+  alertaApropriacaoIndevida?: boolean;
+  motivoAlertaApropriacao?: string | null;
+
+  // Diagnóstico e Governança RTC cClassTrib / CST (SVRS)
+  cclasstribInconsistente?: boolean;
+  cclasstribSugerido?: string;
+  cstSugerido?: string;
+  motivoInconsistenciaCClassTrib?: string;
+  cclassOficialDesc?: string;
+
+  // Indicador de Operação / Local da Operação (indOper SVRS)
+  indOperCode?: string;
+  indOperInfo?: {
+    codigo?: string;
+    nome?: string;
+    dispositivo_legal?: string;
+    local?: string;
+  };
+}
+
+export interface IndOperItem {
+  id: string;
+  codigo: string;
+  nome: string;
+  dispositivo_legal: string;
+  local: string;
+  local_fornecedor?: string;
+  caracteristica?: string;
+  data_publicacao?: string;
+  inicio_vigencia?: string;
+  fim_vigencia?: string;
+  dados_completos_json?: string;
 }
 
 export interface MapaCfopItem {
@@ -958,5 +999,87 @@ export interface EncargoPatronalParamItem {
   sistema_s: number;
   entidades_descricao?: string;
   ativo?: number | boolean;
+}
+
+// ==========================================
+// COCKPIT DE MONTAGEM DINÂMICA DE RELATÓRIOS
+// ==========================================
+
+export type CockpitScope = 'pessoal' | 'empresa' | 'global';
+
+export type CockpitAggregationType = 'sum' | 'count' | 'avg' | 'min' | 'max' | 'count_distinct';
+
+export type CockpitFilterOperator = 
+  | 'eq' 
+  | 'neq' 
+  | 'contains' 
+  | 'starts_with' 
+  | 'gt' 
+  | 'gte' 
+  | 'lt' 
+  | 'lte' 
+  | 'between' 
+  | 'in' 
+  | 'is_null' 
+  | 'is_not_null';
+
+export interface CockpitMetrica {
+  campo: string;
+  agregacao: CockpitAggregationType;
+  apelido?: string;
+}
+
+export interface CockpitFiltro {
+  campo: string;
+  operador: CockpitFilterOperator;
+  valor?: any;
+  valorFim?: any;
+}
+
+export interface CockpitOrdenacao {
+  campo: string;
+  direcao: 'asc' | 'desc';
+}
+
+export interface CockpitQueryConfig {
+  fonte_dados: string;
+  modo?: 'agrupado' | 'detalhado';
+  dimensoes?: string[];
+  metricas?: CockpitMetrica[];
+  filtros?: CockpitFiltro[];
+  ordenacao?: CockpitOrdenacao[];
+  limite?: number;
+}
+
+export interface CockpitModelo {
+  id: string;
+  nome: string;
+  descricao?: string;
+  categoria?: string;
+  escopo: CockpitScope;
+  usuario_id: string;
+  empresa_id?: string | null;
+  configuracao: CockpitQueryConfig;
+  criado_por_nome?: string;
+  criado_por_email?: string;
+  is_padrao_sistema?: number;
+  podeEditar?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CockpitField {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'date' | 'badge';
+  group: string;
+  aggregatable?: boolean;
+}
+
+export interface CockpitDataSource {
+  id: string;
+  nome: string;
+  descricao: string;
+  campos: CockpitField[];
 }
 

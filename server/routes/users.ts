@@ -863,9 +863,11 @@ router.get('/empresa/:empresaId/membros', requireAuth, async (req: Authenticated
         empresa,
         membros: membros.map(m => ({
           usuarioId: m.usuario_id,
+          id: m.usuario_id,
           nome: m.nome,
           email: m.email,
           perfil: m.perfil,
+          papel: m.perfil,
           status: m.status,
           vinculoId: m.vinculo_id,
           permissao: m.permissao || 'total',

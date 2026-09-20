@@ -3,17 +3,20 @@ import {
   SlidersHorizontal, Table, Plus, Edit3, Trash2, CheckCircle2,
   AlertTriangle, FileText, Scale, Save, Percent, ShieldCheck, Search, Filter, X,
   Check, FileCheck, Layers, Upload, Download, FileSpreadsheet, Sparkles, Receipt,
-  Pencil, Calculator, Building2, Briefcase, TrendingUp, Users, ChevronDown, ChevronUp
+  Pencil, Calculator, Building2, Briefcase, TrendingUp, Users, ChevronDown, ChevronUp,
+  FileCode, MapPin, ExternalLink
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useApi } from '../hooks/useApi';
+import { getApiBaseUrl } from '../utils/apiConfig';
 import {
   AliquotaTabelaItem,
   NcmRegraAnexoItem,
   SimplesNacionalFaixaItem,
   SimplesNacionalPartilhaItem,
   LucroPresumidoParamItem,
-  EncargoPatronalParamItem
+  EncargoPatronalParamItem,
+  IndOperItem
 } from '../types';
 
 interface CClassRule {
@@ -66,15 +69,191 @@ export interface InferenciaParamItem {
   updated_at?: string;
 }
 
-// REGRAS_RETENCAO_SERVICOS foi removido. Os dados agora vêm do backend.
+interface UniversalTableActionsProps {
+  endpoint: string;
+  baseFilename: string;
+  onUploadSuccess: () => void;
+  onAddNew?: () => void;
+  addNewLabel?: string;
+  searchPlaceholder?: string;
+  searchTerm?: string;
+  onSearchChange?: (val: string) => void;
+}
+
+const UniversalTableActions: React.FC<UniversalTableActionsProps> = ({
+  endpoint,
+  baseFilename,
+  onUploadSuccess,
+  onAddNew,
+  addNewLabel = 'Novo Registro',
+  searchPlaceholder = 'Filtrar registros...',
+  searchTerm,
+  onSearchChange
+}) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleExport = async (format: 'xlsx' | 'json') => {
+    setIsExporting(true);
+    try {
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${getApiBaseUrl()}/tables/${endpoint}/export?format=${format}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Falha ao exportar');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseFilename}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert('Erro na exportação: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const fileName = file.name.toLowerCase();
+      let rows: any[] = [];
+      if (fileName.endsWith('.json')) {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        rows = Array.isArray(parsed) ? parsed : (parsed.itens || parsed.data || []);
+      } else {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'buffer' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows = XLSX.utils.sheet_to_json(ws);
+      }
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw new Error('Arquivo vazio ou formato não reconhecido.');
+      }
+      const token = localStorage.getItem('token') || '';
+      const res = await fetch(`${getApiBaseUrl()}/tables/${endpoint}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ itens: rows })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Erro ao processar importação');
+      }
+      alert(data.message || 'Importação realizada com sucesso!');
+      onUploadSuccess();
+    } catch (err: any) {
+      alert('Erro no upload: ' + err.message);
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-2 border-b border-slate-800/80 mb-3">
+      {onSearchChange !== undefined && (
+        <div className="relative w-full sm:w-80">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder={searchPlaceholder}
+            value={searchTerm || ''}
+            onChange={(e) => onSearchChange(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+          />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileSelected}
+          accept=".xlsx,.xls,.json,.csv"
+          className="hidden"
+        />
+
+        <button
+          onClick={() => handleExport('xlsx')}
+          disabled={isExporting}
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+          title="Exportar dados da tabela em formato Microsoft Excel (.xlsx)"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Exportar XLSX</span>
+        </button>
+
+        <button
+          onClick={() => handleExport('json')}
+          disabled={isExporting}
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+          title="Exportar dados da tabela em formato JSON estruturado"
+        >
+          <FileCode className="w-3.5 h-3.5 text-amber-400" />
+          <span>Exportar JSON</span>
+        </button>
+
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
+          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 border border-slate-700 transition-colors cursor-pointer"
+          title="Importar registros em massa a partir de arquivo .xlsx ou .json"
+        >
+          <Upload className="w-3.5 h-3.5 text-cyan-400" />
+          <span>{isUploading ? 'Importando...' : 'Importar (JSON / XLSX)'}</span>
+        </button>
+
+        {onAddNew && (
+          <button
+            onClick={onAddNew}
+            className="px-3.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-cyan-600/20 transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>{addNewLabel}</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export const TabelasFiscaisPanel: React.FC = () => {
   const { get, post, put, del, uploadFile } = useApi();
-  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'retencoes_servicos' | 'simples_nacional' | 'lucro_presumido' | 'cclasstrib' | 'cfop' | 'regras' | 'inferencia'>('ad_valorem');
+  const [activeTab, setActiveTab] = useState<'ad_valorem' | 'ad_rem' | 'anexos_ncm' | 'cclasstrib' | 'indoper' | 'cfop' | 'regras' | 'retencoes_servicos' | 'simples_nacional' | 'lucro_presumido' | 'inferencia'>('ad_valorem');
 
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [showCategoriasGuide, setShowCategoriasGuide] = useState(false);
+
+  // ── TAB: indOper (LOCAL DA OPERAÇÃO SVRS) ─────────────────
+  const [indOperList, setIndOperList] = useState<IndOperItem[]>([]);
+  const [searchTermIndOper, setSearchTermIndOper] = useState('');
+  const [showAddIndOper, setShowAddIndOper] = useState(false);
+  const [editingIndOper, setEditingIndOper] = useState<IndOperItem | null>(null);
+  const [indOperForm, setIndOperForm] = useState({
+    id: '',
+    codigo: '',
+    nome: '',
+    dispositivo_legal: 'Art. 11 da LC 214/2025',
+    local: 'Estabelecimento fornecedor',
+    local_fornecedor: '',
+    caracteristica: '',
+    data_publicacao: '17/11/2025',
+    inicio_vigencia: '17/11/2025',
+    fim_vigencia: '-'
+  });
 
   const showSuccess = (msg: string) => {
     setSuccessMsg(msg);
@@ -225,6 +404,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const [newAliquota, setNewAliquota] = useState('');
 
   const [cfopRules, setCfopRules] = useState<CfopRule[]>([]);
+  const [searchTermCfop, setSearchTermCfop] = useState('');
   const [showAddCfop, setShowAddCfop] = useState(false);
   const [editingCfop, setEditingCfop] = useState<CfopRule | null>(null);
   const [newCfopCode, setNewCfopCode] = useState('');
@@ -235,9 +415,23 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const [newCfopEvidencia, setNewCfopEvidencia] = useState('');
 
   const [regras, setRegras] = useState<RegraElegibilidade[]>([]);
+  const [searchTermRegras, setSearchTermRegras] = useState('');
+  const [showAddRegra, setShowAddRegra] = useState(false);
+  const [editingRegra, setEditingRegra] = useState<RegraElegibilidade | null>(null);
+  const [regraForm, setRegraForm] = useState({
+    codigo_regra: '',
+    nome: '',
+    descricao: '',
+    tipo_aquisicao: 'Insumo Operacional',
+    cfops_aplicaveis: '',
+    resultado_padrao: 'Elegível ao Crédito',
+    evidencia_minima: 'XML + Documento Fiscal',
+    base_legal: 'LC 214/2025'
+  });
 
   // ── TAB 3.5: RETENCOES SERVICOS STATE ─────────────────────
   const [regrasRetencao, setRegrasRetencao] = useState<any[]>([]);
+  const [searchTermRetencao, setSearchTermRetencao] = useState('');
   const [loadingRetencoes, setLoadingRetencoes] = useState(false);
   const [isUploadingCSV, setIsUploadingCSV] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -419,7 +613,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
   const reloadData = async () => {
     setLoading(true);
     try {
-      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras, resInfer, resSimples, resPresumido, resEncargos] = await Promise.all([
+      const [resAdVal, resAdRem, resNcm, resClass, resCfop, resRegras, resInfer, resSimples, resPresumido, resEncargos, resIndOper] = await Promise.all([
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-valorem'),
         get<{ success: boolean; data: AliquotaTabelaItem[] }>('/tables/aliquotas/ad-rem'),
         get<{ success: boolean; data: NcmRegraAnexoItem[] }>('/tables/anexos-ncm'),
@@ -429,7 +623,8 @@ export const TabelasFiscaisPanel: React.FC = () => {
         get<{ success: boolean; data: InferenciaParamItem[] }>('/tables/inferencia'),
         get<{ success: boolean; faixas: SimplesNacionalFaixaItem[]; partilhas: SimplesNacionalPartilhaItem[] }>('/tables/simples-nacional'),
         get<{ success: boolean; data: LucroPresumidoParamItem[] }>('/tables/lucro-presumido'),
-        get<{ success: boolean; data: EncargoPatronalParamItem[] }>('/tables/encargos-patronais')
+        get<{ success: boolean; data: EncargoPatronalParamItem[] }>('/tables/encargos-patronais'),
+        get<{ success: boolean; data: IndOperItem[] }>('/tables/indoper')
       ]);
 
       if (resAdVal.ok && resAdVal.data?.data) setAdValoremList(resAdVal.data.data);
@@ -445,6 +640,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
       }
       if (resPresumido.ok && resPresumido.data?.data) setLucroPresumidoList(resPresumido.data.data);
       if (resEncargos.ok && resEncargos.data?.data) setEncargosList(resEncargos.data.data);
+      if (resIndOper?.ok && resIndOper.data?.data) setIndOperList(resIndOper.data.data);
     } catch (err) {
       console.error('Erro ao recarregar tabelas fiscais:', err);
     } finally {
@@ -875,6 +1071,83 @@ export const TabelasFiscaisPanel: React.FC = () => {
     }
   };
 
+  // ── INDOPER HANDLERS ─────────────────────────────────────
+  const handleSaveIndOper = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await post('/tables/indoper', indOperForm);
+    if (res.ok) {
+      showSuccess('Indicador indOper salvo com sucesso!');
+      setShowAddIndOper(false);
+      setEditingIndOper(null);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao salvar indOper');
+    }
+  };
+
+  // ── CCLASSTRIB HANDLERS ──────────────────────────────────
+  const handleSaveCClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      id: editingCClass?.id,
+      cclasstrib: newCode,
+      descricao_interna: newDesc,
+      tratamento_esperado: newTratamento,
+      permite_credito: newCredito,
+      aliquota_esperada: newAliquota
+    };
+    const res = await post('/tables/cclasstrib', payload);
+    if (res.ok) {
+      showSuccess('cClassTrib salvo com sucesso!');
+      setShowAddCClass(false);
+      setEditingCClass(null);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao salvar cClassTrib');
+    }
+  };
+
+  // ── CFOP HANDLERS ────────────────────────────────────────
+  const handleSaveCfop = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      id: editingCfop?.id,
+      cfop: newCfopCode,
+      descricao: newCfopDesc,
+      categoria: newCfopCat,
+      tratamento_padrao: newCfopTrat,
+      exige_onerosidade: newCfopOneroso ? 1 : 0,
+      evidencia_minima: newCfopEvidencia
+    };
+    const res = await post('/tables/cfop', payload);
+    if (res.ok) {
+      showSuccess('Regra de CFOP salva com sucesso!');
+      setShowAddCfop(false);
+      setEditingCfop(null);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao salvar regra de CFOP');
+    }
+  };
+
+  // ── REGRAS ELEGIBILIDADE HANDLERS ────────────────────────
+  const handleSaveRegra = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      id: editingRegra?.id,
+      ...regraForm
+    };
+    const res = await post('/tables/regras', payload);
+    if (res.ok) {
+      showSuccess('Regra de elegibilidade salva com sucesso!');
+      setShowAddRegra(false);
+      setEditingRegra(null);
+      await reloadData();
+    } else {
+      alert(res.error || 'Erro ao salvar regra de elegibilidade');
+    }
+  };
+
   // ── FILTERED NCMS ────────────────────────────────────────
   const filteredNcms = ncmList.filter(n => {
     if (ncmFilterTipo !== 'todos' && n.tipo_tratamento !== ncmFilterTipo) return false;
@@ -1056,8 +1329,21 @@ export const TabelasFiscaisPanel: React.FC = () => {
           }`}
         >
           <Table className="w-4 h-4" />
-          <span>cClassTrib (6D)</span>
+          <span>cClassTrib ({cClassRules.length})</span>
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">Cat. C</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('indoper')}
+          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'indoper'
+              ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <MapPin className="w-4 h-4" />
+          <span>indOper Destino ({indOperList.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono">Cat. C</span>
         </button>
 
         <button
@@ -1071,6 +1357,19 @@ export const TabelasFiscaisPanel: React.FC = () => {
           <FileText className="w-4 h-4" />
           <span>Matriz CFOP ({cfopRules.length})</span>
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Cat. C</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('regras')}
+          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'regras'
+              ? 'bg-rose-600 text-white shadow-md'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Elegibilidade ({regras.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">Cat. C</span>
         </button>
 
 
@@ -1103,15 +1402,15 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 Parâmetros oficiais de alíquotas percentuais por período de vigência para CBS Federal, IBS Estadual, IBS Municipal e IS Federal.
               </p>
             </div>
-
-            <button
-              onClick={handleOpenNewAdValorem}
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nova Vigência Ad Valorem</span>
-            </button>
           </div>
+
+          <UniversalTableActions
+            endpoint="aliquotas/ad-valorem"
+            baseFilename="Aliquotas_Ad_Valorem"
+            onUploadSuccess={reloadData}
+            onAddNew={handleOpenNewAdValorem}
+            addNewLabel="Nova Vigência Ad Valorem"
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
@@ -1205,15 +1504,15 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 Alíquotas específicas em valor monetário fixo por unidade de medida (combustíveis, GLP, bebidas) conforme LC 214/2025.
               </p>
             </div>
-
-            <button
-              onClick={handleOpenNewAdRem}
-              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-amber-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nova Vigência Ad Rem</span>
-            </button>
           </div>
+
+          <UniversalTableActions
+            endpoint="aliquotas/ad-rem"
+            baseFilename="Aliquotas_Ad_Rem"
+            onUploadSuccess={reloadData}
+            onAddNew={handleOpenNewAdRem}
+            addNewLabel="Nova Vigência Ad Rem"
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
@@ -1304,46 +1603,21 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 Mapeamento de NCMs com Alíquota Zero (Cesta Básica), Reduções de 60%, 30% e Regimes Específicos.
               </p>
             </div>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-700/20 cursor-pointer"
-                title="Importar planilha com centenas de NCMs de uma só vez"
-              >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>Importar Planilha Excel</span>
-              </button>
-
-              <button
-                onClick={handleOpenNewNcm}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Novo NCM / Anexo</span>
-              </button>
-            </div>
           </div>
 
-          {/* Filtros e Busca */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:w-80">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar por NCM, descrição ou cClassTrib..."
-                value={ncmSearch}
-                onChange={(e) => setNcmSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-              />
-            </div>
+          <UniversalTableActions
+            endpoint="anexos-ncm"
+            baseFilename="Anexos_NCM_LC214_2025"
+            onUploadSuccess={reloadData}
+            onAddNew={handleOpenNewNcm}
+            addNewLabel="Novo NCM / Anexo"
+            searchPlaceholder="Buscar por NCM, descrição ou cClassTrib..."
+            searchTerm={ncmSearch}
+            onSearchChange={setNcmSearch}
+          />
+
+          {/* Filtro por Tipo */}
+          <div className="flex flex-col sm:flex-row items-center justify-end gap-3">
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Filter className="w-4 h-4 text-slate-400" />
@@ -1460,47 +1734,25 @@ export const TabelasFiscaisPanel: React.FC = () => {
                   Matriz de Retenções na Fonte em Serviços (NFS-e) & Fundamentação Legal
                 </h3>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Categoria C — Informativa & Auditoria
+                  {regrasRetencao.length} Regras Cadastradas
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Regras tributárias importadas via arquivo CSV para auditoria automática (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme LC 116/03, LC 214 e normativos federais.
+                Regras tributárias parametrizadas para auditoria automática (IRRF, CSLL, PIS, COFINS, INSS e ISS) conforme LC 116/03, LC 214 e normativos federais.
               </p>
             </div>
-
-            <div className="flex items-center gap-3">
-              <input 
-                type="file" 
-                accept=".csv,.xlsx" 
-                className="hidden" 
-                ref={csvInputRef} 
-                onChange={handleUploadCSV}
-              />
-              <button 
-                onClick={() => csvInputRef.current?.click()}
-                disabled={isUploadingCSV}
-                className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-colors ${
-                  isUploadingCSV ? 'bg-slate-700 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/20'
-                }`}
-              >
-                {isUploadingCSV ? (
-                  <span className="flex items-center gap-2"><div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> Processando...</span>
-                ) : (
-                  <><Upload className="w-4 h-4" /> Importar CSV</>
-                )}
-              </button>
-              <button
-                onClick={handleOpenNewRegraRetencao}
-                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-[11px] flex items-center gap-2 shadow-lg shadow-amber-600/20 cursor-pointer transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Nova Regra</span>
-              </button>
-              <div className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-800 text-amber-300 text-xs font-bold font-mono">
-                {regrasRetencao.length} Regras
-              </div>
-            </div>
           </div>
+
+          <UniversalTableActions
+            endpoint="regras-retencao-servicos"
+            baseFilename="Regras_Retencao_Servicos_LC116_LC214"
+            onUploadSuccess={loadRetencoes}
+            onAddNew={handleOpenNewRegraRetencao}
+            addNewLabel="Nova Regra"
+            searchPlaceholder="Buscar por código LC 116, NBS ou descrição..."
+            searchTerm={searchTermRetencao}
+            onSearchChange={setSearchTermRetencao}
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800 pb-2">
             <table className="w-max min-w-full text-left text-xs text-slate-300">
@@ -1522,10 +1774,21 @@ export const TabelasFiscaisPanel: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {loadingRetencoes ? (
-                  <tr><td colSpan={11} className="py-8 text-center text-slate-500">Carregando regras...</td></tr>
+                  <tr><td colSpan={12} className="py-8 text-center text-slate-500">Carregando regras...</td></tr>
                 ) : regrasRetencao.length === 0 ? (
-                  <tr><td colSpan={11} className="py-8 text-center text-slate-500">Nenhuma regra encontrada. Importe um arquivo CSV.</td></tr>
-                ) : regrasRetencao.map((regra) => (
+                  <tr><td colSpan={12} className="py-8 text-center text-slate-500">Nenhuma regra encontrada. Importe um arquivo JSON ou XLSX.</td></tr>
+                ) : regrasRetencao
+                  .filter((regra) => {
+                    if (!searchTermRetencao) return true;
+                    const s = searchTermRetencao.toLowerCase();
+                    return (
+                      (regra.item_lc116 && String(regra.item_lc116).toLowerCase().includes(s)) ||
+                      (regra.descricao_item && String(regra.descricao_item).toLowerCase().includes(s)) ||
+                      (regra.nbs && String(regra.nbs).toLowerCase().includes(s)) ||
+                      (regra.cclasstrib && String(regra.cclasstrib).toLowerCase().includes(s))
+                    );
+                  })
+                  .map((regra) => (
                   <tr key={regra.id} className="hover:bg-slate-800/40 transition-colors">
                     <td className="py-2.5 px-4 font-mono font-bold text-amber-400 whitespace-nowrap">{regra.item_lc116}</td>
                     <td className="py-2.5 px-4 text-slate-200 text-[11px] truncate max-w-[250px]" title={regra.descricao_item}>{regra.descricao_item}</td>
@@ -1567,39 +1830,48 @@ export const TabelasFiscaisPanel: React.FC = () => {
       {/* ═══════════════════════════════════════════════════════
           TAB 4: cClassTrib Rules
       ═══════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════════
+          TAB 4: cClassTrib Rules
+      ═══════════════════════════════════════════════════════ */}
       {activeTab === 'cclasstrib' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
-          {/* Header Informativo Categoria C */}
-          <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-800/50 flex items-center gap-3">
-            <Table className="w-5 h-5 text-purple-400 shrink-0" />
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-purple-300 text-sm">Classificação Tributária cClassTrib (6 Dígitos)</span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                Categoria C — Informativa & Referência
-              </span>
+          {/* Header Oficial SEFAZ / SVRS */}
+          <div className="p-4 rounded-xl bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-950 border border-purple-800/50 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Table className="w-5 h-5 text-purple-400 shrink-0" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-purple-300 text-sm">Classificação Tributária cClassTrib & CST (Reforma Tributária RTC)</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    {cClassRules.length} Enquadramentos Oficiais SEFAZ/SVRS
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Tabela oficial unificada conforme Lei Complementar 214/2025. Combustíveis enquadrados estritamente no CST 620 (Monofásica) e cClassTrib 620001–620007.
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:w-96">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Filtrar por cClassTrib ou descrição..."
-                value={searchTermCClass}
-                onChange={(e) => setSearchTermCClass(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            <button
-              onClick={() => setShowAddCClass(true)}
-              className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-600/20 cursor-pointer"
+            <a
+              href="https://dfe-portal.svrs.rs.gov.br/CFF/ClassificacaoTributaria"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 text-xs font-bold border border-cyan-800/80 transition-colors shadow-sm cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span>Novo cClassTrib</span>
-            </button>
+              <span>Portal da Conformidade Fácil (SVRS)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
+
+          <UniversalTableActions
+            endpoint="cclasstrib"
+            baseFilename="Tabela_Oficial_cClassTrib_SVRS"
+            onUploadSuccess={reloadData}
+            onAddNew={() => setShowAddCClass(true)}
+            addNewLabel="Novo cClassTrib"
+            searchPlaceholder="Filtrar por cClassTrib ou descrição..."
+            searchTerm={searchTermCClass}
+            onSearchChange={setSearchTermCClass}
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
@@ -1635,13 +1907,169 @@ export const TabelasFiscaisPanel: React.FC = () => {
                     <td className="py-3 px-4 font-sans text-slate-400">{rule.aliquota_esperada}</td>
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        <button onClick={() => setEditingCClass(rule)} className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-cyan-400">
+                        <button onClick={() => setEditingCClass(rule)} className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-cyan-400 cursor-pointer" title="Editar">
                           <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Deseja excluir o cClassTrib ${rule.cclasstrib}?`)) return;
+                            const res = await del(`/tables/cclasstrib/${rule.id || rule.cclasstrib}`);
+                            if (res.ok) {
+                              showSuccess('cClassTrib excluído com sucesso!');
+                              reloadData();
+                            } else {
+                              alert('Erro ao excluir: ' + res.error);
+                            }
+                          }}
+                          className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-red-400 cursor-pointer"
+                          title="Excluir"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TAB: indOper (Local da Operação / Princípio do Destino - LC 214)
+      ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'indoper' && (
+        <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
+          <div className="p-4 rounded-xl bg-gradient-to-r from-teal-950/40 via-slate-900 to-slate-950 border border-teal-800/50 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <MapPin className="w-5 h-5 text-teal-400 shrink-0" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-teal-300 text-sm">
+                    Tabela Oficial SEFAZ / SVRS — Indicadores de Operação (indOper)
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    {indOperList.length} Códigos Oficiais (Art. 11/12 da LC 214/2025)
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Determina o local de incidência do IBS e CBS com base no Princípio do Destino, caracterizando onde o tributo é devido e partilhado entre os entes federativos.
+                </p>
+              </div>
+            </div>
+            <a
+              href="https://dfe-portal.svrs.rs.gov.br/CFF/ClassificacaoTributaria"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 text-xs font-bold border border-cyan-800/80 transition-colors shadow-sm cursor-pointer"
+            >
+              <span>Portal da Conformidade Fácil (SVRS)</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+
+          <UniversalTableActions
+            endpoint="indoper"
+            baseFilename="Tabela_Oficial_indOper_SVRS"
+            onUploadSuccess={reloadData}
+            onAddNew={() => {
+              setEditingIndOper(null);
+              setIndOperForm({
+                id: '',
+                codigo: '',
+                nome: '',
+                dispositivo_legal: 'Art. 11 da LC 214/2025',
+                local: 'Estabelecimento fornecedor',
+                local_fornecedor: '',
+                caracteristica: '',
+                data_publicacao: '17/11/2025',
+                inicio_vigencia: '17/11/2025',
+                fim_vigencia: '-'
+              });
+              setShowAddIndOper(true);
+            }}
+            addNewLabel="Novo indOper"
+            searchPlaceholder="Buscar por código, nome, local ou dispositivo..."
+            searchTerm={searchTermIndOper}
+            onSearchChange={setSearchTermIndOper}
+          />
+
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950/80 text-[11px] uppercase tracking-wider font-extrabold text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th className="py-3 px-4">Código</th>
+                  <th className="py-3 px-4">Nome / Descrição da Operação</th>
+                  <th className="py-3 px-4">Dispositivo Legal</th>
+                  <th className="py-3 px-4">Local de Incidência</th>
+                  <th className="py-3 px-4">Vigência</th>
+                  <th className="py-3 px-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 font-mono">
+                {indOperList
+                  .filter(item => {
+                    if (!searchTermIndOper) return true;
+                    const s = searchTermIndOper.toLowerCase();
+                    return (
+                      item.codigo.toLowerCase().includes(s) ||
+                      item.nome.toLowerCase().includes(s) ||
+                      (item.local && item.local.toLowerCase().includes(s)) ||
+                      (item.dispositivo_legal && item.dispositivo_legal.toLowerCase().includes(s))
+                    );
+                  })
+                  .map((item) => (
+                    <tr key={item.id || item.codigo} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-bold text-cyan-400">{item.codigo}</td>
+                      <td className="py-3 px-4 font-sans font-medium text-slate-200 max-w-sm">{item.nome}</td>
+                      <td className="py-3 px-4 font-sans text-slate-400">{item.dispositivo_legal}</td>
+                      <td className="py-3 px-4 font-sans text-slate-300">{item.local}</td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">{item.inicio_vigencia || '17/11/2025'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setEditingIndOper(item);
+                              setIndOperForm({
+                                id: item.id,
+                                codigo: item.codigo,
+                                nome: item.nome,
+                                dispositivo_legal: item.dispositivo_legal,
+                                local: item.local,
+                                local_fornecedor: item.local_fornecedor || '',
+                                caracteristica: item.caracteristica || '',
+                                data_publicacao: item.data_publicacao || '17/11/2025',
+                                inicio_vigencia: item.inicio_vigencia || '17/11/2025',
+                                fim_vigencia: item.fim_vigencia || '-'
+                              });
+                              setShowAddIndOper(true);
+                            }}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-cyan-400 cursor-pointer"
+                            title="Editar indOper"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Deseja excluir o código indOper ${item.codigo}?`)) return;
+                              const res = await del(`/tables/indoper/${item.id || item.codigo}`);
+                              if (res.ok) {
+                                showSuccess('Código indOper excluído com sucesso!');
+                                reloadData();
+                              } else {
+                                alert('Erro ao excluir: ' + res.error);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-red-400 cursor-pointer"
+                            title="Excluir indOper"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -1658,14 +2086,27 @@ export const TabelasFiscaisPanel: React.FC = () => {
               <Scale className="w-5 h-5 text-indigo-400" />
               Matriz de CFOP x Tratamento e Onerosidade
             </h3>
-            <button
-              onClick={() => setShowAddCfop(true)}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo CFOP</span>
-            </button>
           </div>
+
+          <UniversalTableActions
+            endpoint="cfop"
+            baseFilename="Tabela_Matriz_CFOP"
+            onUploadSuccess={reloadData}
+            onAddNew={() => {
+              setEditingCfop(null);
+              setNewCfopCode('');
+              setNewCfopDesc('');
+              setNewCfopCat('Compra');
+              setNewCfopTrat('Elegível');
+              setNewCfopOneroso(true);
+              setNewCfopEvidencia('');
+              setShowAddCfop(true);
+            }}
+            addNewLabel="Novo CFOP"
+            searchPlaceholder="Filtrar por CFOP ou descrição..."
+            searchTerm={searchTermCfop}
+            onSearchChange={setSearchTermCfop}
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
@@ -1677,27 +2118,70 @@ export const TabelasFiscaisPanel: React.FC = () => {
                   <th className="py-3 px-4">Tratamento</th>
                   <th className="py-3 px-4">Exige Onerosidade?</th>
                   <th className="py-3 px-4">Evidência Mínima</th>
+                  <th className="py-3 px-4 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {cfopRules.map((rule) => (
-                  <tr key={rule.id || rule.cfop} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-indigo-400">{rule.cfop}</td>
-                    <td className="py-3 px-4 font-medium text-slate-200">{rule.descricao}</td>
-                    <td className="py-3 px-4 text-slate-400">{rule.categoria}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                        rule.tratamento_padrao === 'Elegível' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
-                        rule.tratamento_padrao === 'Não elegível' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30' :
-                        'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                      }`}>
-                        {rule.tratamento_padrao}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">{rule.exige_onerosidade ? '✅ Sim' : '❌ Não'}</td>
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">{rule.evidencia_minima || 'XML Válido'}</td>
-                  </tr>
-                ))}
+                {cfopRules
+                  .filter(rule => {
+                    if (!searchTermCfop) return true;
+                    const s = searchTermCfop.toLowerCase();
+                    return rule.cfop.toLowerCase().includes(s) || rule.descricao.toLowerCase().includes(s) || rule.categoria.toLowerCase().includes(s);
+                  })
+                  .map((rule) => (
+                    <tr key={rule.id || rule.cfop} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-indigo-400">{rule.cfop}</td>
+                      <td className="py-3 px-4 font-medium text-slate-200">{rule.descricao}</td>
+                      <td className="py-3 px-4 text-slate-400">{rule.categoria}</td>
+                      <td className="py-3 px-4">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          rule.tratamento_padrao === 'Elegível' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' :
+                          rule.tratamento_padrao === 'Não elegível' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30' :
+                          'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        }`}>
+                          {rule.tratamento_padrao}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">{rule.exige_onerosidade ? '✅ Sim' : '❌ Não'}</td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">{rule.evidencia_minima || 'XML Válido'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setEditingCfop(rule);
+                              setNewCfopCode(rule.cfop);
+                              setNewCfopDesc(rule.descricao);
+                              setNewCfopCat(rule.categoria);
+                              setNewCfopTrat(rule.tratamento_padrao);
+                              setNewCfopOneroso(rule.exige_onerosidade);
+                              setNewCfopEvidencia(rule.evidencia_minima || '');
+                              setShowAddCfop(true);
+                            }}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-indigo-400 cursor-pointer"
+                            title="Editar CFOP"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Deseja excluir o CFOP ${rule.cfop}?`)) return;
+                              const res = await del(`/tables/cfop/${rule.id || rule.cfop}`);
+                              if (res.ok) {
+                                showSuccess('CFOP excluído com sucesso!');
+                                reloadData();
+                              } else {
+                                alert('Erro ao excluir CFOP: ' + res.error);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-slate-700 rounded-lg text-slate-300 hover:text-red-400 cursor-pointer"
+                            title="Excluir CFOP"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -1709,28 +2193,98 @@ export const TabelasFiscaisPanel: React.FC = () => {
       ═══════════════════════════════════════════════════════ */}
       {activeTab === 'regras' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-lg">
-          <h3 className="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-            <ShieldCheck className="w-5 h-5 text-teal-400" />
-            Regras de Elegibilidade de Crédito da Reforma Tributária (LC 214/2025)
-          </h3>
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-teal-400" />
+              Regras de Elegibilidade de Crédito da Reforma Tributária (LC 214/2025)
+            </h3>
+          </div>
+
+          <UniversalTableActions
+            endpoint="regras"
+            baseFilename="Tabela_Regras_Elegibilidade"
+            onUploadSuccess={reloadData}
+            onAddNew={() => {
+              setEditingRegra(null);
+              setRegraForm({
+                codigo_regra: '',
+                nome: '',
+                descricao: '',
+                tipo_aquisicao: 'Insumo Operacional',
+                cfops_aplicaveis: '',
+                resultado_padrao: 'Elegível ao Crédito',
+                evidencia_minima: 'XML + Documento Fiscal',
+                base_legal: 'LC 214/2025'
+              });
+              setShowAddRegra(true);
+            }}
+            addNewLabel="Nova Regra"
+            searchPlaceholder="Filtrar regras por código, nome ou CFOPs..."
+            searchTerm={searchTermRegras}
+            onSearchChange={setSearchTermRegras}
+          />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {regras.map((r) => (
-              <div key={r.id || r.codigo_regra} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold text-teal-400">{r.codigo_regra}</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/10 text-teal-300 border border-teal-500/30">
-                    {r.resultado_padrao}
-                  </span>
+            {regras
+              .filter(r => {
+                if (!searchTermRegras) return true;
+                const s = searchTermRegras.toLowerCase();
+                return r.codigo_regra.toLowerCase().includes(s) || r.nome.toLowerCase().includes(s) || (r.cfops_aplicaveis && r.cfops_aplicaveis.toLowerCase().includes(s));
+              })
+              .map((r) => (
+                <div key={r.id || r.codigo_regra} className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-bold text-teal-400">{r.codigo_regra}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-teal-500/10 text-teal-300 border border-teal-500/30">
+                        {r.resultado_padrao}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditingRegra(r);
+                          setRegraForm({
+                            codigo_regra: r.codigo_regra,
+                            nome: r.nome,
+                            descricao: r.descricao,
+                            tipo_aquisicao: r.tipo_aquisicao || 'Insumo Operacional',
+                            cfops_aplicaveis: r.cfops_aplicaveis || '',
+                            resultado_padrao: r.resultado_padrao || 'Elegível ao Crédito',
+                            evidencia_minima: r.evidencia_minima || 'XML + Documento Fiscal',
+                            base_legal: r.base_legal || 'LC 214/2025'
+                          });
+                          setShowAddRegra(true);
+                        }}
+                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-teal-400 cursor-pointer"
+                        title="Editar Regra"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Deseja excluir a regra ${r.codigo_regra}?`)) return;
+                          const res = await del(`/tables/regras/${r.id || r.codigo_regra}`);
+                          if (res.ok) {
+                            showSuccess('Regra excluída com sucesso!');
+                            reloadData();
+                          } else {
+                            alert('Erro ao excluir regra: ' + res.error);
+                          }
+                        }}
+                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400 cursor-pointer"
+                        title="Excluir Regra"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <h4 className="text-xs font-bold text-slate-200">{r.nome}</h4>
+                  <p className="text-[11px] text-slate-400">{r.descricao}</p>
+                  <div className="text-[10px] text-slate-500 border-t border-slate-900 pt-2 flex items-center justify-between">
+                    <span>Evidência: {r.evidencia_minima}</span>
+                    <span className="font-mono">{r.base_legal}</span>
+                  </div>
                 </div>
-                <h4 className="text-xs font-bold text-slate-200">{r.nome}</h4>
-                <p className="text-[11px] text-slate-400">{r.descricao}</p>
-                <div className="text-[10px] text-slate-500 border-t border-slate-900 pt-2 flex items-center justify-between">
-                  <span>Evidência: {r.evidencia_minima}</span>
-                  <span className="font-mono">{r.base_legal}</span>
-                </div>
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       )}
@@ -1740,25 +2294,23 @@ export const TabelasFiscaisPanel: React.FC = () => {
       ═══════════════════════════════════════════════════════ */}
       {activeTab === 'inferencia' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4 shadow-xl">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800 pb-4">
-            <div>
-              <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                <SlidersHorizontal className="w-5 h-5 text-violet-400" />
-                Parâmetros de Inferência — Alíquotas Médias do Simulador
-              </h3>
-              <p className="text-xs text-slate-400 mt-0.5 max-w-3xl">
-                Alíquotas médias de ICMS, PIS, COFINS, IPI e ISS aplicadas exclusivamente pelo <strong>Simulador Comparativo de Transição</strong> da Central de KPIs quando os XMLs não discriminam os tributos (ex: Simples Nacional CRT 1/4 e CT-e sem PIS/COFINS). Os relatórios e dados do XML continuam refletindo <strong>estritamente</strong> os valores originais.
-              </p>
-            </div>
-
-            <button
-              onClick={handleOpenNewInferencia}
-              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-violet-600/20 cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Novo Parâmetro de Inferência</span>
-            </button>
+          <div className="border-b border-slate-800 pb-4">
+            <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+              <SlidersHorizontal className="w-5 h-5 text-violet-400" />
+              Parâmetros de Inferência — Alíquotas Médias do Simulador
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5 max-w-3xl">
+              Alíquotas médias de ICMS, PIS, COFINS, IPI e ISS aplicadas exclusivamente pelo <strong>Simulador Comparativo de Transição</strong> da Central de KPIs quando os XMLs não discriminam os tributos (ex: Simples Nacional CRT 1/4 e CT-e sem PIS/COFINS). Os relatórios e dados do XML continuam refletindo <strong>estritamente</strong> os valores originais.
+            </p>
           </div>
+
+          <UniversalTableActions
+            endpoint="inferencia"
+            baseFilename="Tabela_Parametros_Inferencia"
+            onUploadSuccess={reloadData}
+            onAddNew={handleOpenNewInferencia}
+            addNewLabel="Novo Parâmetro de Inferência"
+          />
 
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs text-slate-300">
@@ -1880,6 +2432,12 @@ export const TabelasFiscaisPanel: React.FC = () => {
               <span>{showPartilhaReforma ? 'Ocultar Transição LC 214' : 'Ver Transição LC 214 (2027-2033)'}</span>
             </button>
           </div>
+
+          <UniversalTableActions
+            endpoint="simples-nacional"
+            baseFilename="Tabela_Simples_Nacional"
+            onUploadSuccess={reloadData}
+          />
 
           {/* Anexo Pills Selector */}
           <div className="flex flex-wrap gap-2 pt-1">
@@ -2047,7 +2605,6 @@ export const TabelasFiscaisPanel: React.FC = () => {
       ═══════════════════════════════════════════════════════ */}
       {activeTab === 'lucro_presumido' && (
         <div className="p-6 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-6 shadow-xl animate-fade-in">
-          {/* Header */}
           <div className="border-b border-slate-800 pb-4">
             <h3 className="text-base font-extrabold text-white flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-cyan-400" />
@@ -2057,6 +2614,30 @@ export const TabelasFiscaisPanel: React.FC = () => {
               Coeficientes legais de presunção de lucro para IRPJ e CSLL por atividade econômica, limites do adicional e alíquotas de encargos previdenciários patronais (INSS 20%, RAT e Sistema S).
             </p>
           </div>
+
+          <UniversalTableActions
+            endpoint="lucro-presumido"
+            baseFilename="Tabela_Lucro_Presumido"
+            onUploadSuccess={reloadData}
+            onAddNew={() => {
+              setEditingLucroPresumido(null);
+              setLucroPresumidoForm({
+                codigo_atividade: '',
+                nome_atividade: '',
+                categoria: 'Serviços',
+                presuncao_irpj: 0.32,
+                presuncao_csll: 0.32,
+                aliq_irpj_base: 0.15,
+                aliq_irpj_adicional: 0.10,
+                limite_adicional_mes: 20000,
+                aliq_csll_base: 0.09,
+                base_legal: 'Lei 9.249/1995, art. 15 e 20',
+                detalhe: ''
+              });
+              setShowModalLucroPresumido(true);
+            }}
+            addNewLabel="Nova Atividade / Presunção"
+          />
 
           {/* Seção 1: Atividades e Presunções */}
           <div className="space-y-3">
@@ -3369,6 +3950,457 @@ export const TabelasFiscaisPanel: React.FC = () => {
                 >
                   <Save className="w-4 h-4" />
                   Salvar Encargos
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: ADICIONAR / EDITAR INDOPER (SVRS / LC 214)
+      ═══════════════════════════════════════════════════════ */}
+      {showAddIndOper && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-teal-400" />
+                {editingIndOper ? 'Editar Indicador de Operação (indOper)' : 'Novo Indicador de Operação (indOper)'}
+              </h3>
+              <button
+                onClick={() => { setShowAddIndOper(false); setEditingIndOper(null); }}
+                className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveIndOper} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Código Oficial (ex: 001, 101) *</label>
+                  <input
+                    type="text"
+                    value={indOperForm.codigo}
+                    onChange={(e) => setIndOperForm({ ...indOperForm, codigo: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-teal-400 font-mono font-bold"
+                    placeholder="ex: 101"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Dispositivo Legal *</label>
+                  <input
+                    type="text"
+                    value={indOperForm.dispositivo_legal}
+                    onChange={(e) => setIndOperForm({ ...indOperForm, dispositivo_legal: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="Art. 11 da LC 214/2025"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Nome / Descrição da Hipótese *</label>
+                <input
+                  type="text"
+                  value={indOperForm.nome}
+                  onChange={(e) => setIndOperForm({ ...indOperForm, nome: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="Nome oficial da operação"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Local da Operação (Princípio do Destino)</label>
+                <input
+                  type="text"
+                  value={indOperForm.local}
+                  onChange={(e) => setIndOperForm({ ...indOperForm, local: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="Estabelecimento fornecedor, destinatário, etc."
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Características / Observações</label>
+                <textarea
+                  rows={2}
+                  value={indOperForm.caracteristica}
+                  onChange={(e) => setIndOperForm({ ...indOperForm, caracteristica: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 resize-none"
+                  placeholder="Detalhes complementares"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddIndOper(false); setEditingIndOper(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar indOper
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: ADICIONAR / EDITAR CCLASSTRIB (SVRS RTC)
+      ═══════════════════════════════════════════════════════ */}
+      {(showAddCClass || editingCClass) && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Layers className="w-5 h-5 text-purple-400" />
+                {editingCClass ? 'Editar Classificação Tributária (cClassTrib)' : 'Nova Classificação Tributária (cClassTrib)'}
+              </h3>
+              <button
+                onClick={() => { setShowAddCClass(false); setEditingCClass(null); }}
+                className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCClass} className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Código cClassTrib (6 dígitos oficiais, ex: 620006, 000001) *</label>
+                <input
+                  type="text"
+                  value={newCode}
+                  onChange={(e) => setNewCode(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-purple-400 font-mono font-bold"
+                  placeholder="ex: 620006"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Descrição Oficial (SVRS / RFB) *</label>
+                <textarea
+                  rows={3}
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 resize-none"
+                  placeholder="Descrição da regra de tributação"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Tratamento Esperado *</label>
+                  <select
+                    value={newTratamento}
+                    onChange={(e) => setNewTratamento(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="tributado">Tributado</option>
+                    <option value="aliquota_reduzida">Alíquota Reduzida</option>
+                    <option value="isento">Isento</option>
+                    <option value="nao_incidencia">Não Incidência</option>
+                    <option value="monofasico">Monofásico</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Permite Crédito? *</label>
+                  <select
+                    value={newCredito}
+                    onChange={(e) => setNewCredito(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="Sim">Sim</option>
+                    <option value="Não">Não</option>
+                    <option value="Parcial">Parcial</option>
+                    <option value="Depende">Depende</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Alíquota Esperada / Referência</label>
+                <input
+                  type="text"
+                  value={newAliquota}
+                  onChange={(e) => setNewAliquota(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="ex: Padrão (26.5%), Alíquota Zero, etc."
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddCClass(false); setEditingCClass(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-purple-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar cClassTrib
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: ADICIONAR / EDITAR CFOP
+      ═══════════════════════════════════════════════════════ */}
+      {showAddCfop && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Scale className="w-5 h-5 text-indigo-400" />
+                {editingCfop ? 'Editar Regra de CFOP' : 'Nova Regra de CFOP'}
+              </h3>
+              <button
+                onClick={() => { setShowAddCfop(false); setEditingCfop(null); }}
+                className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCfop} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">CFOP (4 dígitos) *</label>
+                  <input
+                    type="text"
+                    value={newCfopCode}
+                    onChange={(e) => setNewCfopCode(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-indigo-400 font-mono font-bold"
+                    placeholder="ex: 1102"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Categoria *</label>
+                  <select
+                    value={newCfopCat}
+                    onChange={(e) => setNewCfopCat(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="Compra">Compra</option>
+                    <option value="Devolução">Devolução</option>
+                    <option value="Transferência">Transferência</option>
+                    <option value="Remessa">Remessa</option>
+                    <option value="Outros">Outros</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Descrição do CFOP *</label>
+                <input
+                  type="text"
+                  value={newCfopDesc}
+                  onChange={(e) => setNewCfopDesc(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="ex: Compra para comercialização"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Tratamento Padrão *</label>
+                  <select
+                    value={newCfopTrat}
+                    onChange={(e) => setNewCfopTrat(e.target.value as any)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="Elegível">Elegível</option>
+                    <option value="Não elegível">Não elegível</option>
+                    <option value="Depende">Depende</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Exige Onerosidade? *</label>
+                  <select
+                    value={newCfopOneroso ? 'true' : 'false'}
+                    onChange={(e) => setNewCfopOneroso(e.target.value === 'true')}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="true">Sim (Exige Pagamento)</option>
+                    <option value="false">Não (Bonificação/Remessa)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Evidência Mínima Exigida</label>
+                <input
+                  type="text"
+                  value={newCfopEvidencia}
+                  onChange={(e) => setNewCfopEvidencia(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="ex: XML Válido + Extrato Financeiro"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddCfop(false); setEditingCfop(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar CFOP
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          MODAL: ADICIONAR / EDITAR REGRA DE ELEGIBILIDADE
+      ═══════════════════════════════════════════════════════ */}
+      {showAddRegra && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-fade-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-teal-400" />
+                {editingRegra ? 'Editar Regra de Elegibilidade' : 'Nova Regra de Elegibilidade'}
+              </h3>
+              <button
+                onClick={() => { setShowAddRegra(false); setEditingRegra(null); }}
+                className="text-slate-400 hover:text-white text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveRegra} className="space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Código da Regra *</label>
+                  <input
+                    type="text"
+                    value={regraForm.codigo_regra}
+                    onChange={(e) => setRegraForm({ ...regraForm, codigo_regra: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-teal-400 font-mono font-bold"
+                    placeholder="ex: REG_INSUMO_01"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Resultado Padrão *</label>
+                  <select
+                    value={regraForm.resultado_padrao}
+                    onChange={(e) => setRegraForm({ ...regraForm, resultado_padrao: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  >
+                    <option value="Elegível ao Crédito">Elegível ao Crédito</option>
+                    <option value="Não Elegível">Não Elegível</option>
+                    <option value="Depende de Evidência">Depende de Evidência</option>
+                    <option value="Monofásico / Vedado">Monofásico / Vedado</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Nome da Regra *</label>
+                <input
+                  type="text"
+                  value={regraForm.nome}
+                  onChange={(e) => setRegraForm({ ...regraForm, nome: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="Nome descritivo da regra"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Descrição</label>
+                <textarea
+                  rows={2}
+                  value={regraForm.descricao}
+                  onChange={(e) => setRegraForm({ ...regraForm, descricao: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 resize-none"
+                  placeholder="Descrição da regra de negócio"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">CFOPs Aplicáveis (separados por vírgula)</label>
+                  <input
+                    type="text"
+                    value={regraForm.cfops_aplicaveis}
+                    onChange={(e) => setRegraForm({ ...regraForm, cfops_aplicaveis: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 font-mono"
+                    placeholder="1101, 1102, 2101"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-300 block mb-1">Base Legal *</label>
+                  <input
+                    type="text"
+                    value={regraForm.base_legal}
+                    onChange={(e) => setRegraForm({ ...regraForm, base_legal: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                    placeholder="Art. 28 da LC 214/2025"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-300 block mb-1">Evidência Mínima</label>
+                <input
+                  type="text"
+                  value={regraForm.evidencia_minima}
+                  onChange={(e) => setRegraForm({ ...regraForm, evidencia_minima: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-slate-200"
+                  placeholder="XML + Comprovante de Pagamento"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => { setShowAddRegra(false); setEditingRegra(null); }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs hover:bg-slate-700 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-teal-600/20 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  Salvar Regra
                 </button>
               </div>
             </form>

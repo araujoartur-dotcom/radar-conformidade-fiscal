@@ -1,0 +1,389 @@
+import fs from 'fs';
+import path from 'path';
+import { v4 as uuid } from 'uuid';
+import { getDatabase } from './database';
+
+export function seedTabelasOficiais() {
+  const db = getDatabase();
+
+  console.log('🚀 Iniciando Seed das Tabelas Oficiais RTC (SVRS & LC 214/2025)...');
+
+  // 1. SEED CCLASSTRIB (164 Registros Oficiais da SVRS)
+  try {
+    const cclassPath = path.resolve('server/db/tabela_oficial_cst_cclasstrib_svrs.json');
+    if (fs.existsSync(cclassPath)) {
+      const cclassData = JSON.parse(fs.readFileSync(cclassPath, 'utf8'));
+      
+      // Expurgar qualquer fallback inexistente 900001
+      db.prepare("DELETE FROM cclasstrib_regras WHERE cclasstrib = '900001'").run();
+
+      const stmtCClass = db.prepare(`
+        INSERT INTO cclasstrib_regras (
+          id, cclasstrib, descricao_interna, cst, desc_cst, descricao,
+          exige_tributacao, reducao_bc_cst, reducao_aliquota, diferimento, monofasica,
+          perc_reducao_ibs, perc_reducao_cbs, tipo_aliquota, permite_credito,
+          url_legislacao, numero_anexo, tributacao_monofasica_normal,
+          tributacao_monofasica_retencao, tributacao_monofasica_retida_anteriormente,
+          tributacao_monofasica_diferimento, credito_presumido, estorno_credito,
+          transferencia_credito, tratamento_esperado, dados_completos_json, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          cclasstrib = excluded.cclasstrib,
+          descricao_interna = excluded.descricao_interna,
+          cst = excluded.cst,
+          desc_cst = excluded.desc_cst,
+          descricao = excluded.descricao,
+          exige_tributacao = excluded.exige_tributacao,
+          reducao_bc_cst = excluded.reducao_bc_cst,
+          reducao_aliquota = excluded.reducao_aliquota,
+          diferimento = excluded.diferimento,
+          monofasica = excluded.monofasica,
+          perc_reducao_ibs = excluded.perc_reducao_ibs,
+          perc_reducao_cbs = excluded.perc_reducao_cbs,
+          tipo_aliquota = excluded.tipo_aliquota,
+          permite_credito = excluded.permite_credito,
+          url_legislacao = excluded.url_legislacao,
+          numero_anexo = excluded.numero_anexo,
+          tributacao_monofasica_normal = excluded.tributacao_monofasica_normal,
+          tributacao_monofasica_retencao = excluded.tributacao_monofasica_retencao,
+          tributacao_monofasica_retida_anteriormente = excluded.tributacao_monofasica_retida_anteriormente,
+          tributacao_monofasica_diferimento = excluded.tributacao_monofasica_diferimento,
+          credito_presumido = excluded.credito_presumido,
+          estorno_credito = excluded.estorno_credito,
+          transferencia_credito = excluded.transferencia_credito,
+          tratamento_esperado = excluded.tratamento_esperado,
+          dados_completos_json = excluded.dados_completos_json,
+          updated_at = datetime('now')
+      `);
+
+      const insertManyCClass = db.transaction((items: any[]) => {
+        for (const item of items) {
+          const cod = String(item['Código da Classificação Tributária'] || item.cclasstrib || '').trim();
+          if (!cod) continue;
+          const cst = String(item['Código da Situação Tributária'] || item.cst || '').trim();
+          const desc = String(item['Descrição do Código da Classificação Tributária'] || item.descricao || item.descricao_interna || '').trim();
+          const descCst = String(item['Descrição da Situação Tributária'] || item.desc_cst || '').trim();
+          const monofasica = String(item['Monofásica'] || item.monofasica || (cst === '620' ? 'Sim' : 'Não')).trim();
+          const redIbs = Number(item['Percentual Redução IBS'] || item.perc_reducao_ibs || 0);
+          const redCbs = Number(item['Percentual Redução CBS'] || item.perc_reducao_cbs || 0);
+          
+          // Tratamento esperado
+          let tratamento = 'tributado';
+          if (cst === '620') tratamento = 'monofasico';
+          else if (cst === '400') tratamento = 'isento';
+          else if (cst === '410') tratamento = 'imune';
+          else if (cst === '510' || cst === '515') tratamento = 'diferido';
+          else if (cst === '550') tratamento = 'suspenso';
+          else if (redIbs > 0 || redCbs > 0) tratamento = 'reduzido';
+
+          // Permissão de crédito: combustíveis cobrados anteriormente (620006) ou CST 400/410/620 é 'Não' por padrão
+          let permiteCredito = 'Sim';
+          if (cst === '620' || cod === '620006' || cod === '620001' || cod === '620002') {
+            permiteCredito = 'Não';
+          } else if (cst === '400' || (cst === '410' && item['Estorno de Crédito'] !== 'Sim')) {
+            permiteCredito = 'Não';
+          }
+
+          // ID determinístico por código cClassTrib
+          const id = `cclass-${cod}`;
+
+          stmtCClass.run(
+            id,
+            cod,
+            desc,
+            cst,
+            descCst,
+            desc,
+            String(item['Exige Tributação'] || 'Sim'),
+            String(item['Redução BC CST'] || 'Não'),
+            String(item['Redução de Alíquota'] || 'Não'),
+            String(item['Diferimento'] || 'Não'),
+            monofasica,
+            redIbs,
+            redCbs,
+            String(item['Tipo de Alíquota'] || ''),
+            permiteCredito,
+            String(item['Url da Legislação'] || ''),
+            String(item['Número do Anexo'] || ''),
+            String(item['Tributação Monofásica Normal'] || 'Não'),
+            String(item['Tributação Monofásica sujeita a retenção'] || 'Não'),
+            String(item['Tributação Monofásica retida anteriormente'] || 'Não'),
+            String(item['Tributação Monofásica de Combustível com diferimento'] || 'Não'),
+            String(item['Crédito Presumido'] || 'Não'),
+            String(item['Estorno de Crédito'] || 'Não'),
+            String(item['Transferência de Crédito'] || 'Não'),
+            tratamento,
+            JSON.stringify(item)
+          );
+        }
+      });
+
+      insertManyCClass(cclassData);
+      const totalCClass = (db.prepare('SELECT count(*) as total FROM cclasstrib_regras').get() as any)?.total || 0;
+      console.log(`✅ cClassTrib Oficial SVRS semeado com sucesso: ${totalCClass} registros.`);
+    }
+  } catch (err: any) {
+    console.error('Erro ao semear cClassTrib SVRS:', err.message);
+  }
+
+  // 2. SEED INDOPER (39 Registros Oficiais da SVRS)
+  try {
+    const indoperPath = path.resolve('server/db/tabela_oficial_indoper_svrs.json');
+    if (fs.existsSync(indoperPath)) {
+      const indoperData = JSON.parse(fs.readFileSync(indoperPath, 'utf8'));
+
+      const stmtIndoper = db.prepare(`
+        INSERT INTO indoper_regras (
+          id, codigo, nome, dispositivo_legal, local, local_fornecedor,
+          caracteristica, data_publicacao, inicio_vigencia, fim_vigencia, dados_completos_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(codigo) DO UPDATE SET
+          nome = excluded.nome,
+          dispositivo_legal = excluded.dispositivo_legal,
+          local = excluded.local,
+          local_fornecedor = excluded.local_fornecedor,
+          caracteristica = excluded.caracteristica,
+          data_publicacao = excluded.data_publicacao,
+          inicio_vigencia = excluded.inicio_vigencia,
+          fim_vigencia = excluded.fim_vigencia,
+          dados_completos_json = excluded.dados_completos_json
+      `);
+
+      const insertManyIndoper = db.transaction((items: any[]) => {
+        for (const item of items) {
+          const cod = String(item['Código'] || item.codigo || '').trim();
+          if (!cod) continue;
+          const id = `indoper-${cod}`;
+          stmtIndoper.run(
+            id,
+            cod,
+            String(item['Nome'] || item.nome || ''),
+            String(item['Dispositivo Legal'] || item.dispositivo_legal || ''),
+            String(item['Local'] || item.local || ''),
+            String(item['Local do Fornecedor'] || item.local_fornecedor || ''),
+            String(item['Característica do Fornecedor'] || item.caracteristica || ''),
+            String(item['Data de Publicação'] || '17/11/2025'),
+            String(item['Início de Vigência'] || '17/11/2025'),
+            String(item['Fim de Vigência'] || '-'),
+            JSON.stringify(item)
+          );
+        }
+      });
+
+      insertManyIndoper(indoperData);
+      const totalIndoper = (db.prepare('SELECT count(*) as total FROM indoper_regras').get() as any)?.total || 0;
+      console.log(`✅ indOper Oficial SVRS semeado com sucesso: ${totalIndoper} registros.`);
+    }
+  } catch (err: any) {
+    console.error('Erro ao semear indOper SVRS:', err.message);
+  }
+
+  // 3. SEED NCM ANEXOS LC 214/2025 (1.166 Itens)
+  try {
+    const csvPath = path.resolve('server/db/LC214_2025_Itens_x_Codigo_v2.csv');
+    if (fs.existsSync(csvPath)) {
+      const content = fs.readFileSync(csvPath, 'utf8');
+      const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
+      
+      const parseCSVLine = (line: string) => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            if (inQuotes && line[i + 1] === '"') {
+              current += '"';
+              i++;
+            } else {
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ';' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      };
+
+      const header = parseCSVLine(lines[0]);
+      const stmtNcm = db.prepare(`
+        INSERT INTO ncm_regras_anexos (
+          id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao,
+          anexo_lei, base_legal, codigo_normalizado, nivel_codigo, titulo_anexo,
+          item_anexo, descritivo, tratamento, perc_aliquota_aplicavel, tributo,
+          tipo_classificacao, condicionantes_observacoes, permite_credito,
+          is_combustivel, cclasstrib_sugerido, cst_sugerido, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, datetime('now')
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          ncm = excluded.ncm,
+          cclasstrib = excluded.cclasstrib,
+          descricao = excluded.descricao,
+          tipo_tratamento = excluded.tipo_tratamento,
+          percentual_reducao = excluded.percentual_reducao,
+          anexo_lei = excluded.anexo_lei,
+          base_legal = excluded.base_legal,
+          codigo_normalizado = excluded.codigo_normalizado,
+          nivel_codigo = excluded.nivel_codigo,
+          titulo_anexo = excluded.titulo_anexo,
+          item_anexo = excluded.item_anexo,
+          descritivo = excluded.descritivo,
+          tratamento = excluded.tratamento,
+          perc_aliquota_aplicavel = excluded.perc_aliquota_aplicavel,
+          tributo = excluded.tributo,
+          tipo_classificacao = excluded.tipo_classificacao,
+          condicionantes_observacoes = excluded.condicionantes_observacoes,
+          permite_credito = excluded.permite_credito,
+          is_combustivel = excluded.is_combustivel,
+          cclasstrib_sugerido = excluded.cclasstrib_sugerido,
+          cst_sugerido = excluded.cst_sugerido,
+          updated_at = datetime('now')
+      `);
+
+      const insertManyNcm = db.transaction((rowLines: string[]) => {
+        for (let i = 1; i < rowLines.length; i++) {
+          const vals = parseCSVLine(rowLines[i]);
+          if (vals.length < header.length) continue;
+
+          const row: Record<string, string> = {};
+          header.forEach((h, idx) => {
+            row[h] = vals[idx] || '';
+          });
+
+          const codigo = (row['Codigo'] || '').trim();
+          const codNorm = (row['Codigo_Normalizado'] || codigo.replace(/\D/g, '')).trim();
+          const tituloAnexo = (row['Titulo_Anexo'] || '').trim();
+          const descritivo = (row['Descritivo'] || '').trim();
+          const tratamento = (row['Tratamento'] || '').trim();
+          const percAliq = Number(row['Perc_Aliquota_Aplicavel'] || 0);
+          const percRed = Number(row['Perc_Reducao'] || (100 - percAliq));
+          
+          // Flag de combustível (NCMs 2710, 2711 ou Artigo 172 da LC 214)
+          const isCombustivel = (codNorm.startsWith('2710') || codNorm.startsWith('2711') || codNorm.startsWith('2207') || codNorm.startsWith('3826')) ? 1 : 0;
+          
+          let permiteCredito = (row['Permite_Credito'] || 'Sim').trim();
+          let cclassSugerido = '';
+          let cstSugerido = '000';
+          
+          if (isCombustivel === 1) {
+            cstSugerido = '620';
+            cclassSugerido = '620006'; // Cobrada anteriormente (aquisição por postos/revenda/consumo)
+            permiteCredito = 'Não';    // Art. 267 da LC 214/2025
+          } else if (tratamento.toLowerCase().includes('zero') || percRed === 100) {
+            cstSugerido = '200';
+            cclassSugerido = '200003'; // Alíquota zero
+          } else if (tratamento.toLowerCase().includes('60') || percRed === 60) {
+            cstSugerido = '200';
+            cclassSugerido = '200034'; // Redução de 60%
+          } else if (tratamento.toLowerCase().includes('30') || percRed === 30) {
+            cstSugerido = '200';
+            cclassSugerido = '200052'; // Redução de 30%
+          }
+
+          let tipoTratamento: string = 'padrao';
+          if (isCombustivel === 1) tipoTratamento = 'ad_rem';
+          else if (tratamento.toLowerCase().includes('zero') || percRed === 100) tipoTratamento = 'cesta_basica_zero';
+          else if (tratamento.toLowerCase().includes('60') || percRed === 60) tipoTratamento = 'reducao_60';
+          else if (tratamento.toLowerCase().includes('30') || percRed === 30) tipoTratamento = 'reducao_30';
+
+          const id = `ncm-lc214-${row['ID_Codigo'] || i}-${codNorm || 'item'}`;
+
+          stmtNcm.run(
+            id,
+            codigo,
+            row['NBS'] || '',
+            cclassSugerido,
+            descritivo || tituloAnexo,
+            tipoTratamento,
+            percRed,
+            tituloAnexo,
+            row['Base_Legal'] || 'LC 214/2025',
+            codNorm,
+            row['Nivel_Codigo'] || '',
+            tituloAnexo,
+            row['Item_Anexo'] || '',
+            descritivo,
+            tratamento,
+            percAliq,
+            row['Tributo'] || 'IBS e CBS',
+            row['Tipo_Classificacao'] || 'NCM/SH',
+            row['Condicionantes_Observacoes'] || '',
+            permiteCredito,
+            isCombustivel,
+            cclassSugerido,
+            cstSugerido
+          );
+        }
+
+        // Garantir os principais combustíveis monofásicos do Art. 172 da LC 214/2025
+        const combustiveisArt172 = [
+          { ncm: '2711.19.10', codNorm: '27111910', desc: 'Gás Liquefeito de Petróleo (GLP / Gás de Cozinha)', cclass: '620006', cst: '620' },
+          { ncm: '2711.11.00', codNorm: '27111100', desc: 'Gás Natural Liquefeito (GNL)', cclass: '620006', cst: '620' },
+          { ncm: '2711.21.00', codNorm: '27112100', desc: 'Gás Natural Veicular / Gasoso (GNV)', cclass: '620006', cst: '620' },
+          { ncm: '2710.12.59', codNorm: '27101259', desc: 'Gasolina Comum e Aditivada (Gasolina A/C)', cclass: '620006', cst: '620' },
+          { ncm: '2710.19.21', codNorm: '27101921', desc: 'Óleo Diesel (Diesel A/B/S10/S500)', cclass: '620006', cst: '620' },
+          { ncm: '2207.10.10', codNorm: '22071010', desc: 'Álcool Etílico Anidro Combustível (EAC)', cclass: '620003', cst: '620' },
+          { ncm: '2207.10.90', codNorm: '22071090', desc: 'Álcool Etílico Hidratado Combustível (EHC)', cclass: '620001', cst: '620' },
+          { ncm: '3826.00.00', codNorm: '38260000', desc: 'Biodiesel (B100)', cclass: '620001', cst: '620' },
+          { ncm: '2710.19.11', codNorm: '27101911', desc: 'Querosene de Aviação (QAV)', cclass: '620006', cst: '620' }
+        ];
+
+        for (const c of combustiveisArt172) {
+          const id = `ncm-comb-${c.codNorm}`;
+          stmtNcm.run(
+            id,
+            c.ncm,
+            '',
+            c.cclass,
+            c.desc,
+            'ad_rem',
+            0,
+            'Regime Monofásico de Combustíveis (Art. 172 LC 214/2025)',
+            'Art. 172 da LC 214/2025',
+            c.codNorm,
+            '8 digitos (item completo)',
+            'Monofásico de Combustíveis',
+            '1',
+            c.desc,
+            'Tributação Monofásica Ad Rem',
+            0,
+            'IBS e CBS',
+            'NCM/SH',
+            'Alíquota ad rem por unidade de medida. Vedada a apropriação de créditos na revenda/consumo (Art. 267 LC 214/2025).',
+            'Não',
+            1,
+            c.cclass,
+            c.cst
+          );
+        }
+      });
+
+      insertManyNcm(lines);
+      const totalNcm = (db.prepare('SELECT count(*) as total FROM ncm_regras_anexos').get() as any)?.total || 0;
+      console.log(`✅ Regras da LC 214/2025 semeadas com sucesso: ${totalNcm} registros.`);
+    } else {
+      console.warn(`Arquivo ${csvPath} não encontrado para seed de NCM.`);
+    }
+  } catch (err: any) {
+    console.error('Erro ao semear NCMs LC 214/2025:', err.message);
+  }
+
+  console.log('🏁 Seed das Tabelas Oficiais RTC finalizado!');
+}

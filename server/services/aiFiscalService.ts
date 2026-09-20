@@ -662,7 +662,7 @@ export async function processarMensagemFiscal(
     // Lista de modelos com fallback automático contra erros 429 (cota) e 503 (alta demanda)
     const modelCandidates = [
       AI_CONFIG.MODEL,
-      ...( ((AI_CONFIG as any).FALLBACK_MODELS as string[]) || ['gemini-flash-latest', 'gemini-3.5-flash-lite'] )
+      ...( ((AI_CONFIG as any).FALLBACK_MODELS as string[]) || ['gemini-2.0-flash', 'gemini-1.5-flash'] )
     ];
 
     // Função auxiliar com retry e alternância automática de modelos (Fallback resiliente)
