@@ -17,6 +17,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { AI_CONFIG } from '../config';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 
 // =========================================================
 // INTERFACES
@@ -179,11 +180,68 @@ const TOOLS_DEFINITIONS = [
 ];
 
 // =========================================================
-// EXECUÇÃO LOCAL DAS FERRAMENTAS CONTRA O BANCO DE DADOS
+// EXECUÇÃO DAS FERRAMENTAS CONTRA O BANCO DE DADOS (SUPABASE & SQLITE)
 // =========================================================
 
 async function executarToolResumoEmpresa(empresaId: string): Promise<any> {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: empresa, error: empErr } = await supabase
+          .from('empresas')
+          .select('id, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, ultimo_nsu, max_nsu, status')
+          .eq('id', empresaId)
+          .maybeSingle();
+
+        if (empErr) {
+          console.error('❌ [AI Tool] Erro ao consultar empresa no Supabase:', empErr.message);
+        }
+
+        if (empresa) {
+          const { data: certs } = await supabase
+            .from('certificados')
+            .select('emissor, validade, status_alerta, created_at')
+            .eq('empresa_id', empresaId)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          const certList = certs || [];
+          const cert = certList.find((c: any) => c.status_alerta === 'ok') || certList[0];
+          const certValido = Boolean(
+            cert &&
+            cert.status_alerta === 'ok' &&
+            cert.validade &&
+            new Date(cert.validade) >= new Date()
+          );
+
+          return {
+            empresa: {
+              razaoSocial: empresa.razao_social,
+              cnpj: empresa.cnpj_completo,
+              uf: empresa.uf,
+              regimeTributario: empresa.regime_tributario,
+              status: empresa.status,
+              ultimoNsu: empresa.ultimo_nsu,
+              maxNsu: empresa.max_nsu
+            },
+            certificadoDigitalA1: cert ? {
+              instalado: true,
+              valido: certValido,
+              validade: cert.validade,
+              emissor: cert.emissor || 'AC ICP-Brasil',
+              statusAlerta: cert.status_alerta
+            } : {
+              instalado: false,
+              valido: false,
+              mensagem: 'Nenhum certificado A1 (.PFX) cadastrado para este CNPJ.'
+            }
+          };
+        }
+      }
+    }
+
+    // Fallback SQLite local
     const db = getDatabase();
     const empresa = db.prepare(`
       SELECT id, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, ultimo_nsu, max_nsu, status
@@ -191,7 +249,7 @@ async function executarToolResumoEmpresa(empresaId: string): Promise<any> {
     `).get(empresaId) as any;
 
     if (!empresa) {
-      return { erro: 'Empresa ativa não encontrada na carteira de CNPJs do banco local.' };
+      return { erro: 'Empresa ativa não encontrada na carteira de CNPJs do banco de dados.' };
     }
 
     const cert = db.prepare(`
@@ -236,6 +294,63 @@ async function executarToolResumoEmpresa(empresaId: string): Promise<any> {
 
 async function executarToolKpisImpostos(empresaId: string, competencia?: string): Promise<any> {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        let query = supabase
+          .from('dfe_documentos')
+          .select('valor_total, valor_cbs, valor_ibs, valor_pis, valor_cofins, valor_icms, base_cbs, base_ibs')
+          .eq('empresa_id', empresaId);
+
+        if (competencia) {
+          query = query.eq('competencia', competencia);
+        }
+
+        const { data: docs, error: docErr } = await query.limit(5000);
+        if (!docErr && docs) {
+          let totalDocumentos = docs.length;
+          let faturamentoTotal = 0;
+          let baseCbs = 0;
+          let totalCbs = 0;
+          let baseIbs = 0;
+          let totalIbs = 0;
+          let totalPis = 0;
+          let totalCofins = 0;
+          let totalIcms = 0;
+
+          for (const d of docs) {
+            faturamentoTotal += Number(d.valor_total || 0);
+            baseCbs += Number(d.base_cbs || 0);
+            totalCbs += Number(d.valor_cbs || 0);
+            baseIbs += Number(d.base_ibs || 0);
+            totalIbs += Number(d.valor_ibs || 0);
+            totalPis += Number(d.valor_pis || 0);
+            totalCofins += Number(d.valor_cofins || 0);
+            totalIcms += Number(d.valor_icms || 0);
+          }
+
+          return {
+            empresaId,
+            competencia: competencia || 'Histórico Geral Acumulado (Base Oficial Supabase)',
+            totalNotasFiscais: totalDocumentos,
+            faturamentoTotal: Number(faturamentoTotal.toFixed(2)),
+            apuracaoRtc: {
+              baseCbs: Number(baseCbs.toFixed(2)),
+              totalCbs: Number(totalCbs.toFixed(2)),
+              baseIbs: Number(baseIbs.toFixed(2)),
+              totalIbs: Number(totalIbs.toFixed(2))
+            },
+            tributosFederaisVigentes: {
+              pisApurado: Number(totalPis.toFixed(2)),
+              cofinsApurado: Number(totalCofins.toFixed(2)),
+              icmsApurado: Number(totalIcms.toFixed(2))
+            }
+          };
+        }
+      }
+    }
+
+    // Fallback SQLite local
     const db = getDatabase();
     let query = `
       SELECT 
@@ -278,6 +393,54 @@ async function executarToolKpisImpostos(empresaId: string, competencia?: string)
 
 async function executarToolAuditarNotas(empresaId: string, limite: number = 10): Promise<any> {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: itens, error: itensErr } = await supabase
+          .from('dfe_itens')
+          .select('item_nro, descricao_item, ncm, cfop, cclasstrib, aliquota_cbs, aliquota_ibs, documento_id')
+          .or('cclasstrib.is.null,cclasstrib.eq.,cclasstrib.eq.000000')
+          .limit(limite);
+
+        if (!itensErr && itens && itens.length > 0) {
+          const docIds = Array.from(new Set(itens.map(i => i.documento_id).filter(Boolean)));
+          const { data: docs } = await supabase
+            .from('dfe_documentos')
+            .select('id, chave_acesso, tipo_doc, data_emissao, fornecedor_razao, valor_total')
+            .in('id', docIds);
+
+          const docMap = new Map((docs || []).map(d => [d.id, d]));
+
+          return {
+            totalInconsistenciasEncontradas: itens.length,
+            amostraItensPendentesClassificacaoRTC: itens.map(n => {
+              const doc = docMap.get(n.documento_id);
+              return {
+                chaveAcesso: doc?.chave_acesso || n.documento_id,
+                tipo: doc?.tipo_doc || 'NFe',
+                dataEmissao: doc?.data_emissao,
+                fornecedor: doc?.fornecedor_razao,
+                item: n.item_nro,
+                descricao: n.descricao_item,
+                ncm: n.ncm,
+                cfop: n.cfop,
+                cclasstribAtual: n.cclasstrib || 'AUSENTE (Exigido pela NT 2025.002)',
+                aliquotaCbsInformada: n.aliquota_cbs,
+                aliquotaIbsInformada: n.aliquota_ibs
+              };
+            })
+          };
+        } else if (!itensErr) {
+          return {
+            totalInconsistenciasEncontradas: 0,
+            amostraItensPendentesClassificacaoRTC: [],
+            mensagem: 'Nenhuma inconsistência de cClassTrib localizada nas notas verificadas.'
+          };
+        }
+      }
+    }
+
+    // Fallback SQLite local
     const db = getDatabase();
     const notasSemCClass = db.prepare(`
       SELECT 
@@ -323,6 +486,50 @@ async function executarToolAuditarNotas(empresaId: string, limite: number = 10):
 
 async function executarToolStatusSefaz(empresaId: string): Promise<any> {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        const { data: empresa } = await supabase
+          .from('empresas')
+          .select('ultimo_nsu, max_nsu, uf')
+          .eq('id', empresaId)
+          .maybeSingle();
+
+        const { data: eventos } = await supabase
+          .from('eventos_transmitidos')
+          .select('chave_acesso, codigo_evento, nome_evento, codigo_retorno, motivo_retorno, ambiente, data_hora, status')
+          .eq('empresa_id', empresaId)
+          .order('data_hora', { ascending: false })
+          .limit(1);
+
+        const ultimoEvento = eventos && eventos[0];
+
+        if (!ultimoEvento) {
+          return {
+            status: 'sem_eventos',
+            ultimoNsu: empresa?.ultimo_nsu || '000000000000000',
+            maxNsu: empresa?.max_nsu || '000000000000000',
+            uf: empresa?.uf || 'SP',
+            mensagem: 'Nenhum evento registrado no histórico recente desta empresa.'
+          };
+        }
+
+        return {
+          ultimoRetornoSefaz: {
+            codigoRetorno: ultimoEvento.codigo_retorno || '138',
+            motivoRetorno: ultimoEvento.motivo_retorno || 'Consulta concluída com sucesso',
+            evento: `${ultimoEvento.codigo_evento} - ${ultimoEvento.nome_evento}`,
+            ambiente: ultimoEvento.ambiente === '1' ? 'Produção (tpAmb=1)' : 'Homologação (tpAmb=2)',
+            dataHora: ultimoEvento.data_hora,
+            statusGeral: ultimoEvento.status,
+            ultimoNsuProcessado: empresa?.ultimo_nsu || '000000000000000',
+            maxNsuSefaz: empresa?.max_nsu || '000000000000000'
+          }
+        };
+      }
+    }
+
+    // Fallback SQLite local
     const db = getDatabase();
     const ultimoEvento = db.prepare(`
       SELECT chave_acesso, codigo_evento, nome_evento, codigo_retorno, motivo_retorno, ambiente, data_hora, status
@@ -364,6 +571,22 @@ async function executarToolStatusSefaz(empresaId: string): Promise<any> {
 
 async function executarToolParametrosFiscais(tabela: string, filtro?: string): Promise<any> {
   try {
+    if (isSupabaseConfigured()) {
+      const supabase = getSupabaseAdmin();
+      if (supabase) {
+        if (tabela === 'aliquotas_referencia') {
+          const { data, error } = await supabase
+            .from('aliquotas_referencia')
+            .select('*')
+            .order('competencia_inicio', { ascending: false })
+            .limit(10);
+          if (!error && data && data.length > 0) {
+            return { tabela: 'aliquotas_referencia', aliquotas: data };
+          }
+        }
+      }
+    }
+
     const db = getDatabase();
     switch (tabela) {
       case 'retencoes_servicos': {
@@ -436,25 +659,25 @@ export async function processarMensagemFiscal(
       parts: [{ text: mensagemComContexto }]
     });
 
-// Função auxiliar com retry automático para picos de alta demanda (503)
-async function callGeminiWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2): Promise<any> {
-  let attempt = 0;
-  while (attempt <= maxRetries) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (err: any) {
-      const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand');
-      if (is503 && attempt < maxRetries) {
-        attempt++;
-        const delay = attempt * 1200;
-        console.warn(`⚠️ [Gemini 503] Alta demanda temporária no Google. Tentativa ${attempt} de ${maxRetries} após ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
+    // Função auxiliar com retry automático para picos de alta demanda (503)
+    async function callGeminiWithRetry(aiClient: GoogleGenAI, params: any, maxRetries = 2): Promise<any> {
+      let attempt = 0;
+      while (attempt <= maxRetries) {
+        try {
+          return await aiClient.models.generateContent(params);
+        } catch (err: any) {
+          const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand');
+          if (is503 && attempt < maxRetries) {
+            attempt++;
+            const delay = attempt * 1200;
+            console.warn(`⚠️ [Gemini 503] Alta demanda temporária no Google. Tentativa ${attempt} de ${maxRetries} após ${delay}ms...`);
+            await new Promise(r => setTimeout(r, delay));
+            continue;
+          }
+          throw err;
+        }
       }
-      throw err;
     }
-  }
-}
 
     // Primeira chamada para o modelo com as ferramentas fiscais
     let response = await callGeminiWithRetry(ai, {
@@ -471,52 +694,57 @@ async function callGeminiWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2)
     let iteracoes = 0;
     while (response.functionCalls && response.functionCalls.length > 0 && iteracoes < 3) {
       iteracoes++;
-      const call = response.functionCalls[0];
-      const toolName = call.name;
-      const toolArgs = (call.args as any) || {};
+      const calls = response.functionCalls;
+      const responseParts: any[] = [];
 
-      // Força sempre o empresaId do token de autenticação (Blindagem Multi-Tenant)
-      toolArgs.empresaId = empresaAtivaId;
+      for (const call of calls) {
+        const toolName = call.name;
+        const toolArgs = (call.args as any) || {};
+        toolArgs.empresaId = empresaAtivaId;
 
-      let toolResult: any = null;
+        let toolResult: any = null;
+        let summaryText = '';
 
-      if (toolName === 'consultar_resumo_empresa') {
-        toolResult = await executarToolResumoEmpresa(empresaAtivaId);
-        toolsUsed.push({
-          toolName,
-          args: toolArgs,
-          resultSummary: `Dados da empresa ativa (${toolResult.empresa?.razaoSocial || empresaAtivaId}) consultados com sucesso.`
-        });
-      } else if (toolName === 'consultar_kpis_impostos') {
-        toolResult = await executarToolKpisImpostos(empresaAtivaId, toolArgs.competencia);
-        toolsUsed.push({
-          toolName,
-          args: toolArgs,
-          resultSummary: `KPIs de impostos consultados: R$ ${toolResult.faturamentoTotal || 0} faturados.`
-        });
-      } else if (toolName === 'auditar_inconsistencias_notas') {
-        toolResult = await executarToolAuditarNotas(empresaAtivaId, toolArgs.limite || 10);
-        toolsUsed.push({
-          toolName,
-          args: toolArgs,
-          resultSummary: `Auditoria concluída: ${toolResult.totalInconsistenciasEncontradas} itens analisados.`
-        });
-      } else if (toolName === 'consultar_ultimo_status_sefaz') {
-        toolResult = await executarToolStatusSefaz(empresaAtivaId);
-        toolsUsed.push({
-          toolName,
-          args: toolArgs,
-          resultSummary: `Status SEFAZ verificado: cStat ${toolResult.ultimoRetornoSefaz?.codigoRetorno || 'N/A'}.`
-        });
-      } else if (toolName === 'consultar_parametros_fiscais') {
-        toolResult = await executarToolParametrosFiscais(toolArgs.tabela, toolArgs.filtro);
-        toolsUsed.push({
-          toolName,
-          args: toolArgs,
-          resultSummary: `Tabela de parâmetros "${toolArgs.tabela}" consultada.`
-        });
-      } else {
-        toolResult = { erro: `Ferramenta ${toolName} não implementada.` };
+        if (toolName === 'consultar_resumo_empresa') {
+          toolResult = await executarToolResumoEmpresa(empresaAtivaId);
+          const razao = toolResult.empresa?.razaoSocial || (toolResult.erro ? 'Empresa' : empresaAtivaId);
+          summaryText = toolResult.erro 
+            ? `Consulta da empresa: ${toolResult.erro}` 
+            : `Dados da empresa ativa (${razao}) consultados com sucesso.`;
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
+        } else if (toolName === 'consultar_kpis_impostos') {
+          toolResult = await executarToolKpisImpostos(empresaAtivaId, toolArgs.competencia);
+          summaryText = toolResult.erro 
+            ? `KPIs de impostos: ${toolResult.erro}` 
+            : `KPIs de impostos consultados: R$ ${toolResult.faturamentoTotal || 0} faturados.`;
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
+        } else if (toolName === 'auditar_inconsistencias_notas') {
+          toolResult = await executarToolAuditarNotas(empresaAtivaId, toolArgs.limite || 10);
+          summaryText = toolResult.erro 
+            ? `Auditoria de notas: ${toolResult.erro}` 
+            : `Auditoria concluída: ${toolResult.totalInconsistenciasEncontradas || 0} itens analisados.`;
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
+        } else if (toolName === 'consultar_ultimo_status_sefaz') {
+          toolResult = await executarToolStatusSefaz(empresaAtivaId);
+          summaryText = `Status SEFAZ verificado: cStat ${toolResult.ultimoRetornoSefaz?.codigoRetorno || 'N/A'}.`;
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
+        } else if (toolName === 'consultar_parametros_fiscais') {
+          toolResult = await executarToolParametrosFiscais(toolArgs.tabela, toolArgs.filtro);
+          summaryText = `Tabela de parâmetros "${toolArgs.tabela}" consultada.`;
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: summaryText });
+        } else {
+          toolResult = { erro: `Ferramenta ${toolName} não implementada.` };
+          toolsUsed.push({ toolName, args: toolArgs, resultSummary: `Ferramenta ${toolName} não suportada.` });
+        }
+
+        const respPart: any = {
+          name: toolName,
+          response: { output: toolResult }
+        };
+        if (call.id) {
+          respPart.id = call.id;
+        }
+        responseParts.push({ functionResponse: respPart });
       }
 
       // Adiciona o turno do modelo chamando a tool PRESERVANDO thoughtSignature e partes intactas
@@ -525,32 +753,52 @@ async function callGeminiWithRetry(ai: GoogleGenAI, params: any, maxRetries = 2)
       } else {
         contents.push({
           role: 'model',
-          parts: [{ functionCall: call }]
+          parts: calls.map(c => ({ functionCall: c }))
         });
       }
 
+      // Adiciona a resposta de todas as tools executadas
       contents.push({
         role: 'user',
-        parts: [{
-          functionResponse: {
-            name: toolName,
-            response: { output: toolResult }
-          }
-        }]
+        parts: responseParts
       });
 
-      // Chama novamente o modelo com retry para formular a resposta explicativa final
+      // Mantém tools na iteração para permitir chamadas subsequentes; limita a 3 iterações
+      const shouldProvideTools = iteracoes < 3;
+      const callConfig: any = {
+        systemInstruction: SYSTEM_PROMPT_AUDITOR_AI,
+        temperature: 0.2
+      };
+      if (shouldProvideTools) {
+        callConfig.tools = [{ functionDeclarations: TOOLS_DEFINITIONS as any }];
+      }
+
       response = await callGeminiWithRetry(ai, {
         model: AI_CONFIG.MODEL,
         contents,
-        config: {
-          systemInstruction: SYSTEM_PROMPT_AUDITOR_AI,
-          temperature: 0.2
-        }
+        config: callConfig
       });
     }
 
-    const textoFinal = response.text || 'Não foi possível sintetizar a resposta fiscal no momento.';
+    let textoFinal = response.text || '';
+    if (!textoFinal && response.candidates && response.candidates[0]?.content?.parts) {
+      const textPart = response.candidates[0].content.parts.find((p: any) => p.text);
+      if (textPart) {
+        textoFinal = textPart.text;
+      }
+    }
+
+    // Sanitização de segurança caso o modelo porventura tente ecoar formato de tool call como texto
+    if (textoFinal.startsWith('response:default_api:') || textoFinal.includes('response:default_api:')) {
+      textoFinal = textoFinal.replace(/response:default_api:[a-zA-Z0-9_]+\{output:[^}]+\}\}/g, '').trim();
+      if (!textoFinal) {
+        textoFinal = 'Os dados fiscais da empresa ativa foram consultados e validados no sistema com sucesso.';
+      }
+    }
+
+    if (!textoFinal) {
+      textoFinal = 'Não foi possível sintetizar a resposta fiscal no momento. Por favor, reformule a pergunta ou tente novamente.';
+    }
 
     return {
       success: true,
