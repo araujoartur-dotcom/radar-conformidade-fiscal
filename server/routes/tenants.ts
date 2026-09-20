@@ -69,9 +69,11 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
             cnpjCompleto: r.cnpj_completo,
             razaoSocial: r.razao_social,
             nomeFantasia: r.nome_fantasia || r.razao_social,
-            grupoContabilCliente: 'Carteira Geral',
+            grupoContabilCliente: r.grupo_contabil || 'Carteira Geral',
             uf: r.uf,
             regimeTributario: r.regime_tributario,
+            cnaePrincipal: r.cnae_principal || '',
+            suframa: r.inscricao_suframa || '',
             naturezaJuridica: r.natureza_juridica_desc,
             codigoNaturezaJuridica: r.natureza_juridica_codigo,
             manifestarCienciaAutomatica: r.manifestar_ciencia_automatica !== undefined ? Boolean(r.manifestar_ciencia_automatica) : true,
@@ -199,6 +201,9 @@ router.post('/', requireAuth, requirePerfil('admin_master', 'contador_gestor'), 
           regime_tributario: regimeTributario || 'Lucro Real',
           natureza_juridica_desc: naturezaJuridica || null,
           natureza_juridica_codigo: codigoNaturezaJuridica || null,
+          cnae_principal: req.body.cnaePrincipal || null,
+          inscricao_suframa: req.body.suframa || null,
+          grupo_contabil: grupoContabilCliente || 'Carteira Geral',
           status: 'ativo',
           created_at: brasiliaNow,
           updated_at: brasiliaNow,
@@ -362,7 +367,18 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
       }
     }
 
-    const { razaoSocial, nomeFantasia, uf, regimeTributario, manifestarCienciaAutomatica, naturezaJuridica, codigoNaturezaJuridica } = req.body;
+    const {
+      razaoSocial,
+      nomeFantasia,
+      uf,
+      regimeTributario,
+      manifestarCienciaAutomatica,
+      naturezaJuridica,
+      codigoNaturezaJuridica,
+      cnaePrincipal,
+      suframa,
+      grupoContabilCliente
+    } = req.body;
     const autoCiencia = manifestarCienciaAutomatica !== false ? 1 : 0;
     const brasiliaNow = getBrasiliaTimestamp();
 
@@ -378,6 +394,9 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
             regime_tributario: regimeTributario || 'Lucro Real',
             natureza_juridica_desc: naturezaJuridica || null,
             natureza_juridica_codigo: codigoNaturezaJuridica || null,
+            cnae_principal: cnaePrincipal || null,
+            inscricao_suframa: suframa || null,
+            grupo_contabil: grupoContabilCliente || null,
             manifestar_ciencia_automatica: Boolean(autoCiencia),
             updated_at: new Date().toISOString()
           })

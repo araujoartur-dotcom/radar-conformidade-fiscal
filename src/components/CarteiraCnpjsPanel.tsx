@@ -184,6 +184,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [tenantFlagWebhook, setTenantFlagWebhook] = useState(true);
   const [tenantFlagConsultaDemanda, setTenantFlagConsultaDemanda] = useState(true);
   const [showTenantSecret, setShowTenantSecret] = useState(false);
+  const [isEditingSecret, setIsEditingSecret] = useState(false);
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
 
@@ -251,6 +252,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
       if (res.ok && res.data) {
         setTenantClientId(res.data.clientId || '');
         setTenantClientSecret('');
+        setIsEditingSecret(false);
         setTenantClientSecretMascarado(res.data.clientSecretMascarado || (res.data.configurado ? '••••••••••••' : ''));
         setTenantWebhookUrl(res.data.webhookUrl || '');
         setTenantCgibsUrl(res.data.cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync');
@@ -306,6 +308,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           setTenantClientSecretMascarado(`${tenantClientSecret.substring(0, 4)}...${tenantClientSecret.slice(-4)}`);
           setTenantClientSecret('');
         }
+        setIsEditingSecret(false);
         setTimeout(() => setIntegracoesSalvo(false), 3500);
       } else {
         alert('Erro ao salvar integrações: ' + (res.error || res.data?.error || 'Erro desconhecido'));
@@ -674,8 +677,9 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
     });
 
     // 2. Salva credenciais e configurações de integração (CGIBS, SEFIN, ERP) de forma integrada
+    let credErro = '';
     try {
-      await post<any>('/apuracao/credenciais', {
+      const credRes = await post<any>('/apuracao/credenciais', {
         empresaId: editingTenant.id,
         clientId: tenantClientId,
         clientSecret: tenantClientSecret,
@@ -695,7 +699,18 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         despacharNfseAuto: tenantDespacharNfseAuto,
         notificarManifestacao: tenantNotificarManifestacao
       });
+
+      if (credRes.ok) {
+        if (tenantClientSecret && tenantClientSecret.trim()) {
+          setTenantClientSecretMascarado(`${tenantClientSecret.substring(0, 4)}...${tenantClientSecret.slice(-4)}`);
+          setTenantClientSecret('');
+        }
+        setIsEditingSecret(false);
+      } else {
+        credErro = credRes.error || credRes.data?.error || 'Erro ao sincronizar credenciais no banco.';
+      }
     } catch (errCred: any) {
+      credErro = errCred.message;
       console.warn('Aviso ao sincronizar credenciais da empresa:', errCred.message);
     }
 
@@ -714,7 +729,12 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
         setCertificado({ ...certificado, razãoSocial: editingTenant.razaoSocial });
       }
       setEditingTenant(null);
-      alert('Cadastro da empresa e credenciais fiscais salvos com sucesso!');
+
+      if (credErro) {
+        alert(`Dados da empresa atualizados com sucesso, porém houve aviso nas credenciais: ${credErro}`);
+      } else {
+        alert('Cadastro da empresa e credenciais fiscais sincronizados com sucesso no Supabase!');
+      }
     } else {
       alert(res.error || 'Erro ao atualizar empresa.');
     }
@@ -2793,26 +2813,75 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                               <span>Client Secret (Chave Privada)</span>
                               {tenantClientSecretMascarado && (
                                 <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 flex items-center gap-1">
-                                  <Check className="w-3 h-3" /> Configurado: {tenantClientSecretMascarado}
+                                  <Check className="w-3 h-3" /> Armazenado no Cofre
                                 </span>
                               )}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => setShowTenantSecret(!showTenantSecret)}
-                              className="text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer text-[10px]"
-                            >
-                              {showTenantSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                              <span>{showTenantSecret ? 'Ocultar' : 'Exibir'}</span>
-                            </button>
+                            {!isEditingSecret && tenantClientSecretMascarado ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsEditingSecret(true);
+                                  setTenantClientSecret('');
+                                }}
+                                className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer text-[11px] font-bold"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Substituir Chave</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShowTenantSecret(!showTenantSecret)}
+                                className="text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer text-[10px]"
+                              >
+                                {showTenantSecret ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                <span>{showTenantSecret ? 'Ocultar' : 'Exibir'}</span>
+                              </button>
+                            )}
                           </label>
-                          <input
-                            type={showTenantSecret ? 'text' : 'password'}
-                            placeholder={tenantClientSecretMascarado ? `Chave já cadastrada (${tenantClientSecretMascarado}). Preencha apenas para alterar.` : "Deixe em branco para manter a chave atual"}
-                            value={tenantClientSecret}
-                            onChange={(e) => setTenantClientSecret(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
-                          />
+
+                          {tenantClientSecretMascarado && !isEditingSecret ? (
+                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-emerald-600/40 text-xs">
+                              <div className="flex items-center gap-2 font-mono text-emerald-300">
+                                <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>•••••••••••• ({tenantClientSecretMascarado})</span>
+                              </div>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-emerald-400 font-bold">
+                                Ativa & Conectada
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <div className="relative">
+                                <input
+                                  type={showTenantSecret ? 'text' : 'password'}
+                                  placeholder={tenantClientSecretMascarado ? "Digite a nova chave privada para substituir" : "Cole o Client Secret fornecido pelo CGIBS"}
+                                  value={tenantClientSecret}
+                                  onChange={(e) => setTenantClientSecret(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 pr-24 text-slate-200 font-mono focus:outline-none focus:border-cyan-500 text-xs"
+                                  autoFocus={isEditingSecret}
+                                />
+                                {isEditingSecret && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setIsEditingSecret(false);
+                                      setTenantClientSecret('');
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-200 px-2 py-1 bg-slate-800 rounded border border-slate-700 cursor-pointer"
+                                  >
+                                    Manter Atual
+                                  </button>
+                                )}
+                              </div>
+                              {isEditingSecret && (
+                                <span className="text-[10px] text-slate-400 block">
+                                  Caso queira manter a chave atual ({tenantClientSecretMascarado}), clique em "Manter Atual".
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         <div>
