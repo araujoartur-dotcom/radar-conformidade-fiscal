@@ -346,7 +346,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
 
         setTenantWebhookUrl(res.data.webhookUrl || '');
         setTenantCgibsUrl(res.data.cgibsUrl || 'https://api.cgibs.gov.br/v1/eventos/sync');
-        setTenantRfbUrl(res.data.rfbUrl || 'https://consumo.tributos.gov.br');
+        setTenantRfbUrl(res.data.rfbUrl || 'https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api');
         setTenantSvrsUrl(res.data.svrsUrl || 'https://nfe.svrs.rs.gov.br/ws/NFeRecepcaoEvento4/NFeRecepcaoEvento4.asmx');
         setTenantNfseNacionalUrl(res.data.nfseNacionalUrl || 'https://www.nfse.gov.br/dnfse/api/v1/eventos');
         setTenantApiKeyCgibs(res.data.apiKeyCgibs || '');
@@ -438,7 +438,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [newSuframa, setNewSuframa] = useState('');
   const [newManifestarCiencia, setNewManifestarCiencia] = useState(true);
 
-  // Endereço (SPED 0005)
+  // Endereço Cadastral
   const [newCep, setNewCep] = useState('');
   const [newLogradouro, setNewLogradouro] = useState('');
   const [newNumero, setNewNumero] = useState('');
@@ -448,7 +448,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
   const [newTelefone, setNewTelefone] = useState('');
   const [newEmail, setNewEmail] = useState('');
 
-  // Contador (SPED 0100) — Campos Opcionais
+  // Contador / Responsável Técnico — Campos Opcionais
   const [newContadorNome, setNewContadorNome] = useState('');
   const [newContadorCpf, setNewContadorCpf] = useState('');
   const [newContadorCrc, setNewContadorCrc] = useState('');
@@ -993,7 +993,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 Consulta Rápida & Importação Instantânea de Empresa
               </h3>
               <p className="text-[11px] text-slate-400">
-                Informe o CNPJ para buscar automaticamente Razão Social, CNAE, Endereço, Regime Tributário e gerar o SPED.
+                Informe o CNPJ para buscar automaticamente Razão Social, CNAE, Endereço e Regime Tributário para conformidade fiscal.
               </p>
             </div>
           </div>
@@ -1237,7 +1237,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     <button
                       onClick={() => handleOpenEdit(tenant, 'identificacao')}
                       className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white transition-all cursor-pointer"
-                      title="Editar dados cadastrais & SPED Bloco 0"
+                      title="Editar dados cadastrais e fiscais"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
@@ -1420,7 +1420,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                             type="button"
                             onClick={() => handleOpenEdit(tenant, 'identificacao')}
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600 text-slate-400 hover:text-white cursor-pointer"
-                            title="Editar Dados & SPED"
+                            title="Editar Dados Cadastrais"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                           </button>
@@ -1470,7 +1470,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-white">
-                    Novo Cadastro de Empresa & Configuração SPED Bloco 0
+                    Novo Cadastro de Empresa & Configurações Fiscais
                   </h3>
                   <p className="text-xs text-slate-400">
                     Cadastre a empresa cliente preenchendo os dados ou usando a consulta automática da Receita Federal.
@@ -1662,7 +1662,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Perfil SPED Fiscal</label>
+                      <label className="font-bold text-slate-300 block mb-1">Perfil de Enquadramento Fiscal</label>
                       <select
                         value={newPerfilSped}
                         onChange={(e) => setNewPerfilSped(e.target.value as any)}
@@ -1764,7 +1764,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 2: ENDEREÇO & CONTATO (SPED 0005) */}
+              {/* TAB 2: ENDEREÇO & CONTATO */}
               {modalTab === 'endereco' && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1886,11 +1886,11 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 3: CONTADOR (SPED 0100) */}
+              {/* TAB 3: CONTADOR / RESPONSÁVEL TÉCNICO */}
               {modalTab === 'contador' && (
                 <div className="space-y-3">
                   <div className="p-3 bg-indigo-950/40 border border-indigo-800/60 rounded-xl text-indigo-300 text-xs">
-                    <strong>Registro |0100| do SPED:</strong> Cadastro do Contabilista / Contador responsável técnico pela escrituração contábil e fiscal da empresa.
+                    <strong>Responsável Técnico Contábil:</strong> Cadastro do Contabilista / Contador responsável técnico pela escrituração e apuração fiscal da empresa.
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2030,7 +2030,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
           </div>
         </div>
       )}
-      {/* Modal Editar CNPJ / Cliente & Configuração SPED Bloco 0 */}
+      {/* Modal Editar CNPJ / Cliente & Configurações Fiscais */}
       {editingTenant && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 md:p-6 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
@@ -2223,7 +2223,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                     </div>
 
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Perfil SPED Fiscal</label>
+                      <label className="font-bold text-slate-300 block mb-1">Perfil de Enquadramento Fiscal</label>
                       <select
                         value={editingTenant.perfilSped || 'A'}
                         onChange={(e) => setEditingTenant({ ...editingTenant, perfilSped: e.target.value as any })}
@@ -2356,7 +2356,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 2: ENDEREÇO & CONTATO (SPED 0005) */}
+              {/* TAB 2: ENDEREÇO & CONTATO */}
               {modalTab === 'endereco' && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -2509,11 +2509,11 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                 </div>
               )}
 
-              {/* TAB 3: CONTADOR (SPED 0100) */}
+              {/* TAB 3: CONTADOR / RESPONSÁVEL TÉCNICO */}
               {modalTab === 'contador' && (
                 <div className="space-y-3">
                   <div className="p-3 bg-indigo-950/40 border border-indigo-800/60 rounded-xl text-indigo-300 text-xs">
-                    <strong>Registro |0100| do SPED:</strong> Cadastro do Contabilista / Contador responsável técnico pela escrituração contábil e fiscal da empresa.
+                    <strong>Responsável Técnico Contábil:</strong> Cadastro do Contabilista / Contador responsável técnico pela escrituração e apuração fiscal da empresa.
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -3097,17 +3097,10 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
                             <span className="text-[10px] text-slate-500">Atalhos:</span>
                             <button
                               type="button"
-                              onClick={() => setTenantRfbUrl('https://consumo.tributos.gov.br')}
-                              className="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 cursor-pointer"
+                              onClick={() => setTenantRfbUrl('https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api')}
+                              className="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-cyan-400 border border-slate-700 cursor-pointer font-semibold"
                             >
-                              Oficial (consumo.tributos.gov.br)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setTenantRfbUrl('https://piloto-cbs.tributos.gov.br')}
-                              className="px-2 py-0.5 rounded text-[10px] bg-slate-900 hover:bg-slate-800 text-indigo-400 border border-slate-700 cursor-pointer"
-                            >
-                              Piloto Restrito (piloto-cbs)
+                              API Oficial Calculadora (consumo.tributos.gov.br)
                             </button>
                           </div>
                         </div>
@@ -3603,7 +3596,7 @@ export const CarteiraCnpjsPanel: React.FC<CarteiraCnpjsPanelProps> = ({
               {/* Footer Actions */}
               <div className="pt-3 flex items-center justify-between border-t border-slate-800">
                 <div className="text-slate-400 text-[11px]">
-                  💡 Os dados alimentam os módulos de DF-e, SPED Fiscal e Reinf.
+                  💡 Os dados alimentam os módulos de DF-e, Apuração Assistida RTC e Conectores ERP.
                 </div>
 
                 <div className="flex items-center gap-2">

@@ -21,7 +21,7 @@ export const RelatorioCalculoCreditoEsperado: React.FC<RelatorioCalculoCreditoEs
             3) Relatório “Cálculo do Crédito Esperado” (Recálculo Independente IBS / CBS)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Recálculo em motor fiscal independente dos créditos de IBS e CBS comparando diretamente com o valor apropriado nas contas do ERP (SAP / Totvs).
+            Recálculo em motor fiscal independente dos créditos de IBS e CBS comparando diretamente com o valor apropriado nas contas do ERP corporativo.
           </p>
         </div>
 

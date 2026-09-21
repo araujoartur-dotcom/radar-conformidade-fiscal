@@ -280,7 +280,7 @@ export const CopilotoFiscalDrawer: React.FC<CopilotoFiscalDrawerProps> = ({
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-cyan-500 p-0.5 shadow-lg shadow-cyan-500/20">
               <div className="w-full h-full rounded-[14px] bg-[#0b121e] flex items-center justify-center">
-                <Scale className="w-6 h-6 text-cyan-400" />
+                <Bot className="w-6 h-6 text-cyan-400" />
               </div>
               <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 rounded-full border-2 border-[#0b121e] animate-pulse" />
             </div>
@@ -289,6 +289,9 @@ export const CopilotoFiscalDrawer: React.FC<CopilotoFiscalDrawerProps> = ({
                 <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-1.5">
                   Auditor AI
                 </h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 font-mono">
+                  Gemini 3.6 Flash
+                </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium truncate max-w-[260px] sm:max-w-[320px]">
                 Especialista em RTC (LC 214/25, EC 132/23) & Tributos Vigentes

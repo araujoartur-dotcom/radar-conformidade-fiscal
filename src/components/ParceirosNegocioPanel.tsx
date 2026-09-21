@@ -273,7 +273,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
     }
   };
 
-  // ── EXECUTAR SIMULAÇÃO FISCAL & SPED ───────────────────────
+  // ── EXECUTAR SIMULAÇÃO FISCAL & RTC ───────────────────────
   const handleRunSimulacao = async () => {
     const res = await post<{ success: boolean; simulation: SimulacaoFiscalParceiro }>('/partners/simulate-tax', {
       partnerData: formData,
@@ -287,7 +287,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
     }
   };
 
-  // ── GERAR REGISTRO 0150 SPED EM TEMPO REAL ─────────────────
+  // ── GERAR REGISTRO 0150 DO PARTICIPANTE EM TEMPO REAL ──────
   const gerarLinhaSped0150 = () => {
     const p = formData;
     const cleanDoc = (p.cpfCnpj || '').replace(/[.\-\/]/g, '').toUpperCase();
@@ -595,7 +595,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                     className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-cyan-300 text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer shrink-0"
                   >
                     <Calculator className="w-3 h-3 text-cyan-400" />
-                    <span>Simular SPED</span>
+                    <span>Simular Tributação</span>
                   </button>
                 </div>
               </div>
@@ -678,7 +678,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                     {editingPartner ? 'Editar Dados Mestres do Parceiro' : 'Novo Parceiro de Negócio (Tax Business Partner)'}
                   </h2>
                   <p className="text-xs text-slate-400">
-                    Conformidade total com SPED Fiscal, EFD-Contribuições, SCANC e Portaria RFB nº 439/2024.
+                    Conformidade total com Reforma Tributária (RTC/CGIBS), DF-e e Portaria RFB nº 439/2024.
                   </p>
                 </div>
               </div>
@@ -758,7 +758,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                 }`}
               >
                 <Calculator className="w-3.5 h-3.5" />
-                <span>6. Simulador SPED / SCANC</span>
+                <span>6. Simulador Fiscal / SCANC</span>
               </button>
             </div>
 
@@ -1235,7 +1235,7 @@ export const ParceirosNegocioPanel: React.FC = () => {
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="font-bold text-slate-300 block mb-1">Conta Contábil Fornecedor / Cliente (SPED Reg 0500)</label>
+                      <label className="font-bold text-slate-300 block mb-1">Conta Contábil Fornecedor / Cliente (Plano de Contas)</label>
                       <input
                         type="text"
                         placeholder="Ex: 2.01.01.01.0025"
@@ -1339,17 +1339,17 @@ export const ParceirosNegocioPanel: React.FC = () => {
                 </div>
               )}
 
-              {/* TAB 6: SIMULADOR SPED & SCANC */}
+              {/* TAB 6: SIMULADOR FISCAL & SCANC */}
               {activeTab === 'sped_simulador' && (
                 <div className="space-y-4">
-                  {/* Visualizador do Registro 0150 SPED */}
+                  {/* Visualizador do Registro 0150 */}
                   <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-cyan-300 text-xs flex items-center gap-2">
                         <FileCode className="w-4 h-4" />
-                        Registro Oficial EFD ICMS/IPI e EFD Contribuições: |0150|
+                        Registro Oficial do Participante: |0150|
                       </span>
-                      <span className="text-[10px] text-slate-400 font-mono">Layout Guia Prático SPED</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Layout EFD / Escrituração</span>
                     </div>
 
                     <div className="p-3 rounded-xl bg-black border border-slate-800 text-cyan-400 font-mono text-[11px] overflow-x-auto select-all">

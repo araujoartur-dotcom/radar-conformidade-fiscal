@@ -137,7 +137,7 @@ export const RelatorioMapaCfop: React.FC = () => {
             6) Relatório “Mapa CFOP x Tratamento de Crédito” (Matriz de Governança Corporativa)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Tabela mestra corporativa que define o enquadramento fiscal por CFOP no SAP/ERP, impedindo interpretações divergentes da equipe tributária.
+            Tabela mestra corporativa que define o enquadramento fiscal por CFOP no ERP, impedindo interpretações divergentes da equipe tributária.
           </p>
         </div>
 

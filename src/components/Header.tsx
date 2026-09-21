@@ -3,7 +3,7 @@ import {
   Building2, ShieldCheck, FileSpreadsheet, Layers, Search, FileCode,
   Send, Database, ShieldAlert, FolderArchive, Globe, FileBarChart, LogOut,
   ChevronDown, Check, User, Lock, Users, Calculator, TrendingUp, Key,
-  BarChart3, Plug, Sparkles
+  BarChart3, Plug, Sparkles, Bot
 } from 'lucide-react';
 import { QueryMode, CertificadoA1, AmbienteSefaz } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -108,6 +108,8 @@ export const Header: React.FC<HeaderProps> = ({
         return { title: 'Central de Eventos DF-e', icon: Send, color: 'text-indigo-400' };
       case 'relatorios_xml':
         return { title: 'Relatórios Fiscais', icon: FileBarChart, color: 'text-cyan-400' };
+      case 'cockpit_relatorios':
+        return { title: 'Relatórios Dinâmicos', icon: Layers, color: 'text-amber-400' };
       case 'tabelas_fiscais':
         return { title: 'Parâmetros & Tabelas Fiscais', icon: FileBarChart, color: 'text-indigo-400' };
       case 'conectores_municipais':
@@ -153,6 +155,44 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Center: Assistente de Auditoria AI (Auditor AI) */}
+        {onOpenCopiloto && (
+          <div className="flex items-center justify-center flex-1 max-w-sm sm:max-w-md mx-2 sm:mx-4">
+            <button
+              onClick={onOpenCopiloto}
+              className="group relative flex items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-1.5 sm:py-2 rounded-2xl bg-gradient-to-r from-slate-900/90 via-cyan-950/40 to-slate-900/90 hover:from-cyan-950/70 hover:via-indigo-950/70 hover:to-blue-950/70 border border-cyan-500/40 hover:border-cyan-400 shadow-lg shadow-cyan-950/50 hover:shadow-cyan-500/20 text-white transition-all duration-200 cursor-pointer w-full sm:w-auto hover:scale-[1.02] active:scale-[0.98]"
+              title="Abrir Assistente de Auditoria AI — Auditor AI (Ctrl + J)"
+              aria-label="Abrir Assistente de Auditoria AI"
+            >
+              {/* Icon Container with AI Agent icon */}
+              <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 text-white shadow-md shadow-cyan-500/30 group-hover:scale-105 transition-transform shrink-0">
+                <Bot className="w-4.5 h-4.5 text-white" />
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-[#0b121e] animate-pulse" />
+              </div>
+
+              {/* Text / Status */}
+              <div className="text-left flex flex-col justify-center min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-extrabold text-white tracking-tight group-hover:text-cyan-300 transition-colors">
+                    Auditor AI
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 font-mono">
+                    Gemini 3.6 Flash
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400 font-medium truncate hidden sm:inline">
+                  Copiloto Fiscal • RTC & Legislação
+                </span>
+              </div>
+
+              {/* Keyboard Shortcut badge */}
+              <kbd className="hidden lg:inline-flex items-center gap-0.5 px-2 py-0.5 text-[10px] font-mono font-semibold text-cyan-300/80 bg-slate-950/80 border border-slate-700/80 rounded-lg ml-auto">
+                Ctrl+J
+              </kbd>
+            </button>
+          </div>
+        )}
 
         {/* Right Info Badges & Tenant Switcher */}
         <div className="flex items-center gap-3 shrink-0">
@@ -281,27 +321,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-[9px] text-slate-400 font-normal">(Clique p/ gerenciar)</span>
             </div>
           </div>
-
-          {/* Copiloto Fiscal IA (Auditor AI) */}
-          {onOpenCopiloto && (
-            <div className="relative group">
-              <button
-                onClick={onOpenCopiloto}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-950/80 via-indigo-950/80 to-cyan-950/80 hover:from-blue-900 hover:to-cyan-900 text-cyan-300 border border-cyan-500/50 hover:border-cyan-400 text-xs font-bold shadow-md shadow-cyan-500/15 transition-all cursor-pointer"
-                title="Abrir Copiloto Fiscal IA — Auditor AI (Consultor Especialista)"
-                aria-label="Copiloto Fiscal IA"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
-                <span className="hidden sm:inline">Auditor AI</span>
-              </button>
-
-              {/* Hover Tooltip */}
-              <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-2.5 py-1.5 rounded-lg bg-slate-900/98 border border-cyan-700/60 text-[11px] font-bold text-cyan-200 whitespace-nowrap shadow-2xl opacity-0 scale-95 group-hover:opacity-100 group-hover:scale-100 transition-all duration-150 ease-out pointer-events-none z-50 flex items-center gap-1">
-                <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 bg-slate-900 border-t border-l border-cyan-700/60" />
-                <span>Auditor AI • Especialista RTC & Tributos Vigentes</span>
-              </div>
-            </div>
-          )}
 
           {/* Export Fiscal (Compact Icon Button with Hover Tooltip) */}
           {onOpenExportFiscal && (

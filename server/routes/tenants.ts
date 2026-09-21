@@ -395,24 +395,42 @@ router.put('/:id', requireAuth, requirePerfil('admin_master', 'suporte_ti', 'con
     if (isSupabaseConfigured()) {
       const supabase = getSupabaseAdmin();
       if (supabase) {
-        const { error: updateErr } = await supabase
+        const fullPayload: Record<string, any> = {
+          razao_social: (razaoSocial || '').toUpperCase(),
+          nome_fantasia: (nomeFantasia || razaoSocial || '').toUpperCase(),
+          uf: uf || 'SP',
+          regime_tributario: regimeTributario || 'Lucro Real',
+          natureza_juridica_desc: naturezaJuridica || null,
+          natureza_juridica_codigo: codigoNaturezaJuridica || null,
+          cnae_principal: cnaePrincipal || null,
+          inscricao_suframa: suframa || null,
+          grupo_contabil: grupoContabilCliente || null,
+          manifestar_ciencia_automatica: Boolean(autoCiencia),
+          bloquear_credito_combustiveis: bloqComb,
+          ncm_vedados_credito: ncmVedados,
+          updated_at: new Date().toISOString()
+        };
+
+        let { error: updateErr } = await supabase
           .from('empresas')
-          .update({
-            razao_social: (razaoSocial || '').toUpperCase(),
-            nome_fantasia: (nomeFantasia || razaoSocial || '').toUpperCase(),
-            uf: uf || 'SP',
-            regime_tributario: regimeTributario || 'Lucro Real',
-            natureza_juridica_desc: naturezaJuridica || null,
-            natureza_juridica_codigo: codigoNaturezaJuridica || null,
-            cnae_principal: cnaePrincipal || null,
-            inscricao_suframa: suframa || null,
-            grupo_contabil: grupoContabilCliente || null,
-            manifestar_ciencia_automatica: Boolean(autoCiencia),
-            bloquear_credito_combustiveis: bloqComb,
-            ncm_vedados_credito: ncmVedados,
-            updated_at: new Date().toISOString()
-          })
+          .update(fullPayload)
           .eq('id', id);
+
+        // Fallback defensivo caso colunas adicionais não existam ainda no schema cache do Supabase
+        if (updateErr && (updateErr.message.includes('schema cache') || updateErr.message.includes('bloquear_credito_combustiveis') || updateErr.message.includes('ncm_vedados_credito'))) {
+          console.warn('⚠️ Supabase schema cache sem colunas de combustível/NCM. Tentando update com campos base...', updateErr.message);
+          delete fullPayload.bloquear_credito_combustiveis;
+          delete fullPayload.ncm_vedados_credito;
+          delete fullPayload.cnae_principal;
+          delete fullPayload.inscricao_suframa;
+          delete fullPayload.grupo_contabil;
+
+          const retry = await supabase
+            .from('empresas')
+            .update(fullPayload)
+            .eq('id', id);
+          updateErr = retry.error;
+        }
 
         if (updateErr) {
           console.error('❌ Erro ao editar empresa no Supabase:', updateErr.message);

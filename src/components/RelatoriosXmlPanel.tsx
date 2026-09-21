@@ -5,15 +5,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useKpis } from '../contexts/KpiContext';
 import { getApiBaseUrl } from '../utils/apiConfig';
 import { FiscalVerticalBarChart } from './FiscalVerticalBarChart';
-import { RelatorioRazaoEntradas } from './relatorios/RelatorioRazaoEntradas';
-import { RelatorioMatrizElegibilidade } from './relatorios/RelatorioMatrizElegibilidade';
-import { RelatorioCalculoCreditoEsperado } from './relatorios/RelatorioCalculoCreditoEsperado';
-import { RelatorioExcecoesPendencias } from './relatorios/RelatorioExcecoesPendencias';
-import { RelatorioEstornosAjustes } from './relatorios/RelatorioEstornosAjustes';
-import { RelatorioMapaCfop } from './relatorios/RelatorioMapaCfop';
-import { RelatorioMapaCClassTrib } from './relatorios/RelatorioMapaCClassTrib';
-import { RelatorioOnerosidade } from './relatorios/RelatorioOnerosidade';
-import { RelatorioRetencoesFonte } from './relatorios/RelatorioRetencoesFonte';
 import { RelatorioConsolidadoMercadorias } from './relatorios/RelatorioConsolidadoMercadorias';
 import { RelatorioConsolidadoServicos } from './relatorios/RelatorioConsolidadoServicos';
 import { 
@@ -719,21 +710,11 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
     }
   };
 
-  // Cálculo de filtros ativos para badge visual
-  const activeFiltersCount = [
-    Boolean(filters.searchTerm),
-    Boolean(filters.cnpjEmitente),
-    Boolean(filters.cnpjDestinatario),
-    filters.uf !== 'TODAS',
+  const activeFilterCount = [
     Boolean(filters.dataInicio),
     Boolean(filters.dataFim),
+    Boolean(filters.searchTerm),
     filters.tipoDoc !== 'TODOS',
-    filters.situacaoDoc !== 'TODAS',
-    Boolean(filters.cfop),
-    Boolean(filters.cClassTrib),
-    filters.indicadorOnerosidade !== 'TODOS',
-    filters.resultadoElegibilidade !== 'TODOS',
-    filters.apenasExcecoes,
     filters.statusRad && filters.statusRad !== 'TODOS',
     filters.visaoAnalitica && filters.visaoAnalitica !== '360'
   ].filter(Boolean).length;
@@ -741,15 +722,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
   const reportTabs = [
     { id: 'consolidado_mercadorias' as ReportTabType, label: '1) Mercadorias & Fretes (NF-e 55 & CT-e)', icon: FileText, badge: 'Consolidado Mestre' },
     { id: 'consolidado_servicos' as ReportTabType, label: '2) Serviços & Retenções (NFS-e ADN/Mun.)', icon: Receipt, badge: 'Consolidado Mestre' },
-    { id: 'mapa_cfop' as ReportTabType, label: '3) Mapa CFOP', icon: BookOpen, badge: 'Apoio' },
-    { id: 'mapa_cclasstrib' as ReportTabType, label: '4) Mapa cClassTrib', icon: Tag, badge: 'Apoio' },
-    { id: 'razao_entradas' as ReportTabType, label: 'Razão de Entradas (#1)', icon: Layers, badge: 'Legado' },
-    { id: 'matriz_elegibilidade' as ReportTabType, label: 'Matriz Elegibilidade (#2)', icon: ShieldCheck, badge: 'Legado' },
-    { id: 'calculo_credito' as ReportTabType, label: 'Crédito Esperado x Apropriado (#3)', icon: Calculator, badge: 'Legado' },
-    { id: 'excecoes_pendencias' as ReportTabType, label: 'Exceções & Pendências (#4)', icon: AlertTriangle, count: items.filter(i => i.isExcecao).length, badge: 'Legado' },
-    { id: 'estornos_ajustes' as ReportTabType, label: 'Estornos / Ajustes (#5)', icon: RotateCcw, badge: 'Legado' },
-    { id: 'onerosidade_auditoria' as ReportTabType, label: 'Onerosidade Auditoria (#8)', icon: Scale, badge: 'Legado' },
-    { id: 'retencoes_fonte' as ReportTabType, label: 'Retenções Fonte Legado (#9)', icon: Receipt, badge: 'Legado' },
   ];
 
   return (
@@ -779,15 +751,11 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                   ? 'bg-slate-800/90 hover:bg-slate-700 text-cyan-300 border-cyan-500/40 hover:border-cyan-400'
                   : 'bg-gradient-to-r from-cyan-950/80 to-blue-950/80 hover:from-cyan-900 hover:to-blue-900 text-cyan-300 border-cyan-500/60 hover:border-cyan-400 shadow-cyan-950/40'
               }`}
-              title={isFiltersExpanded ? 'Recolher bloco de filtros para ampliar a visualização dos relatórios' : 'Expandir bloco de filtros para ajustar parâmetros'}
             >
-              <Filter className="w-3.5 h-3.5 text-cyan-400" />
+              <Filter className="w-3.5 h-3.5" />
               <span>{isFiltersExpanded ? 'Recolher Filtros' : 'Expandir Filtros'}</span>
-              {isFiltersExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {activeFiltersCount > 0 && !isFiltersExpanded && (
-                <span className="px-1.5 py-0.2 text-[10px] bg-cyan-500 text-slate-950 font-black rounded-full ml-0.5">
-                  {activeFiltersCount}
-                </span>
+              {activeFilterCount > 0 && (
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
               )}
             </button>
 
@@ -856,10 +824,10 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               <button
                 onClick={onNavigateToCockpit}
                 className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/40 font-bold text-xs shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Abrir Cockpit de Montagem Dinâmica de Relatórios & Pivot Studio"
+                title="Abrir Módulo de Relatórios Dinâmicos & Pivot Studio"
               >
                 <Layers className="w-3.5 h-3.5 text-amber-400" />
-                <span>Cockpit Dinâmico</span>
+                <span>Relatórios Dinâmicos</span>
               </button>
             )}
           </div>
@@ -897,27 +865,12 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                 Tipo: {filters.tipoDoc}
               </span>
             )}
-            {filters.cfop && (
-              <span className="bg-slate-800 text-amber-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono">
-                CFOP: {filters.cfop}
-              </span>
-            )}
-            {filters.uf !== 'TODAS' && (
-              <span className="bg-slate-800 text-indigo-300 px-2 py-0.5 rounded-lg border border-slate-700">
-                UF: {filters.uf}
-              </span>
-            )}
             {filters.searchTerm && (
               <span className="bg-slate-800 text-slate-200 px-2 py-0.5 rounded-lg border border-slate-700 truncate max-w-[150px]">
                 Busca: "{filters.searchTerm}"
               </span>
             )}
-            {filters.apenasExcecoes && (
-              <span className="bg-rose-950/60 text-rose-300 px-2 py-0.5 rounded-lg border border-rose-800/60">
-                Apenas Exceções
-              </span>
-            )}
-            {activeFiltersCount > 0 && (
+            {activeFilterCount > 0 && (
               <button
                 onClick={handleClearFilters}
                 className="text-xs text-rose-400 hover:text-rose-300 underline cursor-pointer ml-auto"
@@ -1309,162 +1262,33 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
               )}
             </div>
 
-            {/* Linha 4: CNPJ Emitente */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                CNPJ Emitente / Fornecedor:
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 01.001.001/0001-91"
-                value={filters.cnpjEmitente}
-                onChange={(e) => setFilters({ ...filters, cnpjEmitente: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            {/* Linha 4: CNPJ Destinatário */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                CNPJ Destinatário / Filial:
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 02.002.002/0002-02"
-                value={filters.cnpjDestinatario}
-                onChange={(e) => setFilters({ ...filters, cnpjDestinatario: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-indigo-300 font-mono focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            {/* Linha 4: UF */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Estado / UF Emitente / Dest:
-              </label>
-              <select
-                value={filters.uf}
-                onChange={(e) => setFilters({ ...filters, uf: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
-              >
-                <option value="TODAS">TODAS AS UFs</option>
-                <option value="SP">SP - São Paulo</option>
-                <option value="RJ">RJ - Rio de Janeiro</option>
-                <option value="DF">DF - Distrito Federal</option>
-                <option value="MG">MG - Minas Gerais</option>
-                <option value="PR">PR - Paraná</option>
-                <option value="RS">RS - Rio Grande do Sul</option>
-              </select>
-            </div>
-
-            {/* Linha 4: Data Início */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Data Inicial Emissão:
+            {/* Período de Emissão: Apenas Data Inicial e Data Final */}
+            <div className="col-span-1 sm:col-span-2 md:col-span-2 min-w-0">
+              <label className="text-xs uppercase font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Data Inicial Emissão:</span>
               </label>
               <input
                 type="date"
                 value={filters.dataInicio}
                 onChange={(e) => setFilters({ ...filters, dataInicio: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none font-mono"
               />
             </div>
 
-            {/* Linha 4: Data Fim */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Data Final Emissão:
+            <div className="col-span-1 sm:col-span-2 md:col-span-2 min-w-0">
+              <label className="text-xs uppercase font-bold text-slate-300 block mb-1.5 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Data Final Emissão:</span>
               </label>
               <input
                 type="date"
                 value={filters.dataFim}
                 onChange={(e) => setFilters({ ...filters, dataFim: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500 font-mono"
+                className="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-500 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none font-mono"
               />
-            </div>
-
-            {/* Linha 5: CFOP */}
-            <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
-                CFOP (ex: 1102, 1551, 1910):
-              </label>
-              <input
-                type="text"
-                placeholder="Ex: 1102"
-                value={filters.cfop}
-                onChange={(e) => setFilters({ ...filters, cfop: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            {/* Linha 5: cClassTrib */}
-            <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
-                cClassTrib (ex: 000001, 100001, 200001):
-              </label>
-              <input
-                type="text"
-                maxLength={6}
-                placeholder="Ex: 000001"
-                value={filters.cClassTrib}
-                onChange={(e) => setFilters({ ...filters, cClassTrib: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-amber-300 font-mono focus:outline-none focus:border-cyan-500"
-              />
-            </div>
-
-            {/* Linha 5: Indicador Onerosidade */}
-            <div className="min-w-0">
-              <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1 truncate">
-                Indicador de Onerosidade:
-              </label>
-              <select
-                value={filters.indicadorOnerosidade}
-                onChange={(e) => setFilters({ ...filters, indicadorOnerosidade: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              >
-                <option value="TODOS">Todos os Indicadores</option>
-                <option value="Oneroso">Oneroso</option>
-                <option value="Não Oneroso">Não Oneroso</option>
-                <option value="Misto">Misto</option>
-                <option value="Indeterminado">Indeterminado</option>
-              </select>
-            </div>
-
-            {/* Linha 5: Situação Doc */}
-            <div className="min-w-0">
-              <label className="text-xs uppercase font-semibold text-slate-400 block mb-1.5 truncate">
-                Situação do Documento:
-              </label>
-              <select
-                value={filters.situacaoDoc}
-                onChange={(e) => setFilters({ ...filters, situacaoDoc: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              >
-                <option value="TODAS">Todas as Situações</option>
-                <option value="autorizado">Autorizado</option>
-                <option value="cancelado">Cancelado</option>
-                <option value="denegado">Denegado</option>
-                <option value="substituido">Substituído</option>
-              </select>
-            </div>
-
-            {/* Linha 6: Checkbox Exceções */}
-            <div className="flex items-center gap-2 pt-2 col-span-1 sm:col-span-2 md:col-span-3 xl:col-span-4 min-w-0">
-              <label className="flex items-center gap-2 text-rose-300 font-bold cursor-pointer select-none text-xs">
-                <input
-                  type="checkbox"
-                  checked={filters.apenasExcecoes}
-                  onChange={(e) => setFilters({ ...filters, apenasExcecoes: e.target.checked })}
-                  className="w-4 h-4 accent-rose-500 rounded border-slate-700 cursor-pointer shrink-0"
-                />
-                <span>Exibir Apenas Exceções e Pendências Críticas</span>
-              </label>
             </div>
 
           </div>
@@ -1545,63 +1369,6 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
                     onOpenLedger={(chave) => handleOpenLedger(chave)}
                     onSyncApuracao={handleSyncApuracao}
                     syncingApuracao={syncingApuracao}
-                  />
-                )}
-
-                {activeTab === 'razao_entradas' && (
-                  <RelatorioRazaoEntradas
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'matriz_elegibilidade' && (
-                  <RelatorioMatrizElegibilidade
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'calculo_credito' && (
-                  <RelatorioCalculoCreditoEsperado
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'excecoes_pendencias' && (
-                  <RelatorioExcecoesPendencias
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'estornos_ajustes' && (
-                  <RelatorioEstornosAjustes
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'mapa_cfop' && (
-                  <RelatorioMapaCfop />
-                )}
-
-                {activeTab === 'mapa_cclasstrib' && (
-                  <RelatorioMapaCClassTrib />
-                )}
-
-                {activeTab === 'onerosidade_auditoria' && (
-                  <RelatorioOnerosidade
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
-                  />
-                )}
-
-                {activeTab === 'retencoes_fonte' && (
-                  <RelatorioRetencoesFonte
-                    items={filteredItems}
-                    onOpenDetail={(it) => setSelectedItemForModal(it)}
                   />
                 )}
               </div>
@@ -1713,7 +1480,7 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
 
               <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1">
                 <div className="text-[10px] text-slate-400 uppercase font-sans font-bold text-cyan-400">
-                  Apropriação no SAP / ERP
+                  Apropriação no ERP
                 </div>
                 <div>Crédito Apropriado IBS: R$ {selectedItemForModal.creditoApropriadoIbs.toFixed(2)}</div>
                 <div>Crédito Apropriado CBS: R$ {selectedItemForModal.creditoApropriadoCbs.toFixed(2)}</div>

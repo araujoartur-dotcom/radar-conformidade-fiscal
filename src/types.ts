@@ -367,7 +367,7 @@ export const ESTADOS_BRASIL = [
 export type EstadoUF = typeof ESTADOS_BRASIL[number];
 
 // ==========================================
-// TIPOS PARA ÁREA DE RELATÓRIOS XML / SAP ERP
+// TIPOS PARA ÁREA DE RELATÓRIOS XML / ERP
 // ==========================================
 
 export type ReportTabType = 

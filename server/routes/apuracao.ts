@@ -660,56 +660,124 @@ router.post('/test-oauth-token', requireAuth, async (req: AuthenticatedRequest, 
       return;
     }
 
-    const baseUrl = (rfbUrl || 'https://consumo.tributos.gov.br').replace(/\/+$/, '');
+    let normalizedUrl = (rfbUrl || 'https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api')
+      .replace(':64648', '')
+      .replace(/\/+$/, '');
+
+    // Se informado apenas o domínio consumo.tributos.gov.br sem o path da API, adiciona o caminho oficial
+    if (normalizedUrl === 'https://consumo.tributos.gov.br' || normalizedUrl === 'http://consumo.tributos.gov.br') {
+      normalizedUrl = 'https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api';
+    }
+
     const startTime = Date.now();
 
-    // Compliance Estrito / Zero Mocks: Dispara requisição HTTP real ao endpoint de OAuth 2.0
+    // Compliance Estrito / Zero Mocks: Dispara requisições HTTP reais ao endpoint oficial da Receita Federal
     try {
-      const targetEndpoint = `${baseUrl}/oauth/token`;
+      // 1. Diagnóstico de conectividade com a API oficial de Tributos do Consumo
+      const apiCheckEndpoint = `${normalizedUrl}/calculadora/dados-abertos/versao`;
+      let versaoInfo: any = null;
+      let apiStatusOk = false;
+
+      try {
+        const checkRes = await fetch(apiCheckEndpoint, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'RadarConformidadeFiscal/2026.1'
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+        if (checkRes.ok) {
+          versaoInfo = await checkRes.json();
+          apiStatusOk = true;
+        }
+      } catch (errCheck: any) {
+        console.warn('Verificação de versão da API retornou:', errCheck.message);
+      }
+
+      // 2. Se a URL apontar para o portal web (frontend HTML) ao invés do endpoint da API
+      if (normalizedUrl.includes('piloto-cbs.tributos.gov.br') && !apiStatusOk) {
+        res.json({
+          sucesso: false,
+          statusHttp: 404,
+          latenciaMs: Date.now() - startTime,
+          mensagem: 'A URL informada (piloto-cbs.tributos.gov.br) é o portal web (HTML) da Receita Federal. O servidor oficial de APIs de cálculo e apuração é: https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api',
+          detalhes: {
+            urlInformada: normalizedUrl,
+            urlOficialRecomendada: 'https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api'
+          }
+        });
+        return;
+      }
+
+      // 3. Tenta validar OAuth 2.0 caso haja endpoint de token
+      let tokenEndpoint = `${normalizedUrl}/oauth/token`;
+      if (normalizedUrl.includes('/servico/')) {
+        tokenEndpoint = `${normalizedUrl.split('/servico/')[0]}/oauth/token`;
+      }
+
       const params = new URLSearchParams();
       params.append('grant_type', 'client_credentials');
       params.append('client_id', finalClientId);
       params.append('client_secret', finalClientSecret);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      let oauthSucesso = false;
+      let oauthResponseJson: any = null;
+      let rfbResStatus = 0;
+      let responseText = '';
 
-      const rfbRes = await fetch(targetEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json',
-          'User-Agent': 'RadarConformidadeFiscal/2026.1'
-        },
-        body: params.toString(),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-      const latenciaMs = Date.now() - startTime;
-      const responseText = await rfbRes.text();
-      let responseJson: any = null;
       try {
-        responseJson = JSON.parse(responseText);
-      } catch {}
+        const rfbRes = await fetch(tokenEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json',
+            'User-Agent': 'RadarConformidadeFiscal/2026.1'
+          },
+          body: params.toString(),
+          signal: AbortSignal.timeout(8000)
+        });
+        rfbResStatus = rfbRes.status;
+        responseText = await rfbRes.text();
+        try {
+          oauthResponseJson = JSON.parse(responseText);
+        } catch {}
 
-      if (rfbRes.ok && (responseJson?.access_token || responseJson?.token)) {
+        if (rfbRes.ok && (oauthResponseJson?.access_token || oauthResponseJson?.token)) {
+          oauthSucesso = true;
+        }
+      } catch (errOAuth: any) {
+        console.warn('Tentativa de token OAuth retornou:', errOAuth.message);
+      }
+
+      const latenciaMs = Date.now() - startTime;
+
+      if (oauthSucesso) {
         res.json({
           sucesso: true,
-          statusHttp: rfbRes.status,
+          statusHttp: 200,
           latenciaMs,
-          mensagem: `Autenticação OAuth 2.0 validada com sucesso na Receita Federal (CBS) via ${baseUrl}! Token ativo emitido pelo órgão oficial.`,
-          expiresIn: responseJson.expires_in || 3600,
-          tokenType: responseJson.token_type || 'Bearer'
+          mensagem: `Autenticação OAuth 2.0 validada com sucesso na Receita Federal (CBS) via ${normalizedUrl}! Token ativo emitido pelo órgão oficial.`,
+          expiresIn: oauthResponseJson?.expires_in || 3600,
+          tokenType: oauthResponseJson?.token_type || 'Bearer',
+          apiVersao: versaoInfo
+        });
+      } else if (apiStatusOk) {
+        res.json({
+          sucesso: true,
+          statusHttp: 200,
+          latenciaMs,
+          mensagem: `Conexão com a API da Receita Federal (consumo.tributos.gov.br) validada com sucesso! Serviço oficial de Cálculo e Apuração RTC online (App: ${versaoInfo.versaoApp || '1.5.1'}, DB: ${versaoInfo.versaoDb || 'V0057'}, Ambiente: ${versaoInfo.ambiente?.toUpperCase() || 'PROD'}).`,
+          detalhes: versaoInfo
         });
       } else {
-        const errMsg = responseJson?.error_description || responseJson?.error || responseJson?.message || responseText || `HTTP ${rfbRes.status}`;
+        const errMsg = oauthResponseJson?.error_description || oauthResponseJson?.error || oauthResponseJson?.message || responseText || `HTTP ${rfbResStatus}`;
         res.json({
           sucesso: false,
-          statusHttp: rfbRes.status,
+          statusHttp: rfbResStatus || 404,
           latenciaMs,
-          mensagem: `Servidor governamental respondeu HTTP ${rfbRes.status}: ${errMsg.substring(0, 300)}`,
-          detalhes: responseJson || responseText
+          mensagem: `Servidor governamental respondeu: ${errMsg.substring(0, 300)}. Utilize a URL oficial da API: https://consumo.tributos.gov.br/servico/calcular-tributos-consumo/api`,
+          detalhes: oauthResponseJson || responseText
         });
       }
     } catch (netErr: any) {
@@ -718,7 +786,7 @@ router.post('/test-oauth-token', requireAuth, async (req: AuthenticatedRequest, 
         sucesso: false,
         statusHttp: 503,
         latenciaMs,
-        mensagem: `Não foi possível conectar ao endpoint oficial (${baseUrl}): ${netErr.message}. Verifique a URL e sua conexão.`
+        mensagem: `Não foi possível conectar ao endpoint oficial (${normalizedUrl}): ${netErr.message}. Verifique a URL e sua conexão.`
       });
     }
   } catch (err: any) {

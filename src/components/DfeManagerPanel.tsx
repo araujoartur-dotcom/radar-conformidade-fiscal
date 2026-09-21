@@ -548,7 +548,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 transition-all cursor-pointer"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
-                    Sincronizar SAP/ERP
+                    Sincronizar ERP
                   </button>
                 </div>
               </div>

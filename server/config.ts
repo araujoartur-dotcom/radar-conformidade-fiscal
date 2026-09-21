@@ -170,8 +170,8 @@ export const SUPABASE = {
 // ============================================================
 export const AI_CONFIG = {
   GEMINI_API_KEY: (process.env.GEMINI_API_KEY || '').trim(),
-  MODEL: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-  FALLBACK_MODELS: ['gemini-2.0-flash', 'gemini-1.5-flash'],
+  MODEL: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
+  FALLBACK_MODELS: ['gemini-3.5-flash', 'gemini-flash-latest'],
   IS_CONFIGURED: Boolean((process.env.GEMINI_API_KEY || '').trim()),
 } as const;
 

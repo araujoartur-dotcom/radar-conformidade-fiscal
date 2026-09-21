@@ -84,7 +84,7 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
             }`}
           >
             <Server className="w-4 h-4" />
-            <span>Conectores SAP & ERPs</span>
+            <span>Conectores de ERP</span>
           </button>
 
           <button
@@ -162,7 +162,7 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-300">URL do Webhook / Endpoint SAP</label>
+              <label className="text-xs font-bold text-slate-300">URL do Webhook / Endpoint do ERP</label>
               <input
                 type="text"
                 value={config.endpointUrl}
@@ -181,7 +181,7 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
                     onChange={(e) => setConfig({ ...config, autoSyncEvents: e.target.checked })}
                     className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-cyan-500 focus:ring-0"
                   />
-                  <span className="text-slate-200 font-medium">Sincronizar eventos de Manifestação em tempo real para o SAP</span>
+                  <span className="text-slate-200 font-medium">Sincronizar eventos de Manifestação em tempo real para o ERP</span>
                 </label>
 
                 <label className="flex items-center gap-2.5 cursor-pointer">
@@ -191,7 +191,7 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
                     onChange={(e) => setConfig({ ...config, autoSyncAudit: e.target.checked })}
                     className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-cyan-500 focus:ring-0"
                   />
-                  <span className="text-slate-200 font-medium">Atualizar status cadastral IE (CCC SEFAZ) nos parceiros de negócio (Business Partners / KNA1 / LFA1)</span>
+                  <span className="text-slate-200 font-medium">Atualizar status cadastral IE (CCC SEFAZ) nos parceiros de negócio do ERP</span>
                 </label>
               </div>
             </div>
@@ -205,12 +205,12 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
                 {isTesting ? (
                   <>
                     <RefreshCw className="w-4 h-4 animate-spin" />
-                    Testando Conexão RFC SAP...
+                    Testando Conexão com o ERP...
                   </>
                 ) : (
                   <>
                     <Zap className="w-4 h-4 text-cyan-300" />
-                    Testar Conectividade com SAP
+                    Testar Conectividade com o ERP
                   </>
                 )}
               </button>
@@ -231,8 +231,8 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
             <div className="space-y-3 text-xs">
               <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-white">SAP S/4HANA Cloud / On-Premise</div>
-                  <div className="text-[10px] text-slate-400">RFC / OData v4 Active</div>
+                  <div className="font-bold text-white">Conector RFC / BAPI (ERP)</div>
+                  <div className="text-[10px] text-slate-400">Suporte SAP S/4HANA & OData v4</div>
                 </div>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
                   Operacional
@@ -282,7 +282,7 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
                     : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
                 }`}
               >
-                SAP BAPI / RFC
+                RFC / BAPI
               </button>
               <button
                 type="button"

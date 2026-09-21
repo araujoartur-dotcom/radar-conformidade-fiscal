@@ -96,10 +96,10 @@ export const SidebarCertificado: React.FC<SidebarCertificadoProps> = ({
       ]
     },
     {
-      title: 'Relatórios Fiscais (SAP / ERP)',
+      title: 'Relatórios Fiscais (ERP)',
       items: [
         { id: 'relatorios_xml' as QueryMode, label: 'Relatórios Fiscais', icon: FileBarChart, accent: 'cyan' },
-        { id: 'cockpit_relatorios' as QueryMode, label: 'Cockpit Dinâmico Studio', icon: Layers, accent: 'amber', badge: 'PRO' },
+        { id: 'cockpit_relatorios' as QueryMode, label: 'Relatórios Dinâmicos', icon: Layers, accent: 'amber', badge: 'PRO' },
         { id: 'tabelas_fiscais' as QueryMode, label: 'Parâmetros & Tabelas Fiscais', icon: Sliders, accent: 'indigo' },
       ]
     },

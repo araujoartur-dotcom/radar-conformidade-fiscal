@@ -79,19 +79,19 @@ export const GRUPOS_MODULOS: GrupoModulos[] = [
     ]
   },
   {
-    titulo: 'Relatórios Fiscais (SAP / ERP)',
+    titulo: 'Relatórios Fiscais (ERP)',
     modulos: [
       {
         id: 'relatorios_xml',
         label: 'Relatórios Fiscais Especializados',
-        grupo: 'Relatórios Fiscais (SAP / ERP)',
+        grupo: 'Relatórios Fiscais (ERP)',
         descricao: 'Razão de entradas, matriz de elegibilidade, mapa CFOP e retenções na fonte',
         accent: 'cyan'
       },
       {
         id: 'cockpit_relatorios',
-        label: 'Cockpit de Relatórios Dinâmicos',
-        grupo: 'Relatórios Fiscais (SAP / ERP)',
+        label: 'Relatórios Dinâmicos',
+        grupo: 'Relatórios Fiscais (ERP)',
         descricao: 'Construtor dinâmico de relatórios, pivot table, métricas personalizadas e gestão de modelos',
         accent: 'amber',
         badge: 'PRO'
@@ -99,7 +99,7 @@ export const GRUPOS_MODULOS: GrupoModulos[] = [
       {
         id: 'tabelas_fiscais',
         label: 'Parâmetros & Tabelas Fiscais',
-        grupo: 'Relatórios Fiscais (SAP / ERP)',
+        grupo: 'Relatórios Fiscais (ERP)',
         descricao: 'Parâmetros fiscais, tabelas de alíquotas, cClassTrib e regras de tributação',
         accent: 'indigo'
       }
@@ -143,7 +143,7 @@ export const GRUPOS_MODULOS: GrupoModulos[] = [
         id: 'carteira_cnpjs',
         label: 'Cadastro de Empresas & Certificados',
         grupo: 'Acesso & Gestão Multi-Tenant',
-        descricao: 'Gestão da carteira de clientes, dados cadastrais, SPED 0100 e certificados A1',
+        descricao: 'Gestão da carteira de clientes, dados cadastrais, dados societários e certificados A1',
         accent: 'emerald'
       },
       {
@@ -197,7 +197,7 @@ export const PRESETS_ACESSO: PresetAcesso[] = [
   {
     id: 'analista_fiscal',
     nome: 'Analista Fiscal Pleno',
-    descricao: 'Gestão operacional completa de notas, apuração IBS/CBS, SPED e relatórios',
+    descricao: 'Gestão operacional completa de notas, apuração assistida IBS/CBS/IS e relatórios',
     icone: '📑',
     badge: 'Fiscal',
     perfil: 'analista_fiscal',
