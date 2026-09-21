@@ -60,7 +60,7 @@ export default function App() {
   useEffect(() => {
     if (user && !hasModuleAccess(activeMode, user, empresaAtiva)) {
       const fallbackModes: QueryMode[] = [
-        'central_kpis', 'dfe_xml', 'relatorios_xml', 'lote', 'apuracao_assistida', 'detalhada'
+        'central_kpis', 'dfe_xml', 'relatorios_xml', 'cockpit_relatorios', 'lote', 'apuracao_assistida', 'detalhada'
       ];
       const allowedFallback = fallbackModes.find(m => hasModuleAccess(m, user, empresaAtiva)) || 'central_kpis';
       setActiveMode(allowedFallback);

@@ -91,12 +91,15 @@ export function seedNcmRegrasAnexos(db: any): void {
 
     const stmtNcm = db.prepare(`
       INSERT OR REPLACE INTO ncm_regras_anexos (
-        id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01', '2033-12-31', 1)
+        id, codigo, codigo_normalizado, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+        percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01', '2033-12-31', 1)
     `);
 
     for (const n of ncmRegras) {
-      stmtNcm.run(uuid(), n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
+      const cod = n.ncm || '';
+      const codNorm = cod.replace(/\D/g, '');
+      stmtNcm.run(uuid(), cod, codNorm, n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
     }
   } catch (e) {
     console.error('Erro ao semear ncm_regras_anexos:', e);

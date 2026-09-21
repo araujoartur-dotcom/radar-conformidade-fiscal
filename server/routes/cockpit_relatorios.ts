@@ -407,7 +407,7 @@ router.get('/modelos', requireAuth, (req: AuthenticatedRequest, res: Response) =
   try {
     const db = getDatabase();
     const userId = req.user?.userId;
-    const empresaId = req.user?.empresaAtivaId;
+    const empresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || '';
 
     if (!userId) {
       return res.status(401).json({ error: 'Usuário não autenticado.', code: 'AUTH_REQUIRED' });
@@ -458,7 +458,7 @@ router.post('/modelos', requireAuth, (req: AuthenticatedRequest, res: Response) 
     const userId = req.user?.userId;
     const userEmail = req.user?.email || '';
     const userPerfil = req.user?.perfil || '';
-    const activeEmpresaId = req.user?.empresaAtivaId;
+    const activeEmpresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || req.body?.empresa_id;
 
     const {
       nome,
@@ -722,7 +722,7 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
 
   try {
     const db = getDatabase();
-    const activeEmpresaId = req.user?.empresaAtivaId;
+    const activeEmpresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || req.body?.empresa_id;
 
     if (!activeEmpresaId) {
       return res.status(400).json({
@@ -793,7 +793,7 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
 router.post('/exportar', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const activeEmpresaId = req.user?.empresaAtivaId;
+    const activeEmpresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || req.body?.empresa_id;
 
     if (!activeEmpresaId) {
       return res.status(400).json({

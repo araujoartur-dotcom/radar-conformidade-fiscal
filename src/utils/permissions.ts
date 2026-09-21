@@ -192,7 +192,7 @@ export const PRESETS_ACESSO: PresetAcesso[] = [
     badge: 'Leitura',
     perfil: 'operador_leitura',
     permissao: 'leitura',
-    modulos: ['central_kpis', 'relatorios_xml']
+    modulos: ['central_kpis', 'relatorios_xml', 'cockpit_relatorios']
   },
   {
     id: 'analista_fiscal',
@@ -202,7 +202,7 @@ export const PRESETS_ACESSO: PresetAcesso[] = [
     badge: 'Fiscal',
     perfil: 'analista_fiscal',
     permissao: 'escrita',
-    modulos: ['central_kpis', 'dfe_xml', 'eventos_dfe', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml', 'tabelas_fiscais']
+    modulos: ['central_kpis', 'dfe_xml', 'eventos_dfe', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml', 'cockpit_relatorios', 'tabelas_fiscais']
   },
   {
     id: 'auditor_compliance',
@@ -212,7 +212,7 @@ export const PRESETS_ACESSO: PresetAcesso[] = [
     badge: 'Compliance',
     perfil: 'auditor_externo',
     permissao: 'leitura',
-    modulos: ['central_kpis', 'dfe_xml', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml']
+    modulos: ['central_kpis', 'dfe_xml', 'apuracao_assistida', 'simulador_regimes', 'relatorios_xml', 'cockpit_relatorios']
   },
   {
     id: 'contador_gestor',
@@ -258,7 +258,24 @@ export function hasModuleAccess(
     return list.includes('carteira_cnpjs');
   }
 
-  // 4. Se o usuário ou a empresa ativa possui lista específica de módulos permitidos
+  // 4. Módulo de Relatórios Dinâmicos (cockpit_relatorios):
+  // Herdado de forma progressiva caso o usuário tenha acesso aos Relatórios Fiscais (relatorios_xml)
+  // ou se pertencer aos perfis padrão de auditoria/analista/contador
+  if (moduleId === 'cockpit_relatorios') {
+    const rawMods = (user as any).modulosPermitidos || empresaAtiva?.modulosPermitidos;
+    if (!rawMods || rawMods === '*' || rawMods === '["*"]') {
+      return true;
+    }
+    const allowedList = parseModulosList(rawMods);
+    if (allowedList.includes('cockpit_relatorios') || allowedList.includes('relatorios_xml')) {
+      return true;
+    }
+    if (['admin_master', 'suporte_ti', 'contador_gestor', 'analista_fiscal', 'auditor_externo', 'operador_leitura'].includes(user.perfil)) {
+      return true;
+    }
+  }
+
+  // 5. Se o usuário ou a empresa ativa possui lista específica de módulos permitidos
   const rawModulos = (user as any).modulosPermitidos || empresaAtiva?.modulosPermitidos;
   if (!rawModulos || rawModulos === '*' || rawModulos === '["*"]') {
     return true;

@@ -322,8 +322,8 @@ export function initializeSchema(): void {
       perc_aliquota_aplicavel     REAL DEFAULT NULL,
       tributo                     TEXT DEFAULT 'IBS e CBS',
       tipo_classificacao          TEXT DEFAULT 'NCM/SH',
-      codigo                      TEXT NOT NULL,
-      codigo_normalizado          TEXT NOT NULL,
+      codigo                      TEXT NOT NULL DEFAULT '',
+      codigo_normalizado          TEXT NOT NULL DEFAULT '',
       nivel_codigo                TEXT DEFAULT '',
       base_legal                  TEXT DEFAULT '',
       linha_agrupadora            TEXT DEFAULT 'Nao',
@@ -638,7 +638,7 @@ export function initializeSchema(): void {
       descricao             TEXT DEFAULT '',
       categoria             TEXT DEFAULT 'fiscal',          -- fiscal | auditoria | rtc | gerencial
       escopo                TEXT NOT NULL DEFAULT 'pessoal', -- pessoal | empresa | global
-      usuario_id            TEXT NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+      usuario_id            TEXT REFERENCES usuarios(id) ON DELETE CASCADE,
       empresa_id            TEXT REFERENCES empresas(id) ON DELETE CASCADE,
       configuracao_json     TEXT NOT NULL,                  -- JSON com fontes, dimensoes, metricas, filtros, ordenacao
       criado_por_nome       TEXT DEFAULT '',
@@ -854,146 +854,6 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_modelos_dinamicos_escopo ON relatorios_modelos_dinamicos(escopo);
   `);
 
-  // Seed de Modelos Dinâmicos Oficiais (Padrão de Fábrica da Plataforma)
-  try {
-    const countModelos = (db.prepare('SELECT COUNT(*) as total FROM relatorios_modelos_dinamicos WHERE is_padrao_sistema = 1').get() as any)?.total || 0;
-    if (countModelos === 0) {
-      const adminUser = db.prepare("SELECT id, email FROM usuarios WHERE perfil = 'admin_master' LIMIT 1").get() as any;
-      const adminId = adminUser?.id || '9e1c175a-94f6-4071-beee-0fef4c142f71';
-      const adminEmail = adminUser?.email || 'admin@radarfiscal.com.br';
-
-      const defaultModelos = [
-        {
-          id: 'mod-combustiveis-monofasicos',
-          nome: 'Auditoria de Monofásicos de Combustíveis (NCM 2710/2711 & CST 620)',
-          descricao: 'Monitoramento de itens sujeitos à tributação monofásica e controle de vedação de créditos (Art. 267 da LC 214/2025).',
-          categoria: 'auditoria',
-          escopo: 'global',
-          usuario_id: adminId,
-          empresa_id: null,
-          criado_por_nome: 'Governança Fiscal',
-          criado_por_email: adminEmail,
-          is_padrao_sistema: 1,
-          configuracao_json: JSON.stringify({
-            fonte_dados: 'dfe_itens_documentos',
-            modo: 'agrupado',
-            dimensoes: ['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao'],
-            metricas: [
-              { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
-              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
-              { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
-              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
-              { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
-              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
-              { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
-            ],
-            filtros: [
-              { campo: 'ncm', operador: 'contains', valor: '271' }
-            ],
-            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
-            limite: 1000
-          })
-        },
-        {
-          id: 'mod-matriz-cclasstrib-cst',
-          nome: 'Matriz Cruzada de IBS/CBS por cClassTrib e CST',
-          descricao: 'Consolidação das bases e tributos da Reforma Tributária agrupados por Classificação Tributária SVRS e CST.',
-          categoria: 'rtc',
-          escopo: 'global',
-          usuario_id: adminId,
-          empresa_id: null,
-          criado_por_nome: 'Governança Fiscal',
-          criado_por_email: adminEmail,
-          is_padrao_sistema: 1,
-          configuracao_json: JSON.stringify({
-            fonte_dados: 'dfe_itens_documentos',
-            modo: 'agrupado',
-            dimensoes: ['cclasstrib', 'cst_csosn', 'tipo_operacao'],
-            metricas: [
-              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Total Líquido' },
-              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total' },
-              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total' },
-              { campo: 'id', agregacao: 'count', apelido: 'Contagem de Linhas' }
-            ],
-            filtros: [],
-            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
-            limite: 1000
-          })
-        },
-        {
-          id: 'mod-ranking-fornecedores-creditos',
-          nome: 'Ranking de Fornecedores por Volume Financeiro e Créditos',
-          descricao: 'Visão executiva dos principais parceiros comerciais por volume de aquisições e potencial de créditos de IBS/CBS.',
-          categoria: 'fiscal',
-          escopo: 'global',
-          usuario_id: adminId,
-          empresa_id: null,
-          criado_por_nome: 'Governança Fiscal',
-          criado_por_email: adminEmail,
-          is_padrao_sistema: 1,
-          configuracao_json: JSON.stringify({
-            fonte_dados: 'dfe_itens_documentos',
-            modo: 'agrupado',
-            dimensoes: ['fornecedor_cnpj', 'fornecedor_razao', 'fornecedor_uf'],
-            metricas: [
-              { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Volume Comprado (R$)' },
-              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'Crédito IBS (R$)' },
-              { campo: 'valor_cbs', agregacao: 'sum', apelido: 'Crédito CBS (R$)' },
-              { campo: 'documento_id', agregacao: 'count_distinct', apelido: 'Qtd Notas' }
-            ],
-            filtros: [
-              { campo: 'tipo_operacao', operador: 'eq', valor: 'Entrada' }
-            ],
-            ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
-            limite: 500
-          })
-        },
-        {
-          id: 'mod-analise-local-destino',
-          nome: 'Conformidade de Destino e Local da Operação (indOper)',
-          descricao: 'Análise geográfica das operações fiscais por UF de fornecedor, cliente e competência.',
-          categoria: 'fiscal',
-          escopo: 'global',
-          usuario_id: adminId,
-          empresa_id: null,
-          criado_por_nome: 'Governança Fiscal',
-          criado_por_email: adminEmail,
-          is_padrao_sistema: 1,
-          configuracao_json: JSON.stringify({
-            fonte_dados: 'dfe_documentos',
-            modo: 'agrupado',
-            dimensoes: ['fornecedor_uf', 'cliente_uf', 'tipo_operacao'],
-            metricas: [
-              { campo: 'valor_total', agregacao: 'sum', apelido: 'Valor Total dos Documentos' },
-              { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base Acumulada IBS' },
-              { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Destino' },
-              { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
-            ],
-            filtros: [],
-            ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
-            limite: 500
-          })
-        }
-      ];
-
-      const stmtModelo = db.prepare(`
-        INSERT OR REPLACE INTO relatorios_modelos_dinamicos (
-          id, nome, descricao, categoria, escopo, usuario_id, empresa_id, configuracao_json,
-          criado_por_nome, criado_por_email, is_padrao_sistema
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const m of defaultModelos) {
-        stmtModelo.run(
-          m.id, m.nome, m.descricao, m.categoria, m.escopo, m.usuario_id, m.empresa_id,
-          m.configuracao_json, m.criado_por_nome, m.criado_por_email, m.is_padrao_sistema
-        );
-      }
-      console.log(`📊 Seed de Modelos Dinâmicos executado: ${defaultModelos.length} modelos de fábrica criados.`);
-    }
-  } catch (err: any) {
-    console.warn('Aviso no seed de modelos dinâmicos:', err.message);
-  }
 
   // Seed automático de Conectores Municipais das principais prefeituras
   try {

@@ -59,7 +59,7 @@ export const AcessoCorporativoModal: React.FC<AcessoCorporativoModalProps> = ({
   const [newCnpjs, setNewCnpjs] = useState<string[]>([]);
   const [newPermissao, setNewPermissao] = useState<'total' | 'escrita' | 'leitura'>('escrita');
   const [newModulos, setNewModulos] = useState<QueryMode[]>([
-    'central_kpis', 'dfe_xml', 'eventos_dfe', 'apuracao_assistida', 'relatorios_xml', 'tabelas_fiscais'
+    'central_kpis', 'dfe_xml', 'eventos_dfe', 'apuracao_assistida', 'relatorios_xml', 'cockpit_relatorios', 'tabelas_fiscais'
   ]);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
 

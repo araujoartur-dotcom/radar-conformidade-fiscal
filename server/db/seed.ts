@@ -25,6 +25,7 @@ export function seedDatabase(): void {
   seedRegimesParametros(db);
   seedCategoriaB(db);
   seedTabelasOficiais();
+  seedModelosDinamicos(db);
 
   // Verificar se já foi populado
   const existingUsers = db.prepare('SELECT COUNT(*) as count FROM usuarios').get() as any;
@@ -181,23 +182,34 @@ export function seedDatabase(): void {
   // =========================================================
   // CATÁLOGO DE ANEXOS & REGIMES ESPECIAIS (NCM / NBS / cClassTrib)
   // =========================================================
-  const ncmRegras = [
-    { ncm: '2711.19.10', nbs: '', cclasstrib: '620006', desc: 'Gás Liquefeito de Petróleo (GLP)', tipo: 'ad_rem', red: 0, anexo: 'Art. 172 LC 214/25', base: 'LC 214/2025' },
-    { ncm: '1006.10.92', nbs: '', cclasstrib: '030001', desc: 'Arroz em grãos não parboilizado', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
-    { ncm: '0401.20.10', nbs: '', cclasstrib: '030001', desc: 'Leite pasteurizado integral', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
-    { ncm: '0713.33.19', nbs: '', cclasstrib: '030001', desc: 'Feijão preto e feijão carioca', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
-    { ncm: '3004.90.99', nbs: '', cclasstrib: '010001', desc: 'Medicamentos de uso humano essenciais', tipo: 'reducao_60', red: 60, anexo: 'Anexo VII Produtos de Saúde', base: 'Art. 132 LC 214/2025' },
-    { ncm: '8504.40.21', nbs: '', cclasstrib: '000001', desc: 'Equipamentos e conversores estáticos', tipo: 'padrao', red: 0, anexo: 'Regime Geral', base: 'LC 214/2025' },
-  ];
+  try {
+    const ncmRegras = [
+      { ncm: '2711.19.10', nbs: '', cclasstrib: '620006', desc: 'Gás Liquefeito de Petróleo (GLP)', tipo: 'ad_rem', red: 0, anexo: 'Art. 172 LC 214/25', base: 'LC 214/2025' },
+      { ncm: '1006.10.92', nbs: '', cclasstrib: '030001', desc: 'Arroz em grãos não parboilizado', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+      { ncm: '0401.20.10', nbs: '', cclasstrib: '030001', desc: 'Leite pasteurizado integral', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+      { ncm: '0713.33.19', nbs: '', cclasstrib: '030001', desc: 'Feijão preto e feijão carioca', tipo: 'cesta_basica_zero', red: 100, anexo: 'Anexo I Cesta Básica Nacional', base: 'Art. 8º LC 214/2025' },
+      { ncm: '3004.90.99', nbs: '', cclasstrib: '010001', desc: 'Medicamentos de uso humano essenciais', tipo: 'reducao_60', red: 60, anexo: 'Anexo VII Produtos de Saúde', base: 'Art. 132 LC 214/2025' },
+      { ncm: '8504.40.21', nbs: '', cclasstrib: '000001', desc: 'Equipamentos e conversores estáticos', tipo: 'padrao', red: 0, anexo: 'Regime Geral', base: 'LC 214/2025' },
+    ];
 
-  const stmtNcm = db.prepare(`
-    INSERT OR REPLACE INTO ncm_regras_anexos (id, ncm, nbs, cclasstrib, descricao, tipo_tratamento, percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01', '2033-12-31', 1)
-  `);
+    const stmtNcm = db.prepare(`
+      INSERT OR REPLACE INTO ncm_regras_anexos (
+        id, codigo, codigo_normalizado, ncm, nbs, cclasstrib, descricao, tipo_tratamento,
+        percentual_reducao, anexo_lei, base_legal, vigencia_inicio, vigencia_fim, ativo
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-01-01', '2033-12-31', 1)
+    `);
 
-  for (const n of ncmRegras) {
-    stmtNcm.run(uuid(), n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
+    for (const n of ncmRegras) {
+      const cod = n.ncm || '';
+      const codNorm = cod.replace(/\D/g, '');
+      stmtNcm.run(uuid(), cod, codNorm, n.ncm, n.nbs, n.cclasstrib, n.desc, n.tipo, n.red, n.anexo, n.base);
+    }
+  } catch (errNcm: any) {
+    console.warn('⚠️ Aviso ao semear catálogo inicial de NCM:', errNcm.message);
   }
+
+  // Modelos dinâmicos oficiais
+  seedModelosDinamicos(db);
 
   console.log('✅ Seed concluído: Admin, Empresa Homologação, Alíquotas Ad Valorem/Ad Rem, Anexos NCM, CFOP, cClassTrib, Parâmetros de Inferência.');
 }
@@ -226,4 +238,147 @@ export function seedParametrosInferencia(db: any): void {
     console.warn('⚠️ Erro ao verificar/popular parametros_inferencia:', err.message);
   }
 }
+
+export function seedModelosDinamicos(db: any): void {
+  try {
+    const countModelos = (db.prepare('SELECT COUNT(*) as total FROM relatorios_modelos_dinamicos WHERE is_padrao_sistema = 1').get() as any)?.total || 0;
+    if (countModelos > 0) return;
+
+    const adminUser = db.prepare("SELECT id, email FROM usuarios WHERE perfil = 'admin_master' LIMIT 1").get() as any;
+    const adminId = adminUser?.id || null;
+    const adminEmail = adminUser?.email || 'admin@radarfiscal.com.br';
+
+    const defaultModelos = [
+      {
+        id: 'mod-combustiveis-monofasicos',
+        nome: 'Auditoria de Monofásicos de Combustíveis (NCM 2710/2711 & CST 620)',
+        descricao: 'Monitoramento de itens sujeitos à tributação monofásica e controle de vedação de créditos (Art. 267 da LC 214/2025).',
+        categoria: 'auditoria',
+        escopo: 'global',
+        usuario_id: adminId,
+        empresa_id: null,
+        criado_por_nome: 'Governança Fiscal',
+        criado_por_email: adminEmail,
+        is_padrao_sistema: 1,
+        configuracao_json: JSON.stringify({
+          fonte_dados: 'dfe_itens_documentos',
+          modo: 'agrupado',
+          dimensoes: ['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao'],
+          metricas: [
+            { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
+            { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
+            { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
+            { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
+            { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
+            { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
+            { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
+          ],
+          filtros: [
+            { campo: 'ncm', operador: 'contains', valor: '271' }
+          ],
+          ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+          limite: 1000
+        })
+      },
+      {
+        id: 'mod-matriz-cclasstrib-cst',
+        nome: 'Matriz Cruzada de IBS/CBS por cClassTrib e CST',
+        descricao: 'Consolidação das bases e tributos da Reforma Tributária agrupados por Classificação Tributária SVRS e CST.',
+        categoria: 'rtc',
+        escopo: 'global',
+        usuario_id: adminId,
+        empresa_id: null,
+        criado_por_nome: 'Governança Fiscal',
+        criado_por_email: adminEmail,
+        is_padrao_sistema: 1,
+        configuracao_json: JSON.stringify({
+          fonte_dados: 'dfe_itens_documentos',
+          modo: 'agrupado',
+          dimensoes: ['cclasstrib', 'cst_csosn', 'tipo_operacao'],
+          metricas: [
+            { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Total Líquido' },
+            { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total' },
+            { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total' },
+            { campo: 'id', agregacao: 'count', apelido: 'Contagem de Linhas' }
+          ],
+          filtros: [],
+          ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+          limite: 1000
+        })
+      },
+      {
+        id: 'mod-ranking-fornecedores-creditos',
+        nome: 'Ranking de Fornecedores por Volume Financeiro e Créditos',
+        descricao: 'Visão executiva dos principais parceiros comerciais por volume de aquisições e potencial de créditos de IBS/CBS.',
+        categoria: 'fiscal',
+        escopo: 'global',
+        usuario_id: adminId,
+        empresa_id: null,
+        criado_por_nome: 'Governança Fiscal',
+        criado_por_email: adminEmail,
+        is_padrao_sistema: 1,
+        configuracao_json: JSON.stringify({
+          fonte_dados: 'dfe_itens_documentos',
+          modo: 'agrupado',
+          dimensoes: ['fornecedor_cnpj', 'fornecedor_razao', 'fornecedor_uf'],
+          metricas: [
+            { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Volume Comprado (R$)' },
+            { campo: 'valor_ibs', agregacao: 'sum', apelido: 'Crédito IBS (R$)' },
+            { campo: 'valor_cbs', agregacao: 'sum', apelido: 'Crédito CBS (R$)' },
+            { campo: 'documento_id', agregacao: 'count_distinct', apelido: 'Qtd Notas' }
+          ],
+          filtros: [
+            { campo: 'tipo_operacao', operador: 'eq', valor: 'Entrada' }
+          ],
+          ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+          limite: 500
+        })
+      },
+      {
+        id: 'mod-analise-local-destino',
+        nome: 'Conformidade de Destino e Local da Operação (indOper)',
+        descricao: 'Análise geográfica das operações fiscais por UF de fornecedor, cliente e competência.',
+        categoria: 'fiscal',
+        escopo: 'global',
+        usuario_id: adminId,
+        empresa_id: null,
+        criado_por_nome: 'Governança Fiscal',
+        criado_por_email: adminEmail,
+        is_padrao_sistema: 1,
+        configuracao_json: JSON.stringify({
+          fonte_dados: 'dfe_documentos',
+          modo: 'agrupado',
+          dimensoes: ['fornecedor_uf', 'cliente_uf', 'tipo_operacao'],
+          metricas: [
+            { campo: 'valor_total', agregacao: 'sum', apelido: 'Valor Total dos Documentos' },
+            { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base Acumulada IBS' },
+            { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Destino' },
+            { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
+          ],
+          filtros: [],
+          ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
+          limite: 500
+        })
+      }
+    ];
+
+    const stmtModelo = db.prepare(`
+      INSERT OR REPLACE INTO relatorios_modelos_dinamicos (
+        id, nome, descricao, categoria, escopo, usuario_id, empresa_id, configuracao_json,
+        criado_por_nome, criado_por_email, is_padrao_sistema
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const m of defaultModelos) {
+      stmtModelo.run(
+        m.id, m.nome, m.descricao, m.categoria, m.escopo, m.usuario_id, m.empresa_id,
+        m.configuracao_json, m.criado_por_nome, m.criado_por_email, m.is_padrao_sistema
+      );
+    }
+    console.log(`📊 Seed de Modelos Dinâmicos executado: ${defaultModelos.length} modelos de fábrica criados.`);
+  } catch (err: any) {
+    console.warn('Aviso no seed de modelos dinâmicos:', err.message);
+  }
+}
+
 

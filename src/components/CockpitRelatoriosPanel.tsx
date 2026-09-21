@@ -14,15 +14,231 @@ import {
   CockpitAggregationType, CockpitFilterOperator
 } from '../types';
 
+const DEFAULT_COCKPIT_DATA_SOURCES: CockpitDataSource[] = [
+  {
+    id: 'dfe_itens_documentos',
+    nome: 'Itens de Documentos Fiscais (Detalhado)',
+    descricao: 'Linhas de produtos/serviços de NF-e, CT-e e NFS-e cruzadas com dados de cabeçalho e tributação RTC.',
+    campos: [
+      { key: 'id', label: 'ID Item', type: 'string', group: 'Identificação' },
+      { key: 'documento_id', label: 'ID Documento', type: 'string', group: 'Identificação' },
+      { key: 'item_nro', label: 'Nº Item', type: 'number', group: 'Identificação' },
+      { key: 'ncm', label: 'NCM', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'cclasstrib', label: 'cClassTrib (RTC)', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'cst_csosn', label: 'CST / CSOSN', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'cfop', label: 'CFOP', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'descricao_item', label: 'Descrição do Item', type: 'string', group: 'Produto / Serviço' },
+      { key: 'natureza_operacao', label: 'Natureza da Operação', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'quantidade', label: 'Quantidade', type: 'number', group: 'Quantidades', aggregatable: true },
+      { key: 'unidade', label: 'Unidade', type: 'string', group: 'Quantidades' },
+      { key: 'valor_bruto_item', label: 'Valor Bruto (R$)', type: 'number', group: 'Valores', aggregatable: true },
+      { key: 'desconto_incondicional', label: 'Desconto (R$)', type: 'number', group: 'Valores', aggregatable: true },
+      { key: 'frete_seguro_rateado', label: 'Frete/Seguro (R$)', type: 'number', group: 'Valores', aggregatable: true },
+      { key: 'valor_liquido_item', label: 'Valor Líquido (R$)', type: 'number', group: 'Valores', aggregatable: true },
+      { key: 'base_ibs', label: 'Base de Cálculo IBS', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'aliquota_ibs', label: 'Alíquota IBS (%)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'valor_ibs', label: 'Valor IBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'base_cbs', label: 'Base de Cálculo CBS', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'aliquota_cbs', label: 'Alíquota CBS (%)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'valor_cbs', label: 'Valor CBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'chave_acesso', label: 'Chave de Acesso', type: 'string', group: 'Documento' },
+      { key: 'tipo_doc', label: 'Tipo Doc (NF-e/CT-e/NFS-e)', type: 'badge', group: 'Documento' },
+      { key: 'tipo_operacao', label: 'Operação (Entrada/Saída)', type: 'badge', group: 'Documento' },
+      { key: 'numero_serie', label: 'Número / Série', type: 'string', group: 'Documento' },
+      { key: 'data_emissao', label: 'Data de Emissão', type: 'date', group: 'Documento' },
+      { key: 'competencia', label: 'Competência', type: 'string', group: 'Documento' },
+      { key: 'fornecedor_cnpj', label: 'CNPJ Emitente/Fornecedor', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'fornecedor_razao', label: 'Razão Social Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'fornecedor_uf', label: 'UF Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'fornecedor_municipio', label: 'Município Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'cliente_cnpj', label: 'CNPJ Destinatário/Cliente', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'cliente_razao', label: 'Razão Social Destinatário', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'cliente_uf', label: 'UF Destinatário', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'situacao_doc', label: 'Situação Documento', type: 'badge', group: 'Documento' }
+    ]
+  },
+  {
+    id: 'dfe_documentos',
+    nome: 'Documentos Fiscais (Cabeçalho Consolidado)',
+    descricao: 'Consolidação de valores, impostos e participantes por Documento Fiscal Eletrônico.',
+    campos: [
+      { key: 'id', label: 'ID Documento', type: 'string', group: 'Identificação' },
+      { key: 'chave_acesso', label: 'Chave de Acesso', type: 'string', group: 'Documento' },
+      { key: 'tipo_doc', label: 'Tipo Doc', type: 'badge', group: 'Documento' },
+      { key: 'tipo_operacao', label: 'Operação (Entrada/Saída)', type: 'badge', group: 'Documento' },
+      { key: 'numero_serie', label: 'Número / Série', type: 'string', group: 'Documento' },
+      { key: 'data_emissao', label: 'Data de Emissão', type: 'date', group: 'Documento' },
+      { key: 'competencia', label: 'Competência', type: 'string', group: 'Documento' },
+      { key: 'valor_total', label: 'Valor Total (R$)', type: 'number', group: 'Valores Totais', aggregatable: true },
+      { key: 'base_ibs', label: 'Base Total IBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'valor_ibs', label: 'Valor Total IBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'base_cbs', label: 'Base Total CBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'valor_cbs', label: 'Valor Total CBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      { key: 'valor_icms', label: 'ICMS (R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'valor_ipi', label: 'IPI (R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'valor_pis', label: 'PIS (R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'valor_cofins', label: 'COFINS (R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'valor_iss', label: 'ISS (R$)', type: 'number', group: 'Retenções', aggregatable: true },
+      { key: 'valor_irrf', label: 'IRRF (R$)', type: 'number', group: 'Retenções', aggregatable: true },
+      { key: 'fornecedor_cnpj', label: 'CNPJ Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'fornecedor_razao', label: 'Razão Social Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'fornecedor_uf', label: 'UF Emitente', type: 'string', group: 'Emitente / Fornecedor' },
+      { key: 'cliente_cnpj', label: 'CNPJ Destinatário', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'cliente_razao', label: 'Razão Social Destinatário', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'cliente_uf', label: 'UF Destinatário', type: 'string', group: 'Destinatário / Cliente' },
+      { key: 'situacao_doc', label: 'Situação SEFAZ', type: 'badge', group: 'Documento' }
+    ]
+  },
+  {
+    id: 'eventos_transmitidos',
+    nome: 'Central de Eventos Fiscais & Manifestações',
+    descricao: 'Histórico de eventos transmitidos para a SEFAZ (ciência da emissão, confirmação, cancelamento).',
+    campos: [
+      { key: 'id', label: 'ID Evento', type: 'string', group: 'Identificação' },
+      { key: 'chave_acesso', label: 'Chave de Acesso', type: 'string', group: 'Documento' },
+      { key: 'tipo_dfe', label: 'Tipo DF-e', type: 'badge', group: 'Evento' },
+      { key: 'codigo_evento', label: 'Código do Evento', type: 'string', group: 'Evento' },
+      { key: 'nome_evento', label: 'Nome do Evento', type: 'string', group: 'Evento' },
+      { key: 'categoria', label: 'Categoria', type: 'badge', group: 'Evento' },
+      { key: 'status', label: 'Status', type: 'badge', group: 'Evento' },
+      { key: 'protocolo_sefaz', label: 'Protocolo SEFAZ', type: 'string', group: 'SEFAZ' },
+      { key: 'codigo_retorno', label: 'Cód Retorno SEFAZ', type: 'string', group: 'SEFAZ' },
+      { key: 'motivo_retorno', label: 'Motivo Retorno', type: 'string', group: 'SEFAZ' },
+      { key: 'data_hora', label: 'Data e Hora', type: 'date', group: 'Data/Hora' }
+    ]
+  },
+  {
+    id: 'apuracao_extrato_cc',
+    nome: 'Apuração Assistida (Conta Corrente Fiscal RTC)',
+    descricao: 'Lançamentos detalhados do Conta Corrente Fiscal CGIBS/RTC (débitos, créditos e saldos de apuração).',
+    campos: [
+      { key: 'id', label: 'ID Lançamento', type: 'string', group: 'Identificação' },
+      { key: 'operacao_id', label: 'ID Operação', type: 'string', group: 'Identificação' },
+      { key: 'chave_acesso', label: 'Chave da Operação (DF-e)', type: 'string', group: 'Operação' },
+      { key: 'tipo_operacao', label: 'Tipo de Operação', type: 'badge', group: 'Operação' },
+      { key: 'mov', label: 'Movimentação / Evento', type: 'badge', group: 'Operação' },
+      { key: 'dth_lancto', label: 'Data/Hora do Lançamento', type: 'date', group: 'Data/Hora' },
+      { key: 'dth_emissao', label: 'Data de Emissão', type: 'date', group: 'Data/Hora' },
+      { key: 'cnpj_fornecedor', label: 'CNPJ Fornecedor', type: 'string', group: 'Participantes' },
+      { key: 'cnpj_adquirente', label: 'CNPJ Adquirente', type: 'string', group: 'Participantes' },
+      { key: 'debito_em_aberto', label: 'Débito em Aberto (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'debito_extinto', label: 'Débito Extinto (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'credito_a_propriar', label: 'Crédito a Propriar (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'credito_nao_utilizado', label: 'Crédito Não Utilizado (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'credito_utilizado', label: 'Crédito Utilizado (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'recurso_financeiro_disponivel_para_transferencia', label: 'Recurso Disponível p/ Transf. (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'recurso_financeiro_a_transferir', label: 'Recurso a Transferir (R$)', type: 'number', group: 'Valores CGIBS', aggregatable: true },
+      { key: 'arquivo_origem', label: 'Arquivo de Origem', type: 'string', group: 'Metadados' }
+    ]
+  }
+];
+
+const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
+  {
+    id: 'padrao-ncm-ibscbs',
+    nome: 'Resumo de Itens por NCM & Alíquotas IBS/CBS',
+    descricao: 'Pivot agrupada por NCM, cClassTrib, CST e Fornecedor com somatório de bases e alíquotas da Reforma Tributária.',
+    categoria: 'fiscal',
+    escopo: 'global',
+    usuario_id: 'sistema',
+    is_padrao_sistema: 1,
+    podeEditar: false,
+    configuracao: {
+      fonte_dados: 'dfe_itens_documentos',
+      modo: 'agrupado',
+      dimensoes: ['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao'],
+      metricas: [
+        { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
+        { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
+        { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
+        { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
+        { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
+        { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
+      ],
+      ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+      limite: 1000
+    }
+  },
+  {
+    id: 'padrao-fornecedor-uf',
+    nome: 'Ranking de Compras por Fornecedor & UF',
+    descricao: 'Visão consolidada de valores totais de compras agrupadas por parceiro comercial e estado de origem.',
+    categoria: 'gerencial',
+    escopo: 'global',
+    usuario_id: 'sistema',
+    is_padrao_sistema: 1,
+    podeEditar: false,
+    configuracao: {
+      fonte_dados: 'dfe_documentos',
+      modo: 'agrupado',
+      dimensoes: ['fornecedor_razao', 'fornecedor_uf', 'tipo_operacao'],
+      metricas: [
+        { campo: 'valor_total', agregacao: 'sum', apelido: 'Total Compras' },
+        { campo: 'valor_icms', agregacao: 'sum', apelido: 'ICMS Destacado' },
+        { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total' },
+        { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total' },
+        { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
+      ],
+      ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
+      limite: 500
+    }
+  },
+  {
+    id: 'padrao-manifestacao-status',
+    nome: 'Histórico de Manifestação & Eventos SEFAZ',
+    descricao: 'Auditoria de confirmação de operação, ciência da emissão e eventos transmitidos por status.',
+    categoria: 'compliance',
+    escopo: 'global',
+    usuario_id: 'sistema',
+    is_padrao_sistema: 1,
+    podeEditar: false,
+    configuracao: {
+      fonte_dados: 'eventos_transmitidos',
+      modo: 'agrupado',
+      dimensoes: ['tipo_dfe', 'nome_evento', 'status'],
+      metricas: [
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Eventos' }
+      ],
+      ordenacao: [{ campo: 'id', direcao: 'desc' }],
+      limite: 500
+    }
+  },
+  {
+    id: 'padrao-cc-cgibs',
+    nome: 'Extrato de Débitos e Créditos Conta Corrente RTC',
+    descricao: 'Consolidação de débitos extintos e créditos a apropriar no Ledger CGIBS.',
+    categoria: 'rtc',
+    escopo: 'global',
+    usuario_id: 'sistema',
+    is_padrao_sistema: 1,
+    podeEditar: false,
+    configuracao: {
+      fonte_dados: 'apuracao_extrato_cc',
+      modo: 'agrupado',
+      dimensoes: ['tipo_operacao', 'mov'],
+      metricas: [
+        { campo: 'debito_em_aberto', agregacao: 'sum', apelido: 'Débito em Aberto' },
+        { campo: 'debito_extinto', agregacao: 'sum', apelido: 'Débito Extinto' },
+        { campo: 'credito_a_propriar', agregacao: 'sum', apelido: 'Crédito a Propriar' },
+        { campo: 'credito_utilizado', agregacao: 'sum', apelido: 'Crédito Utilizado' },
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Lançamentos' }
+      ],
+      ordenacao: [{ campo: 'debito_extinto', direcao: 'desc' }],
+      limite: 500
+    }
+  }
+];
+
 export const CockpitRelatoriosPanel: React.FC = () => {
   const { user, empresaAtiva } = useAuth();
   const { get, post, put, del } = useApi();
 
   // Estados de Metadados
-  const [fontes, setFontes] = useState<CockpitDataSource[]>([]);
-  const [modelos, setModelos] = useState<CockpitModelo[]>([]);
-  const [modeloAtivo, setModeloAtivo] = useState<CockpitModelo | null>(null);
-  const [isLoadingMeta, setIsLoadingMeta] = useState<boolean>(true);
+  const [fontes, setFontes] = useState<CockpitDataSource[]>(DEFAULT_COCKPIT_DATA_SOURCES);
+  const [modelos, setModelos] = useState<CockpitModelo[]>(DEFAULT_COCKPIT_MODELS);
+  const [modeloAtivo, setModeloAtivo] = useState<CockpitModelo | null>(DEFAULT_COCKPIT_MODELS[0]);
+  const [isLoadingMeta, setIsLoadingMeta] = useState<boolean>(false);
 
   // Estados de Construção da Consulta
   const [fonteSelecionada, setFonteSelecionada] = useState<string>('dfe_itens_documentos');
@@ -88,12 +304,17 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         get('/cockpit/modelos')
       ]);
 
-      if (resFontes.ok && resFontes.data?.fontes) {
+      if (resFontes.ok && resFontes.data?.fontes && resFontes.data.fontes.length > 0) {
         setFontes(resFontes.data.fontes);
       }
 
-      if (resModelos.ok && resModelos.data?.modelos) {
-        setModelos(resModelos.data.modelos);
+      if (resModelos.ok && resModelos.data?.modelos && resModelos.data.modelos.length > 0) {
+        setModelos(prev => {
+          const serverMods = resModelos.data.modelos;
+          const serverIds = new Set(serverMods.map((m: any) => m.id));
+          const uniqueDefaults = prev.filter(m => !serverIds.has(m.id));
+          return [...serverMods, ...uniqueDefaults];
+        });
       }
     } catch (err: any) {
       console.error('Erro ao carregar fontes e modelos do cockpit:', err);
@@ -118,6 +339,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
 
     try {
       const payload = {
+        empresa_id: empresaAtiva.id,
         fonte_dados: fonteSelecionada,
         modo,
         dimensoes,

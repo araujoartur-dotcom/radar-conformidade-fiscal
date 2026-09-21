@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "test:supabase": "tsx scripts/test-supabase-connection.ts",
     "test:sanity": "tsx scripts/verify-production-sanity.ts",
+    "test:clean-db": "tsx scripts/test-clean-db.ts",
     "ingest": "tsx scripts/ingest-xmls-fast.ts",
     "seed:dev": "tsx scripts/seed-dev-mock.ts"
   },
@@ -41,7 +42,8 @@
     "vite": "^6.2.3",
     "xlsx": "^0.18.5",
     "xml-crypto": "^6.1.2",
-    "xml2js": "^0.6.2"
+    "xml2js": "^0.6.2",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -56,8 +58,10 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
