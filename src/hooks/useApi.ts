@@ -70,9 +70,13 @@ export function useApi() {
         let errDesc = data?.error || data?.message;
         if (!errDesc) {
           if (response.status === 504) {
-            errDesc = 'Erro 504 (Gateway Timeout): Os webservices governamentais demoraram mais de 25 segundos para responder.';
+            errDesc = cleanEndpoint.includes('/ai')
+              ? 'Erro 504 (Gateway Timeout): O serviço de Inteligência Artificial demorou mais de 25 segundos para responder.'
+              : 'Erro 504 (Gateway Timeout): Os webservices demoraram mais de 25 segundos para responder.';
           } else if (response.status === 502) {
-            errDesc = 'Erro 502 (Bad Gateway): O servidor intermediário ou webservice governamental está temporariamente indisponível.';
+            errDesc = cleanEndpoint.includes('/ai')
+              ? 'Erro 502 (Bad Gateway): O serviço de Inteligência Artificial está temporariamente indisponível.'
+              : 'Erro 502 (Bad Gateway): O servidor intermediário ou webservice governamental está temporariamente indisponível.';
           } else if (response.status === 503) {
             errDesc = 'Erro 503 (Serviço Indisponível): O serviço está temporariamente sobrecarregado ou em manutenção.';
           } else {

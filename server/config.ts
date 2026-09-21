@@ -169,9 +169,11 @@ export const SUPABASE = {
 // INTELIGÊNCIA ARTIFICIAL FISCAL (GOOGLE GEMINI)
 // ============================================================
 export const AI_CONFIG = {
+  ENABLED: process.env.ENABLE_AI_COPILOT === 'true', // Desativado temporariamente por padrão (previsão mantida em código)
   GEMINI_API_KEY: (process.env.GEMINI_API_KEY || '').trim(),
-  MODEL: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
-  FALLBACK_MODELS: ['gemini-3.5-flash', 'gemini-flash-latest'],
+  MODEL: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview',
+  FALLBACK_MODELS: ['gemini-3.1-flash-lite', 'gemini-flash-latest'],
+  TIMEOUT_MS: 12000, // Timeout rígido de 12s para proteção anti-504 (impede estouro do proxy de 25s)
   IS_CONFIGURED: Boolean((process.env.GEMINI_API_KEY || '').trim()),
 } as const;
 

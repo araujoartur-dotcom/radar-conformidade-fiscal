@@ -133,6 +133,24 @@ const DEFAULT_COCKPIT_DATA_SOURCES: CockpitDataSource[] = [
   }
 ];
 
+const ANOS_DISPONIVEIS = ['2026', '2025', '2024', '2023', '2022', 'todos'] as const;
+
+const MESES = [
+  { valor: 'todos', label: 'Ano Todo' },
+  { valor: '01', label: 'Jan' },
+  { valor: '02', label: 'Fev' },
+  { valor: '03', label: 'Mar' },
+  { valor: '04', label: 'Abr' },
+  { valor: '05', label: 'Mai' },
+  { valor: '06', label: 'Jun' },
+  { valor: '07', label: 'Jul' },
+  { valor: '08', label: 'Ago' },
+  { valor: '09', label: 'Set' },
+  { valor: '10', label: 'Out' },
+  { valor: '11', label: 'Nov' },
+  { valor: '12', label: 'Dez' }
+] as const;
+
 const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
   {
     id: 'padrao-ncm-ibscbs',
@@ -157,7 +175,8 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
         { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
       ],
       ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
-      limite: 1000
+      limite: 0,
+      periodo: { ano: '2026', mes: 'todos' }
     }
   },
   {
@@ -181,7 +200,8 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
         { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
       ],
       ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
-      limite: 500
+      limite: 0,
+      periodo: { ano: '2026', mes: 'todos' }
     }
   },
   {
@@ -201,7 +221,8 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
         { campo: 'id', agregacao: 'count', apelido: 'Qtd Eventos' }
       ],
       ordenacao: [{ campo: 'id', direcao: 'desc' }],
-      limite: 500
+      limite: 0,
+      periodo: { ano: '2026', mes: 'todos' }
     }
   },
   {
@@ -225,7 +246,8 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
         { campo: 'id', agregacao: 'count', apelido: 'Qtd Lançamentos' }
       ],
       ordenacao: [{ campo: 'debito_extinto', direcao: 'desc' }],
-      limite: 500
+      limite: 0,
+      periodo: { ano: '2026', mes: 'todos' }
     }
   }
 ];
@@ -239,6 +261,10 @@ export const CockpitRelatoriosPanel: React.FC = () => {
   const [modelos, setModelos] = useState<CockpitModelo[]>(DEFAULT_COCKPIT_MODELS);
   const [modeloAtivo, setModeloAtivo] = useState<CockpitModelo | null>(DEFAULT_COCKPIT_MODELS[0]);
   const [isLoadingMeta, setIsLoadingMeta] = useState<boolean>(false);
+
+  // Estados de Período da Pesquisa (Competência)
+  const [anoSelecionado, setAnoSelecionado] = useState<string>('2026');
+  const [mesSelecionado, setMesSelecionado] = useState<string>('todos');
 
   // Estados de Construção da Consulta
   const [fonteSelecionada, setFonteSelecionada] = useState<string>('dfe_itens_documentos');
@@ -257,7 +283,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
   const [ordenacao, setOrdenacao] = useState<CockpitOrdenacao[]>([
     { campo: 'valor_liquido_item', direcao: 'desc' }
   ]);
-  const [limite, setLimite] = useState<number>(1000);
+  const [limite, setLimite] = useState<number>(0);
 
   // Estados de Execução & Resultados
   const [isExecutando, setIsExecutando] = useState<boolean>(false);
@@ -328,11 +354,14 @@ export const CockpitRelatoriosPanel: React.FC = () => {
   }, [carregarMetadados]);
 
   // Executar a consulta dinâmica
-  const executarConsulta = useCallback(async () => {
+  const executarConsulta = useCallback(async (anoOverride?: string, mesOverride?: string) => {
     if (!empresaAtiva?.id) {
       setExecErro('Por favor, selecione uma empresa ativa para consultar os dados com isolamento multi-tenant.');
       return;
     }
+
+    const ano = anoOverride !== undefined ? anoOverride : anoSelecionado;
+    const mes = mesOverride !== undefined ? mesOverride : mesSelecionado;
 
     setIsExecutando(true);
     setExecErro(null);
@@ -346,7 +375,11 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         metricas: modo === 'agrupado' ? metricas : [],
         filtros,
         ordenacao,
-        limite
+        limite,
+        periodo: {
+          ano,
+          mes
+        }
       };
 
       const res = await post('/cockpit/executar', payload);
@@ -368,7 +401,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     } finally {
       setIsExecutando(false);
     }
-  }, [empresaAtiva?.id, fonteSelecionada, modo, dimensoes, metricas, filtros, ordenacao, limite, post]);
+  }, [empresaAtiva?.id, fonteSelecionada, modo, dimensoes, metricas, filtros, ordenacao, limite, anoSelecionado, mesSelecionado, post]);
 
   // Auto-executar consulta ao inicializar ou quando mudar modelo ativo
   useEffect(() => {
@@ -388,7 +421,9 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     if (cfg.metricas) setMetricas(cfg.metricas);
     if (cfg.filtros) setFiltros(cfg.filtros);
     if (cfg.ordenacao) setOrdenacao(cfg.ordenacao);
-    if (cfg.limite) setLimite(cfg.limite);
+    setLimite(cfg.limite !== undefined ? cfg.limite : 0);
+    if (cfg.periodo?.ano) setAnoSelecionado(String(cfg.periodo.ano));
+    if (cfg.periodo?.mes) setMesSelecionado(String(cfg.periodo.mes));
 
     setIsGerenciarModelosOpen(false);
     setSucessoFeedback(`Modelo '${mod.nome}' carregado com sucesso!`);
@@ -422,7 +457,11 @@ export const CockpitRelatoriosPanel: React.FC = () => {
           metricas,
           filtros,
           ordenacao,
-          limite
+          limite,
+          periodo: {
+            ano: anoSelecionado,
+            mes: mesSelecionado
+          }
         }
       };
 
@@ -481,7 +520,11 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         metricas: modo === 'agrupado' ? metricas : [],
         filtros,
         ordenacao,
-        limite: 20000
+        limite: 0,
+        periodo: {
+          ano: anoSelecionado,
+          mes: mesSelecionado
+        }
       };
 
       const token = localStorage.getItem('@RadarFiscal:token') || '';
@@ -734,6 +777,72 @@ export const CockpitRelatoriosPanel: React.FC = () => {
               <span className="text-[10px] text-slate-400 font-mono">
                 {empresaAtiva?.razaoSocial || 'Sem empresa'}
               </span>
+            </div>
+
+            {/* 0. Período de Pesquisa (Competência Ano/Mês) */}
+            <div className="p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Período da Pesquisa (Competência)</span>
+                </label>
+                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
+                  {anoSelecionado === 'todos' ? 'Todos os Anos' : anoSelecionado}
+                  {mesSelecionado !== 'todos' ? ` / ${MESES.find(m => m.valor === mesSelecionado)?.label || mesSelecionado}` : ' (Ano Todo)'}
+                </span>
+              </div>
+
+              {/* Seletor de Ano */}
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1 font-semibold uppercase tracking-wider">
+                  Ano Fiscal:
+                </span>
+                <div className="grid grid-cols-6 gap-1">
+                  {ANOS_DISPONIVEIS.map(ano => (
+                    <button
+                      key={ano}
+                      type="button"
+                      onClick={() => {
+                        setAnoSelecionado(ano);
+                        executarConsulta(ano, mesSelecionado);
+                      }}
+                      className={`py-1 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer ${
+                        anoSelecionado === ano
+                          ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30 font-extrabold'
+                          : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
+                      }`}
+                    >
+                      {ano === 'todos' ? 'Todos' : ano}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Seletor de Mês */}
+              <div>
+                <span className="text-[10px] text-slate-400 block mb-1 font-semibold uppercase tracking-wider">
+                  Mês / Competência:
+                </span>
+                <div className="grid grid-cols-4 sm:grid-cols-4 gap-1">
+                  {MESES.map(mes => (
+                    <button
+                      key={mes.valor}
+                      type="button"
+                      onClick={() => {
+                        setMesSelecionado(mes.valor);
+                        executarConsulta(anoSelecionado, mes.valor);
+                      }}
+                      className={`py-1 px-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer text-center ${
+                        mesSelecionado === mes.valor
+                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md border border-cyan-400/40 font-bold'
+                          : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/70 hover:text-slate-200 border border-slate-700/40'
+                      }`}
+                    >
+                      {mes.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* 1. Fonte de Dados */}
@@ -1007,22 +1116,23 @@ export const CockpitRelatoriosPanel: React.FC = () => {
               )}
             </div>
 
-            {/* 6. Ordenação & Limite Seguro */}
+            {/* 6. Ordenação & Limite da Extração */}
             <div className="grid grid-cols-2 gap-2 border-t border-slate-800/80 pt-3">
               <div>
                 <label className="text-[10px] font-semibold text-slate-400 block mb-1">
-                  Limite Seguro de Linhas
+                  Limite da Extração
                 </label>
                 <select
                   value={limite}
                   onChange={e => setLimite(Number(e.target.value))}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 font-mono"
                 >
-                  <option value={200}>200 linhas</option>
-                  <option value={500}>500 linhas</option>
+                  <option value={0}>Sem Limite (Todo o Período)</option>
+                  <option value={25000}>25.000 linhas</option>
+                  <option value={10000}>10.000 linhas</option>
+                  <option value={5000}>5.000 linhas</option>
                   <option value={1000}>1.000 linhas</option>
-                  <option value={2500}>2.500 linhas</option>
-                  <option value={5000}>5.000 linhas (máx)</option>
+                  <option value={500}>500 linhas</option>
                 </select>
               </div>
 
@@ -1047,7 +1157,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
             {/* Botão Final de Execução */}
             <button
               type="button"
-              onClick={executarConsulta}
+              onClick={() => executarConsulta()}
               disabled={isExecutando}
               className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
             >
@@ -1064,13 +1174,31 @@ export const CockpitRelatoriosPanel: React.FC = () => {
           <div className="glass-panel-glow p-4 rounded-2xl border border-slate-800 space-y-3">
             {/* Barra de Status e Pesquisa Local */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <div className="flex items-center gap-1.5 text-xs text-slate-300">
                   <span className="font-bold text-white">
                     {linhasFiltradas.length.toLocaleString('pt-BR')}
                   </span>
                   <span>registro(s) retornado(s)</span>
                 </div>
+
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20">
+                  <Calendar className="w-3 h-3 text-cyan-400" />
+                  <span>
+                    {anoSelecionado === 'todos' ? 'Todos os Anos' : anoSelecionado}
+                    {mesSelecionado !== 'todos' ? ` / ${MESES.find(m => m.valor === mesSelecionado)?.label || mesSelecionado}` : ' (Ano Todo)'}
+                  </span>
+                </div>
+
+                {limite === 0 ? (
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    Sem Limite
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/60">
+                    Máx {limite.toLocaleString('pt-BR')}
+                  </span>
+                )}
 
                 {resultado && (
                   <div className="flex items-center gap-1 text-[11px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">

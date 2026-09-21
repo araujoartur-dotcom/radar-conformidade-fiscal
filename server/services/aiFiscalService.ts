@@ -661,12 +661,12 @@ export async function processarMensagemFiscal(
 
     // Lista de modelos com fallback automático contra erros 429 (cota) e 503 (alta demanda)
     const modelCandidates = [
-      AI_CONFIG.MODEL || 'gemini-3.6-flash',
-      ...( ((AI_CONFIG as any).FALLBACK_MODELS as string[]) || ['gemini-3.5-flash', 'gemini-flash-latest'] )
+      AI_CONFIG.MODEL || 'gemini-3.1-flash-lite-preview',
+      ...( ((AI_CONFIG as any).FALLBACK_MODELS as string[]) || ['gemini-3.1-flash-lite', 'gemini-flash-latest'] )
     ];
 
-    // Função auxiliar com retry e alternância automática de modelos (Fallback resiliente)
-    async function callGeminiWithRetry(aiClient: GoogleGenAI, params: any, maxRetries = 2): Promise<any> {
+    // Função auxiliar com retry e alternância automática de modelos (Timeout de segurança anti-504 de 12s)
+    async function callGeminiWithRetry(aiClient: GoogleGenAI, params: any, maxRetries = 1): Promise<any> {
       let lastErr: any = null;
 
       for (const modelToUse of modelCandidates) {
@@ -675,15 +675,38 @@ export async function processarMensagemFiscal(
 
         while (attempt <= maxRetries) {
           try {
-            return await aiClient.models.generateContent(currentParams);
+            let timerId: any = null;
+            const timeoutPromise = new Promise((_, reject) => {
+              timerId = setTimeout(() => {
+                const timeoutErr: any = new Error('TIMEOUT_AI: A inteligência artificial demorou mais de 12 segundos para responder.');
+                timeoutErr.status = 504;
+                reject(timeoutErr);
+              }, 12000);
+            });
+
+            try {
+              const result = await Promise.race([
+                aiClient.models.generateContent(currentParams),
+                timeoutPromise
+              ]);
+              return result;
+            } finally {
+              if (timerId) clearTimeout(timerId);
+            }
           } catch (err: any) {
             lastErr = err;
             const is503 = err?.status === 503 || err?.message?.includes('503') || err?.message?.includes('high demand') || err?.message?.includes('UNAVAILABLE');
             const is429 = err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('Quota exceeded') || err?.message?.includes('RESOURCE_EXHAUSTED');
+            const isTimeout = err?.message?.includes('TIMEOUT_AI') || err?.status === 504;
+
+            if (isTimeout) {
+              console.warn(`⏱️ [Gemini Timeout] Modelo ${modelToUse} excedeu 12s. Tentando modelo reserva...`);
+              break; // Pula imediatamente para o próximo modelo sem esperar retentativa longa
+            }
 
             if (is503 && attempt < maxRetries) {
               attempt++;
-              const delay = attempt * 1200;
+              const delay = attempt * 1000;
               console.warn(`⚠️ [Gemini 503] Alta demanda temporária em ${modelToUse}. Tentativa ${attempt} após ${delay}ms...`);
               await new Promise(r => setTimeout(r, delay));
               continue;

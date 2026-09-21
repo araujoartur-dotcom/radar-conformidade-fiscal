@@ -43,10 +43,15 @@ function checkUserRateLimit(userId: string): boolean {
 router.get('/status', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   res.json({
     success: true,
-    isConfigured: AI_CONFIG.IS_CONFIGURED,
+    enabled: AI_CONFIG.ENABLED,
+    isConfigured: AI_CONFIG.ENABLED && AI_CONFIG.IS_CONFIGURED,
+    status: AI_CONFIG.ENABLED ? (AI_CONFIG.IS_CONFIGURED ? 'online' : 'unconfigured') : 'maintenance',
     model: AI_CONFIG.MODEL,
     empresaAtivaId: req.user?.empresaAtivaId || null,
-    versaoCopiloto: '3.0 - RTC & Compliance Integral'
+    versaoCopiloto: '3.0 - RTC & Compliance Integral',
+    mensagem: AI_CONFIG.ENABLED
+      ? 'Auditor AI disponível.'
+      : 'O Auditor AI está temporariamente em manutenção para aprimoramento de infraestrutura.'
   });
 });
 
@@ -56,6 +61,15 @@ router.get('/status', requireAuth, (req: AuthenticatedRequest, res: Response) =>
  */
 router.post('/chat', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Verificação de status da feature flag
+    if (!AI_CONFIG.ENABLED) {
+      res.status(503).json({
+        success: false,
+        error: 'O Auditor AI está temporariamente desativado para aprimoramento de infraestrutura e calibração de modelos tributários da LC 214/2025.'
+      });
+      return;
+    }
+
     const userId = req.user?.userId;
     const empresaAtivaId = req.user?.empresaAtivaId || (req.body.empresaId as string);
 

@@ -19,6 +19,7 @@ import { v4 as uuid } from 'uuid';
 import * as XLSX from 'xlsx';
 import { requireAuth, AuthenticatedRequest, logAuditAction } from '../middleware/auth';
 import { getDatabase } from '../db/database';
+import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
 import { getBrasiliaTimestamp } from '../utils/timezone';
 
 const router = Router();
@@ -351,9 +352,15 @@ function buildSafeQuery(args: BuildQueryArgs): {
     sql += ` ORDER BY [${selectColumns[0].key}] ASC`;
   }
 
-  // Limite com proteção contra sobrecarga (Circuit Breaker)
-  const maxSafeLimit = Math.min(Number(args.limite) || 1000, 5000);
-  sql += ` LIMIT ${maxSafeLimit}`;
+  // Limite de linhas (0 = Sem Limite / Todo o Período pesquisado)
+  const rawLimit = Number(args.limite);
+  if (rawLimit > 0) {
+    sql += ` LIMIT ${Math.min(rawLimit, 100000)}`;
+  } else if (rawLimit === 0) {
+    sql += ` LIMIT 100000`;
+  } else {
+    sql += ` LIMIT 10000`;
+  }
 
   if (args.offset && Number(args.offset) > 0) {
     sql += ` OFFSET ${Number(args.offset)}`;
@@ -712,16 +719,317 @@ router.delete('/modelos/:id', requireAuth, (req: AuthenticatedRequest, res: Resp
   }
 });
 
+interface SupabaseCockpitArgs {
+  fonte_dados: string;
+  modo?: 'agrupado' | 'detalhado';
+  dimensoes?: string[];
+  metricas?: QueryMetrica[];
+  filtros?: QueryFiltro[];
+  ordenacao?: QueryOrdenacao[];
+  limite?: number;
+  offset?: number;
+  activeEmpresaId: string;
+  periodo?: {
+    ano?: string | number;
+    mes?: string | number;
+  };
+}
+
+async function executeSupabaseCockpitQuery(args: SupabaseCockpitArgs): Promise<{
+  rows: any[];
+  columns: { key: string; label: string; type: string }[];
+  totals: Record<string, number>;
+  totalCount: number;
+  executionTimeMs: number;
+}> {
+  const startTime = Date.now();
+  const source = DATA_SOURCES[args.fonte_dados];
+  if (!source) {
+    throw new Error(`Fonte de dados '${args.fonte_dados}' inválida ou não suportada.`);
+  }
+
+  const supabase = getSupabaseAdmin();
+  if (!supabase) {
+    throw new Error('Conexão Supabase não configurada no servidor.');
+  }
+
+  const modo = args.modo || 'detalhado';
+  const dimensoes = (args.dimensoes || []).filter(d => !!source.campos[d]);
+  const metricas = (args.metricas || []).filter(m => !!source.campos[m.campo]);
+  const filtros = (args.filtros || []).filter(f => !!source.campos[f.campo]);
+  const ordenacao = (args.ordenacao || []).filter(o => !!source.campos[o.campo]);
+
+  // 0 ou valor negativo significa sem limite (todo o período)
+  const effectiveLimit = (!args.limite || Number(args.limite) <= 0) ? 100000 : Math.min(Number(args.limite), 100000);
+  const pageSize = 1000;
+  let allRawRows: any[] = [];
+  let page = 0;
+
+  if (args.fonte_dados === 'dfe_documentos') {
+    let query = supabase.from('dfe_documentos').select('*').eq('empresa_id', args.activeEmpresaId);
+
+    // Filtro de período (Ano / Mês)
+    if (args.periodo?.ano && args.periodo.ano !== 'todos') {
+      const anoStr = String(args.periodo.ano);
+      if (args.periodo.mes && args.periodo.mes !== 'todos') {
+        const mesStr = String(args.periodo.mes).padStart(2, '0');
+        query = query.eq('competencia', `${anoStr}-${mesStr}`);
+      } else {
+        query = query.gte('data_emissao', `${anoStr}-01-01T00:00:00.000Z`).lte('data_emissao', `${anoStr}-12-31T23:59:59.999Z`);
+      }
+    }
+
+    // Filtros customizados
+    for (const f of filtros) {
+      if (f.operador === 'eq') query = query.eq(f.campo, f.valor);
+      else if (f.operador === 'neq') query = query.neq(f.campo, f.valor);
+      else if (f.operador === 'contains') query = query.ilike(f.campo, `%${f.valor}%`);
+      else if (f.operador === 'starts_with') query = query.ilike(f.campo, `${f.valor}%`);
+      else if (f.operador === 'gt') query = query.gt(f.campo, f.valor);
+      else if (f.operador === 'gte') query = query.gte(f.campo, f.valor);
+      else if (f.operador === 'lt') query = query.lt(f.campo, f.valor);
+      else if (f.operador === 'lte') query = query.lte(f.campo, f.valor);
+      else if (f.operador === 'is_null') query = query.is(f.campo, null);
+      else if (f.operador === 'is_not_null') query = query.not(f.campo, 'is', null);
+      else if (f.operador === 'in' && Array.isArray(f.valor)) query = query.in(f.campo, f.valor);
+    }
+
+    while (allRawRows.length < effectiveLimit) {
+      const from = page * pageSize;
+      const to = Math.min(from + pageSize - 1, effectiveLimit - 1);
+      const { data, error } = await query.range(from, to);
+      if (error) {
+        console.error('❌ [Supabase Cockpit] Erro na consulta dfe_documentos:', error);
+        throw error;
+      }
+      if (!data || data.length === 0) break;
+      allRawRows.push(...data);
+      if (data.length < pageSize) break;
+      page++;
+    }
+
+  } else if (args.fonte_dados === 'dfe_itens_documentos') {
+    let query = supabase.from('dfe_itens')
+      .select('*, dfe_documentos!inner(id, empresa_id, tipo_doc, tipo_operacao, numero_serie, data_emissao, competencia, fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio, cliente_cnpj, cliente_razao, cliente_uf, situacao_doc, chave_acesso)')
+      .eq('dfe_documentos.empresa_id', args.activeEmpresaId);
+
+    // Filtro de período (Ano / Mês)
+    if (args.periodo?.ano && args.periodo.ano !== 'todos') {
+      const anoStr = String(args.periodo.ano);
+      if (args.periodo.mes && args.periodo.mes !== 'todos') {
+        const mesStr = String(args.periodo.mes).padStart(2, '0');
+        query = query.eq('dfe_documentos.competencia', `${anoStr}-${mesStr}`);
+      } else {
+        query = query.gte('dfe_documentos.data_emissao', `${anoStr}-01-01T00:00:00.000Z`).lte('dfe_documentos.data_emissao', `${anoStr}-12-31T23:59:59.999Z`);
+      }
+    }
+
+    // Filtros customizados
+    for (const f of filtros) {
+      const fieldDef = source.campos[f.campo];
+      const isDocCol = fieldDef?.sqlExpr?.startsWith('d.');
+      const colName = isDocCol ? `dfe_documentos.${f.campo}` : f.campo;
+
+      if (f.operador === 'eq') query = query.eq(colName, f.valor);
+      else if (f.operador === 'neq') query = query.neq(colName, f.valor);
+      else if (f.operador === 'contains') query = query.ilike(colName, `%${f.valor}%`);
+      else if (f.operador === 'starts_with') query = query.ilike(colName, `${f.valor}%`);
+      else if (f.operador === 'gt') query = query.gt(colName, f.valor);
+      else if (f.operador === 'gte') query = query.gte(colName, f.valor);
+      else if (f.operador === 'lt') query = query.lt(colName, f.valor);
+      else if (f.operador === 'lte') query = query.lte(colName, f.valor);
+      else if (f.operador === 'is_null') query = query.is(colName, null);
+      else if (f.operador === 'is_not_null') query = query.not(colName, 'is', null);
+      else if (f.operador === 'in' && Array.isArray(f.valor)) query = query.in(colName, f.valor);
+    }
+
+    while (allRawRows.length < effectiveLimit) {
+      const from = page * pageSize;
+      const to = Math.min(from + pageSize - 1, effectiveLimit - 1);
+      const { data, error } = await query.range(from, to);
+      if (error) {
+        console.error('❌ [Supabase Cockpit] Erro na consulta dfe_itens:', error);
+        throw error;
+      }
+      if (!data || data.length === 0) break;
+      allRawRows.push(...data);
+      if (data.length < pageSize) break;
+      page++;
+    }
+
+  } else if (args.fonte_dados === 'eventos_transmitidos') {
+    let query = supabase.from('eventos_transmitidos').select('*').eq('empresa_id', args.activeEmpresaId);
+
+    while (allRawRows.length < effectiveLimit) {
+      const from = page * pageSize;
+      const to = Math.min(from + pageSize - 1, effectiveLimit - 1);
+      const { data, error } = await query.range(from, to);
+      if (error) {
+        console.error('❌ [Supabase Cockpit] Erro na consulta eventos:', error);
+        throw error;
+      }
+      if (!data || data.length === 0) break;
+      allRawRows.push(...data);
+      if (data.length < pageSize) break;
+      page++;
+    }
+  } else {
+    try {
+      const { data, error } = await supabase.from(args.fonte_dados).select('*').limit(effectiveLimit);
+      if (!error && data) {
+        allRawRows = data;
+      }
+    } catch {
+      allRawRows = [];
+    }
+  }
+
+  // Achata propriedades aninhadas (Join do Supabase)
+  const flattenedRows = allRawRows.map(r => {
+    if (r.dfe_documentos) {
+      return { ...r, ...r.dfe_documentos, dfe_documentos: undefined };
+    }
+    return r;
+  });
+
+  const selectColumns: { key: string; label: string; type: string }[] = [];
+  const numericColumns: string[] = [];
+  let finalRows: any[] = [];
+
+  if (modo === 'agrupado' && dimensoes.length > 0) {
+    // Define colunas das dimensões
+    for (const d of dimensoes) {
+      const f = source.campos[d];
+      selectColumns.push({ key: d, label: f ? f.label : d, type: f ? f.type : 'string' });
+    }
+
+    // Define colunas das métricas
+    for (const m of metricas) {
+      const f = source.campos[m.campo];
+      const alias = m.apelido ? m.apelido.trim() : `${m.agregacao}_${m.campo}`;
+      selectColumns.push({ key: alias, label: m.apelido || (f ? f.label : alias), type: 'number' });
+      numericColumns.push(alias);
+    }
+
+    // Agrupamento Pivot
+    const groupMap = new Map<string, { groupValues: Record<string, any>; items: any[] }>();
+
+    for (const r of flattenedRows) {
+      const keyParts = dimensoes.map(d => String(r[d] ?? '-'));
+      const groupKey = keyParts.join('___');
+
+      let entry = groupMap.get(groupKey);
+      if (!entry) {
+        const groupValues: Record<string, any> = {};
+        for (const d of dimensoes) {
+          groupValues[d] = r[d] ?? '-';
+        }
+        entry = { groupValues, items: [] };
+        groupMap.set(groupKey, entry);
+      }
+      entry.items.push(r);
+    }
+
+    // Cálculo das métricas para cada grupo
+    finalRows = Array.from(groupMap.values()).map(entry => {
+      const rowObj: Record<string, any> = { ...entry.groupValues };
+
+      for (const m of metricas) {
+        const alias = m.apelido ? m.apelido.trim() : `${m.agregacao}_${m.campo}`;
+        const vals = entry.items.map(it => Number(it[m.campo]) || 0);
+
+        if (m.agregacao === 'sum') {
+          rowObj[alias] = vals.reduce((acc, v) => acc + v, 0);
+        } else if (m.agregacao === 'count') {
+          rowObj[alias] = entry.items.length;
+        } else if (m.agregacao === 'avg') {
+          const sum = vals.reduce((acc, v) => acc + v, 0);
+          rowObj[alias] = entry.items.length ? sum / entry.items.length : 0;
+        } else if (m.agregacao === 'min') {
+          rowObj[alias] = vals.length ? Math.min(...vals) : 0;
+        } else if (m.agregacao === 'max') {
+          rowObj[alias] = vals.length ? Math.max(...vals) : 0;
+        } else if (m.agregacao === 'count_distinct') {
+          rowObj[alias] = new Set(entry.items.map(it => it[m.campo])).size;
+        } else {
+          rowObj[alias] = entry.items.length;
+        }
+      }
+
+      return rowObj;
+    });
+
+  } else {
+    // Modo Detalhado (Tabela Analítica)
+    const selectedKeys = dimensoes.length > 0 ? dimensoes : Object.keys(source.campos);
+    for (const k of selectedKeys) {
+      const f = source.campos[k];
+      if (f) {
+        selectColumns.push({ key: k, label: f.label, type: f.type });
+        if (f.type === 'number') {
+          numericColumns.push(k);
+        }
+      }
+    }
+
+    finalRows = flattenedRows.map(r => {
+      const rowObj: Record<string, any> = {};
+      for (const col of selectColumns) {
+        rowObj[col.key] = r[col.key] ?? '';
+      }
+      return rowObj;
+    });
+  }
+
+  // Ordenação
+  if (ordenacao.length > 0) {
+    const sortField = ordenacao[0].campo;
+    const isDesc = ordenacao[0].direcao === 'desc';
+
+    finalRows.sort((a, b) => {
+      const valA = a[sortField];
+      const valB = b[sortField];
+      if (valA === valB) return 0;
+      if (valA === null || valA === undefined) return 1;
+      if (valB === null || valB === undefined) return -1;
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return isDesc ? valB - valA : valA - valB;
+      }
+      return isDesc
+        ? String(valB).localeCompare(String(valA), 'pt-BR')
+        : String(valA).localeCompare(String(valB), 'pt-BR');
+    });
+  }
+
+  // Totais
+  const totals: Record<string, number> = {};
+  for (const col of numericColumns) {
+    totals[col] = finalRows.reduce((acc, row) => {
+      const val = Number(row[col]);
+      return acc + (isNaN(val) ? 0 : val);
+    }, 0);
+  }
+
+  const elapsedMs = Date.now() - startTime;
+
+  return {
+    rows: finalRows,
+    columns: selectColumns,
+    totals,
+    totalCount: finalRows.length,
+    executionTimeMs: elapsedMs
+  };
+}
+
 /**
  * POST /api/cockpit/executar
- * Executa a consulta dinâmica sobre o banco SQLite com proteção de tenant,
- * prepared statements e limite máximo seguro.
+ * Executa a consulta dinâmica sobre o banco (Supabase prioritário, com fallback SQLite)
+ * com proteção de tenant, prepared statements e suporte a período e sem limites.
  */
-router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.post('/executar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const startTime = Date.now();
 
   try {
-    const db = getDatabase();
     const activeEmpresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || req.body?.empresa_id;
 
     if (!activeEmpresaId) {
@@ -738,10 +1046,40 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
       metricas = [],
       filtros = [],
       ordenacao = [],
-      limite = 1000,
-      offset = 0
+      limite = 0,
+      offset = 0,
+      periodo
     } = req.body;
 
+    // ── ESTRATÉGIA 1: SUPABASE CLOUD (Base Oficial em Produção) ──
+    if (isSupabaseConfigured()) {
+      try {
+        const resultadoSupa = await executeSupabaseCockpitQuery({
+          fonte_dados,
+          modo,
+          dimensoes,
+          metricas,
+          filtros,
+          ordenacao,
+          limite,
+          offset,
+          activeEmpresaId,
+          periodo
+        });
+
+        return res.json({
+          success: true,
+          ...resultadoSupa,
+          fonteBanco: 'supabase',
+          timestamp: getBrasiliaTimestamp()
+        });
+      } catch (supaErr: any) {
+        console.warn('⚠️ [Cockpit Supabase] Falha ao consultar Supabase, tentando SQLite:', supaErr.message);
+      }
+    }
+
+    // ── ESTRATÉGIA 2: SQLITE LOCAL (Fallback) ──
+    const db = getDatabase();
     const { dataSql, params, selectColumns, numericColumns } = buildSafeQuery({
       fonte_dados,
       modo,
@@ -757,7 +1095,6 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
     const stmt = db.prepare(dataSql);
     const rows = stmt.all(...params) as any[];
 
-    // Calcular somatório das colunas numéricas para a barra de totais
     const totals: Record<string, number> = {};
     for (const col of numericColumns) {
       totals[col] = rows.reduce((acc, row) => {
@@ -775,6 +1112,7 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
       totals,
       totalCount: rows.length,
       executionTimeMs: elapsedMs,
+      fonteBanco: 'sqlite',
       timestamp: getBrasiliaTimestamp()
     });
   } catch (err: any) {
@@ -790,9 +1128,8 @@ router.post('/executar', requireAuth, (req: AuthenticatedRequest, res: Response)
  * POST /api/cockpit/exportar
  * Executa a consulta e gera arquivo para download (.xlsx ou .json)
  */
-router.post('/exportar', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+router.post('/exportar', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const db = getDatabase();
     const activeEmpresaId = req.user?.empresaAtivaId || (req.headers['x-empresa-ativa-id'] as string) || req.body?.empresa_id;
 
     if (!activeEmpresaId) {
@@ -803,7 +1140,7 @@ router.post('/exportar', requireAuth, (req: AuthenticatedRequest, res: Response)
     }
 
     const {
-      formato = 'xlsx', // 'xlsx' | 'json'
+      formato = 'xlsx',
       nomeRelatorio = 'Relatorio_Dinamico_Fiscal',
       fonte_dados = 'dfe_itens_documentos',
       modo = 'detalhado',
@@ -811,23 +1148,51 @@ router.post('/exportar', requireAuth, (req: AuthenticatedRequest, res: Response)
       metricas = [],
       filtros = [],
       ordenacao = [],
-      limite = 20000 // limite seguro expandido para exportação
+      limite = 0, // Sem limite para exportação
+      periodo
     } = req.body;
 
-    const { dataSql, params, selectColumns } = buildSafeQuery({
-      fonte_dados,
-      modo,
-      dimensoes,
-      metricas,
-      filtros,
-      ordenacao,
-      limite: Math.min(Number(limite) || 20000, 20000),
-      offset: 0,
-      activeEmpresaId
-    });
+    let rows: any[] = [];
+    let selectColumns: { key: string; label: string; type: string }[] = [];
 
-    const stmt = db.prepare(dataSql);
-    const rows = stmt.all(...params) as any[];
+    if (isSupabaseConfigured()) {
+      try {
+        const resultadoSupa = await executeSupabaseCockpitQuery({
+          fonte_dados,
+          modo,
+          dimensoes,
+          metricas,
+          filtros,
+          ordenacao,
+          limite: limite || 100000,
+          activeEmpresaId,
+          periodo
+        });
+        rows = resultadoSupa.rows;
+        selectColumns = resultadoSupa.columns;
+      } catch (supaErr: any) {
+        console.warn('⚠️ [Cockpit Export Supabase] Falha, tentando SQLite:', supaErr.message);
+      }
+    }
+
+    if (rows.length === 0) {
+      const db = getDatabase();
+      const { dataSql, params, selectColumns: sc } = buildSafeQuery({
+        fonte_dados,
+        modo,
+        dimensoes,
+        metricas,
+        filtros,
+        ordenacao,
+        limite: Math.min(Number(limite) || 50000, 50000),
+        offset: 0,
+        activeEmpresaId
+      });
+
+      const stmt = db.prepare(dataSql);
+      rows = stmt.all(...params) as any[];
+      selectColumns = sc;
+    }
 
     const sanitizedBaseName = (nomeRelatorio || 'Relatorio_Dinamico_Fiscal')
       .replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -848,7 +1213,6 @@ router.post('/exportar', requireAuth, (req: AuthenticatedRequest, res: Response)
       return res.send(jsonContent);
     }
 
-    // Exportação em XLSX com mapeamento de rótulos amigáveis
     const mappedRows = rows.map(r => {
       const obj: Record<string, any> = {};
       for (const col of selectColumns) {

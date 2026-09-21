@@ -1068,6 +1068,10 @@ export interface CockpitQueryConfig {
   filtros?: CockpitFiltro[];
   ordenacao?: CockpitOrdenacao[];
   limite?: number;
+  periodo?: {
+    ano?: string | number;
+    mes?: string | number;
+  };
 }
 
 export interface CockpitModelo {

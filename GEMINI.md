@@ -10,3 +10,6 @@
    - Não manter modais soltos de certificado no cabeçalho ou outros módulos; outros pontos atuam estritamente como indicadores direcionadores para a Carteira de CNPJs.
 3. **Padrões Oficiais SEFAZ / RTC**:
    - Cumprimento rigoroso dos esquemas XML nacionais (Pacote 010f, NT 2025.002 RTC v1.50/v1.51, NT 2026.007, NT 2026.004 CNPJ Alfanumérico).
+4. **Transparência e Realismo Técnico Obrigatório**:
+   - Proibição de otimismo superficial. Só responder positivamente sobre viabilidade quando for 100% real, testado e comprovado.
+   - Sempre declarar custos adicionais reais de APIs, limitações de provedores externos, SLAs e pontos de falha antes de iniciar qualquer trabalho.

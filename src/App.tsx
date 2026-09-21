@@ -110,11 +110,16 @@ export default function App() {
   // Modal State for Turbo Fiscal .ZIP Export
   const [isExportFiscalModalOpen, setIsExportFiscalModalOpen] = useState(false);
 
+  // Configuração / Feature Flag: Copiloto Fiscal IA (Auditor AI)
+  // Desativado temporariamente por decisão de negócio; previsão 100% mantida em código.
+  const ENABLE_AI_COPILOT = false;
+
   // Copiloto Fiscal IA (Auditor AI) Drawer State
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
 
   // Atalho de teclado global para abrir/fechar o Copiloto Fiscal (Ctrl + J ou Cmd + J)
   useEffect(() => {
+    if (!ENABLE_AI_COPILOT) return;
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault();
@@ -123,7 +128,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, []);
+  }, [ENABLE_AI_COPILOT]);
 
   // Settings
   const [rateLimit, setRateLimit] = useState<number>(8); // 8 req/s default
@@ -326,7 +331,7 @@ export default function App() {
         onOpenExportFiscal={() => setIsExportFiscalModalOpen(true)}
         ambienteSefaz={ambienteSefaz}
         setAmbienteSefaz={setAmbienteSefaz}
-        onOpenCopiloto={() => setIsCopilotOpen(true)}
+        onOpenCopiloto={ENABLE_AI_COPILOT ? () => setIsCopilotOpen(true) : undefined}
       />
 
       {/* Connectivity & Cold-Start Recovery Banner */}
@@ -574,11 +579,13 @@ export default function App() {
         totalDocsAvailable={currentKpis?.totalDocs || dfeList.length || 21345}
       />
 
-      {/* Copiloto Fiscal IA Drawer */}
-      <CopilotoFiscalDrawer
-        isOpen={isCopilotOpen}
-        onClose={() => setIsCopilotOpen(false)}
-      />
+      {/* Copiloto Fiscal IA Drawer (previsão mantida em código, reativável via ENABLE_AI_COPILOT) */}
+      {ENABLE_AI_COPILOT && (
+        <CopilotoFiscalDrawer
+          isOpen={isCopilotOpen}
+          onClose={() => setIsCopilotOpen(false)}
+        />
+      )}
 
     </div>
   );
