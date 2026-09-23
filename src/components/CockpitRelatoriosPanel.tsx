@@ -17,44 +17,72 @@ import {
 const DEFAULT_COCKPIT_DATA_SOURCES: CockpitDataSource[] = [
   {
     id: 'dfe_itens_documentos',
-    nome: 'Itens de Documentos Fiscais (Detalhado)',
-    descricao: 'Linhas de produtos/serviços de NF-e, CT-e e NFS-e cruzadas com dados de cabeçalho e tributação RTC.',
+    nome: 'Itens de Documentos Fiscais (Tags Oficiais XML)',
+    descricao: 'Itens de NF-e, CT-e e NFS-e extraídos diretamente das tags canônicas dos XMLs (NT 2025.002 RTC / SEFAZ).',
     campos: [
-      { key: 'id', label: 'ID Item', type: 'string', group: 'Identificação' },
-      { key: 'documento_id', label: 'ID Documento', type: 'string', group: 'Identificação' },
-      { key: 'item_nro', label: 'Nº Item', type: 'number', group: 'Identificação' },
-      { key: 'ncm', label: 'NCM', type: 'string', group: 'Classificação Fiscal' },
-      { key: 'cclasstrib', label: 'cClassTrib (RTC)', type: 'string', group: 'Classificação Fiscal' },
-      { key: 'cst_csosn', label: 'CST / CSOSN', type: 'string', group: 'Classificação Fiscal' },
-      { key: 'cfop', label: 'CFOP', type: 'string', group: 'Classificação Fiscal' },
-      { key: 'descricao_item', label: 'Descrição do Item', type: 'string', group: 'Produto / Serviço' },
-      { key: 'natureza_operacao', label: 'Natureza da Operação', type: 'string', group: 'Classificação Fiscal' },
-      { key: 'quantidade', label: 'Quantidade', type: 'number', group: 'Quantidades', aggregatable: true },
-      { key: 'unidade', label: 'Unidade', type: 'string', group: 'Quantidades' },
-      { key: 'valor_bruto_item', label: 'Valor Bruto (R$)', type: 'number', group: 'Valores', aggregatable: true },
-      { key: 'desconto_incondicional', label: 'Desconto (R$)', type: 'number', group: 'Valores', aggregatable: true },
-      { key: 'frete_seguro_rateado', label: 'Frete/Seguro (R$)', type: 'number', group: 'Valores', aggregatable: true },
-      { key: 'valor_liquido_item', label: 'Valor Líquido (R$)', type: 'number', group: 'Valores', aggregatable: true },
-      { key: 'base_ibs', label: 'Base de Cálculo IBS', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'aliquota_ibs', label: 'Alíquota IBS (%)', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'valor_ibs', label: 'Valor IBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'base_cbs', label: 'Base de Cálculo CBS', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'aliquota_cbs', label: 'Alíquota CBS (%)', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'valor_cbs', label: 'Valor CBS (R$)', type: 'number', group: 'Tributação RTC', aggregatable: true },
-      { key: 'chave_acesso', label: 'Chave de Acesso', type: 'string', group: 'Documento' },
+      // 1. Tags Oficiais da Reforma Tributária (RTC)
+      { key: 'cClassTrib', label: 'cClassTrib (Classificação Tributária RTC)', type: 'string', group: 'Reforma Tributária (RTC)' },
+      { key: 'indOper', label: 'indOper (Indicador da Operação RTC)', type: 'string', group: 'Reforma Tributária (RTC)' },
+      { key: 'vBC', label: 'vBC (Base de Cálculo IBS/CBS)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'pIBSUF', label: 'pIBSUF (Alíquota IBS Estadual %)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'vIBSUF', label: 'vIBSUF (Valor IBS Estadual R$)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'pIBSMun', label: 'pIBSMun (Alíquota IBS Municipal %)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'vIBSMun', label: 'vIBSMun (Valor IBS Municipal R$)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'pIBS', label: 'pIBS (Alíquota IBS Global %)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'vIBS', label: 'vIBS (Valor IBS Global R$)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'pCBS', label: 'pCBS (Alíquota CBS %)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'vCBS', label: 'vCBS (Valor CBS Global R$)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      { key: 'vIS', label: 'vIS (Imposto Seletivo R$)', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+
+      // 2. Classificação & Dados dos Produtos / Itens
+      { key: 'NCM', label: 'NCM (Classificação Fiscal)', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'CFOP', label: 'CFOP (Natureza da Operação)', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'CST', label: 'CST / CSOSN', type: 'string', group: 'Classificação Fiscal' },
+      { key: 'descricao_item', label: 'Descrição do Item / Produto', type: 'string', group: 'Produto / Serviço' },
+      { key: 'qCom', label: 'qCom (Quantidade Comercial)', type: 'number', group: 'Quantidades', aggregatable: true },
+      { key: 'uCom', label: 'uCom (Unidade de Medida)', type: 'string', group: 'Quantidades' },
+      { key: 'vProd', label: 'vProd (Valor Bruto dos Produtos R$)', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      { key: 'vItem', label: 'vItem (Valor Líquido do Item R$)', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      { key: 'vDesc', label: 'vDesc (Desconto Incondicional R$)', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      { key: 'vFrete', label: 'vFrete (Frete Rateado R$)', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+
+      // 3. Destino & Localização
+      { key: 'cMun', label: 'cMun (Cód. IBGE Município Destino)', type: 'string', group: 'Localização & Destino' },
+      { key: 'xMun', label: 'xMun (Nome Município Destino)', type: 'string', group: 'Localização & Destino' },
+      { key: 'UF', label: 'UF (Estado de Destino)', type: 'string', group: 'Localização & Destino' },
+
+      // 4. Tributos Tradicionais
+      { key: 'vICMS', label: 'vICMS (ICMS Destacado R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'vPIS', label: 'vPIS (PIS R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'vCOFINS', label: 'vCOFINS (COFINS R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'vIPI', label: 'vIPI (IPI R$)', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      { key: 'vNF', label: 'vNF (Valor Total da Nota R$)', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+
+      // 5. Participantes da Operação
+      { key: 'fornecedor_cnpj', label: 'CNPJ Emitente / Fornecedor', type: 'string', group: 'Participantes' },
+      { key: 'fornecedor_razao', label: 'Razão Social Emitente', type: 'string', group: 'Participantes' },
+      { key: 'fornecedor_uf', label: 'UF Emitente', type: 'string', group: 'Participantes' },
+      { key: 'fornecedor_municipio', label: 'Município Emitente', type: 'string', group: 'Participantes' },
+      { key: 'cliente_cnpj', label: 'CNPJ Destinatário / Cliente', type: 'string', group: 'Participantes' },
+      { key: 'cliente_razao', label: 'Razão Social Destinatário', type: 'string', group: 'Participantes' },
+      { key: 'cliente_uf', label: 'UF Destinatário', type: 'string', group: 'Participantes' },
+
+      // 6. Dados do Documento Fiscal
+      { key: 'chNFe', label: 'chNFe (Chave de Acesso)', type: 'string', group: 'Documento' },
+      { key: 'dhEmi', label: 'dhEmi (Data de Emissão)', type: 'date', group: 'Documento' },
       { key: 'tipo_doc', label: 'Tipo Doc (NF-e/CT-e/NFS-e)', type: 'badge', group: 'Documento' },
       { key: 'tipo_operacao', label: 'Operação (Entrada/Saída)', type: 'badge', group: 'Documento' },
       { key: 'numero_serie', label: 'Número / Série', type: 'string', group: 'Documento' },
-      { key: 'data_emissao', label: 'Data de Emissão', type: 'date', group: 'Documento' },
-      { key: 'competencia', label: 'Competência', type: 'string', group: 'Documento' },
-      { key: 'fornecedor_cnpj', label: 'CNPJ Emitente/Fornecedor', type: 'string', group: 'Emitente / Fornecedor' },
-      { key: 'fornecedor_razao', label: 'Razão Social Emitente', type: 'string', group: 'Emitente / Fornecedor' },
-      { key: 'fornecedor_uf', label: 'UF Emitente', type: 'string', group: 'Emitente / Fornecedor' },
-      { key: 'fornecedor_municipio', label: 'Município Emitente', type: 'string', group: 'Emitente / Fornecedor' },
-      { key: 'cliente_cnpj', label: 'CNPJ Destinatário/Cliente', type: 'string', group: 'Destinatário / Cliente' },
-      { key: 'cliente_razao', label: 'Razão Social Destinatário', type: 'string', group: 'Destinatário / Cliente' },
-      { key: 'cliente_uf', label: 'UF Destinatário', type: 'string', group: 'Destinatário / Cliente' },
-      { key: 'situacao_doc', label: 'Situação Documento', type: 'badge', group: 'Documento' }
+      { key: 'competencia', label: 'Competência (AAAA-MM)', type: 'string', group: 'Documento' },
+      { key: 'situacao_doc', label: 'Situação Documento', type: 'badge', group: 'Documento' },
+
+      // 7. Compatibilidade Legada
+      { key: 'cclasstrib', label: 'cclasstrib (legado)', type: 'string', group: 'Compatibilidade' },
+      { key: 'natureza_operacao', label: 'natureza_operacao (legado)', type: 'string', group: 'Compatibilidade' },
+      { key: 'base_ibs', label: 'base_ibs (legado)', type: 'number', group: 'Compatibilidade', aggregatable: true },
+      { key: 'valor_ibs', label: 'valor_ibs (legado)', type: 'number', group: 'Compatibilidade', aggregatable: true },
+      { key: 'base_cbs', label: 'base_cbs (legado)', type: 'number', group: 'Compatibilidade', aggregatable: true },
+      { key: 'valor_cbs', label: 'valor_cbs (legado)', type: 'number', group: 'Compatibilidade', aggregatable: true }
     ]
   },
   {
@@ -149,13 +177,13 @@ const MESES = [
   { valor: '10', label: 'Out' },
   { valor: '11', label: 'Nov' },
   { valor: '12', label: 'Dez' }
-] as const;
+];
 
 const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
   {
-    id: 'padrao-ncm-ibscbs',
-    nome: 'Resumo de Itens por NCM & Alíquotas IBS/CBS',
-    descricao: 'Pivot agrupada por NCM, cClassTrib, CST e Fornecedor com somatório de bases e alíquotas da Reforma Tributária.',
+    id: 'padrao-hierarquia-rtc-sefaz',
+    nome: 'Hierarquia Oficial RTC (cClassTrib → pIBS → indOper → cMun → UF)',
+    descricao: 'Pivot da Reforma Tributária com agrupamento estrito da esquerda para a direita e valores reais extraídos diretamente das tags XML.',
     categoria: 'fiscal',
     escopo: 'global',
     usuario_id: 'sistema',
@@ -164,17 +192,16 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
     configuracao: {
       fonte_dados: 'dfe_itens_documentos',
       modo: 'agrupado',
-      dimensoes: ['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao'],
+      dimensoes: ['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF'],
       metricas: [
-        { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
-        { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
-        { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
-        { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
-        { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
-        { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
-        { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
+        { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
+        { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
+        { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
+        { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
+        { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
       ],
-      ordenacao: [{ campo: 'valor_liquido_item', direcao: 'desc' }],
+      ordenacao: [{ campo: 'vBC', direcao: 'desc' }],
       limite: 0,
       periodo: { ano: '2026', mes: 'todos' }
     }
@@ -269,21 +296,22 @@ export const CockpitRelatoriosPanel: React.FC = () => {
   // Estados de Construção da Consulta
   const [fonteSelecionada, setFonteSelecionada] = useState<string>('dfe_itens_documentos');
   const [modo, setModo] = useState<'detalhado' | 'agrupado'>('agrupado');
-  const [dimensoes, setDimensoes] = useState<string[]>(['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao']);
+  const [dimensoes, setDimensoes] = useState<string[]>(['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF']);
+  const [colunasPivot, setColunasPivot] = useState<string[]>([]);
   const [metricas, setMetricas] = useState<CockpitMetrica[]>([
-    { campo: 'valor_bruto_item', agregacao: 'sum', apelido: 'Valor Bruto Total' },
-    { campo: 'valor_liquido_item', agregacao: 'sum', apelido: 'Valor Líquido' },
-    { campo: 'base_ibs', agregacao: 'sum', apelido: 'Base IBS' },
-    { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Apurado' },
-    { campo: 'base_cbs', agregacao: 'sum', apelido: 'Base CBS' },
-    { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Apurado' },
-    { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens' }
+    { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
+    { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
+    { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
+    { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
+    { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
+    { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
   ]);
   const [filtros, setFiltros] = useState<CockpitFiltro[]>([]);
   const [ordenacao, setOrdenacao] = useState<CockpitOrdenacao[]>([
-    { campo: 'valor_liquido_item', direcao: 'desc' }
+    { campo: 'vBC', direcao: 'desc' }
   ]);
   const [limite, setLimite] = useState<number>(0);
+  const [buscaCampo, setBuscaCampo] = useState<string>('');
 
   // Estados de Execução & Resultados
   const [isExecutando, setIsExecutando] = useState<boolean>(false);
@@ -559,7 +587,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     }
   };
 
-  // Helpers de Manipulação de Dimensões
+  // Helpers de Manipulação de Dimensões (Linhas)
   const toggleDimensao = (campoKey: string) => {
     setDimensoes(prev => {
       if (prev.includes(campoKey)) {
@@ -570,13 +598,68 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     });
   };
 
+  const reordenarDimensao = (index: number, direcao: 'up' | 'down') => {
+    setDimensoes(prev => {
+      const copy = [...prev];
+      const targetIndex = direcao === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= copy.length) return prev;
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
+    });
+  };
+
+  const toggleColunaPivot = (campoKey: string) => {
+    setColunasPivot(prev => {
+      if (prev.includes(campoKey)) {
+        return prev.filter(k => k !== campoKey);
+      } else {
+        return [...prev, campoKey];
+      }
+    });
+  };
+
+  const aplicarHierarquiaRtc = () => {
+    setFonteSelecionada('dfe_itens_documentos');
+    setModo('agrupado');
+    setDimensoes(['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF']);
+    setMetricas([
+      { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
+      { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
+      { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
+      { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
+      { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
+      { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
+    ]);
+    setOrdenacao([{ campo: 'vBC', direcao: 'desc' }]);
+    setSucessoFeedback('Hierarquia Oficial RTC SEFAZ aplicada (cClassTrib → pIBS → indOper → cMun → UF)!');
+    setTimeout(() => setSucessoFeedback(null), 4000);
+  };
+
   // Helpers de Manipulação de Métricas
-  const adicionarMetrica = (campoKey: string) => {
+  const adicionarMetrica = (campoKey: string, tipoExibicao: 'valor' | 'percent_total' = 'valor') => {
     const campoObj = fonteAtivaObj?.campos.find(c => c.key === campoKey);
-    const apelido = campoObj ? `${campoObj.label}` : campoKey;
+    const apelido = tipoExibicao === 'percent_total' 
+      ? `% ${campoObj ? campoObj.label : campoKey}` 
+      : (campoObj ? `${campoObj.label}` : campoKey);
     setMetricas(prev => [
       ...prev,
-      { campo: campoKey, agregacao: 'sum', apelido }
+      { campo: campoKey, agregacao: 'sum', apelido, exibicao: tipoExibicao }
+    ]);
+  };
+
+  const duplicarMetricaComoPercentual = (index: number) => {
+    const baseMet = metricas[index];
+    if (!baseMet) return;
+    setMetricas(prev => [
+      ...prev,
+      {
+        campo: baseMet.campo,
+        agregacao: baseMet.agregacao,
+        apelido: `% Total (${baseMet.apelido || baseMet.campo})`,
+        exibicao: 'percent_total'
+      }
     ]);
   };
 
@@ -626,14 +709,23 @@ export const CockpitRelatoriosPanel: React.FC = () => {
   }, [linhasFiltradas, paginaAtual, itensPorPagina]);
 
   // Formatação de valores
-  const formatarValor = (valor: any, tipo?: string) => {
+  const formatarValor = (valor: any, tipo?: string, labelOuChave?: string) => {
     if (valor === null || valor === undefined || valor === '') return '-';
+    if (String(valor).includes('(Não informado') || String(valor).includes('Sem RTC')) {
+      return String(valor);
+    }
+    const isPercent = labelOuChave?.includes('%') || labelOuChave?.toLowerCase().includes('percent');
     if (tipo === 'number' || typeof valor === 'number') {
       const num = Number(valor);
       if (isNaN(num)) return valor;
-      // Se for número inteiro pequeno ou contagem
-      if (Number.isInteger(num) && num < 1000) return num.toString();
-      // Formata como moeda brasileira
+      if (isPercent) {
+        return `${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+      }
+      // Se for número inteiro pequeno ou contagem de itens
+      if (Number.isInteger(num) && num < 1000 && !labelOuChave?.toLowerCase().includes('valor') && !labelOuChave?.toLowerCase().includes('base')) {
+        return num.toString();
+      }
+      // Formata como moeda/decimal brasileiro
       return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     return String(valor);
@@ -765,7 +857,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         {/* ========================================== */}
         {/* COLUNA ESQUERDA: CONSTRUTOR DA CONSULTA    */}
         {/* ========================================== */}
-        <div className="lg:col-span-4 space-y-4">
+        <div className="lg:col-span-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] overflow-y-auto pr-1.5 custom-scrollbar space-y-4">
           <div className="glass-panel-glow p-4 rounded-2xl border border-slate-800 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
               <div className="flex items-center gap-2">
@@ -915,205 +1007,359 @@ export const CockpitRelatoriosPanel: React.FC = () => {
               </div>
             </div>
 
-            {/* 3. Dimensões (Agrupamento ou Colunas) */}
-            <div className="space-y-1.5">
+            {/* 3. Seleção de Campos / Tags XML & 4 Quadrantes Pivot (Excel Style) */}
+            <div className="space-y-3 border-t border-slate-800/80 pt-3">
+              {/* Cabeçalho da Seção com Atalho RTC */}
               <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-slate-300">
-                  3. {modo === 'agrupado' ? 'Dimensões de Agrupamento (Linhas)' : 'Colunas Selecionadas'}
-                </label>
-                <span className="text-[10px] text-cyan-400 font-mono">
-                  {dimensoes.length} selecionada(s)
-                </span>
-              </div>
-
-              {/* Tag Picker com campos disponíveis */}
-              <div className="max-h-40 overflow-y-auto p-2 bg-slate-900/70 border border-slate-800 rounded-xl space-y-1.5">
-                <div className="flex flex-wrap gap-1.5">
-                  {fonteAtivaObj?.campos.map(campo => {
-                    const isSelected = dimensoes.includes(campo.key);
-                    return (
-                      <button
-                        key={campo.key}
-                        type="button"
-                        onClick={() => toggleDimensao(campo.key)}
-                        className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-all cursor-pointer flex items-center gap-1 ${
-                          isSelected
-                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-sm'
-                            : 'bg-slate-800/80 text-slate-400 border border-slate-700/60 hover:text-slate-200'
-                        }`}
-                      >
-                        <span>{campo.label}</span>
-                        {isSelected ? <X className="w-2.5 h-2.5 text-cyan-400" /> : <Plus className="w-2.5 h-2.5 text-slate-500" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* 4. Métricas / Medidas (Apenas no Modo Agrupado) */}
-            {modo === 'agrupado' && (
-              <div className="space-y-2 border-t border-slate-800/80 pt-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>4. Métricas Agregadas (Valores)</span>
-                  </label>
-                  <span className="text-[10px] text-amber-400 font-mono">
-                    {metricas.length} medida(s)
-                  </span>
-                </div>
-
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {metricas.map((met, idx) => (
-                    <div key={idx} className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center gap-2">
-                      <select
-                        value={met.agregacao}
-                        onChange={e => atualizarMetrica(idx, { agregacao: e.target.value as CockpitAggregationType })}
-                        className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-amber-300 font-mono focus:outline-none"
-                      >
-                        <option value="sum">Soma</option>
-                        <option value="count">Contagem</option>
-                        <option value="count_distinct">Qtd Única</option>
-                        <option value="avg">Média</option>
-                        <option value="min">Mínimo</option>
-                        <option value="max">Máximo</option>
-                      </select>
-
-                      <select
-                        value={met.campo}
-                        onChange={e => atualizarMetrica(idx, { campo: e.target.value })}
-                        className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none truncate"
-                      >
-                        {fonteAtivaObj?.campos.map(c => (
-                          <option key={c.key} value={c.key}>
-                            {c.label}
-                          </option>
-                        ))}
-                      </select>
-
-                      <input
-                        type="text"
-                        value={met.apelido || ''}
-                        onChange={e => atualizarMetrica(idx, { apelido: e.target.value })}
-                        placeholder="Rótulo"
-                        className="w-24 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-300 focus:outline-none"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() => removerMetrica(idx)}
-                        className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
-                        title="Remover Métrica"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Botão Adicionar Métrica */}
-                <div className="flex items-center gap-2">
-                  <select
-                    id="select-add-metrica"
-                    className="flex-1 bg-slate-900/90 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-300"
-                    defaultValue=""
-                    onChange={e => {
-                      if (e.target.value) {
-                        adicionarMetrica(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                  >
-                    <option value="" disabled>+ Adicionar Métrica de Valor...</option>
-                    {fonteAtivaObj?.campos.filter(c => c.aggregatable || c.type === 'number').map(c => (
-                      <option key={c.key} value={c.key}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {/* 5. Filtros Dinâmicos */}
-            <div className="space-y-2 border-t border-slate-800/80 pt-3">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                  <Filter className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>5. Filtros da Consulta</span>
+                <label className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
+                  <Table className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>3. Matriz Pivot &amp; Tags XML (Estilo Excel)</span>
                 </label>
                 <button
                   type="button"
-                  onClick={adicionarFiltro}
-                  className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 cursor-pointer flex items-center gap-1"
+                  onClick={aplicarHierarquiaRtc}
+                  className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-1 transition-all font-semibold cursor-pointer shadow-sm"
+                  title="Aplicar agrupamento padrão RTC: cClassTrib → pIBS → indOper → cMun → UF"
                 >
-                  <Plus className="w-3 h-3" />
-                  <span>Novo Filtro</span>
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>Hierarquia RTC SEFAZ</span>
                 </button>
               </div>
 
-              {filtros.length === 0 ? (
-                <p className="text-[10px] text-slate-500 italic px-1">
-                  Nenhum filtro aplicado. Exibindo todos os registros da empresa ativa.
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                  {filtros.map((fil, idx) => (
-                    <div key={idx} className="p-2 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={fil.campo}
-                          onChange={e => atualizarFiltro(idx, { campo: e.target.value })}
-                          className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none"
-                        >
-                          {fonteAtivaObj?.campos.map(c => (
-                            <option key={c.key} value={c.key}>
-                              {c.label}
-                            </option>
-                          ))}
-                        </select>
+              {/* Barra de Pesquisa de Campos / Tags XML */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={buscaCampo}
+                  onChange={e => setBuscaCampo(e.target.value)}
+                  placeholder="Pesquisar tag XML (cClassTrib, vBC, pIBS, indOper...)"
+                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+                {buscaCampo && (
+                  <button
+                    onClick={() => setBuscaCampo('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
 
-                        <select
-                          value={fil.operador}
-                          onChange={e => atualizarFiltro(idx, { operador: e.target.value as CockpitFilterOperator })}
-                          className="w-28 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-cyan-300 font-mono focus:outline-none"
-                        >
-                          <option value="contains">Contém</option>
-                          <option value="starts_with">Começa com</option>
-                          <option value="eq">Igual a</option>
-                          <option value="neq">Diferente</option>
-                          <option value="gt">Maior que (&gt;)</option>
-                          <option value="gte">Maior ou igual (&gt;=)</option>
-                          <option value="lt">Menor que (&lt;)</option>
-                          <option value="lte">Menor ou igual (&lt;=)</option>
-                          <option value="is_null">Vazio / Nulo</option>
-                          <option value="is_not_null">Preenchido</option>
-                        </select>
+              {/* Tag Picker dos Campos Disponíveis com Ações Rápidas */}
+              <div className="max-h-36 overflow-y-auto p-2 bg-slate-900/70 border border-slate-800 rounded-xl space-y-1">
+                <div className="flex flex-wrap gap-1">
+                  {fonteAtivaObj?.campos
+                    .filter(c => !buscaCampo.trim() || c.label.toLowerCase().includes(buscaCampo.toLowerCase()) || c.key.toLowerCase().includes(buscaCampo.toLowerCase()))
+                    .map(campo => {
+                      const isLinha = dimensoes.includes(campo.key);
+                      const isMetrica = metricas.some(m => m.campo === campo.key);
+                      const isFiltro = filtros.some(f => f.campo === campo.key);
+                      const isNum = campo.aggregatable || campo.type === 'number';
 
-                        <button
-                          type="button"
-                          onClick={() => removerFiltro(idx)}
-                          className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
-                          title="Remover Filtro"
+                      return (
+                        <div
+                          key={campo.key}
+                          className={`text-[10px] px-2 py-0.5 rounded-lg border font-mono transition-all flex items-center gap-1 ${
+                            isLinha
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                              : isMetrica
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : isFiltro
+                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                              : 'bg-slate-800/80 text-slate-300 border-slate-700/60 hover:border-slate-600'
+                          }`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          <span className="truncate max-w-[130px]" title={`${campo.label} (${campo.key})`}>
+                            {campo.key}
+                          </span>
 
-                      {fil.operador !== 'is_null' && fil.operador !== 'is_not_null' && (
-                        <input
-                          type="text"
-                          value={fil.valor ?? ''}
-                          onChange={e => atualizarFiltro(idx, { valor: e.target.value })}
-                          placeholder="Valor do filtro..."
-                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-slate-200 focus:outline-none"
-                        />
-                      )}
-                    </div>
-                  ))}
+                          <div className="flex items-center gap-0.5 border-l border-slate-700/60 pl-1 ml-0.5">
+                            <button
+                              type="button"
+                              onClick={() => toggleDimensao(campo.key)}
+                              title={isLinha ? "Remover das Linhas" : "Adicionar às Linhas (Agrupamento)"}
+                              className={`p-0.5 rounded hover:bg-white/10 ${isLinha ? 'text-amber-400 font-bold' : 'text-slate-400'}`}
+                            >
+                              L
+                            </button>
+                            {isNum && modo === 'agrupado' && (
+                              <button
+                                type="button"
+                                onClick={() => adicionarMetrica(campo.key, 'valor')}
+                                title="Adicionar aos Valores (Soma R$)"
+                                className={`p-0.5 rounded hover:bg-white/10 ${isMetrica ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}
+                              >
+                                V
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setFiltros(prev => [...prev, { campo: campo.key, operador: 'contains', valor: '' }])}
+                              title="Adicionar aos Filtros"
+                              className={`p-0.5 rounded hover:bg-white/10 ${isFiltro ? 'text-cyan-400 font-bold' : 'text-slate-400'}`}
+                            >
+                              F
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
-              )}
+              </div>
+
+              {/* OS 4 QUADRANTES CLÁSSICOS DO EXCEL (Filtros, Colunas, Linhas, Valores) */}
+              <div className="space-y-2.5 pt-1">
+                {/* LINHA SUPERIOR: FILTROS & COLUNAS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {/* Quadrante 1: FILTROS */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-cyan-300">
+                        <Filter className="w-3 h-3 text-cyan-400" />
+                        <span>Filtros ({filtros.length})</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={adicionarFiltro}
+                        className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer"
+                      >
+                        + Novo
+                      </button>
+                    </div>
+                    {filtros.length === 0 ? (
+                      <p className="text-[9px] text-slate-500 italic py-1">Sem filtros (tudo).</p>
+                    ) : (
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
+                        {filtros.map((fil, idx) => (
+                          <div key={idx} className="p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 space-y-1">
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={fil.campo}
+                                onChange={e => atualizarFiltro(idx, { campo: e.target.value })}
+                                className="flex-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none"
+                              >
+                                {fonteAtivaObj?.campos.map(c => (
+                                  <option key={c.key} value={c.key}>{c.key}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={fil.operador}
+                                onChange={e => atualizarFiltro(idx, { operador: e.target.value as CockpitFilterOperator })}
+                                className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-cyan-300 font-mono focus:outline-none"
+                              >
+                                <option value="contains">Contém</option>
+                                <option value="eq">=</option>
+                                <option value="neq">!=</option>
+                                <option value="gt">&gt;</option>
+                                <option value="gte">&gt;=</option>
+                                <option value="lt">&lt;</option>
+                                <option value="lte">&lt;=</option>
+                                <option value="is_null">Vazio</option>
+                                <option value="is_not_null">Preenchido</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => removerFiltro(idx)}
+                                className="text-slate-500 hover:text-rose-400 p-0.5 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {fil.operador !== 'is_null' && fil.operador !== 'is_not_null' && (
+                              <input
+                                type="text"
+                                value={fil.valor ?? ''}
+                                onChange={e => atualizarFiltro(idx, { valor: e.target.value })}
+                                placeholder="Valor..."
+                                className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quadrante 2: COLUNAS */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300">
+                        <Table className="w-3 h-3 text-indigo-400" />
+                        <span>Colunas ({colunasPivot.length})</span>
+                      </div>
+                      <span className="text-[9px] text-slate-500">Horizontal</span>
+                    </div>
+                    {colunasPivot.length === 0 ? (
+                      <p className="text-[9px] text-slate-500 italic py-1">Padrão: métricas em colunas.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                        {colunasPivot.map(colKey => (
+                          <span
+                            key={colKey}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 font-mono"
+                          >
+                            <span>{colKey}</span>
+                            <button onClick={() => toggleColunaPivot(colKey)} className="hover:text-rose-400">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* LINHA INFERIOR: LINHAS (HIERARQUIA ESQ->DIR) & VALORES (MÉTRICAS + PERCENTUAIS) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {/* Quadrante 3: LINHAS (Hierarquia Ordenada) */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-amber-300">
+                        <Layers className="w-3 h-3 text-amber-400" />
+                        <span>Linhas ({dimensoes.length})</span>
+                      </div>
+                      <span className="text-[9px] text-slate-500">Esq. → Dir.</span>
+                    </div>
+                    {dimensoes.length === 0 ? (
+                      <p className="text-[9px] text-slate-500 italic py-1">Selecione campos para agrupar.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                        {dimensoes.map((dimKey, idx) => {
+                          const cObj = fonteAtivaObj?.campos.find(c => c.key === dimKey);
+                          return (
+                            <div
+                              key={dimKey}
+                              className="p-1.5 rounded-lg bg-slate-800/80 border border-amber-500/30 flex items-center justify-between text-[11px]"
+                            >
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-bold flex items-center justify-center shrink-0">
+                                  {idx + 1}
+                                </span>
+                                <span className="font-mono font-bold text-white truncate" title={cObj?.label || dimKey}>
+                                  {dimKey}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={idx === 0}
+                                  onClick={() => reordenarDimensao(idx, 'up')}
+                                  className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer"
+                                  title="Subir na hierarquia (mais à esquerda)"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={idx === dimensoes.length - 1}
+                                  onClick={() => reordenarDimensao(idx, 'down')}
+                                  className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer"
+                                  title="Descer na hierarquia (mais à direita)"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDimensao(dimKey)}
+                                  className="p-0.5 text-slate-400 hover:text-rose-400 cursor-pointer"
+                                  title="Remover da hierarquia"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quadrante 4: VALORES (Métricas + % Total Geral) */}
+                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
+                      <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-300">
+                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                        <span>Valores ({metricas.length})</span>
+                      </div>
+                      <span className="text-[9px] text-slate-500">Cálculos &amp; %</span>
+                    </div>
+                    {metricas.length === 0 ? (
+                      <p className="text-[9px] text-slate-500 italic py-1">Nenhuma métrica selecionada.</p>
+                    ) : (
+                      <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
+                        {metricas.map((met, idx) => (
+                          <div
+                            key={idx}
+                            className="p-1.5 rounded-lg bg-slate-800/80 border border-emerald-500/30 space-y-1 text-[10px]"
+                          >
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={met.agregacao}
+                                onChange={e => atualizarMetrica(idx, { agregacao: e.target.value as CockpitAggregationType })}
+                                className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-emerald-300 font-mono focus:outline-none"
+                              >
+                                <option value="sum">Soma</option>
+                                <option value="count">Qtd</option>
+                                <option value="avg">Média</option>
+                                <option value="min">Mín</option>
+                                <option value="max">Máx</option>
+                              </select>
+
+                              <span className="flex-1 font-mono font-bold text-white truncate" title={met.campo}>
+                                {met.campo}
+                              </span>
+
+                              {/* Alternador R$ ou % Total */}
+                              <button
+                                type="button"
+                                onClick={() => atualizarMetrica(idx, { exibicao: met.exibicao === 'percent_total' ? 'valor' : 'percent_total' })}
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-all ${
+                                  met.exibicao === 'percent_total'
+                                    ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                                    : 'bg-slate-700 text-slate-300 hover:text-white'
+                                }`}
+                                title={met.exibicao === 'percent_total' ? "Exibindo como % do Total Geral" : "Exibindo como Valor R$"}
+                              >
+                                {met.exibicao === 'percent_total' ? '% Total' : 'R$'}
+                              </button>
+
+                              {/* Botão Duplicar como Percentual */}
+                              {met.exibicao !== 'percent_total' && (
+                                <button
+                                  type="button"
+                                  onClick={() => duplicarMetricaComoPercentual(idx)}
+                                  className="text-slate-400 hover:text-cyan-300 p-0.5 cursor-pointer"
+                                  title="Duplicar esta métrica como % do Total Geral"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => removerMetrica(idx)}
+                                className="text-slate-500 hover:text-rose-400 p-0.5 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+
+                            <input
+                              type="text"
+                              value={met.apelido || ''}
+                              onChange={e => atualizarMetrica(idx, { apelido: e.target.value })}
+                              placeholder="Rótulo da coluna..."
+                              className="w-full bg-slate-900 border border-slate-700/80 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* 6. Ordenação & Limite da Extração */}
@@ -1295,12 +1541,32 @@ export const CockpitRelatoriosPanel: React.FC = () => {
                                   isNumeric ? 'text-right font-mono font-medium' : ''
                                 }`}
                               >
-                                {col.key === 'cclasstrib' || col.key === 'cst_csosn' || col.key === 'tipo_doc' ? (
+                                {col.key === 'cClassTrib' || col.key === 'cclasstrib' || col.key === 'indOper' ? (
+                                  val && val !== '(Não informado / Sem RTC)' ? (
+                                    <span className="text-[10px] px-2 py-0.5 rounded-md font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                      {val}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-500 italic">
+                                      {val || '-'}
+                                    </span>
+                                  )
+                                ) : col.key === 'cst_csosn' || col.key === 'tipo_doc' ? (
                                   <span className="text-[10px] px-2 py-0.5 rounded-md font-bold font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                                     {val || '-'}
                                   </span>
+                                ) : (col.label.includes('%') || col.key.includes('%')) && typeof val === 'number' ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden shrink-0">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full" 
+                                        style={{ width: `${Math.min(Math.max(val, 0), 100)}%` }} 
+                                      />
+                                    </div>
+                                    <span>{formatarValor(val, col.type, col.label)}</span>
+                                  </div>
                                 ) : (
-                                  formatarValor(val, col.type)
+                                  formatarValor(val, col.type, col.label)
                                 )}
                               </td>
                             );
@@ -1327,7 +1593,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
                               totalVal !== undefined ? 'text-right font-mono text-cyan-300 font-bold' : 'text-slate-500'
                             }`}
                           >
-                            {totalVal !== undefined ? formatarValor(totalVal, 'number') : ''}
+                            {totalVal !== undefined ? formatarValor(totalVal, 'number', col.label) : ''}
                           </td>
                         );
                       })}

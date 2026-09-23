@@ -368,87 +368,9 @@ export const RelatoriosXmlPanel: React.FC<RelatoriosXmlPanelProps> = ({ dfeList 
       
       setItems(fetchedItems);
       setHasSearched(true);
-    } catch (error) {
-      console.error('Erro na busca:', error);
-      if (dfeList && dfeList.length > 0) {
-        const mapped = dfeList.map((doc, idx) => {
-          const docTotal = Number(doc.valorTotal) || 0;
-          const valIbs = Number(doc.valorIbs) || 0;
-          const valCbs = Number(doc.valorCbs) || 0;
-          return {
-            id: `mem-${doc.chaveAcesso}-${idx}`,
-            empresaId: doc.empresaId || empresaAtiva?.id || 'empresa-ativa',
-            empresaCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            empresaNome: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
-            tipoDoc: (doc.tipo || 'NFe') as any,
-            chaveAcesso: doc.chaveAcesso,
-            numeroSerie: `${doc.numero || '1'} / ${doc.serie || '1'}`,
-            dataEmissao: doc.dataEmissao || new Date().toISOString(),
-            dataEntrada: doc.dataEmissao || new Date().toISOString(),
-            competencia: doc.dataEmissao ? doc.dataEmissao.substring(0, 7) : '2026-08',
-            fornecedorCnpj: doc.emitenteCnpj || '00.000.000/0000-00',
-            fornecedorRazao: doc.emitenteNome || 'FORNECEDOR REGISTRADO',
-            fornecedorUf: doc.emitenteUf || 'SP',
-            fornecedorMunicipio: 'São Paulo',
-            clienteCnpj: doc.destinatarioCnpj || empresaAtiva?.cnpj || '00.000.000/0001-91',
-            clienteRazao: doc.destinatarioNome || empresaAtiva?.razaoSocial || 'EMPRESA REGISTRADA',
-            clienteUf: doc.destinatarioUf || 'SP',
-            situacaoDoc: 'autorizado',
-            situacaoManifestacao: doc.isResumoApenas ? 'sem_manifestacao' : 'confirmada',
-            eventoUltimo: doc.eventoUltimo || 'Autorizado o uso do DF-e',
-            alertaFraude: false,
-            itemNro: 1,
-            descricaoItem: 'Item Principal / Operação Global',
-            ncm: '2711.19.10',
-            cest: '',
-            cfop: '1102',
-            cClassTrib: '000001',
-            cstCsosn: '000',
-            naturezaOperacao: 'Operação Fiscal',
-            quantidade: 1,
-            unidade: 'UN',
-            valorUnitario: docTotal,
-            valorBrutoItem: docTotal,
-            descontoIncondicional: 0,
-            freteSeguroRateado: 0,
-            valorLiquidoItem: docTotal,
-            valorIcms: Number(doc.valorIcms) || 0,
-            valorIpi: Number(doc.valorIpi) || 0,
-            valorPis: Number(doc.valorPis) || 0,
-            valorCofins: Number(doc.valorCofins) || 0,
-            baseIbs: Number(doc.baseIbs) || 0,
-            aliquotaIbs: docTotal > 0 && valIbs > 0 ? Number(((valIbs / docTotal) * 100).toFixed(2)) : 0,
-            valorIbs: valIbs,
-            baseCbs: Number(doc.baseCbs) || 0,
-            aliquotaCbs: docTotal > 0 && valCbs > 0 ? Number(((valCbs / docTotal) * 100).toFixed(2)) : 0,
-            valorCbs: valCbs,
-            valorIs: Number(doc.valorImpostoSeletivo) || 0,
-            creditoEsperadoIbs: valIbs,
-            creditoEsperadoCbs: valCbs,
-            creditoApropriadoIbs: valIbs,
-            creditoApropriadoCbs: valCbs,
-            diferencaCreditoIbs: 0,
-            diferencaCreditoCbs: 0,
-            fonteAliquota: 'documento',
-            indicadorOnerosidade: 'Oneroso',
-            criterioOnerosidade: 'Pagamento Confirmado',
-            evidenciaCobranca: true,
-            tipoAquisicao: 'insumo',
-            destinacao: 'atividade_tributada',
-            regraAplicadaId: 'ELEG_001',
-            resultadoElegibilidade: 'Elegível',
-            motivoPadronizado: 'DF-e registrado no Radar Fiscal',
-            evidencia: 'Documento auditado',
-            usuarioCaptura: 'Processo Automático',
-            rotinaCaptura: 'Robô SEFAZ / Upload',
-            isExcecao: false,
-            temEventoAfetaCredito: false,
-            creditoOriginalTotal: valIbs + valCbs,
-            creditoEstornadoTotal: 0
-          };
-        });
-        setItems(mapped);
-      }
+    } catch (error: any) {
+      console.error('Erro na busca de relatórios fiscais:', error);
+      setItems([]);
       setHasSearched(true);
     } finally {
       setLoading(false);

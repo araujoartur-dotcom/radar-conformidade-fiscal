@@ -55,54 +55,29 @@ export async function seedSupabaseDatabase(): Promise<void> {
       adminId = users[0].id;
     }
 
-    // 2. Verificar Empresa Padrão
-    const { data: empresas } = await supabase
+    // 2. Vincular Admin às empresas existentes reais (Zero entidades fictícias)
+    const { data: realEmpresas } = await supabase
       .from('empresas')
-      .select('id')
-      .eq('cnpj_completo', '01.001.001/0001-91');
+      .select('id, razao_social, cnpj_completo');
 
-    let empresaId: string;
+    if (realEmpresas && realEmpresas.length > 0) {
+      for (const emp of realEmpresas) {
+        const { data: vinculos } = await supabase
+          .from('usuario_empresa')
+          .select('id')
+          .eq('usuario_id', adminId)
+          .eq('empresa_id', emp.id);
 
-    if (!empresas || empresas.length === 0) {
-      const { data: newEmpresa, error: insertEmpErr } = await supabase
-        .from('empresas')
-        .insert({
-          cnpj_raiz: '01001001',
-          cnpj_completo: '01.001.001/0001-91',
-          razao_social: 'EMPRESA MATRIZ EXEMPLO LTDA',
-          nome_fantasia: 'EMPRESA MATRIZ EXEMPLO',
-          uf: 'SP',
-          regime_tributario: 'Lucro Real',
-          status: 'ativo'
-        })
-        .select('id')
-        .single();
-
-      if (insertEmpErr) {
-        console.error('❌ Erro ao criar empresa no Supabase:', insertEmpErr.message);
-        return;
+        if (!vinculos || vinculos.length === 0) {
+          await supabase.from('usuario_empresa').insert({
+            usuario_id: adminId,
+            empresa_id: emp.id,
+            permissao: 'total',
+            modulos_permitidos: '*'
+          });
+          console.log(`✅ Vínculo admin <-> ${emp.razao_social} criado no Supabase.`);
+        }
       }
-      empresaId = newEmpresa.id;
-      console.log('✅ Empresa padrão criada no Supabase:', empresaId);
-    } else {
-      empresaId = empresas[0].id;
-    }
-
-    // 3. Vincular Admin à Empresa
-    const { data: vinculos } = await supabase
-      .from('usuario_empresa')
-      .select('id')
-      .eq('usuario_id', adminId)
-      .eq('empresa_id', empresaId);
-
-    if (!vinculos || vinculos.length === 0) {
-      await supabase.from('usuario_empresa').insert({
-        usuario_id: adminId,
-        empresa_id: empresaId,
-        permissao: 'total',
-        modulos_permitidos: '*'
-      });
-      console.log('✅ Vínculo admin <-> empresa criado no Supabase.');
     }
 
     console.log('✅ Seed do Supabase validado e sincronizado.');

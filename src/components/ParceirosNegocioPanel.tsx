@@ -43,17 +43,17 @@ export const ParceirosNegocioPanel: React.FC = () => {
     regimeTributario: '04', // Lucro Real
     esferaPublica: 'NA',
     segmento: 'IND',
-    cnaePrincipal: '2511000',
+    cnaePrincipal: '',
     cnaesSecundarios: [],
     statusCadastro: 'A',
     endereco: {
-      cep: '01310100',
-      logradouro: 'Avenida Paulista',
-      numero: '1000',
-      bairro: 'Bela Vista',
-      codMunicipioIbge: '3550308',
-      municipio: 'São Paulo',
-      uf: 'SP',
+      cep: '',
+      logradouro: '',
+      numero: '',
+      bairro: '',
+      codMunicipioIbge: '',
+      municipio: '',
+      uf: '',
       codPaisBacen: '1058',
       nomePais: 'Brasil'
     },
@@ -69,27 +69,27 @@ export const ParceirosNegocioPanel: React.FC = () => {
       aliquotaIcmsSimples: 0
     },
     retencoes: {
-      retemIrrf: true,
-      aliquotaIrrf: 1.5,
-      codigoReceitaIrrf: '1708',
-      retemCrf: true,
-      aliquotaCrf: 4.65,
+      retemIrrf: false,
+      aliquotaIrrf: 0,
+      codigoReceitaIrrf: '',
+      retemCrf: false,
+      aliquotaCrf: 0,
       retemInss: false,
-      aliquotaInss: 11,
+      aliquotaInss: 0,
       indicadorCprb: false,
       retemIss: false,
-      aliquotaIss: 5
+      aliquotaIss: 0
     },
     contabil: {
-      contaContabilFornecedor: '2.01.01.01.0001',
-      centroCustoDefault: 'CC_GERAL',
-      condicaoPagamentoDias: 30,
-      limiteCredito: 100000,
+      contaContabilFornecedor: '',
+      centroCustoDefault: '',
+      condicaoPagamentoDias: 0,
+      limiteCredito: 0,
       dadosBancarios: {
-        bancoCodigo: '001',
-        bancoNome: 'Banco Exemplo',
-        agencia: '1234-5',
-        contaCorrente: '98765-4',
+        bancoCodigo: '',
+        bancoNome: '',
+        agencia: '',
+        contaCorrente: '',
         chavePix: '',
         tipoChavePix: 'CNPJ'
       }

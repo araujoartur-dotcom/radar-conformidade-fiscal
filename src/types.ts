@@ -546,11 +546,19 @@ export interface XmlItemDetailReport {
     observacao?: string;
   };
 
-  // Conta Corrente Fiscal & Homologação CGIBS (Apuração Assistida - LC 215/2025)
+  // Conta Corrente Fiscal & Homologação CGIBS / RFB (Apuração Assistida - LC 214/2025 e LC 215/2025)
   operacaoId?: string;
   statusCreditoCgibs?: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO';
   motivoCreditoCgibs?: string;
   hashCgibs?: string;
+
+  // Ambientes de Apuração Segregados (IBS - Estados/Municípios vs CBS - União) a Nível de Item
+  statusApuracaoIbs?: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' | 'ISENTO_OU_SEM_DESTAQUE';
+  statusApuracaoCbs?: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' | 'ISENTO_OU_SEM_DESTAQUE';
+  motivoApuracaoIbs?: string;
+  motivoApuracaoCbs?: string;
+  valorCreditoLiquidadoIbs?: number | null;
+  valorCreditoLiquidadoCbs?: number | null;
 
   // Integração com Apuração Assistida & Decisão do RAD (Recolhimento pelo Adquirente — Art. 27 LC 215/2025)
   statusLiquidacaoApuracao?: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO';
@@ -559,6 +567,16 @@ export interface XmlItemDetailReport {
   taxaLiquidacaoItem?: number;               // % de crédito liquidado
   impactoDecisorioRad?: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO';
   motivoDecisaoRad?: string;
+
+  // Dados Canônicos de Pagamento extraídos do grupo <pag> do XML Oficial
+  dadosPagamentoXml?: {
+    tPag?: string;
+    meioPagamentoDesc?: string;
+    vPag?: number;
+    indPag?: string;
+    cAut?: string;
+    hasPagamentoIdentificado?: boolean;
+  };
 
   // Governança de Combustíveis & Bloqueio de Crédito (Art. 267 LC 214/2025)
   isCombustivel?: boolean;
@@ -1046,6 +1064,7 @@ export interface CockpitMetrica {
   campo: string;
   agregacao: CockpitAggregationType;
   apelido?: string;
+  exibicao?: 'valor' | 'percent_total' | 'percent_subtotal';
 }
 
 export interface CockpitFiltro {
@@ -1064,6 +1083,7 @@ export interface CockpitQueryConfig {
   fonte_dados: string;
   modo?: 'agrupado' | 'detalhado';
   dimensoes?: string[];
+  colunas?: string[];
   metricas?: CockpitMetrica[];
   filtros?: CockpitFiltro[];
   ordenacao?: CockpitOrdenacao[];

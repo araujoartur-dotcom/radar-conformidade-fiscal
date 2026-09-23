@@ -204,12 +204,8 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
   totals.totalIvaDual += (vCbs + totalIbsDoc);
 
   // Base de Cálculo IBS / CBS (<vBC> estritamente constante nos grupos IBS/CBS do XML)
-  // Se o campo base_cbs/base_ibs estiver preenchido, usa ele.
-  // Caso ausente, utiliza estritamente as alíquotas oficiais de teste cadastradas em Parâmetros (SEM FALLBACK)
-  const divisorCbs = paramsInf.aliqTesteCbs > 0 ? (paramsInf.aliqTesteCbs / 100) : 0;
-  const divisorIbs = paramsInf.aliqTesteIbs > 0 ? (paramsInf.aliqTesteIbs / 100) : 0;
-  const baseCbs = Number(doc.base_cbs) > 0 ? Number(doc.base_cbs) : (vCbs > 0 && divisorCbs > 0 ? Number((vCbs / divisorCbs).toFixed(2)) : 0);
-  const baseIbs = Number(doc.base_ibs) > 0 ? Number(doc.base_ibs) : (totalIbsDoc > 0 && divisorIbs > 0 ? Number((totalIbsDoc / divisorIbs).toFixed(2)) : 0);
+  const baseCbs = Number(doc.base_cbs) || 0;
+  const baseIbs = Number(doc.base_ibs) || 0;
   totals.totalBaseCbs += baseCbs;
   totals.totalBaseIbs += baseIbs;
 

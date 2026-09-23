@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, Link2, CheckCircle2, RefreshCw, Key, ArrowRight, Code, Server, ShieldCheck, Copy, Terminal, Zap, FileCode2 } from 'lucide-react';
+import { Database, Link2, CheckCircle2, AlertTriangle, RefreshCw, Key, ArrowRight, Code, Server, ShieldCheck, Copy, Terminal, Zap, FileCode2 } from 'lucide-react';
 import { ErpConnectionConfig, DfeXmlItem } from '../types';
 import { buildSapBapiPayload, buildTotvsProtheusPayload, buildGenericWebhookPayload } from '../utils/erpConnectors';
 
@@ -10,31 +10,59 @@ interface ErpIntegrationPanelProps {
 export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeList }) => {
   const [config, setConfig] = useState<ErpConnectionConfig>({
     tipoErp: 'SAP_S4HANA',
-    endpointUrl: 'https://sap-s4hana-prd.empresa.com.br/sap/bc/srt/rfc/sap/z_dfe_sync',
-    systemId: 'PRD-100',
-    clientNumber: '100',
-    apiKey: 'sk_live_sap_a89f92019b88300291039a',
-    autoSyncEvents: true,
-    autoSyncAudit: true,
-    statusConexao: 'conectado',
-    ultimaSincronizacao: '2026-08-16 18:00:00'
+    endpointUrl: '',
+    systemId: '',
+    clientNumber: '',
+    apiKey: '',
+    autoSyncEvents: false,
+    autoSyncAudit: false,
+    statusConexao: 'desconectado',
+    ultimaSincronizacao: ''
   });
 
   const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ sucesso: boolean; mensagem: string } | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'payload' | 'api'>('config');
   const [payloadFormat, setPayloadFormat] = useState<'sap' | 'totvs' | 'webhook'>('sap');
 
   const handleTestConnection = () => {
+    if (!config.endpointUrl || !config.apiKey) {
+      setTestResult({
+        sucesso: false,
+        mensagem: 'Informe o Endpoint e a Chave de API antes de testar a conexão.'
+      });
+      return;
+    }
     setIsTesting(true);
-    setTimeout(() => {
-      setIsTesting(false);
-      setConfig(prev => ({
-        ...prev,
-        statusConexao: 'conectado',
-        ultimaSincronizacao: new Date().toISOString().replace('T', ' ').slice(0, 19)
-      }));
-    }, 1000);
+    setTestResult(null);
+    // Validação real: sem mock silencioso
+    fetch(config.endpointUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      },
+      body: JSON.stringify({ action: 'ping' })
+    })
+      .then(res => {
+        if (res.ok) {
+          setConfig(prev => ({
+            ...prev,
+            statusConexao: 'conectado',
+            ultimaSincronizacao: new Date().toISOString().replace('T', ' ').slice(0, 19)
+          }));
+          setTestResult({ sucesso: true, mensagem: 'Conexão estabelecida com sucesso com o servidor ERP.' });
+        } else {
+          setConfig(prev => ({ ...prev, statusConexao: 'erro' }));
+          setTestResult({ sucesso: false, mensagem: `O servidor ERP retornou status HTTP ${res.status}.` });
+        }
+      })
+      .catch(err => {
+        setConfig(prev => ({ ...prev, statusConexao: 'erro' }));
+        setTestResult({ sucesso: false, mensagem: `Falha na conexão: ${err.message}` });
+      })
+      .finally(() => setIsTesting(false));
   };
 
   const sampleSapPayload = {
@@ -196,11 +224,11 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <button
                 onClick={handleTestConnection}
                 disabled={isTesting}
-                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-blue-600/30"
+                className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-2 transition-all shadow-md shadow-blue-600/30 cursor-pointer disabled:opacity-50"
               >
                 {isTesting ? (
                   <>
@@ -215,11 +243,28 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
                 )}
               </button>
 
-              <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-4 h-4" />
-                Conectado com Sucesso
-              </span>
+              {config.statusConexao === 'conectado' ? (
+                <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Conectado com Sucesso
+                </span>
+              ) : config.statusConexao === 'erro' ? (
+                <span className="text-xs text-rose-400 font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4" />
+                  Falha na Conexão
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                  Integração Não Configurada
+                </span>
+              )}
             </div>
+
+            {testResult && (
+              <div className={`p-3 rounded-xl text-xs font-medium border ${testResult.sucesso ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-rose-950/40 border-rose-800 text-rose-300'}`}>
+                {testResult.mensagem}
+              </div>
+            )}
           </div>
 
           <div className="lg:col-span-5 p-6 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 shadow-lg">
@@ -309,34 +354,12 @@ export const ErpIntegrationPanel: React.FC<ErpIntegrationPanelProps> = ({ dfeLis
             </div>
           </div>
 
-          {(() => {
-            const baseDoc = dfeList[0] || {
-              id: 'demo-doc',
-              tipo: 'NFe',
-              numero: '210',
-              serie: '1',
-              chaveAcesso: '35260101001001000191550010000002101000000001',
-              dataEmissao: '2026-08-16',
-              emitenteCnpj: '01.001.001/0001-91',
-              emitenteNome: 'EMPRESA FORNECEDORA EXEMPLO LTDA',
-              emitenteUf: 'SP',
-              destinatarioCnpj: '02.002.002/0002-02',
-              destinatarioNome: 'EMPRESA CLIENTE EXEMPLO S/A',
-              destinatarioUf: 'SP',
-              valorTotal: 67200.00,
-              valorIcms: 0,
-              valorIpi: 0,
-              valorPis: 0,
-              valorCofins: 0,
-              aliquotaCbs: 0.9,
-              valorCbs: 604.80,
-              aliquotaIbs: 0.1,
-              valorIbs: 67.20,
-              valorImpostoSeletivo: 0,
-              statusAuditoria: 'conforme',
-              alertasAuditoria: [],
-              statusSincronizacaoErp: 'pendente'
-            };
+          {dfeList.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 bg-slate-950/60 rounded-xl border border-slate-800">
+              Nenhum documento disponível na carteira para gerar o modelo de payload.
+            </div>
+          ) : (() => {
+            const baseDoc = dfeList[0];
 
             let renderedPayload: any = {};
             if (payloadFormat === 'sap') {

@@ -37,26 +37,15 @@ export const SpedCruzamentoPanel: React.FC<SpedCruzamentoPanelProps> = ({ dfeLis
   const [activeTab, setActiveTab] = useState<'todas' | 'omissoes' | 'valores' | 'participantes'>('todas');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
-  // Se nenhum arquivo foi carregado ainda, cria um SPED base de exemplo a partir dos DF-e para demonstração inicial
+  // Cruzamento estrito: só executa quando o usuário carregar um arquivo SPED autêntico (Zero Mocks)
   const resultadoCruzamento: RelatorioCruzamentoSped | null = useMemo(() => {
-    if (!spedFileContent) {
-      // Se não houver arquivo carregado, cria cruzamento com lista de DF-e existente
-      const sampleSpedText = `|0000|017|0|01082026|31082026|EMPRESA MATRIZ FISCAL LTDA|05791622002061|SP|128661585|3550308|||A|0|
-|0005|MATRIZ FISCAL|01310100|AVENIDA PAULISTA|1000|CONJ 501|BELA VISTA|1132000000||fiscal@empresa.com.br|
-|0100|CONTADOR RESPONSAVEL|12345678900|SP-123456/O-0|00123456000199|01310100|AV PAULISTA|1000||BELA VISTA|1132000000||contabil@auditoria.com.br|3550308|
-${dfeList.slice(0, Math.max(1, Math.floor(dfeList.length / 2))).map((d, i) =>
-  `|0150|FORN-${i+1}|${d.emitenteNome}|1058|${d.emitenteCnpj.replace(/\D/g, '')}|${d.emitenteIe || ''}|3550308||||
-|C100|0|1|FORN-${i+1}|55|00|1|${d.numero}|${d.chaveAcesso}|01082026|02082026|${d.valorTotal.toFixed(2)}|1|0|0|${d.valorTotal.toFixed(2)}|000|0|0|0|0|${d.valorIcms.toFixed(2)}|0|0|0|0|${d.valorPis.toFixed(2)}|${d.valorCofins.toFixed(2)}|0|0|`
-).join('\n')}`;
-      
-      const parsed = parseSpedFiscalTxt(sampleSpedText);
-      return cruzarSefazComSped(dfeList, parsed);
-    }
+    if (!spedFileContent) return null;
 
     try {
       const parsed = parseSpedFiscalTxt(spedFileContent);
       return cruzarSefazComSped(dfeList, parsed);
-    } catch {
+    } catch (e) {
+      console.error('Falha no parse do SPED:', e);
       return null;
     }
   }, [spedFileContent, dfeList]);
@@ -338,6 +327,20 @@ ${dfeList.slice(0, Math.max(1, Math.floor(dfeList.length / 2))).map((d, i) =>
             </div>
           </div>
         </>
+      )}
+
+      {!resultadoCruzamento && (
+        <div className="p-12 rounded-3xl bg-slate-900/60 border border-slate-800 text-center space-y-4 max-w-xl mx-auto my-8">
+          <div className="w-16 h-16 rounded-2xl bg-indigo-950/60 border border-indigo-800/80 flex items-center justify-center text-indigo-400 mx-auto">
+            <Upload className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-bold text-white">Nenhum arquivo SPED EFD carregado</h3>
+            <p className="text-xs text-slate-400">
+              Faça o upload do arquivo oficial .txt da EFD ICMS/IPI para executar a auditoria e conciliação contra os DF-e da SEFAZ.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

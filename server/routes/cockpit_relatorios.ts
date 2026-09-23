@@ -56,20 +56,57 @@ export const DATA_SOURCES: Record<string, DataSourceDef> = {
     colunaTenant: 'd.empresa_id',
     joinClausula: 'JOIN dfe_documentos d ON i.documento_id = d.id',
     campos: {
-      id: { key: 'id', label: 'ID Item', sqlExpr: 'i.id', type: 'string', group: 'Identificação' },
-      documento_id: { key: 'documento_id', label: 'ID Documento', sqlExpr: 'i.documento_id', type: 'string', group: 'Identificação' },
-      item_nro: { key: 'item_nro', label: 'Nº Item', sqlExpr: 'i.item_nro', type: 'number', group: 'Identificação' },
-      ncm: { key: 'ncm', label: 'NCM', sqlExpr: 'i.ncm', type: 'string', group: 'Classificação Fiscal' },
+      // Tags Oficiais de Tributos & Valores RTC (NT 2025.002)
+      cClassTrib: { key: 'cClassTrib', label: 'cClassTrib (Classificação Tributária RTC)', sqlExpr: 'i.cclasstrib', type: 'string', group: 'Reforma Tributária (RTC)' },
+      indOper: { key: 'indOper', label: 'indOper (Indicador da Operação)', sqlExpr: 'i.natureza_operacao', type: 'string', group: 'Reforma Tributária (RTC)' },
+      vBC: { key: 'vBC', label: 'vBC (Base de Cálculo IBS/CBS R$)', sqlExpr: 'i.base_ibs', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+      pIBSUF: { key: 'pIBSUF', label: 'pIBSUF (Alíquota IBS Estadual %)', sqlExpr: 'i.aliquota_ibs', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      vIBSUF: { key: 'vIBSUF', label: 'vIBSUF (Valor IBS Estadual R$)', sqlExpr: 'i.valor_ibs', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+      pIBSMun: { key: 'pIBSMun', label: 'pIBSMun (Alíquota IBS Municipal %)', sqlExpr: '0', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      vIBSMun: { key: 'vIBSMun', label: 'vIBSMun (Valor IBS Municipal R$)', sqlExpr: '0', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+      pIBS: { key: 'pIBS', label: 'pIBS (Alíquota IBS Total %)', sqlExpr: 'i.aliquota_ibs', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      vIBS: { key: 'vIBS', label: 'vIBS (Valor IBS Total R$)', sqlExpr: 'i.valor_ibs', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+      pCBS: { key: 'pCBS', label: 'pCBS (Alíquota CBS Federal %)', sqlExpr: 'i.aliquota_cbs', type: 'number', group: 'Reforma Tributária (RTC)', aggregatable: true },
+      vCBS: { key: 'vCBS', label: 'vCBS (Valor CBS Federal R$)', sqlExpr: 'i.valor_cbs', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+      vIS: { key: 'vIS', label: 'vIS (Imposto Seletivo R$)', sqlExpr: 'i.valor_is', type: 'number', group: 'Tributos RTC (Reforma)', aggregatable: true },
+
+      // Tags Oficiais de Valores Comerciais & Quantidades
+      vProd: { key: 'vProd', label: 'vProd (Valor Bruto dos Produtos R$)', sqlExpr: 'i.valor_bruto_item', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      vDesc: { key: 'vDesc', label: 'vDesc (Desconto Incondicional R$)', sqlExpr: 'i.desconto_incondicional', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      vFrete: { key: 'vFrete', label: 'vFrete (Frete/Seguro Rateado R$)', sqlExpr: 'i.frete_seguro_rateado', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      vItem: { key: 'vItem', label: 'vItem (Valor Líquido do Item R$)', sqlExpr: 'i.valor_liquido_item', type: 'number', group: 'Valores Comerciais', aggregatable: true },
+      qCom: { key: 'qCom', label: 'qCom (Quantidade Comercial)', sqlExpr: 'i.quantidade', type: 'number', group: 'Quantidades', aggregatable: true },
+      uCom: { key: 'uCom', label: 'uCom (Unidade Comercial)', sqlExpr: 'i.unidade', type: 'string', group: 'Quantidades' },
+
+      // Tags Oficiais de Classificação & Localização
+      NCM: { key: 'NCM', label: 'NCM (Classificação Fiscal)', sqlExpr: 'i.ncm', type: 'string', group: 'Classificação Fiscal' },
+      CFOP: { key: 'CFOP', label: 'CFOP (Código Fiscal de Operações)', sqlExpr: 'i.cfop', type: 'string', group: 'Classificação Fiscal' },
+      CST: { key: 'CST', label: 'CST (Código Situação Tributária)', sqlExpr: 'i.cst_csosn', type: 'string', group: 'Classificação Fiscal' },
+      cMun: { key: 'cMun', label: 'cMun (Código IBGE Município)', sqlExpr: 'd.fornecedor_municipio', type: 'string', group: 'Localização / Destino' },
+      xMun: { key: 'xMun', label: 'xMun (Nome do Município)', sqlExpr: 'd.fornecedor_municipio', type: 'string', group: 'Localização / Destino' },
+      UF: { key: 'UF', label: 'UF (UF Destino/Cliente)', sqlExpr: 'd.cliente_uf', type: 'string', group: 'Localização / Destino' },
+
+      // Tags Oficiais de Tributos Tradicionais
+      vICMS: { key: 'vICMS', label: 'vICMS (ICMS Tradicional R$)', sqlExpr: 'i.valor_icms', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      vPIS: { key: 'vPIS', label: 'vPIS (PIS Tradicional R$)', sqlExpr: 'i.valor_pis', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      vCOFINS: { key: 'vCOFINS', label: 'vCOFINS (COFINS Tradicional R$)', sqlExpr: 'i.valor_cofins', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+      vIPI: { key: 'vIPI', label: 'vIPI (IPI Tradicional R$)', sqlExpr: 'i.valor_ipi', type: 'number', group: 'Tributos Tradicionais', aggregatable: true },
+
+      // Tags Oficiais de Cabeçalho / Documento
+      vNF: { key: 'vNF', label: 'vNF (Valor Total do Documento R$)', sqlExpr: 'd.valor_total', type: 'number', group: 'Documento', aggregatable: true },
+      chNFe: { key: 'chNFe', label: 'chNFe (Chave de Acesso)', sqlExpr: 'd.chave_acesso', type: 'string', group: 'Documento' },
+      dhEmi: { key: 'dhEmi', label: 'dhEmi (Data de Emissão)', sqlExpr: 'd.data_emissao', type: 'date', group: 'Documento' },
+      tipo_doc: { key: 'tipo_doc', label: 'Tipo Doc (NF-e/CT-e/NFS-e)', sqlExpr: 'd.tipo_doc', type: 'badge', group: 'Documento' },
+      tipo_operacao: { key: 'tipo_operacao', label: 'Operação (Entrada/Saída)', sqlExpr: 'd.tipo_operacao', type: 'badge', group: 'Documento' },
+      competencia: { key: 'competencia', label: 'Competência (AAAA-MM)', sqlExpr: 'd.competencia', type: 'string', group: 'Documento' },
+      fornecedor_cnpj: { key: 'fornecedor_cnpj', label: 'CNPJ Emitente', sqlExpr: 'd.fornecedor_cnpj', type: 'string', group: 'Emitente / Fornecedor' },
+      fornecedor_razao: { key: 'fornecedor_razao', label: 'Razão Social Emitente', sqlExpr: 'd.fornecedor_razao', type: 'string', group: 'Emitente / Fornecedor' },
+      cliente_cnpj: { key: 'cliente_cnpj', label: 'CNPJ Destinatário', sqlExpr: 'd.cliente_cnpj', type: 'string', group: 'Destinatário / Cliente' },
+      cliente_razao: { key: 'cliente_razao', label: 'Razão Social Destinatário', sqlExpr: 'd.cliente_razao', type: 'string', group: 'Destinatário / Cliente' },
+
+      // Aliases Legados para Compatibilidade
       cclasstrib: { key: 'cclasstrib', label: 'cClassTrib (RTC)', sqlExpr: 'i.cclasstrib', type: 'string', group: 'Classificação Fiscal' },
-      cst_csosn: { key: 'cst_csosn', label: 'CST / CSOSN', sqlExpr: 'i.cst_csosn', type: 'string', group: 'Classificação Fiscal' },
-      cfop: { key: 'cfop', label: 'CFOP', sqlExpr: 'i.cfop', type: 'string', group: 'Classificação Fiscal' },
-      descricao_item: { key: 'descricao_item', label: 'Descrição do Item', sqlExpr: 'i.descricao_item', type: 'string', group: 'Produto / Serviço' },
-      natureza_operacao: { key: 'natureza_operacao', label: 'Natureza da Operação', sqlExpr: 'i.natureza_operacao', type: 'string', group: 'Classificação Fiscal' },
-      quantidade: { key: 'quantidade', label: 'Quantidade', sqlExpr: 'i.quantidade', type: 'number', group: 'Quantidades', aggregatable: true },
-      unidade: { key: 'unidade', label: 'Unidade', sqlExpr: 'i.unidade', type: 'string', group: 'Quantidades' },
       valor_bruto_item: { key: 'valor_bruto_item', label: 'Valor Bruto (R$)', sqlExpr: 'i.valor_bruto_item', type: 'number', group: 'Valores', aggregatable: true },
-      desconto_incondicional: { key: 'desconto_incondicional', label: 'Desconto (R$)', sqlExpr: 'i.desconto_incondicional', type: 'number', group: 'Valores', aggregatable: true },
-      frete_seguro_rateado: { key: 'frete_seguro_rateado', label: 'Frete/Seguro (R$)', sqlExpr: 'i.frete_seguro_rateado', type: 'number', group: 'Valores', aggregatable: true },
       valor_liquido_item: { key: 'valor_liquido_item', label: 'Valor Líquido (R$)', sqlExpr: 'i.valor_liquido_item', type: 'number', group: 'Valores', aggregatable: true },
       base_ibs: { key: 'base_ibs', label: 'Base de Cálculo IBS', sqlExpr: 'i.base_ibs', type: 'number', group: 'Tributação RTC', aggregatable: true },
       aliquota_ibs: { key: 'aliquota_ibs', label: 'Alíquota IBS (%)', sqlExpr: 'i.aliquota_ibs', type: 'number', group: 'Tributação RTC', aggregatable: true },
@@ -77,18 +114,23 @@ export const DATA_SOURCES: Record<string, DataSourceDef> = {
       base_cbs: { key: 'base_cbs', label: 'Base de Cálculo CBS', sqlExpr: 'i.base_cbs', type: 'number', group: 'Tributação RTC', aggregatable: true },
       aliquota_cbs: { key: 'aliquota_cbs', label: 'Alíquota CBS (%)', sqlExpr: 'i.aliquota_cbs', type: 'number', group: 'Tributação RTC', aggregatable: true },
       valor_cbs: { key: 'valor_cbs', label: 'Valor CBS (R$)', sqlExpr: 'i.valor_cbs', type: 'number', group: 'Tributação RTC', aggregatable: true },
+      desconto_incondicional: { key: 'desconto_incondicional', label: 'Desconto (R$)', sqlExpr: 'i.desconto_incondicional', type: 'number', group: 'Valores', aggregatable: true },
+      frete_seguro_rateado: { key: 'frete_seguro_rateado', label: 'Frete/Seguro (R$)', sqlExpr: 'i.frete_seguro_rateado', type: 'number', group: 'Valores', aggregatable: true },
+      quantidade: { key: 'quantidade', label: 'Quantidade', sqlExpr: 'i.quantidade', type: 'number', group: 'Quantidades', aggregatable: true },
+      unidade: { key: 'unidade', label: 'Unidade', sqlExpr: 'i.unidade', type: 'string', group: 'Quantidades' },
+      ncm: { key: 'ncm', label: 'NCM', sqlExpr: 'i.ncm', type: 'string', group: 'Classificação Fiscal' },
+      cfop: { key: 'cfop', label: 'CFOP', sqlExpr: 'i.cfop', type: 'string', group: 'Classificação Fiscal' },
+      cst_csosn: { key: 'cst_csosn', label: 'CST / CSOSN', sqlExpr: 'i.cst_csosn', type: 'string', group: 'Classificação Fiscal' },
+      natureza_operacao: { key: 'natureza_operacao', label: 'Natureza da Operação', sqlExpr: 'i.natureza_operacao', type: 'string', group: 'Classificação Fiscal' },
+      descricao_item: { key: 'descricao_item', label: 'Descrição do Item', sqlExpr: 'i.descricao_item', type: 'string', group: 'Produto / Serviço' },
+      item_nro: { key: 'item_nro', label: 'Nº Item', sqlExpr: 'i.item_nro', type: 'number', group: 'Identificação' },
+      documento_id: { key: 'documento_id', label: 'ID Documento', sqlExpr: 'i.documento_id', type: 'string', group: 'Identificação' },
+      id: { key: 'id', label: 'ID Item', sqlExpr: 'i.id', type: 'string', group: 'Identificação' },
       chave_acesso: { key: 'chave_acesso', label: 'Chave de Acesso', sqlExpr: 'd.chave_acesso', type: 'string', group: 'Documento' },
-      tipo_doc: { key: 'tipo_doc', label: 'Tipo Doc (NF-e/CT-e/NFS-e)', sqlExpr: 'd.tipo_doc', type: 'badge', group: 'Documento' },
-      tipo_operacao: { key: 'tipo_operacao', label: 'Operação (Entrada/Saída)', sqlExpr: 'd.tipo_operacao', type: 'badge', group: 'Documento' },
-      numero_serie: { key: 'numero_serie', label: 'Número / Série', sqlExpr: 'd.numero_serie', type: 'string', group: 'Documento' },
       data_emissao: { key: 'data_emissao', label: 'Data de Emissão', sqlExpr: 'd.data_emissao', type: 'date', group: 'Documento' },
-      competencia: { key: 'competencia', label: 'Competência', sqlExpr: 'd.competencia', type: 'string', group: 'Documento' },
-      fornecedor_cnpj: { key: 'fornecedor_cnpj', label: 'CNPJ Emitente/Fornecedor', sqlExpr: 'd.fornecedor_cnpj', type: 'string', group: 'Emitente / Fornecedor' },
-      fornecedor_razao: { key: 'fornecedor_razao', label: 'Razão Social Emitente', sqlExpr: 'd.fornecedor_razao', type: 'string', group: 'Emitente / Fornecedor' },
+      numero_serie: { key: 'numero_serie', label: 'Número / Série', sqlExpr: 'd.numero_serie', type: 'string', group: 'Documento' },
       fornecedor_uf: { key: 'fornecedor_uf', label: 'UF Emitente', sqlExpr: 'd.fornecedor_uf', type: 'string', group: 'Emitente / Fornecedor' },
       fornecedor_municipio: { key: 'fornecedor_municipio', label: 'Município Emitente', sqlExpr: 'd.fornecedor_municipio', type: 'string', group: 'Emitente / Fornecedor' },
-      cliente_cnpj: { key: 'cliente_cnpj', label: 'CNPJ Destinatário/Cliente', sqlExpr: 'd.cliente_cnpj', type: 'string', group: 'Destinatário / Cliente' },
-      cliente_razao: { key: 'cliente_razao', label: 'Razão Social Destinatário', sqlExpr: 'd.cliente_razao', type: 'string', group: 'Destinatário / Cliente' },
       cliente_uf: { key: 'cliente_uf', label: 'UF Destinatário', sqlExpr: 'd.cliente_uf', type: 'string', group: 'Destinatário / Cliente' },
       situacao_doc: { key: 'situacao_doc', label: 'Situação Documento', sqlExpr: 'd.situacao_doc', type: 'badge', group: 'Documento' }
     }
@@ -184,6 +226,7 @@ interface QueryMetrica {
   campo: string;
   agregacao: 'sum' | 'count' | 'avg' | 'min' | 'max' | 'count_distinct';
   apelido?: string;
+  exibicao?: 'valor' | 'percent_total';
 }
 
 interface QueryFiltro {
@@ -884,12 +927,52 @@ async function executeSupabaseCockpitQuery(args: SupabaseCockpitArgs): Promise<{
     }
   }
 
-  // Achata propriedades aninhadas (Join do Supabase)
+  // Achata propriedades aninhadas (Join do Supabase) e normaliza com as tags oficiais da SEFAZ
   const flattenedRows = allRawRows.map(r => {
-    if (r.dfe_documentos) {
-      return { ...r, ...r.dfe_documentos, dfe_documentos: undefined };
-    }
-    return r;
+    const base: Record<string, any> = r.dfe_documentos ? { ...r, ...r.dfe_documentos, dfe_documentos: undefined } : { ...r };
+    
+    // Nomenclatura Canônica das Tags Oficiais do XML da SEFAZ (NT 2025.002)
+    base.cClassTrib = base.cclasstrib || '';
+    base.indOper = base.natureza_operacao || '';
+    base.vBC = Number(base.base_ibs) || 0;
+    base.pIBSUF = Number(base.aliquota_ibs) || 0;
+    base.vIBSUF = Number(base.valor_ibs) || 0;
+    base.pIBSMun = 0;
+    base.vIBSMun = 0;
+    base.pIBS = Number(base.aliquota_ibs) || 0;
+    base.vIBS = Number(base.valor_ibs) || 0;
+    base.pCBS = Number(base.aliquota_cbs) || 0;
+    base.vCBS = Number(base.valor_cbs) || 0;
+    base.vIS = Number(base.valor_is) || 0;
+    base.vProd = Number(base.valor_bruto_item) || 0;
+    base.vDesc = Number(base.desconto_incondicional) || 0;
+    base.vFrete = Number(base.frete_seguro_rateado) || 0;
+    base.vItem = Number(base.valor_liquido_item) || 0;
+    base.qCom = Number(base.quantidade) || 0;
+    base.uCom = base.unidade || '';
+    base.NCM = base.ncm || '';
+    base.CFOP = base.cfop || '';
+    base.CST = base.cst_csosn || '';
+    base.cMun = base.fornecedor_municipio || '';
+    base.xMun = base.fornecedor_municipio || '';
+    base.UF = base.cliente_uf || '';
+    base.vICMS = Number(base.valor_icms) || 0;
+    base.vPIS = Number(base.valor_pis) || 0;
+    base.vCOFINS = Number(base.valor_cofins) || 0;
+    base.vIPI = Number(base.valor_ipi) || 0;
+    base.vNF = Number(base.valor_total) || 0;
+    base.chNFe = base.chave_acesso || '';
+    base.dhEmi = base.data_emissao || '';
+
+    // Compatibilidade reversa
+    base.base_ibs = base.vBC;
+    base.base_cbs = base.vBC;
+    base.valor_ibs = base.vIBS;
+    base.valor_cbs = base.vCBS;
+    base.valor_bruto_item = base.vProd;
+    base.valor_liquido_item = base.vItem;
+
+    return base;
   });
 
   const selectColumns: { key: string; label: string; type: string }[] = [];
@@ -911,18 +994,27 @@ async function executeSupabaseCockpitQuery(args: SupabaseCockpitArgs): Promise<{
       numericColumns.push(alias);
     }
 
-    // Agrupamento Pivot
+    // Agrupamento Pivot Hierárquico Estrito (da esquerda para a direita)
     const groupMap = new Map<string, { groupValues: Record<string, any>; items: any[] }>();
 
     for (const r of flattenedRows) {
-      const keyParts = dimensoes.map(d => String(r[d] ?? '-'));
+      const keyParts = dimensoes.map(d => {
+        const val = r[d];
+        if (val === '' || val === null || val === undefined) {
+          return '(Não informado / Sem RTC)';
+        }
+        return String(val);
+      });
       const groupKey = keyParts.join('___');
 
       let entry = groupMap.get(groupKey);
       if (!entry) {
         const groupValues: Record<string, any> = {};
         for (const d of dimensoes) {
-          groupValues[d] = r[d] ?? '-';
+          const rawVal = r[d];
+          groupValues[d] = (rawVal === '' || rawVal === null || rawVal === undefined)
+            ? '(Não informado / Sem RTC)'
+            : rawVal;
         }
         entry = { groupValues, items: [] };
         groupMap.set(groupKey, entry);
@@ -1008,6 +1100,18 @@ async function executeSupabaseCockpitQuery(args: SupabaseCockpitArgs): Promise<{
       const val = Number(row[col]);
       return acc + (isNaN(val) ? 0 : val);
     }, 0);
+  }
+
+  // Cálculo de % do Total Geral para métricas configuradas com exibicao === 'percent_total'
+  for (const m of metricas) {
+    if (m.exibicao === 'percent_total') {
+      const alias = m.apelido ? m.apelido.trim() : `${m.agregacao}_${m.campo}`;
+      const totalCol = totals[alias] || 0;
+      for (const row of finalRows) {
+        const val = Number(row[alias]) || 0;
+        row[alias] = totalCol > 0 ? Number(((val / totalCol) * 100).toFixed(2)) : 0;
+      }
+    }
   }
 
   const elapsedMs = Date.now() - startTime;

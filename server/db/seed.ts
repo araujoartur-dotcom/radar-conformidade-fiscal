@@ -48,21 +48,6 @@ export function seedDatabase(): void {
   `).run(adminId, 'Administrador Master', 'admin@radarfiscal.com.br', senhaHash, 'admin_master', 'ativo');
 
   // =========================================================
-  // EMPRESA PADRÃO INICIAL
-  // =========================================================
-  const empresaId = uuid();
-  db.prepare(`
-    INSERT OR IGNORE INTO empresas (id, cnpj_raiz, cnpj_completo, razao_social, nome_fantasia, uf, regime_tributario, status)
-    VALUES (?, '01001001', '01.001.001/0001-91', 'EMPRESA MATRIZ EXEMPLO LTDA', 'EMPRESA MATRIZ EXEMPLO', 'SP', 'Lucro Real', 'ativo')
-  `).run(empresaId);
-
-  // Vincular admin à empresa padrão
-  db.prepare(`
-    INSERT OR IGNORE INTO usuario_empresa (id, usuario_id, empresa_id, permissao, modulos_permitidos)
-    VALUES (?, ?, ?, 'total', '*')
-  `).run(uuid(), adminId, empresaId);
-
-  // =========================================================
   // ALÍQUOTAS DE REFERÊNCIA CBS / IBS (Transição 2026–2033)
   // =========================================================
   const aliquotas = [

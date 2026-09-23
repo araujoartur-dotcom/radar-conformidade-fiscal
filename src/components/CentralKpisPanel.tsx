@@ -200,14 +200,14 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
 
   const totalCbs = totalCbsRealXml > 0 ? totalCbsRealXml : ((totalBaseCbsFiltrada * regraAno.aliquotaCbs) / 100);
 
-  // Rateio do IBS entre Estadual e Municipal (se não vier discriminado na tag vIBSUF/Mun, divide 50/50 o IBS do XML)
+  // IBS Estadual e Municipal estritamente das tags vIBSUF e vIBSMun (Zero rateio 50/50 arbitrário)
   const totalIbsUf = (activeKpis?.totalIbsUf && activeKpis.totalIbsUf > 0)
     ? activeKpis.totalIbsUf
-    : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsEstadual) / 100));
+    : 0;
 
   const totalIbsMun = (activeKpis?.totalIbsMun && activeKpis.totalIbsMun > 0)
     ? activeKpis.totalIbsMun
-    : (totalIbsRealXml > 0 ? (totalIbsRealXml / 2) : ((totalBaseIbsFiltrada * regraAno.aliquotaIbsMunicipal) / 100));
+    : 0;
 
   const totalIbsTotal = totalIbsRealXml > 0 ? totalIbsRealXml : (totalIbsUf + totalIbsMun);
   const totalIvaDual = totalCbs + totalIbsTotal;

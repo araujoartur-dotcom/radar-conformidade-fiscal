@@ -406,7 +406,7 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
                         {/* Base IBS/CBS */}
                         <td className="py-2.5 px-3 border-r border-slate-800/60 text-right">
                           <div className="font-mono text-xs text-slate-200">
-                            R$ {(it.baseIbs || it.baseCbs || it.valorLiquidoItem).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            R$ {((it.baseIbs ?? 0) > 0 ? it.baseIbs : (it.baseCbs ?? 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </td>
 
@@ -504,17 +504,37 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
                     {/* Grupo 6: Apuração Assistida & RAD */}
                     {(activeViewMode === '360' || activeViewMode === 'apuracao_rad') && (
                       <>
-                        {/* Status CGIBS */}
+                        {/* Status Apuração Segregado (CGIBS / RFB) */}
                         <td className="py-2.5 px-3 border-r border-slate-800/60 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block ${
-                            it.statusLiquidacaoApuracao === 'LIQUIDADO'
-                              ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
-                              : it.statusLiquidacaoApuracao === 'PENDENTE_EXTINCAO'
-                                ? 'bg-amber-950/80 text-amber-300 border-amber-800'
-                                : 'bg-slate-800 text-slate-400 border-slate-700'
-                          }`}>
-                            {it.statusLiquidacaoApuracao === 'LIQUIDADO' ? '🟢 Liquidado' : it.statusLiquidacaoApuracao === 'PENDENTE_EXTINCAO' ? '🟡 Pendente Split' : '⚪ Não Conciliado'}
-                          </span>
+                          <div className="flex flex-col gap-1 items-center min-w-[120px]">
+                            {/* Status IBS (CGIBS - Estados/Municípios) */}
+                            <span 
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border inline-flex items-center gap-1 w-full justify-between ${
+                                it.statusApuracaoIbs === 'LIQUIDADO' ? 'bg-teal-950/80 text-teal-300 border-teal-800' :
+                                it.statusApuracaoIbs === 'PENDENTE_EXTINCAO' ? 'bg-amber-950/80 text-amber-300 border-amber-800' :
+                                it.statusApuracaoIbs === 'ISENTO_OU_SEM_DESTAQUE' ? 'bg-slate-900 text-slate-400 border-slate-700' :
+                                'bg-slate-900 text-slate-400 border-slate-800'
+                              }`}
+                              title={it.motivoApuracaoIbs || 'Comitê Gestor do IBS (Estados/Municípios)'}
+                            >
+                              <span className="font-mono text-[8px] uppercase tracking-wider text-slate-400">CGIBS (IBS)</span>
+                              <span>{it.statusApuracaoIbs === 'LIQUIDADO' ? '🟢 Extinto' : it.statusApuracaoIbs === 'PENDENTE_EXTINCAO' ? '🟡 Pendente' : it.statusApuracaoIbs === 'ISENTO_OU_SEM_DESTAQUE' ? '⚪ Isento/Zero' : '⚪ Não Conc.'}</span>
+                            </span>
+
+                            {/* Status CBS (RFB - União) */}
+                            <span 
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold border inline-flex items-center gap-1 w-full justify-between ${
+                                it.statusApuracaoCbs === 'LIQUIDADO' ? 'bg-blue-950/80 text-blue-300 border-blue-800' :
+                                it.statusApuracaoCbs === 'PENDENTE_EXTINCAO' ? 'bg-amber-950/80 text-amber-300 border-amber-800' :
+                                it.statusApuracaoCbs === 'ISENTO_OU_SEM_DESTAQUE' ? 'bg-slate-900 text-slate-400 border-slate-700' :
+                                'bg-slate-900 text-slate-400 border-slate-800'
+                              }`}
+                              title={it.motivoApuracaoCbs || 'Receita Federal do Brasil (União)'}
+                            >
+                              <span className="font-mono text-[8px] uppercase tracking-wider text-slate-400">RFB (CBS)</span>
+                              <span>{it.statusApuracaoCbs === 'LIQUIDADO' ? '🟢 Extinto' : it.statusApuracaoCbs === 'PENDENTE_EXTINCAO' ? '🟡 Pendente' : it.statusApuracaoCbs === 'ISENTO_OU_SEM_DESTAQUE' ? '⚪ Isento/Zero' : '⚪ Não Conc.'}</span>
+                            </span>
+                          </div>
                         </td>
 
                         {/* Crédito Real Liquidado */}

@@ -1480,31 +1480,7 @@ export const TabelasFiscaisPanel: React.FC = () => {
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono">Cat. C</span>
         </button>
 
-        <button
-          onClick={() => setActiveTab('cfop')}
-          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'cfop'
-              ? 'bg-indigo-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-          }`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Matriz CFOP ({cfopRules.length})</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Cat. C</span>
-        </button>
 
-        <button
-          onClick={() => setActiveTab('regras')}
-          className={`flex-1 min-w-[160px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'regras'
-              ? 'bg-rose-600 text-white shadow-md'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Elegibilidade ({regras.length})</span>
-          <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono">Cat. C</span>
-        </button>
 
 
         <button

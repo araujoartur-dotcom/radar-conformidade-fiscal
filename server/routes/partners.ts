@@ -87,245 +87,9 @@ export function validarDocumento(tipo: 'PF' | 'PJ' | 'EX', doc: string): boolean
 }
 
 // ============================================================
-// BASE DE DADOS IN-MEMORY SEED PARA DEMONSTRAÇÃO
+// BASE DE DADOS DE PARCEIROS (ESTRITAMENTE REAL / ZERO MOCKS)
 // ============================================================
-let inMemoryPartners: any[] = [
-  {
-    id: 'partner-ind-lucro-real-001',
-    tipoPessoa: 'PJ',
-    papel: 'fornecedor',
-    cpfCnpj: '01.001.001/0001-91',
-    cnpjRaiz: '01001001',
-    cnpjOrdem: '0001',
-    cnpjDv: '91',
-    razaoSocial: 'INDUSTRIA FORNECEDOR EXEMPLO S/A',
-    nomeFantasia: 'FORNECEDOR EXEMPLO INDUSTRIAL',
-    naturezaJuridica: '2054', // S/A Fechada
-    regimeTributario: '04', // Lucro Real
-    esferaPublica: 'NA',
-    segmento: 'IND',
-    cnaePrincipal: '2511000',
-    statusCadastro: 'A',
-    endereco: {
-      cep: '04571000',
-      logradouro: 'Avenida das Nações Unidas',
-      numero: '12901',
-      complemento: 'Torre Oeste 14º Andar',
-      bairro: 'Brooklin Paulista',
-      codMunicipioIbge: '3550308',
-      municipio: 'São Paulo',
-      uf: 'SP',
-      codPaisBacen: '1058',
-      nomePais: 'Brasil'
-    },
-    fiscal: {
-      inscricaoEstadual: '110293847115',
-      indIeDestinatario: '1',
-      inscricaoMunicipal: '9876543-2',
-      indContribuinteIpi: true,
-      indSubstitutoTrib: true,
-      indProdutorRural: false,
-      indCooperativa: false,
-      indOptanteSimples: false,
-      suframa: ''
-    },
-    retencoes: {
-      retemIrrf: true,
-      aliquotaIrrf: 1.5,
-      codigoReceitaIrrf: '1708',
-      retemCrf: true,
-      aliquotaCrf: 4.65,
-      retemInss: false,
-      retemIss: false
-    },
-    contabil: {
-      contaContabilFornecedor: '2.01.01.01.0025',
-      centroCustoDefault: 'CC_FABRICA_SP',
-      condicaoPagamentoDias: 30,
-      limiteCredito: 500000,
-      dadosBancarios: {
-        bancoCodigo: '001',
-        bancoNome: 'Banco Exemplo',
-        agencia: '3300-1',
-        contaCorrente: '45890-2',
-        chavePix: '01001001000191',
-        tipoChavePix: 'CNPJ'
-      },
-      contatoFiscal: {
-        nome: 'Contador Responsável (Exemplo)',
-        email: 'fiscal@empresa.com.br',
-        telefone: '(11) 3456-7890',
-        crcContador: 'SP-123456/O-0'
-      }
-    },
-    situacaoCadastralSefaz: 'Habilitado',
-    dataUltimaConsultaSefaz: '2026-08-15T14:30:00Z',
-    createdAt: '2026-08-10T10:00:00Z',
-    updatedAt: '2026-08-15T14:30:00Z'
-  },
-  {
-    id: 'partner-com-simples-002',
-    tipoPessoa: 'PJ',
-    papel: 'cliente',
-    cpfCnpj: '02.002.002/0002-02',
-    cnpjRaiz: '02002002',
-    cnpjOrdem: '0002',
-    cnpjDv: '02',
-    razaoSocial: 'COMERCIO CLIENTE EXEMPLO LTDA',
-    nomeFantasia: 'CLIENTE EXEMPLO COMERCIAL',
-    naturezaJuridica: '2062', // LTDA
-    regimeTributario: '01', // Simples Nacional
-    esferaPublica: 'NA',
-    segmento: 'COM',
-    cnaePrincipal: '4711302',
-    statusCadastro: 'A',
-    endereco: {
-      cep: '80010000',
-      logradouro: 'Rua XV de Novembro',
-      numero: '450',
-      bairro: 'Centro',
-      codMunicipioIbge: '4106902',
-      municipio: 'Curitiba',
-      uf: 'PR',
-      codPaisBacen: '1058',
-      nomePais: 'Brasil'
-    },
-    fiscal: {
-      inscricaoEstadual: '9018273645',
-      indIeDestinatario: '1',
-      indContribuinteIpi: false,
-      indSubstitutoTrib: false,
-      indProdutorRural: false,
-      indCooperativa: false,
-      indOptanteSimples: true,
-      aliquotaIcmsSimples: 3.12
-    },
-    retencoes: {
-      retemIrrf: false,
-      retemCrf: false, // Isento Lei 10.833
-      retemInss: false,
-      retemIss: false
-    },
-    contabil: {
-      contaContabilCliente: '1.01.02.01.0089',
-      centroCustoDefault: 'CC_COMERCIAL_SUL',
-      condicaoPagamentoDias: 28,
-      limiteCredito: 80000
-    },
-    situacaoCadastralSefaz: 'Habilitado',
-    dataUltimaConsultaSefaz: '2026-08-16T08:00:00Z',
-    createdAt: '2026-08-12T11:20:00Z',
-    updatedAt: '2026-08-16T08:00:00Z'
-  },
-  {
-    id: 'partner-orgao-publico-003',
-    tipoPessoa: 'PJ',
-    papel: 'cliente',
-    cpfCnpj: '03.003.003/0003-03',
-    cnpjRaiz: '03003003',
-    cnpjOrdem: '0003',
-    cnpjDv: '03',
-    razaoSocial: 'ORGAO PUBLICO MUNICIPAL EXEMPLO',
-    nomeFantasia: 'PREFEITURA MUNICIPAL EXEMPLO',
-    naturezaJuridica: '1031', // Órgão Público Municipal
-    regimeTributario: '05', // Imune/Isento
-    esferaPublica: 'MU',
-    segmento: 'SER',
-    cnaePrincipal: '8411600',
-    statusCadastro: 'A',
-    endereco: {
-      cep: '01002020',
-      logradouro: 'Viaduto do Chá',
-      numero: '15',
-      bairro: 'Centro',
-      codMunicipioIbge: '3550308',
-      municipio: 'São Paulo',
-      uf: 'SP',
-      codPaisBacen: '1058',
-      nomePais: 'Brasil'
-    },
-    fiscal: {
-      inscricaoEstadual: 'ISENTO',
-      indIeDestinatario: '9', // Não Contribuinte
-      indContribuinteIpi: false,
-      indSubstitutoTrib: false,
-      indProdutorRural: false,
-      indCooperativa: false,
-      indOptanteSimples: false
-    },
-    retencoes: {
-      retemIrrf: true,
-      retemCrf: true,
-      regimeRetencaoPublica: 'IN_1234_AMPLA',
-      retemInss: false,
-      retemIss: true,
-      aliquotaIss: 5.0
-    },
-    contabil: {
-      contaContabilCliente: '1.01.02.02.0010',
-      centroCustoDefault: 'CC_SETOR_PUBLICO',
-      condicaoPagamentoDias: 60
-    },
-    situacaoCadastralSefaz: 'Isento',
-    dataUltimaConsultaSefaz: '2026-08-16T09:00:00Z',
-    createdAt: '2026-08-01T09:00:00Z',
-    updatedAt: '2026-08-16T09:00:00Z'
-  },
-  {
-    id: 'partner-cnpj-alfa-004',
-    tipoPessoa: 'PJ',
-    papel: 'fornecedor',
-    cpfCnpj: '12.ABC.345/0001-30', // Exemplo de CNPJ Alfanumérico Portaria RFB 439/2024
-    cnpjRaiz: '12ABC345',
-    cnpjOrdem: '0001',
-    cnpjDv: '30',
-    razaoSocial: 'TECH NOVA INOVAÇÃO DIGITAL LTDA',
-    nomeFantasia: 'TECH NOVA CLOUD',
-    naturezaJuridica: '2062',
-    regimeTributario: '04', // Lucro Real
-    esferaPublica: 'NA',
-    segmento: 'SER',
-    cnaePrincipal: '6201501',
-    statusCadastro: 'A',
-    endereco: {
-      cep: '30130000',
-      logradouro: 'Avenida Afonso Pena',
-      numero: '2000',
-      bairro: 'Funcionários',
-      codMunicipioIbge: '3106200',
-      municipio: 'Belo Horizonte',
-      uf: 'MG',
-      codPaisBacen: '1058',
-      nomePais: 'Brasil'
-    },
-    fiscal: {
-      inscricaoMunicipal: '789123/001-4',
-      indIeDestinatario: '9',
-      indContribuinteIpi: false,
-      indSubstitutoTrib: false,
-      indProdutorRural: false,
-      indCooperativa: false,
-      indOptanteSimples: false
-    },
-    retencoes: {
-      retemIrrf: true,
-      aliquotaIrrf: 1.5,
-      codigoReceitaIrrf: '1708',
-      retemCrf: true,
-      aliquotaCrf: 4.65,
-      retemInss: false,
-      retemIss: false
-    },
-    contabil: {
-      contaContabilFornecedor: '2.01.01.02.0078',
-      centroCustoDefault: 'CC_TI_SISTEMAS'
-    },
-    situacaoCadastralSefaz: 'Não Contribuinte',
-    dataUltimaConsultaSefaz: '2026-08-16T10:00:00Z',
-    createdAt: '2026-08-15T15:00:00Z',
-    updatedAt: '2026-08-16T10:00:00Z'
-  }
-];
+let inMemoryPartners: any[] = [];
 
 // ============================================================
 // ENDPOINTS
@@ -359,8 +123,48 @@ router.get('/', requireAuth, async (req: AuthenticatedRequest, res: Response) =>
               contabil: typeof d.contabil === 'string' ? JSON.parse(d.contabil) : d.contabil,
             }));
           }
+
+          // Se não houver parceiros cadastrados, extrai parceiros autênticos dos documentos reais
+          if (list.length === 0) {
+            const { data: docRows } = await supabase
+              .from('dfe_documentos')
+              .select('fornecedor_cnpj, fornecedor_razao, fornecedor_uf, cliente_cnpj, cliente_razao, cliente_uf')
+              .limit(5000);
+
+            if (docRows && docRows.length > 0) {
+              const mapCnpj = new Map<string, any>();
+              for (const row of docRows) {
+                if (row.fornecedor_cnpj && !mapCnpj.has(row.fornecedor_cnpj)) {
+                  mapCnpj.set(row.fornecedor_cnpj, {
+                    id: `partner-${row.fornecedor_cnpj.replace(/\D/g, '')}`,
+                    tipoPessoa: 'PJ',
+                    papel: 'fornecedor',
+                    cpfCnpj: row.fornecedor_cnpj,
+                    razaoSocial: row.fornecedor_razao || 'Razão Social não informada',
+                    nomeFantasia: row.fornecedor_razao || '',
+                    statusCadastro: 'A',
+                    endereco: {
+                      uf: row.fornecedor_uf || '',
+                      municipio: '',
+                      logradouro: '',
+                      numero: '',
+                      bairro: '',
+                      cep: ''
+                    },
+                    fiscal: {
+                      inscricaoEstadual: '',
+                      indIeDestinatario: '1'
+                    },
+                    retencoes: {},
+                    contabil: {}
+                  });
+                }
+              }
+              list = Array.from(mapCnpj.values());
+            }
+          }
         } catch (supErr) {
-          console.warn('⚠️ Tabela parceiros_negocio no Supabase ainda não inicializada. Usando store local.');
+          console.warn('⚠️ Consulta a parceiros no Supabase falhou:', supErr);
         }
       }
     }

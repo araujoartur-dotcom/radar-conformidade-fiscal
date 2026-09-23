@@ -138,9 +138,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             valorIpi: doc.valor_ipi || 0,
             valorPis: doc.valor_pis || 0,
             valorCofins: doc.valor_cofins || 0,
-            aliquotaCbs: doc.valor_total > 0 && doc.valor_cbs ? Number(((doc.valor_cbs / doc.valor_total) * 100).toFixed(2)) : 0,
+            aliquotaCbs: Number(doc.aliquota_cbs) || 0,
             valorCbs: doc.valor_cbs || 0,
-            aliquotaIbs: doc.valor_total > 0 && doc.valor_ibs ? Number(((doc.valor_ibs / doc.valor_total) * 100).toFixed(2)) : 0,
+            aliquotaIbs: Number(doc.aliquota_ibs) || 0,
             valorIbs: doc.valor_ibs || 0,
             valorImpostoSeletivo: doc.valor_is || 0,
             valorIrrf: Number(doc.valor_irrf) || 0,
@@ -152,9 +152,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             eventoUltimo: doc.evento_ultimo || 'Autorizado o uso do DF-e',
             situacaoManifestacao: doc.situacao_manifestacao || 'sem_manifestacao',
             alertaFraude: Boolean(doc.alerta_fraude),
-            statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'conforme',
+            statusAuditoria: doc.alerta_fraude ? 'inconsistente' : 'regular',
             alertasAuditoria: doc.alerta_fraude ? ['🚨 ALERTA CRÍTICO: Cliente manifestou Desconhecimento da Operação (210220)'] : [],
-            statusSincronizacaoErp: 'pendente',
+            statusSincronizacaoErp: doc.status_erp || '',
             xmlRaw: doc.xml_raw || '',
             downloadAt: doc.download_at || '',
           };
@@ -516,7 +516,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     )}
                   </div>
                   <p className="text-xs text-slate-400 mt-1">
-                    Emitida em {formatBrasiliaDateTime(selectedDfe.dataEmissao)} | Status SEFAZ: <strong className="text-emerald-400 uppercase">{selectedDfe.eventoUltimo || 'Autorizada'}</strong> | Status ERP: <strong className="text-cyan-400 uppercase">{selectedDfe.statusSincronizacaoErp}</strong>
+                    Emitida em {formatBrasiliaDateTime(selectedDfe.dataEmissao)} | Status SEFAZ: <strong className="text-emerald-400 uppercase">{selectedDfe.eventoUltimo || 'Autorizada'}</strong>{selectedDfe.statusSincronizacaoErp ? <> | Status ERP: <strong className="text-cyan-400 uppercase">{selectedDfe.statusSincronizacaoErp}</strong></> : null}
                   </p>
                 </div>
 
@@ -650,13 +650,13 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     </div>
                     <div className="space-y-1 text-xs">
                       <div className="flex justify-between text-slate-200">
-                        <span>CBS (Federal ~{selectedDfe.aliquotaCbs}%):</span>
+                        <span>CBS (Federal{selectedDfe.aliquotaCbs > 0 ? ` ${selectedDfe.aliquotaCbs}%` : ''}):</span>
                         <strong className="font-mono text-cyan-400">
                           {selectedDfe.valorCbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </strong>
                       </div>
                       <div className="flex justify-between text-slate-200">
-                        <span>IBS (Est/Mun ~{selectedDfe.aliquotaIbs}%):</span>
+                        <span>IBS (Est/Mun{selectedDfe.aliquotaIbs > 0 ? ` ${selectedDfe.aliquotaIbs}%` : ''}):</span>
                         <strong className="font-mono text-indigo-400">
                           {selectedDfe.valorIbs.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                         </strong>
@@ -691,13 +691,13 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                       Retenções na Fonte de Serviços (NFS-e) & Fundamentações Legais
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      Cód. Serviço: {selectedDfe.codigoServico || '17.05'}
+                      Cód. Serviço: {selectedDfe.codigoServico || 'Não Informado'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
-                      <span className="text-slate-400 block text-[10px]">INSS Retido (11%):</span>
+                      <span className="text-slate-400 block text-[10px]">INSS Retido:</span>
                       <strong className="text-amber-400 font-mono text-sm block">
                         {(selectedDfe.valorInssRetido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </strong>
@@ -721,7 +721,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                     </div>
 
                     <div className="p-2.5 bg-slate-900 rounded-lg border border-slate-800">
-                      <span className="text-slate-400 block text-[10px]">ISS Retido ({selectedDfe.aliquotaIss || 5}%):</span>
+                      <span className="text-slate-400 block text-[10px]">ISS Retido{selectedDfe.aliquotaIss ? ` (${selectedDfe.aliquotaIss}%)` : ''}:</span>
                       <strong className="text-emerald-400 font-mono text-sm block">
                         {(selectedDfe.valorIssRetido || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </strong>

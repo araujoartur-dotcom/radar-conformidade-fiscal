@@ -18,6 +18,95 @@ import { getDecoupledKpiAggregates } from '../services/kpiAggregationService';
 
 const router = Router();
 
+/**
+ * Extrai informações fáticas e oficiais de pagamento diretamente do grupo <pag> / <cobr> do XML
+ * NUNCA infere "Pagamento Confirmado" artificialmente.
+ */
+function parsePaymentInfoFromXml(xmlRaw?: string | null): {
+  indicadorOnerosidade: 'Oneroso' | 'Não Oneroso' | 'Indeterminado';
+  criterioOnerosidade: string;
+  tPag?: string;
+  meioPagamentoDesc?: string;
+  vPag?: number;
+  indPag?: string;
+  hasPagamentoIdentificado: boolean;
+} {
+  if (!xmlRaw) {
+    return {
+      indicadorOnerosidade: 'Indeterminado',
+      criterioOnerosidade: 'Não informado no XML / Aguardando Conciliação',
+      hasPagamentoIdentificado: false
+    };
+  }
+
+  const pagMatch = xmlRaw.match(/<pag>([\s\S]*?)<\/pag>/i);
+  const cobrMatch = xmlRaw.match(/<cobr>([\s\S]*?)<\/cobr>/i);
+
+  if (pagMatch) {
+    const pagContent = pagMatch[1];
+    const tPagMatch = pagContent.match(/<tPag>(\d{2})<\/tPag>/i);
+    const vPagMatch = pagContent.match(/<vPag>([\d.]+)<\/vPag>/i);
+    const indPagMatch = pagContent.match(/<indPag>(\d+)<\/indPag>/i);
+    const tPag = tPagMatch ? tPagMatch[1] : undefined;
+    const vPag = vPagMatch ? parseFloat(vPagMatch[1]) : undefined;
+    const indPag = indPagMatch ? indPagMatch[1] : undefined;
+
+    const tPagDescriptions: Record<string, string> = {
+      '01': 'Dinheiro à Vista',
+      '02': 'Cheque',
+      '03': 'Cartão de Crédito',
+      '04': 'Cartão de Débito',
+      '15': 'Boleto Bancário',
+      '16': 'Depósito Bancário',
+      '17': 'PIX (Instantâneo)',
+      '18': 'Transferência Bancária / TED',
+      '90': 'Sem Pagamento',
+      '99': 'Outros Meios'
+    };
+
+    if (tPag === '90') {
+      return {
+        indicadorOnerosidade: 'Não Oneroso',
+        criterioOnerosidade: 'Operação sem pagamento destacado no XML (tPag 90)',
+        tPag,
+        meioPagamentoDesc: 'Sem Pagamento (tPag 90)',
+        vPag: 0,
+        indPag,
+        hasPagamentoIdentificado: true
+      };
+    }
+
+    if (tPag) {
+      const desc = tPagDescriptions[tPag] || `Meio de Pagamento (${tPag})`;
+      const valorTxt = typeof vPag === 'number' && vPag > 0 ? ` - R$ ${vPag.toFixed(2)}` : '';
+      return {
+        indicadorOnerosidade: 'Oneroso',
+        criterioOnerosidade: `${desc}${valorTxt}`,
+        tPag,
+        meioPagamentoDesc: desc,
+        vPag,
+        indPag,
+        hasPagamentoIdentificado: true
+      };
+    }
+  }
+
+  if (cobrMatch) {
+    const dupCount = (cobrMatch[1].match(/<dup>/gi) || []).length;
+    return {
+      indicadorOnerosidade: 'Oneroso',
+      criterioOnerosidade: dupCount > 0 ? `Fatura no XML (${dupCount} duplicata(s))` : 'Fatura Comercial no XML',
+      hasPagamentoIdentificado: true
+    };
+  }
+
+  return {
+    indicadorOnerosidade: 'Indeterminado',
+    criterioOnerosidade: 'Não informado no XML / Aguardando Extrato',
+    hasPagamentoIdentificado: false
+  };
+}
+
 router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const db = getDatabase();
@@ -202,99 +291,189 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
 
             if (supaDocs.length > 0) {
               totalCount = supaTotal || supaDocs.length;
-              rows = supaDocs.map(d => {
-                const isDocNfse = (d.tipo_doc || '').toString().toUpperCase().includes('NFS');
-                let itemDesc = isDocNfse ? 'Prestação de Serviços Profissionais / Técnicos' : 'Item Principal / Operação Global';
-                let itemNcm = isDocNfse ? '17.01' : '2711.19.10';
-                let itemCfop = isDocNfse ? '1933' : (d.tipo_doc === 'CTe' ? '5353' : '1102');
-                let itemCClass = '000001';
 
-                if (d.xml_raw) {
-                  const cfopMatch = d.xml_raw.match(/<CFOP>(\d{4})<\/CFOP>/i);
-                  if (cfopMatch && cfopMatch[1]) {
-                    itemCfop = cfopMatch[1];
+              // Buscar os itens reais da tabela dfe_itens para os documentos do lote
+              const docIds = supaDocs.map(d => d.id);
+              let supaItens: any[] = [];
+              const CHUNK_SIZE = 100;
+              for (let i = 0; i < docIds.length; i += CHUNK_SIZE) {
+                const chunk = docIds.slice(i, i + CHUNK_SIZE);
+                try {
+                  const { data: itData, error: itErr } = await supabase
+                    .from('dfe_itens')
+                    .select('*')
+                    .in('documento_id', chunk)
+                    .order('item_nro', { ascending: true });
+                  if (!itErr && itData) {
+                    supaItens.push(...itData);
                   }
-                  const cClassMatch = d.xml_raw.match(/<cClassTrib>(\d{6})<\/cClassTrib>/i);
-                  if (cClassMatch && cClassMatch[1]) {
-                    itemCClass = cClassMatch[1];
-                  }
-
-                  if (isDocNfse) {
-                    const descMatch = d.xml_raw.match(/<xDescServ>(.*?)<\/xDescServ>/) || d.xml_raw.match(/<xTribNac>(.*?)<\/xTribNac>/);
-                    if (descMatch && descMatch[1]) {
-                      itemDesc = descMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
-                    }
-                    const servMatch = d.xml_raw.match(/<cTribNac>(\d+)<\/cTribNac>/) || d.xml_raw.match(/<cServ>(\d+)<\/cServ>/);
-                    if (servMatch && servMatch[1]) {
-                      const rawCode = servMatch[1];
-                      itemNcm = rawCode.length >= 4 ? `${rawCode.substring(0, 2)}.${rawCode.substring(2, 4)}` : rawCode;
-                    }
-                  } else {
-                    const prodDescMatch = d.xml_raw.match(/<xProd>(.*?)<\/xProd>/i);
-                    if (prodDescMatch && prodDescMatch[1]) {
-                      itemDesc = prodDescMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
-                    }
-                    const ncmMatch = d.xml_raw.match(/<NCM>(\d+)<\/NCM>/i);
-                    if (ncmMatch && ncmMatch[1]) {
-                      itemNcm = ncmMatch[1];
-                    }
-                  }
+                } catch (itErr) {
+                  console.warn('⚠️ Erro ao buscar dfe_itens no Supabase:', itErr);
                 }
+              }
 
-                return {
-                  docId: d.id,
-                  empresaId: d.empresa_id,
-                  tipoDoc: isDocNfse ? 'NFS-e' : (d.tipo_doc === 'CTe' ? 'CT-e' : (d.tipo_doc === 'NFe' ? 'NF-e' : d.tipo_doc)),
-                  chaveAcesso: d.chave_acesso,
-                  numeroSerie: d.numero_serie,
-                  dataEmissao: d.data_emissao,
-                  dataEntrada: d.data_entrada,
-                  competencia: d.competencia,
-                  fornecedorCnpj: d.fornecedor_cnpj,
-                  fornecedorRazao: d.fornecedor_razao,
-                  fornecedorUf: d.fornecedor_uf,
-                  fornecedorMunicipio: d.fornecedor_municipio,
-                  clienteCnpj: d.cliente_cnpj,
-                  clienteRazao: d.cliente_razao,
-                  clienteUf: d.cliente_uf,
-                  situacaoDoc: d.situacao_doc,
-                  situacaoManifestacao: d.situacao_manifestacao,
-                  eventoUltimo: d.evento_ultimo,
-                  alertaFraude: d.alerta_fraude,
-                  docValorTotal: d.valor_total,
-                  docValorIcms: d.valor_icms,
-                  docValorIpi: d.valor_ipi,
-                  docValorPis: d.valor_pis,
-                  docValorCofins: d.valor_cofins,
-                  docValorCbs: d.valor_cbs,
-                  docValorIbs: d.valor_ibs,
-                  docValorIs: d.valor_is,
-                  docValorIrrf: d.valor_irrf,
-                  docValorInss: d.valor_inss,
-                  docValorIss: d.valor_iss,
-                  docValorCsll: d.valor_csll,
-                  itemNro: 1,
-                  descricaoItem: itemDesc,
-                  ncm: itemNcm,
-                  cest: '',
-                  cfop: itemCfop,
-                  cClassTrib: itemCClass,
-                  cstCsosn: '000',
-                  naturezaOperacao: isDocNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal',
-                  quantidade: 1,
-                  unidade: 'UN',
-                  valorUnitario: d.valor_total,
-                  valorBrutoItem: d.valor_total,
-                  valorLiquidoItem: d.valor_total,
-                  valorIcms: d.valor_icms,
-                  valorIbs: d.valor_ibs,
-                  valorCbs: d.valor_cbs,
-                  valorIs: d.valor_is,
-                  itemId: `item-${d.chave_acesso}-1`
-                };
-              });
+              const itemsByDocId = new Map<string, any[]>();
+              for (const it of supaItens) {
+                const arr = itemsByDocId.get(it.documento_id) || [];
+                arr.push(it);
+                itemsByDocId.set(it.documento_id, arr);
+              }
+
+              rows = [];
+              for (const d of supaDocs) {
+                const isDocNfse = (d.tipo_doc || '').toString().toUpperCase().includes('NFS');
+                const docItens = itemsByDocId.get(d.id) || [];
+
+                if (docItens.length > 0) {
+                  for (const it of docItens) {
+                    rows.push({
+                      docId: d.id,
+                      empresaId: d.empresa_id,
+                      tipoDoc: isDocNfse ? 'NFS-e' : (d.tipo_doc === 'CTe' ? 'CT-e' : (d.tipo_doc === 'NFe' ? 'NF-e' : d.tipo_doc)),
+                      chaveAcesso: d.chave_acesso,
+                      numeroSerie: d.numero_serie,
+                      dataEmissao: d.data_emissao,
+                      dataEntrada: d.data_entrada,
+                      competencia: d.competencia,
+                      fornecedorCnpj: d.fornecedor_cnpj,
+                      fornecedorRazao: d.fornecedor_razao,
+                      fornecedorUf: d.fornecedor_uf,
+                      fornecedorMunicipio: d.fornecedor_municipio,
+                      clienteCnpj: d.cliente_cnpj,
+                      clienteRazao: d.cliente_razao,
+                      clienteUf: d.cliente_uf,
+                      situacaoDoc: d.situacao_doc,
+                      situacaoManifestacao: d.situacao_manifestacao,
+                      eventoUltimo: d.evento_ultimo,
+                      alertaFraude: d.alerta_fraude,
+                      docValorTotal: d.valor_total,
+                      docValorIcms: d.valor_icms,
+                      docValorIpi: d.valor_ipi,
+                      docValorPis: d.valor_pis,
+                      docValorCofins: d.valor_cofins,
+                      docValorCbs: d.valor_cbs,
+                      docValorIbs: d.valor_ibs,
+                      docValorIs: d.valor_is,
+                      docValorIrrf: d.valor_irrf,
+                      docValorInss: d.valor_inss,
+                      docValorIss: d.valor_iss,
+                      docValorCsll: d.valor_csll,
+                      xmlRaw: d.xml_raw,
+
+                      // Propriedades reais extraídas de dfe_itens
+                      itemId: it.id,
+                      itemNro: it.item_nro || 1,
+                      descricaoItem: it.descricao_item || '',
+                      ncm: it.ncm || '',
+                      cest: it.cest || '',
+                      cfop: it.cfop || '',
+                      cClassTrib: it.cclasstrib || '',
+                      cstCsosn: it.cst_csosn || '',
+                      naturezaOperacao: it.natureza_operacao || (isDocNfse ? 'Prestação de Serviços' : 'Operação Mercantil'),
+                      quantidade: it.quantidade || 1,
+                      unidade: it.unidade || 'UN',
+                      valorUnitario: it.valor_unitario || 0,
+                      valorBrutoItem: it.valor_bruto_item || 0,
+                      descontoIncondicional: it.desconto_incondicional || 0,
+                      freteSeguroRateado: it.frete_seguro_rateado || 0,
+                      valorLiquidoItem: it.valor_liquido_item || 0,
+                      baseIcms: it.base_icms || 0,
+                      aliquotaIcms: it.aliquota_icms || 0,
+                      valorIcms: it.valor_icms || 0,
+                      baseIpi: it.base_ipi || 0,
+                      aliquotaIpi: it.aliquota_ipi || 0,
+                      valorIpi: it.valor_ipi || 0,
+                      basePis: it.base_pis || 0,
+                      aliquotaPis: it.aliquota_pis || 0,
+                      valorPis: it.valor_pis || 0,
+                      baseCofins: it.base_cofins || 0,
+                      aliquotaCofins: it.aliquota_cofins || 0,
+                      valorCofins: it.valor_cofins || 0,
+                      baseIbs: it.base_ibs || 0,
+                      aliquotaIbs: it.aliquota_ibs || 0,
+                      valorIbs: it.valor_ibs || 0,
+                      baseCbs: it.base_cbs || 0,
+                      aliquotaCbs: it.aliquota_cbs || 0,
+                      valorCbs: it.valor_cbs || 0,
+                      valorIs: it.valor_is || 0
+                    });
+                  }
+                } else {
+                  // Fallback estrito: se o documento não possuir linhas em dfe_itens, mapeia estritamente os dados fiscais reais do cabeçalho sem simular valores
+                  rows.push({
+                    docId: d.id,
+                    empresaId: d.empresa_id,
+                    tipoDoc: isDocNfse ? 'NFS-e' : (d.tipo_doc === 'CTe' ? 'CT-e' : (d.tipo_doc === 'NFe' ? 'NF-e' : d.tipo_doc)),
+                    chaveAcesso: d.chave_acesso,
+                    numeroSerie: d.numero_serie,
+                    dataEmissao: d.data_emissao,
+                    dataEntrada: d.data_entrada,
+                    competencia: d.competencia,
+                    fornecedorCnpj: d.fornecedor_cnpj,
+                    fornecedorRazao: d.fornecedor_razao,
+                    fornecedorUf: d.fornecedor_uf,
+                    fornecedorMunicipio: d.fornecedor_municipio,
+                    clienteCnpj: d.cliente_cnpj,
+                    clienteRazao: d.cliente_razao,
+                    clienteUf: d.cliente_uf,
+                    situacaoDoc: d.situacao_doc,
+                    situacaoManifestacao: d.situacao_manifestacao,
+                    eventoUltimo: d.evento_ultimo,
+                    alertaFraude: d.alerta_fraude,
+                    docValorTotal: d.valor_total,
+                    docValorIcms: d.valor_icms,
+                    docValorIpi: d.valor_ipi,
+                    docValorPis: d.valor_pis,
+                    docValorCofins: d.valor_cofins,
+                    docValorCbs: d.valor_cbs,
+                    docValorIbs: d.valor_ibs,
+                    docValorIs: d.valor_is,
+                    docValorIrrf: d.valor_irrf,
+                    docValorInss: d.valor_inss,
+                    docValorIss: d.valor_iss,
+                    docValorCsll: d.valor_csll,
+                    xmlRaw: d.xml_raw,
+
+                    itemId: `doc-${d.chave_acesso}`,
+                    itemNro: 1,
+                    descricaoItem: isDocNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Global',
+                    ncm: '',
+                    cest: '',
+                    cfop: '',
+                    cClassTrib: '',
+                    cstCsosn: '',
+                    naturezaOperacao: isDocNfse ? 'Prestação de Serviços' : 'Operação Fiscal',
+                    quantidade: 1,
+                    unidade: 'UN',
+                    valorUnitario: d.valor_total || 0,
+                    valorBrutoItem: d.valor_total || 0,
+                    descontoIncondicional: 0,
+                    freteSeguroRateado: 0,
+                    valorLiquidoItem: d.valor_total || 0,
+                    baseIcms: d.valor_icms > 0 ? d.valor_total : 0,
+                    aliquotaIcms: 0,
+                    valorIcms: d.valor_icms || 0,
+                    baseIpi: 0,
+                    aliquotaIpi: 0,
+                    valorIpi: d.valor_ipi || 0,
+                    basePis: 0,
+                    aliquotaPis: 0,
+                    valorPis: d.valor_pis || 0,
+                    baseCofins: 0,
+                    aliquotaCofins: 0,
+                    valorCofins: d.valor_cofins || 0,
+                    baseIbs: d.base_ibs || 0,
+                    aliquotaIbs: 0,
+                    valorIbs: d.valor_ibs || 0,
+                    baseCbs: d.base_cbs || 0,
+                    aliquotaCbs: 0,
+                    valorCbs: d.valor_cbs || 0,
+                    valorIs: d.valor_is || 0
+                  });
+                }
+              }
               supabaseFetched = true;
-              console.log(`📡 GET /relatorios/xml: ${rows.length} de ${totalCount} documentos carregados do Supabase.`);
+              console.log(`📡 GET /relatorios/xml: ${rows.length} itens reais de ${supaDocs.length} documentos carregados do Supabase.`);
             }
           }
         } catch (e: any) {
@@ -338,6 +517,7 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           d.valor_inss as docValorInss,
           d.valor_iss as docValorIss,
           d.valor_csll as docValorCsll,
+          d.xml_raw as xmlRaw,
           i.item_nro as itemNro,
           i.descricao_item as descricaoItem,
           i.ncm,
@@ -576,12 +756,14 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
     } catch (_) {}
 
     const mapped = rows.map(r => {
-      const itemCfop = r.cfop || (r.tipoDoc === 'NFSe' ? '1933' : '1102');
-      const cfopInfo = cfopMap.get(itemCfop) || { tratamento_padrao: 'Elegível', exige_onerosidade: 1 };
+      const itemCfop = r.cfop || '';
       
       const docTotal = Number(r.docValorTotal) || 0;
       const itemValIbs = r.valorIbs !== null && r.valorIbs !== undefined ? Number(r.valorIbs) : (Number(r.docValorIbs) || 0);
       const itemValCbs = r.valorCbs !== null && r.valorCbs !== undefined ? Number(r.valorCbs) : (Number(r.docValorCbs) || 0);
+
+      // Extração autêntica de pagamento diretamente do XML do documento fiscal
+      const paymentInfo = parsePaymentInfoFromXml(r.xmlRaw);
 
       // Verificação de Combustíveis e Bloqueio de Créditos (Art. 267 da LC 214/2025)
       const empConfig = empresasMap.get(r.empresaId) || empresasMap.get(r.clienteCnpj);
@@ -607,8 +789,11 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       // Se o crédito for vedado, o crédito esperado DEVE ser 0.00
       const creditoEsperadoIbs = creditoVedado ? 0 : itemValIbs;
       const creditoEsperadoCbs = creditoVedado ? 0 : itemValCbs;
-      const creditoApropriadoIbs = itemValIbs;
-      const creditoApropriadoCbs = itemValCbs;
+      
+      // Conciliação de crédito apropriado com a apuração assistida (sem espelhamento falso do XML)
+      const apOpPre = apuracaoMap.get(r.chaveAcesso);
+      const creditoApropriadoIbs = apOpPre ? (Number(apOpPre.tot_credito_utilizado) || 0) : 0;
+      const creditoApropriadoCbs = apOpPre ? (Number(apOpPre.tot_credito_utilizado) || 0) : 0;
 
       // Se o documento tomou crédito indevidamente
       const tomouCreditoIndevido = creditoVedado && (itemValIbs > 0 || itemValCbs > 0);
@@ -643,63 +828,144 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
       // Detalhes da regra cClassTrib oficial
       const cclassOficial = cClassMap.get(cclasstribSugerido || currentCClass);
       
-      // Informações de indOper
-      const indOperCode = String(r.indOper || (r.tipoDoc === 'NFSe' ? '2001' : '1001')).trim();
-      const indOperInfo = indOperMap.get(indOperCode) || {
+      // Informações de indOper (Zero inferência: se não existir no XML, fica não informado)
+      const indOperCode = String(r.indOper || '').trim();
+      const indOperInfo = indOperCode ? (indOperMap.get(indOperCode) || {
         codigo: indOperCode,
-        nome: indOperCode === '1001' ? 'Fornecimento no estabelecimento do fornecedor' : 'Fornecimento geral / Princípio do Destino',
+        nome: `Operação ${indOperCode}`,
         dispositivo_legal: 'Art. 11 da LC 214/2025',
-        local: 'Estabelecimento fornecedor'
+        local: 'Conforme documento'
+      }) : {
+        codigo: '',
+        nome: 'Não informado no XML',
+        dispositivo_legal: '—',
+        local: '—'
       };
 
+      // Determinação autêntica da regra e elegibilidade (Zero ELEG_001 fictício)
+      let regraAplicadaId = 'RTC_PADRAO';
       let resultadoElegibilidade = 'Elegível';
-      if (cfopInfo.tratamento_padrao === 'Não elegível' || creditoVedado) resultadoElegibilidade = 'Não elegível';
-      if (cfopInfo.tratamento_padrao === 'Depende' && !creditoVedado) resultadoElegibilidade = 'Pendente';
+      let motivoPadronizado = 'Aquisição de insumo ou mercadoria com crédito sujeito à não-cumulatividade plena (Art. 28 da LC 214/2025)';
+
+      if (creditoVedado) {
+        regraAplicadaId = 'VEDACAO_ART_267';
+        resultadoElegibilidade = 'Não elegível';
+        motivoPadronizado = motivoAlertaApropriacao || 'Vedação legal de crédito sobre combustíveis e derivados para consumo próprio (Art. 267 da LC 214/2025)';
+      } else if (r.tipoDoc === 'NFSe' || r.tipoDoc === 'NFS-e' || (r.tipoDoc as string)?.toUpperCase().includes('NFS')) {
+        regraAplicadaId = 'RET_NFS_LC116';
+        resultadoElegibilidade = 'Elegível';
+        motivoPadronizado = 'Serviço tomado auditado contra matriz de retenções';
+      } else if (currentCClass) {
+        regraAplicadaId = `cClass_${currentCClass}`;
+        if (currentCClass.startsWith('2') || currentCClass.startsWith('3')) {
+          resultadoElegibilidade = 'Não elegível';
+          motivoPadronizado = `Enquadramento ${currentCClass} sem direito a crédito na entrada (Isenção / Imunidade / Não incidência)`;
+        } else if (currentCClass.startsWith('9')) {
+          resultadoElegibilidade = 'Pendente';
+          motivoPadronizado = `Regime específico monofásico ${currentCClass} — apuração vinculada ao recolhimento na origem`;
+        } else {
+          resultadoElegibilidade = 'Elegível';
+          motivoPadronizado = `Enquadramento oficial RTC cClassTrib ${currentCClass} (Art. 28 LC 214/2025)`;
+        }
+      } else if (itemCfop) {
+        regraAplicadaId = `CFOP_${itemCfop}`;
+        motivoPadronizado = `Operação autêntica registrada sob o CFOP ${itemCfop}`;
+      }
 
       // ========================================================
-      // CONCILIAÇÃO DINÂMICA COM APURAÇÃO ASSISTIDA & DECISÃO RAD
-      // Art. 27 LC 215/2025 - Não-cumulatividade vinculada à liquidação
+      // CONCILIAÇÃO DINÂMICA COM APURAÇÃO ASSISTIDA SEPARADA
+      // Ambiente IBS (CGIBS - Estados/Municípios) & Ambiente CBS (RFB - União)
+      // Art. 28 da LC 214/2025 e Art. 27 da LC 215/2025
       // ========================================================
       const apOp = apuracaoMap.get(r.chaveAcesso);
-      let statusCreditoCgibs: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
-      let motivoCreditoCgibs = 'Aguardando sincronismo com CGIBS / RTC';
-      
-      let statusLiquidacaoApuracao: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
-      let valorCreditoLiquidadoReal: number | null = null; // SEM FALLBACK
-      let valorCreditoRetido: number | null = null;
-      let taxaLiquidacaoItem = 0;
-      let impactoDecisorioRad: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO' = 'NAO_CONCILIADO';
-      let motivoDecisaoRad = 'Operação não localizada na Apuração Assistida do CGIBS. Crédito bloqueado para apropriação até a homologação da liquidação.';
+
+      let statusApuracaoIbs: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' | 'ISENTO_OU_SEM_DESTAQUE' = 'NAO_CONCILIADO';
+      let motivoApuracaoIbs = 'Operação não localizada no ledger de apuração do CGIBS';
+      let valorCreditoLiquidadoIbs: number | null = null;
+
+      let statusApuracaoCbs: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' | 'ISENTO_OU_SEM_DESTAQUE' = 'NAO_CONCILIADO';
+      let motivoApuracaoCbs = 'Operação não localizada no ledger de apuração da RFB';
+      let valorCreditoLiquidadoCbs: number | null = null;
 
       const creditoTotalDoc = creditoEsperadoIbs + creditoEsperadoCbs;
 
-      if (apOp) {
+      // Batimento do IBS (CGIBS)
+      if (itemValIbs === 0 && Number(r.baseIbs || 0) === 0) {
+        statusApuracaoIbs = 'ISENTO_OU_SEM_DESTAQUE';
+        motivoApuracaoIbs = 'Item sem destaque ou incidência de IBS no XML';
+        valorCreditoLiquidadoIbs = 0;
+      } else if (apOp) {
         const totExtinto = Number(apOp.tot_debito_extinto) || 0;
         const totEmAberto = Number(apOp.tot_debito_em_aberto) || 0;
         const totCredUtilizado = Number(apOp.tot_credito_utilizado) || 0;
         const totCredNaoUtilizado = Number(apOp.tot_credito_nao_utilizado) || 0;
-        const totCredAPropriar = Number(apOp.tot_credito_a_propriar) || 0;
-
         if (totCredUtilizado > 0 || totCredNaoUtilizado > 0 || (totExtinto > 0 && totEmAberto <= 0)) {
-          statusCreditoCgibs = totCredUtilizado > 0 ? 'UTILIZADO' : 'CONFIRMADO';
-          statusLiquidacaoApuracao = 'LIQUIDADO';
-          valorCreditoLiquidadoReal = Number((totCredNaoUtilizado + totCredUtilizado > 0 ? totCredNaoUtilizado + totCredUtilizado : Math.min(creditoTotalDoc, totExtinto)).toFixed(2));
-          valorCreditoRetido = 0;
-          taxaLiquidacaoItem = creditoTotalDoc > 0 ? Math.min(100, Number(((valorCreditoLiquidadoReal / creditoTotalDoc) * 100).toFixed(1))) : 100;
-          impactoDecisorioRad = 'APTO_PARA_RAD';
-          motivoDecisaoRad = 'Imposto liquidado pelo Fornecedor ou Split Payment no CGIBS. Crédito 100% liberado para apropriação (Art. 27 LC 215/2025). Desnecessário RAD (Recolhimento pelo Adquirente).';
-          motivoCreditoCgibs = 'Crédito homologado com débito comprovadamente extinto.';
-        } else if (totCredAPropriar > 0 || totEmAberto > 0) {
-          statusCreditoCgibs = 'PENDENTE_EXTINCAO';
-          statusLiquidacaoApuracao = 'PENDENTE_EXTINCAO';
-          valorCreditoLiquidadoReal = 0;
-          valorCreditoRetido = totCredAPropriar > 0 ? totCredAPropriar : creditoTotalDoc;
-          taxaLiquidacaoItem = 0;
-          impactoDecisorioRad = 'AGUARDAR_QUITACAO';
-          motivoDecisaoRad = 'Imposto NÃO liquidado pelo Fornecedor nem pelo Split Payment. Crédito bloqueado para apropriação. O Adquirente pode emitir e recolher via RAD (Recolhimento pelo Adquirente) para liquidar o débito e liberar o crédito, ou aguardar a quitação pelo fornecedor.';
-          motivoCreditoCgibs = 'Aguardando extinção do débito pelo fornecedor ou emissão de RAD pelo adquirente (Art. 27 LC 215/2025)';
+          statusApuracaoIbs = 'LIQUIDADO';
+          motivoApuracaoIbs = 'Débito de IBS do fornecedor extinto perante o Comitê Gestor do IBS (CGIBS)';
+          valorCreditoLiquidadoIbs = creditoEsperadoIbs;
+        } else {
+          statusApuracaoIbs = 'PENDENTE_EXTINCAO';
+          motivoApuracaoIbs = 'Aguardando extinção do débito de IBS pelo fornecedor no CGIBS (Art. 28 LC 214/2025)';
+          valorCreditoLiquidadoIbs = null;
         }
+      } else if (itemValIbs > 0) {
+        statusApuracaoIbs = 'PENDENTE_EXTINCAO';
+        motivoApuracaoIbs = 'Aguardando conciliação da conta corrente com o ambiente CGIBS';
+        valorCreditoLiquidadoIbs = null;
       }
+
+      // Batimento da CBS (RFB)
+      if (itemValCbs === 0 && Number(r.baseCbs || 0) === 0) {
+        statusApuracaoCbs = 'ISENTO_OU_SEM_DESTAQUE';
+        motivoApuracaoCbs = 'Item sem destaque ou incidência de CBS no XML';
+        valorCreditoLiquidadoCbs = 0;
+      } else if (apOp) {
+        const totExtinto = Number(apOp.tot_debito_extinto) || 0;
+        const totEmAberto = Number(apOp.tot_debito_em_aberto) || 0;
+        const totCredUtilizado = Number(apOp.tot_credito_utilizado) || 0;
+        const totCredNaoUtilizado = Number(apOp.tot_credito_nao_utilizado) || 0;
+        if (totCredUtilizado > 0 || totCredNaoUtilizado > 0 || (totExtinto > 0 && totEmAberto <= 0)) {
+          statusApuracaoCbs = 'LIQUIDADO';
+          motivoApuracaoCbs = 'Débito de CBS do fornecedor extinto perante a Receita Federal do Brasil (RFB)';
+          valorCreditoLiquidadoCbs = creditoEsperadoCbs;
+        } else {
+          statusApuracaoCbs = 'PENDENTE_EXTINCAO';
+          motivoApuracaoCbs = 'Aguardando extinção do débito de CBS pelo fornecedor na RFB (Art. 28 LC 214/2025)';
+          valorCreditoLiquidadoCbs = null;
+        }
+      } else if (itemValCbs > 0) {
+        statusApuracaoCbs = 'PENDENTE_EXTINCAO';
+        motivoApuracaoCbs = 'Aguardando conciliação da conta corrente com o ambiente RFB';
+        valorCreditoLiquidadoCbs = null;
+      }
+
+      // Totais unificados de liquidação e RAD
+      const statusLiquidacaoApuracao: 'LIQUIDADO' | 'PENDENTE_EXTINCAO' | 'GLOSADO' | 'NAO_CONCILIADO' = 
+        (statusApuracaoIbs === 'LIQUIDADO' && statusApuracaoCbs === 'LIQUIDADO') ? 'LIQUIDADO' :
+        (statusApuracaoIbs === 'PENDENTE_EXTINCAO' || statusApuracaoCbs === 'PENDENTE_EXTINCAO') ? 'PENDENTE_EXTINCAO' : 'NAO_CONCILIADO';
+
+      const valorCreditoLiquidadoReal = (valorCreditoLiquidadoIbs !== null || valorCreditoLiquidadoCbs !== null)
+        ? ((valorCreditoLiquidadoIbs || 0) + (valorCreditoLiquidadoCbs || 0))
+        : null;
+
+      const valorCreditoRetido = (statusLiquidacaoApuracao === 'PENDENTE_EXTINCAO') ? creditoTotalDoc : 0;
+      const taxaLiquidacaoItem = creditoTotalDoc > 0 && typeof valorCreditoLiquidadoReal === 'number'
+        ? Math.min(100, Number(((valorCreditoLiquidadoReal / creditoTotalDoc) * 100).toFixed(1)))
+        : (statusLiquidacaoApuracao === 'LIQUIDADO' ? 100 : 0);
+
+      const impactoDecisorioRad: 'APTO_PARA_RAD' | 'AGUARDAR_QUITACAO' | 'INAPTO_PARA_RAD' | 'NAO_CONCILIADO' = 
+        statusLiquidacaoApuracao === 'LIQUIDADO' ? 'APTO_PARA_RAD' :
+        statusLiquidacaoApuracao === 'PENDENTE_EXTINCAO' ? 'AGUARDAR_QUITACAO' : 'NAO_CONCILIADO';
+
+      const motivoDecisaoRad = statusLiquidacaoApuracao === 'LIQUIDADO'
+        ? 'Imposto liquidado pelo Fornecedor ou Split Payment no CGIBS/RFB. Crédito 100% liberado para apropriação (Art. 28 LC 214/2025).'
+        : statusLiquidacaoApuracao === 'PENDENTE_EXTINCAO'
+          ? 'Débito de IBS/CBS pendente de extinção pelo fornecedor. O adquirente pode emitir e recolher via RAD para liberar o crédito ou aguardar.'
+          : 'Operação pendente de conciliação nos ambientes CGIBS e RFB.';
+
+      let statusCreditoCgibs: 'CONFIRMADO' | 'PENDENTE_EXTINCAO' | 'UTILIZADO' | 'ESTORNADO' | 'NAO_CONCILIADO' = 
+        statusApuracaoIbs === 'LIQUIDADO' ? 'CONFIRMADO' : (statusApuracaoIbs === 'PENDENTE_EXTINCAO' ? 'PENDENTE_EXTINCAO' : 'NAO_CONCILIADO');
+      let motivoCreditoCgibs = motivoApuracaoIbs;
 
       // ==========================================
       // RETENÇÕES NA FONTE (NFS-E / SERVIÇOS)
@@ -854,15 +1120,15 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         alertaFraude: Boolean(r.alertaFraude),
         
         itemNro: r.itemNro || 1,
-        descricaoItem: r.descricaoItem || (isNfse ? 'Prestação de Serviços Profissionais / Técnicos' : 'Item Principal / Operação Global'),
-        ncm: r.ncm || (isNfse ? '17.01' : '2711.19.10'),
+        descricaoItem: r.descricaoItem || '',
+        ncm: r.ncm || '',
         cest: r.cest || '',
-        cfop: itemCfop,
-        cClassTrib: r.cClassTrib || '000001',
-        cstCsosn: r.cstCsosn || '000',
-        naturezaOperacao: r.naturezaOperacao || (isNfse ? 'Prestação de Serviços (NFS-e)' : 'Operação Fiscal'),
+        cfop: itemCfop || r.cfop || '',
+        cClassTrib: r.cClassTrib || '',
+        cstCsosn: r.cstCsosn || '',
+        naturezaOperacao: r.naturezaOperacao || '',
         quantidade: r.quantidade || 1,
-        unidade: r.unidade || 'UN',
+        unidade: r.unidade || '',
         valorUnitario: r.valorUnitario || docTotal,
         valorBrutoItem: r.valorBrutoItem || docTotal,
         descontoIncondicional: r.descontoIncondicional || 0,
@@ -907,20 +1173,20 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         creditoEsperadoCbs,
         creditoApropriadoIbs,
         creditoApropriadoCbs,
-        diferencaCreditoIbs: 0,
-        diferencaCreditoCbs: 0,
+        diferencaCreditoIbs: Number((creditoEsperadoIbs - creditoApropriadoIbs).toFixed(2)),
+        diferencaCreditoCbs: Number((creditoEsperadoCbs - creditoApropriadoCbs).toFixed(2)),
         fonteAliquota: 'documento',
         
-        indicadorOnerosidade: 'Oneroso',
-        criterioOnerosidade: 'Pagamento Confirmado',
-        evidenciaCobranca: true,
+        indicadorOnerosidade: paymentInfo.indicadorOnerosidade,
+        criterioOnerosidade: paymentInfo.criterioOnerosidade,
+        evidenciaCobranca: paymentInfo.hasPagamentoIdentificado,
         
         tipoAquisicao: isNfse ? 'servico' : 'insumo',
         destinacao: 'atividade_tributada',
-        regraAplicadaId: isNfse ? 'RET_SRV_001' : 'ELEG_001',
+        regraAplicadaId,
         resultadoElegibilidade,
-        motivoPadronizado: isNfse ? 'Serviço com retenções na fonte mapeadas' : (ehPendenteCgibs ? 'Aguardando extinção do débito do fornecedor (Art. 27 LC 215/2025)' : 'Processado via API de relatórios'),
-        evidencia: 'XML DF-e válido e auditado',
+        motivoPadronizado,
+        evidencia: 'XML DF-e autêntico e auditado',
         
         usuarioCaptura: 'Processo Automático',
         rotinaCaptura: 'Robô SEFAZ / Upload',
@@ -986,6 +1252,23 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         statusCreditoCgibs,
         motivoCreditoCgibs,
         hashCgibs: apOp?.hash_acumulado,
+
+        // Ambientes Segregados de Apuração (IBS - Estados/Municípios vs CBS - União) a Nível de Item
+        statusApuracaoIbs,
+        statusApuracaoCbs,
+        motivoApuracaoIbs,
+        motivoApuracaoCbs,
+        valorCreditoLiquidadoIbs,
+        valorCreditoLiquidadoCbs,
+
+        // Dados Canônicos de Pagamento do XML
+        dadosPagamentoXml: {
+          tPag: paymentInfo.tPag,
+          meioPagamentoDesc: paymentInfo.meioPagamentoDesc,
+          vPag: paymentInfo.vPag,
+          indPag: paymentInfo.indPag,
+          hasPagamentoIdentificado: paymentInfo.hasPagamentoIdentificado
+        },
 
         // Apuração Assistida & Opção RAD (Sem Fallback)
         statusLiquidacaoApuracao,
@@ -1503,15 +1786,15 @@ router.post('/upload', requireAuth, async (req: AuthenticatedRequest, res: Respo
           String(row['Descrição'] || row['descricaoItem'] || row['descricao_item'] || 'Item Importado'),
           String(row['NCM'] || row['ncm'] || ''),
           String(row['CFOP'] || row['cfop'] || '1102'),
-          String(row['cClassTrib'] || row['cclasstrib'] || '000001'),
-          String(row['cstCsosn'] || row['cst_csosn'] || '000'),
+          String(row['cClassTrib'] || row['cclasstrib'] || ''),
+          String(row['cstCsosn'] || row['cst_csosn'] || ''),
           Number(row['quantidade'] || 1),
-          String(row['unidade'] || 'UN'),
+          String(row['unidade'] || ''),
           valorLiq, valorLiq,
-          Number(row['Base IBS/CBS (R$)'] || row['baseIbs'] || valorLiq),
+          Number(row['Base IBS/CBS (R$)'] || row['baseIbs'] || 0),
           Number(row['aliquotaIbs'] || 0),
           Number(row['IBS (R$)'] || row['valorIbs'] || 0),
-          Number(row['Base IBS/CBS (R$)'] || row['baseCbs'] || valorLiq),
+          Number(row['Base IBS/CBS (R$)'] || row['baseCbs'] || 0),
           Number(row['aliquotaCbs'] || 0),
           Number(row['CBS (R$)'] || row['valorCbs'] || 0)
         );
