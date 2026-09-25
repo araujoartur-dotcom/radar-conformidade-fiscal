@@ -58,6 +58,11 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
   const [ratFapPct, setRatFapPct] = useState<number>(3.0);
   const [sistemaSTerceirosPct, setSistemaSTerceirosPct] = useState<number>(5.2);
 
+  // Estados da Matriz Qualitativa (Wizard)
+  const [wizardEntrada, setWizardEntrada] = useState<string>('regime_geral');
+  const [wizardSaida, setWizardSaida] = useState<string>('normal');
+  const [wizardCliente, setWizardCliente] = useState<string>('pj_credito');
+
   // Modal / Drawer de Memória de Cálculo
   const [showMemoriaCalculo, setShowMemoriaCalculo] = useState<boolean>(false);
 
@@ -182,24 +187,41 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     }
   };
 
-  // Quadrantes da Matriz
-  const applyScenario = (cenario: number) => {
-    if (cenario === 1) {
-      setPctCompraRegimeGeral(90);
-      setPctVendaB2B(90);
-    } else if (cenario === 2) {
-      setPctCompraRegimeGeral(15);
-      setPctVendaB2B(90);
-    } else if (cenario === 3) {
-      setPctCompraRegimeGeral(85);
-      setPctVendaB2B(10);
-    } else if (cenario === 4) {
-      setPctCompraRegimeGeral(10);
-      setPctVendaB2B(10);
-    }
+  // Lógica Qualitativa (Matriz Decisória Wizard)
+  const cenariosDiagnostico: Record<string, { n: number, titulo: string, decisao: string, diagnostico: string, sliders: { b2b: number, comprasGeral: number } }> = {
+    c1: { n: 1, titulo: 'Trânsito Livre de Crédito', decisao: 'Simples Híbrido', diagnostico: 'Toma crédito cheio na entrada e repassa na saída.', sliders: { comprasGeral: 90, b2b: 90 } },
+    c2: { n: 2, titulo: 'Estrangulador de Margem', decisao: 'Rever Preços', diagnostico: 'Cliente exige crédito, mas a empresa quase não tem créditos a abater.', sliders: { comprasGeral: 15, b2b: 90 } },
+    c3: { n: 3, titulo: 'Armadilha de Custo', decisao: 'Simples Tradicional', diagnostico: 'O crédito na entrada existe, mas o consumidor final não o aproveita.', sliders: { comprasGeral: 85, b2b: 10 } },
+    c4: { n: 4, titulo: 'Zona de Conforto do Simples', decisao: 'Simples Tradicional', diagnostico: 'Ninguém na cadeia precisa de crédito fiscal complexo.', sliders: { comprasGeral: 10, b2b: 10 } },
+    c5: { n: 5, titulo: 'Revenda Monofásica', decisao: 'Condicional', diagnostico: 'Só acumula crédito de demais insumos. Se forem materiais, compensa Híbrido.', sliders: { comprasGeral: 40, b2b: 40 } },
+    c6: { n: 6, titulo: 'Consumidor Insumo (Combustível)', decisao: 'Simples Híbrido', diagnostico: 'Crédito do combustível é forte e reduz o efeito cascata.', sliders: { comprasGeral: 100, b2b: 90 } },
+    c7: { n: 7, titulo: 'Alíquota Reduzida', decisao: 'Híbrido c/ Ressarcimento', diagnostico: 'Redução mantém crédito de entradas, gerando saldo credor.', sliders: { comprasGeral: 80, b2b: 50 } },
+    c8: { n: 8, titulo: 'Exportação / Alíquota Zero', decisao: 'Híbrido c/ Ressarcimento', diagnostico: 'Sem débito na saída, gera saldo credor estrutural para ressarcimento.', sliders: { comprasGeral: 80, b2b: 50 } }
   };
 
-  // Helpers de Formatação (Sem Fallback Silencioso)
+  const getCenarioKey = (ent: string, sai: string, cli: string) => {
+    if (sai === 'zero') return 'c8';
+    if (sai === 'reduzida') return 'c7';
+    if (sai === 'monofasico') return 'c5';
+    if (ent === 'comb_insumo') return 'c6';
+    if (cli === 'pj_credito') return ent === 'regime_geral' ? 'c1' : 'c2';
+    return ent === 'regime_geral' ? 'c3' : 'c4';
+  };
+
+  const cenarioAtualKey = getCenarioKey(wizardEntrada, wizardSaida, wizardCliente);
+  const cenarioAtual = cenariosDiagnostico[cenarioAtualKey];
+
+  const applyWizardScenario = (ent: string, sai: string, cli: string) => {
+    setWizardEntrada(ent);
+    setWizardSaida(sai);
+    setWizardCliente(cli);
+    const key = getCenarioKey(ent, sai, cli);
+    const c = cenariosDiagnostico[key];
+    setPctCompraRegimeGeral(c.sliders.comprasGeral);
+    setPctVendaB2B(c.sliders.b2b);
+  };
+
+  // Helpers de Formatação e Parsing Seguro (Sem Fallback Silencioso)
   const formatMoney = (val?: number | null) => {
     if (val === null || val === undefined || isNaN(val)) return '—';
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -208,6 +230,14 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
   const formatPct = (val?: number | null) => {
     if (val === null || val === undefined || isNaN(val)) return '—';
     return (val * 100).toFixed(2) + '%';
+  };
+
+  const parseSafeNumber = (val: any): number => {
+    if (val === null || val === undefined) return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    const str = String(val).replace(',', '.').replace(/[^\d.-]/g, '');
+    const num = Number(str);
+    return isNaN(num) ? 0 : num;
   };
 
   // ==========================================================================
@@ -245,21 +275,21 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
 
     let faixaIdx = 0;
     for (let i = 0; i < faixas.length; i++) {
-      if (rbt12 <= Number(faixas[i].limite_superior) || i === faixas.length - 1) {
+      if (rbt12 <= parseSafeNumber(faixas[i].limite_superior) || i === faixas.length - 1) {
         faixaIdx = i;
         break;
       }
     }
 
     const faixaConfig = faixas[faixaIdx];
-    const aliqNominal = Number(faixaConfig.aliq_nominal);
-    const deducao = Number(faixaConfig.deducao);
+    const aliqNominal = parseSafeNumber(faixaConfig.aliq_nominal);
+    const deducao = parseSafeNumber(faixaConfig.deducao);
 
     // Fórmula legal: [(RBT12 * AliqNominal) - Deducao] / RBT12
     const aliqEfetiva = rbt12 > 0 ? Math.max(0, ((rbt12 * aliqNominal) - deducao) / rbt12) : aliqNominal;
 
     // Repartição do CPP dentro do DAS
-    const pctReparticaoCpp = Number(faixaConfig.reparticao_cpp) || 0;
+    const pctReparticaoCpp = parseSafeNumber(faixaConfig.reparticao_cpp);
 
     // Fração de partilha IBS e CBS da Reforma (LC 214/2025)
     const partilha = dbPartilhasSimples.find(
@@ -267,7 +297,7 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
            Number(p.ano_transicao) === Number(anoTransicao) &&
            Number(p.faixa) === (faixaIdx + 1)
     );
-    const fracaoIBSCBS = partilha ? Number(partilha.perc_remanejado) : 0;
+    const fracaoIBSCBS = partilha ? parseSafeNumber(partilha.perc_remanejado) : 0;
 
     // Fração de IBS/CBS que sai do DAS
     const aliqEfetivaIBSCBS = aliqEfetiva * fracaoIBSCBS;
@@ -286,11 +316,13 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const creditoClienteTradicional = receitaB2B * aliqEfetivaIBSCBS;
 
     // Simples Híbrido: Débito e Crédito de IBS/CBS
-    const aliqIvaDecimal = aliquotaIvaGeral / 100;
+    const aliqIvaDecimal = parseSafeNumber(aliquotaIvaGeral) / 100;
     const debitoIvaHibrido = faturamentoMes * aliqIvaDecimal;
 
-    const comprasRG = comprasInsumosMes * (pctCompraRegimeGeral / 100);
-    const comprasSimples = comprasInsumosMes * (1 - (pctCompraRegimeGeral / 100));
+    // NOVO: Ambas Compras e Outras Despesas geram crédito no IVA não cumulativo pleno
+    const despesasBaseCredito = comprasInsumosMes + outrasDespesasMes;
+    const comprasRG = despesasBaseCredito * (pctCompraRegimeGeral / 100);
+    const comprasSimples = despesasBaseCredito * (1 - (pctCompraRegimeGeral / 100));
 
     // Crédito de Insumos: Regime Geral pleno + crédito Simples
     const creditoIvaEntrada = (comprasRG * aliqIvaDecimal) + (comprasSimples * aliqEfetivaIBSCBS);
@@ -353,12 +385,12 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       };
     }
 
-    const presuncaoIrpj = Number(ativDb.presuncao_irpj);
-    const presuncaoCsll = Number(ativDb.presuncao_csll);
-    const aliqIrpjBasico = Number(ativDb.aliq_irpj_basico ?? 0.15);
-    const aliqIrpjAdicional = Number(ativDb.aliq_irpj_adicional ?? 0.10);
-    const limiteMensalAdicional = Number(ativDb.limite_mensal_adicional ?? 20000);
-    const aliqCsll = Number(ativDb.aliq_csll ?? 0.09);
+    const presuncaoIrpj = parseSafeNumber(ativDb.presuncao_irpj);
+    const presuncaoCsll = parseSafeNumber(ativDb.presuncao_csll);
+    const aliqIrpjBasico = parseSafeNumber(ativDb.aliq_irpj_basico || 0.15);
+    const aliqIrpjAdicional = parseSafeNumber(ativDb.aliq_irpj_adicional || 0.10);
+    const limiteMensalAdicional = parseSafeNumber(ativDb.limite_mensal_adicional || 20000);
+    const aliqCsll = parseSafeNumber(ativDb.aliq_csll || 0.09);
 
     // 1. Base de Cálculo IRPJ: (Faturamento * Presunção) + Adições
     const baseIrpj = (faturamentoMes * presuncaoIrpj) + outrasReceitasAdicoes;
@@ -374,10 +406,13 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const csllTotal = baseCsll * aliqCsll;
 
     // 3. IBS e CBS pós-Reforma (Não-Cumulativo Pleno)
-    const aliqIvaDecimal = aliquotaIvaGeral / 100;
+    const aliqIvaDecimal = parseSafeNumber(aliquotaIvaGeral) / 100;
     const debitoIvaPresumido = faturamentoMes * aliqIvaDecimal;
-    const comprasRG = comprasInsumosMes * (pctCompraRegimeGeral / 100);
-    const comprasSimples = comprasInsumosMes * (1 - (pctCompraRegimeGeral / 100));
+    
+    // NOVO: Ambas Compras e Outras Despesas geram crédito no IVA não cumulativo pleno
+    const despesasBaseCredito = comprasInsumosMes + outrasDespesasMes;
+    const comprasRG = despesasBaseCredito * (pctCompraRegimeGeral / 100);
+    const comprasSimples = despesasBaseCredito * (1 - (pctCompraRegimeGeral / 100));
 
     const aliqEfetivaIBSCBS = simplesCalculo.isMissingParams ? 0 : simplesCalculo.aliqEfetivaIBSCBS;
     const creditoIvaPresumido = (comprasRG * aliqIvaDecimal) + (comprasSimples * aliqEfetivaIBSCBS);
@@ -415,7 +450,7 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
       totalTributosPresumido,
       creditoClientePresumido
     };
-  }, [dbLucroPresumido, atividadeKey, faturamentoMes, comprasInsumosMes, folhaSalariosMes, outrasReceitasAdicoes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, simplesCalculo]);
+  }, [dbLucroPresumido, atividadeKey, faturamentoMes, comprasInsumosMes, outrasDespesasMes, folhaSalariosMes, outrasReceitasAdicoes, aliquotaIvaGeral, pctCompraRegimeGeral, pctVendaB2B, inssPatronalPct, ratFapPct, sistemaSTerceirosPct, simplesCalculo]);
 
   // ==========================================================================
   // CÁLCULO 3: MINI-DRE GERENCIAL & CAIXA LÍQUIDO DOS 3 REGIMES
@@ -452,6 +487,36 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
     const irpjCsllPres = presumidoCalculo.isMissingParams ? 0 : (presumidoCalculo.irpjTotal + presumidoCalculo.csllTotal);
     const resultadoLiquidoPres = presumidoCalculo.isMissingParams ? null : (margemBrutaPres - despesasTotaisPres - irpjCsllPres);
     const margemLiquidaPctPres = resultadoLiquidoPres !== null && faturamentoMes > 0 ? (resultadoLiquidoPres / faturamentoMes) * 100 : 0;
+
+    // 4. Lucro Real
+    const impostoVendasReal = presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.saldoIvaPresumido;
+    const recLiquidaReal = faturamentoMes - impostoVendasReal;
+    const margemBrutaReal = recLiquidaReal - comprasInsumosMes;
+    const despesasTotaisReal = outrasDespesasMes + folhaSalariosMes + (presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.cppPatronalFolhaPresumido);
+    const lucroOperacionalReal = margemBrutaReal - despesasTotaisReal + outrasReceitasAdicoes;
+    
+    let irpjTotalReal = 0;
+    let csllTotalReal = 0;
+    if (lucroOperacionalReal > 0 && !presumidoCalculo.isMissingParams) {
+      // Cálculo tributário padrão (Simplificado: alíquota básica + adicional sobre o real)
+      const baseReal = lucroOperacionalReal;
+      const aliqIrpjBasico = 0.15;
+      const aliqIrpjAdicional = 0.10;
+      const limiteMensalAdicional = 20000;
+      const aliqCsll = 0.09;
+      
+      const irpjBasicoReal = baseReal * aliqIrpjBasico;
+      const excedenteIrpjReal = Math.max(0, baseReal - limiteMensalAdicional);
+      const irpjAdicionalReal = excedenteIrpjReal * aliqIrpjAdicional;
+      
+      irpjTotalReal = irpjBasicoReal + irpjAdicionalReal;
+      csllTotalReal = baseReal * aliqCsll;
+    }
+    const irpjCsllReal = irpjTotalReal + csllTotalReal;
+    const resultadoLiquidoReal = presumidoCalculo.isMissingParams ? null : (margemBrutaReal - despesasTotaisReal - irpjCsllReal);
+    const margemLiquidaPctReal = resultadoLiquidoReal !== null && faturamentoMes > 0 ? (resultadoLiquidoReal / faturamentoMes) * 100 : 0;
+    const realTotalTributos = presumidoCalculo.isMissingParams ? null : (impostoVendasReal + (presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.cppPatronalFolhaPresumido) + irpjCsllReal);
+
 
     return {
       trad: {
@@ -497,6 +562,21 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
         resultadoLiquido: resultadoLiquidoPres,
         margemLiquidaPct: margemLiquidaPctPres,
         totalTributos: presTotalTributos,
+        creditoCliente: presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.creditoClientePresumido
+      },
+      real: {
+        recBruta: faturamentoMes,
+        impostosVendas: impostoVendasReal,
+        recLiquida: recLiquidaReal,
+        comprasInsumos: comprasInsumosMes,
+        margemBruta: margemBrutaReal,
+        outrasDespesas: outrasDespesasMes,
+        folhaSalarios: folhaSalariosMes,
+        encargosPatronais: presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.cppPatronalFolhaPresumido,
+        irpjCsll: irpjCsllReal,
+        resultadoLiquido: resultadoLiquidoReal,
+        margemLiquidaPct: margemLiquidaPctReal,
+        totalTributos: realTotalTributos,
         creditoCliente: presumidoCalculo.isMissingParams ? 0 : presumidoCalculo.creditoClientePresumido
       }
     };
@@ -714,91 +794,86 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
             </div>
           )}
 
-          {/* MATRIZ DECISÓRIA DE 4 QUADRANTES (FORNECEDOR X CLIENTE) */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5">
-            <div className="flex items-center justify-between mb-3">
+          {/* MATRIZ DECISÓRIA QUALITATIVA (WIZARD DE CADEIA DE VALOR) */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <Layers className="w-4 h-4 text-indigo-400" />
-                Matriz Decisória: Fornecedor (Entrada) × Cliente (Saída)
+                Matriz Decisória da Cadeia de Valor
               </h2>
-              <span className="text-[11px] text-slate-400">Clique no quadrante para carregar premissas automáticas</span>
+              <span className="text-[11px] text-slate-400">Responda para ajustar os simuladores automaticamente</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div
-                onClick={() => applyScenario(1)}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
-                  pctCompraRegimeGeral >= 60 && pctVendaB2B >= 60
-                    ? 'bg-emerald-950/40 border-emerald-500/80 shadow-lg shadow-emerald-900/20'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cenário 1</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">Simples Híbrido</span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-300">
+                  <span className="bg-indigo-500 text-white w-5 h-5 inline-flex items-center justify-center rounded-full text-[10px] mr-2">1</span>
+                  Como são suas compras? (Entrada)
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { v: 'regime_geral', l: 'Regime Geral (Gera crédito cheio)' },
+                    { v: 'simples_mei', l: 'Simples/MEI/Folha (Pouco crédito)' },
+                    { v: 'comb_insumo', l: 'Combustível como Insumo (Forte crédito)' }
+                  ].map(op => (
+                    <label key={op.v} className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition ${wizardEntrada === op.v ? 'bg-indigo-950/40 border-indigo-500/60' : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'}`}>
+                      <input type="radio" className="mt-0.5 accent-indigo-500" checked={wizardEntrada === op.v} onChange={() => applyWizardScenario(op.v, wizardSaida, wizardCliente)} />
+                      <span className="text-[11px] text-slate-300 leading-snug">{op.l}</span>
+                    </label>
+                  ))}
                 </div>
-                <h4 className="text-xs font-bold text-white mt-1.5 mb-1">Trânsito Livre de Crédito</h4>
-                <p className="text-[11px] text-slate-400 line-clamp-2">
-                  <strong>Entrada:</strong> Regime Geral (Crédito Pleno)<br />
-                  <strong>Saída:</strong> PJ Tomadora de Crédito B2B
-                </p>
               </div>
 
-              <div
-                onClick={() => applyScenario(2)}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
-                  pctCompraRegimeGeral < 40 && pctVendaB2B >= 60
-                    ? 'bg-rose-950/40 border-rose-500/80 shadow-lg shadow-rose-900/20'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cenário 2</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300">Risco / Reprecificar</span>
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-300">
+                  <span className="bg-emerald-500 text-white w-5 h-5 inline-flex items-center justify-center rounded-full text-[10px] mr-2">2</span>
+                  Como é tributada a sua venda? (Saída)
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { v: 'normal', l: 'Tributação Normal (Alíquota cheia)' },
+                    { v: 'monofasico', l: 'Monofásico (Revenda Combustível)' },
+                    { v: 'reduzida', l: 'Alíquota Reduzida (Saúde, Agro)' },
+                    { v: 'zero', l: 'Exportação ou Alíquota Zero' }
+                  ].map(op => (
+                    <label key={op.v} className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition ${wizardSaida === op.v ? 'bg-emerald-950/40 border-emerald-500/60' : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'}`}>
+                      <input type="radio" className="mt-0.5 accent-emerald-500" checked={wizardSaida === op.v} onChange={() => applyWizardScenario(wizardEntrada, op.v, wizardCliente)} />
+                      <span className="text-[11px] text-slate-300 leading-snug">{op.l}</span>
+                    </label>
+                  ))}
                 </div>
-                <h4 className="text-xs font-bold text-white mt-1.5 mb-1">O Estrangulador de Margem</h4>
-                <p className="text-[11px] text-slate-400 line-clamp-2">
-                  <strong>Entrada:</strong> Simples / Folha Elevada (Pouco Crédito)<br />
-                  <strong>Saída:</strong> PJ Tomadora que exige Crédito
-                </p>
               </div>
 
-              <div
-                onClick={() => applyScenario(3)}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
-                  pctCompraRegimeGeral >= 60 && pctVendaB2B < 40
-                    ? 'bg-amber-950/40 border-amber-500/80 shadow-lg shadow-amber-900/20'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cenário 3</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300">Simples Tradicional</span>
+              <div className="space-y-3">
+                <label className="block text-xs font-semibold text-slate-300">
+                  <span className="bg-amber-500 text-white w-5 h-5 inline-flex items-center justify-center rounded-full text-[10px] mr-2">3</span>
+                  Quem é o seu principal cliente?
+                </label>
+                <div className="space-y-2">
+                  {[
+                    { v: 'pj_credito', l: 'Pessoa Jurídica (B2B Tomadora de Crédito)' },
+                    { v: 'consumidor', l: 'Consumidor Final (PF) / Varejo' }
+                  ].map(op => (
+                    <label key={op.v} className={`flex items-start gap-2 p-2.5 rounded-xl border cursor-pointer transition ${wizardCliente === op.v ? 'bg-amber-950/40 border-amber-500/60' : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'}`}>
+                      <input type="radio" className="mt-0.5 accent-amber-500" checked={wizardCliente === op.v} onChange={() => applyWizardScenario(wizardEntrada, wizardSaida, op.v)} />
+                      <span className="text-[11px] text-slate-300 leading-snug">{op.l}</span>
+                    </label>
+                  ))}
                 </div>
-                <h4 className="text-xs font-bold text-white mt-1.5 mb-1">A Armadilha de Custo</h4>
-                <p className="text-[11px] text-slate-400 line-clamp-2">
-                  <strong>Entrada:</strong> Regime Geral (Gera Crédito)<br />
-                  <strong>Saída:</strong> Consumidor Final (PF) / Varejo B2C
-                </p>
               </div>
+            </div>
 
-              <div
-                onClick={() => applyScenario(4)}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.02] ${
-                  pctCompraRegimeGeral < 40 && pctVendaB2B < 40
-                    ? 'bg-blue-950/40 border-blue-500/80 shadow-lg shadow-blue-900/20'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Cenário 4</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300">Simples Tradicional</span>
+            <div className="mt-5 p-4 bg-slate-950/60 rounded-xl border border-indigo-500/30 flex flex-col md:flex-row md:items-center gap-4">
+              <div className="shrink-0 w-14 h-14 bg-indigo-900/50 rounded-full flex items-center justify-center border border-indigo-500/50">
+                <TrendingUp className="w-6 h-6 text-indigo-400" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 uppercase">Cenário {cenarioAtual.n}</span>
+                  <h4 className="text-sm font-bold text-white">{cenarioAtual.titulo}</h4>
                 </div>
-                <h4 className="text-xs font-bold text-white mt-1.5 mb-1">Zona de Conforto</h4>
-                <p className="text-[11px] text-slate-400 line-clamp-2">
-                  <strong>Entrada:</strong> Simples / Serviços Locais<br />
-                  <strong>Saída:</strong> Consumidor Final (PF)
-                </p>
+                <p className="text-xs text-slate-300 mb-1.5">{cenarioAtual.diagnostico}</p>
+                <p className="text-[11px] text-emerald-400 font-semibold">Decisão Recomendada pela Matriz: {cenarioAtual.decisao}</p>
               </div>
             </div>
           </div>
@@ -879,14 +954,14 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                       onChange={(e) => handleAnoTransicaoChange(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                     >
-                      <option value="2026">2026 (Ano de Teste - 1,00%)</option>
-                      <option value="2027">2027 (CBS 8,80% / IBS 0,10%)</option>
-                      <option value="2028">2028 (CBS 8,80% / IBS 0,10%)</option>
-                      <option value="2029">2029 (Transição IBS 10% - 10,67%)</option>
-                      <option value="2030">2030 (Transição IBS 20% - 12,54%)</option>
-                      <option value="2031">2031 (Transição IBS 30% - 14,41%)</option>
-                      <option value="2032">2032 (Transição IBS 40% - 16,28%)</option>
-                      <option value="2033">2033 em diante (IVA Dual Pleno 27,91%)</option>
+                      <option value="2026">2026 (Ano de Teste - Recolhimento Fixo)</option>
+                      <option value="2027">2027 (Transição CBS Iniciada)</option>
+                      <option value="2028">2028 (Transição CBS Consolidada)</option>
+                      <option value="2029">2029 (Transição IBS - 1ª Fase)</option>
+                      <option value="2030">2030 (Transição IBS - 2ª Fase)</option>
+                      <option value="2031">2031 (Transição IBS - 3ª Fase)</option>
+                      <option value="2032">2032 (Transição IBS - 4ª Fase)</option>
+                      <option value="2033">2033 em diante (IVA Dual Pleno)</option>
                     </select>
                   </div>
                 </div>
@@ -1095,34 +1170,44 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
             {/* COLUNA DIREITA: COMPARATIVO DOS 3 REGIMES & MINI-DRE (7 COLUNAS) */}
             <div className="xl:col-span-7 space-y-4">
               {/* KPIS DE DESTAQUE */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Simples Tradicional</span>
-                  <div className="text-xl font-extrabold text-white font-mono">
+                  <div className="text-lg font-extrabold text-white font-mono">
                     {simplesCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.trad.totalTributos)}
                   </div>
-                  <span className={`text-[11px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-emerald-400'}`}>
-                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.trad.resultadoLiquido)} (${dreComparativo.trad.margemLiquidaPct.toFixed(1)}%)`}
+                  <span className={`text-[10px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Caixa: ${formatMoney(dreComparativo.trad.resultadoLiquido)} (${dreComparativo.trad.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
 
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Simples Híbrido</span>
-                  <div className="text-xl font-extrabold text-indigo-300 font-mono">
+                  <div className="text-lg font-extrabold text-indigo-300 font-mono">
                     {simplesCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.hib.totalTributos)}
                   </div>
-                  <span className={`text-[11px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-indigo-400'}`}>
-                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.hib.resultadoLiquido)} (${dreComparativo.hib.margemLiquidaPct.toFixed(1)}%)`}
+                  <span className={`text-[10px] mt-1 block ${simplesCalculo.isMissingParams ? 'text-amber-400' : 'text-indigo-400'}`}>
+                    {simplesCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Caixa: ${formatMoney(dreComparativo.hib.resultadoLiquido)} (${dreComparativo.hib.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
 
                 <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
                   <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lucro Presumido</span>
-                  <div className="text-xl font-extrabold text-cyan-300 font-mono">
+                  <div className="text-lg font-extrabold text-cyan-300 font-mono">
                     {presumidoCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.pres.totalTributos)}
                   </div>
-                  <span className={`text-[11px] mt-1 block ${presumidoCalculo.isMissingParams ? 'text-amber-400' : 'text-cyan-400'}`}>
-                    {presumidoCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Resultado: ${formatMoney(dreComparativo.pres.resultadoLiquido)} (${dreComparativo.pres.margemLiquidaPct.toFixed(1)}%)`}
+                  <span className={`text-[10px] mt-1 block ${presumidoCalculo.isMissingParams ? 'text-amber-400' : 'text-cyan-400'}`}>
+                    {presumidoCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Caixa: ${formatMoney(dreComparativo.pres.resultadoLiquido)} (${dreComparativo.pres.margemLiquidaPct.toFixed(1)}%)`}
+                  </span>
+                </div>
+
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 relative overflow-hidden">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lucro Real</span>
+                  <div className="text-lg font-extrabold text-teal-300 font-mono">
+                    {presumidoCalculo.isMissingParams ? 'Sem Parâmetro' : formatMoney(dreComparativo.real.totalTributos)}
+                  </div>
+                  <span className={`text-[10px] mt-1 block ${presumidoCalculo.isMissingParams ? 'text-amber-400' : 'text-teal-400'}`}>
+                    {presumidoCalculo.isMissingParams ? 'Configure na aba Parâmetros' : `Caixa: ${formatMoney(dreComparativo.real.resultadoLiquido)} (${dreComparativo.real.margemLiquidaPct.toFixed(1)}%)`}
                   </span>
                 </div>
               </div>
@@ -1149,27 +1234,26 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                         <th className="py-2.5 text-right font-semibold">Simples Tradicional</th>
                         <th className="py-2.5 text-right font-semibold">Simples Híbrido</th>
                         <th className="py-2.5 text-right font-semibold">Lucro Presumido</th>
+                        <th className="py-2.5 text-right font-semibold">Lucro Real</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
                       {/* 1. Receita Bruta */}
                       <tr>
-                        <td className="py-2 text-slate-300 font-sans font-medium">
-                          (+) Faturamento Bruto do Mês
-                        </td>
+                        <td className="py-2 text-slate-300 font-sans font-medium">(+) Faturamento Bruto do Mês</td>
                         <td className="py-2 text-right text-slate-200">{formatMoney(dreComparativo.trad.recBruta)}</td>
                         <td className="py-2 text-right text-slate-200">{formatMoney(dreComparativo.hib.recBruta)}</td>
                         <td className="py-2 text-right text-slate-200">{formatMoney(dreComparativo.pres.recBruta)}</td>
+                        <td className="py-2 text-right text-slate-200">{formatMoney(dreComparativo.real.recBruta)}</td>
                       </tr>
 
                       {/* 2. Impostos sobre Vendas / Frete */}
                       <tr>
-                        <td className="py-2 text-rose-400 font-sans font-medium">
-                          (-) Tributos s/ Vendas (DAS / IBS-CBS)
-                        </td>
+                        <td className="py-2 text-rose-400 font-sans font-medium">(-) Tributos s/ Vendas (DAS / IBS-CBS)</td>
                         <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.trad.impostosVendas)}</td>
                         <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.hib.impostosVendas)}</td>
                         <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.pres.impostosVendas)}</td>
+                        <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.real.impostosVendas)}</td>
                       </tr>
 
                       {/* 3. Receita Líquida */}
@@ -1178,16 +1262,16 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.trad.recLiquida)}</td>
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.hib.recLiquida)}</td>
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.pres.recLiquida)}</td>
+                        <td className="py-2 text-right text-white">{formatMoney(dreComparativo.real.recLiquida)}</td>
                       </tr>
 
-                      {/* 4. Custos Diretos de Insumos / Mercadorias / Diesel */}
+                      {/* 4. Custos Diretos de Insumos */}
                       <tr>
-                        <td className="py-2 text-slate-400 font-sans">
-                          (-) Insumos / Mercadorias / Diesel
-                        </td>
+                        <td className="py-2 text-slate-400 font-sans">(-) Insumos / Mercadorias / Diesel</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.trad.comprasInsumos)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.hib.comprasInsumos)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.pres.comprasInsumos)}</td>
+                        <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.real.comprasInsumos)}</td>
                       </tr>
 
                       {/* 5. Margem Bruta */}
@@ -1196,68 +1280,52 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.trad.margemBruta)}</td>
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.hib.margemBruta)}</td>
                         <td className="py-2 text-right text-white">{formatMoney(dreComparativo.pres.margemBruta)}</td>
+                        <td className="py-2 text-right text-white">{formatMoney(dreComparativo.real.margemBruta)}</td>
                       </tr>
 
                       {/* 6. Despesas Operacionais e Administrativas */}
                       <tr>
-                        <td className="py-2 text-slate-400 font-sans">
-                          (-) Outras Despesas Operacionais (Aluguel, Luz, etc.)
-                        </td>
+                        <td className="py-2 text-slate-400 font-sans">(-) Outras Despesas Operacionais</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.trad.outrasDespesas)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.hib.outrasDespesas)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.pres.outrasDespesas)}</td>
+                        <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.real.outrasDespesas)}</td>
                       </tr>
 
                       {/* 7. Folha de Salários Bruta */}
                       <tr>
-                        <td className="py-2 text-slate-400 font-sans">
-                          (-) Folha Salarial da Equipe
-                        </td>
+                        <td className="py-2 text-slate-400 font-sans">(-) Folha Salarial da Equipe</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.trad.folhaSalarios)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.hib.folhaSalarios)}</td>
                         <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.pres.folhaSalarios)}</td>
+                        <td className="py-2 text-right text-slate-400">- {formatMoney(dreComparativo.real.folhaSalarios)}</td>
                       </tr>
 
                       {/* 8. Encargos Previdenciários Patronais (CPP / INSS) */}
                       <tr>
-                        <td className="py-2 text-amber-300 font-sans">
-                          (-) Encargos Patronais Folha (CPP/INSS/RAT/Sistema S)
-                        </td>
-                        <td className="py-2 text-right text-emerald-400">
-                          {dreComparativo.trad.encargosPatronais === 0 ? 'R$ 0,00 (incluso DAS)' : `- ${formatMoney(dreComparativo.trad.encargosPatronais)}`}
-                        </td>
-                        <td className="py-2 text-right text-emerald-400">
-                          {dreComparativo.hib.encargosPatronais === 0 ? 'R$ 0,00 (incluso DAS)' : `- ${formatMoney(dreComparativo.hib.encargosPatronais)}`}
-                        </td>
-                        <td className="py-2 text-right text-amber-300 font-bold">
-                          - {formatMoney(dreComparativo.pres.encargosPatronais)}
-                        </td>
+                        <td className="py-2 text-amber-300 font-sans">(-) Encargos Patronais Folha (CPP/INSS/RAT)</td>
+                        <td className="py-2 text-right text-emerald-400">{dreComparativo.trad.encargosPatronais === 0 ? 'R$ 0 (no DAS)' : `- ${formatMoney(dreComparativo.trad.encargosPatronais)}`}</td>
+                        <td className="py-2 text-right text-emerald-400">{dreComparativo.hib.encargosPatronais === 0 ? 'R$ 0 (no DAS)' : `- ${formatMoney(dreComparativo.hib.encargosPatronais)}`}</td>
+                        <td className="py-2 text-right text-amber-300 font-bold">- {formatMoney(dreComparativo.pres.encargosPatronais)}</td>
+                        <td className="py-2 text-right text-amber-300 font-bold">- {formatMoney(dreComparativo.real.encargosPatronais)}</td>
                       </tr>
 
-                      {/* 9. IRPJ e CSLL no Lucro Presumido */}
+                      {/* 9. IRPJ e CSLL no Lucro Presumido/Real */}
                       <tr>
-                        <td className="py-2 text-rose-400 font-sans">
-                          (-) IRPJ Presumido (c/ Adic. 10%) + CSLL (9%)
-                        </td>
-                        <td className="py-2 text-right text-slate-500">(incluso no DAS)</td>
-                        <td className="py-2 text-right text-slate-500">(incluso no DAS)</td>
+                        <td className="py-2 text-rose-400 font-sans">(-) IRPJ (c/ Adic.) + CSLL</td>
+                        <td className="py-2 text-right text-slate-500">(no DAS)</td>
+                        <td className="py-2 text-right text-slate-500">(no DAS)</td>
                         <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.pres.irpjCsll)}</td>
+                        <td className="py-2 text-right text-rose-400">- {formatMoney(dreComparativo.real.irpjCsll)}</td>
                       </tr>
 
                       {/* 10. RESULTADO LÍQUIDO FINAL */}
                       <tr className="bg-indigo-950/40 border-t-2 border-indigo-500 text-sm font-extrabold">
-                        <td className="py-3 text-white font-sans">
-                          (=) RESULTADO LÍQUIDO FINAL (Caixa Real)
-                        </td>
-                        <td className={`py-3 text-right ${dreComparativo.trad.resultadoLiquido >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {formatMoney(dreComparativo.trad.resultadoLiquido)}
-                        </td>
-                        <td className={`py-3 text-right ${dreComparativo.hib.resultadoLiquido >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
-                          {formatMoney(dreComparativo.hib.resultadoLiquido)}
-                        </td>
-                        <td className={`py-3 text-right ${dreComparativo.pres.resultadoLiquido >= 0 ? 'text-cyan-300' : 'text-rose-400'}`}>
-                          {formatMoney(dreComparativo.pres.resultadoLiquido)}
-                        </td>
+                        <td className="py-3 text-white font-sans">(=) RESULTADO LÍQUIDO FINAL (Caixa Real)</td>
+                        <td className={`py-3 text-right ${dreComparativo.trad.resultadoLiquido >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatMoney(dreComparativo.trad.resultadoLiquido)}</td>
+                        <td className={`py-3 text-right ${dreComparativo.hib.resultadoLiquido >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>{formatMoney(dreComparativo.hib.resultadoLiquido)}</td>
+                        <td className={`py-3 text-right ${dreComparativo.pres.resultadoLiquido >= 0 ? 'text-cyan-300' : 'text-rose-400'}`}>{formatMoney(dreComparativo.pres.resultadoLiquido)}</td>
+                        <td className={`py-3 text-right ${dreComparativo.real.resultadoLiquido >= 0 ? 'text-teal-300' : 'text-rose-400'}`}>{formatMoney(dreComparativo.real.resultadoLiquido)}</td>
                       </tr>
 
                       {/* 11. Margem Líquida % */}
@@ -1266,55 +1334,23 @@ export const SimuladorRegimesPanel: React.FC<SimuladorRegimesPanelProps> = ({ em
                         <td className="py-2 text-right text-emerald-400">{dreComparativo.trad.margemLiquidaPct.toFixed(1)}%</td>
                         <td className="py-2 text-right text-indigo-300">{dreComparativo.hib.margemLiquidaPct.toFixed(1)}%</td>
                         <td className="py-2 text-right text-cyan-300">{dreComparativo.pres.margemLiquidaPct.toFixed(1)}%</td>
+                        <td className="py-2 text-right text-teal-300">{dreComparativo.real.margemLiquidaPct.toFixed(1)}%</td>
                       </tr>
 
                       {/* 12. Crédito Transferido para Clientes PJ B2B */}
                       <tr className="bg-emerald-950/20 text-emerald-300 font-bold border-t border-emerald-800/60">
-                        <td className="py-2.5 font-sans flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          Crédito Fiscal Transferido para Clientes B2B
-                        </td>
+                        <td className="py-2.5 font-sans flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-400" />Crédito Transferido (B2B)</td>
                         <td className="py-2.5 text-right font-mono">{formatMoney(dreComparativo.trad.creditoCliente)}</td>
                         <td className="py-2.5 text-right font-mono text-emerald-400">{formatMoney(dreComparativo.hib.creditoCliente)}</td>
                         <td className="py-2.5 text-right font-mono text-emerald-400">{formatMoney(dreComparativo.pres.creditoCliente)}</td>
+                        <td className="py-2.5 text-right font-mono text-emerald-400">{formatMoney(dreComparativo.real.creditoCliente)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
 
-              {/* DIAGNÓSTICO ESTRATÉGICO AUTOMATIZADO */}
-              <div className={`p-4 rounded-2xl border ${
-                dreComparativo.trad.resultadoLiquido > dreComparativo.hib.resultadoLiquido && pctVendaB2B < 50
-                  ? 'bg-emerald-950/40 border-emerald-500/80 text-emerald-200'
-                  : pctVendaB2B >= 60 && pctCompraRegimeGeral >= 60
-                  ? 'bg-indigo-950/40 border-indigo-500/80 text-indigo-200'
-                  : 'bg-amber-950/40 border-amber-500/80 text-amber-200'
-              }`}>
-                <div className="flex items-center gap-2 font-bold text-sm mb-1">
-                  <Sparkles className="w-4 h-4" />
-                  Diagnóstico Estratégico do Radar de Conformidade
-                </div>
-                <p className="text-xs leading-relaxed opacity-90">
-                  {simplesCalculo.isMissingParams || presumidoCalculo.isMissingParams ? (
-                    <span>
-                      <strong>Aguardando parametrização oficial:</strong> Para emitir o diagnóstico estratégico comparativo e recomendações precisas de enquadramento tributário, configure os parâmetros oficiais no módulo <strong>Parâmetros & Tabelas Fiscais</strong>.
-                    </span>
-                  ) : pctVendaB2B >= 60 && pctCompraRegimeGeral >= 60 ? (
-                    <>
-                      <strong>Recomendação: Simples Híbrido (IBS/CBS por Fora).</strong> Sua empresa fatura predominantemente para PJs ({pctVendaB2B}%) e adquire {pctCompraRegimeGeral}% dos seus insumos com crédito pleno no Regime Geral. A vantagem comercial gerada na nota para os seus clientes ({formatMoney(dreComparativo.hib.creditoCliente)} em créditos) neutraliza o impacto de caixa e fortalece sua retenção de clientes contra concorrentes do Lucro Real.
-                    </>
-                  ) : pctVendaB2B >= 60 && pctCompraRegimeGeral < 50 ? (
-                    <>
-                      <strong>Alerta de Risco Crítico de Caixa:</strong> Seus clientes PJ demandam crédito fiscal pleno ({pctVendaB2B}% B2B), mas suas compras não geram lastro de créditos suficiente ({pctCompraRegimeGeral}% no Regime Geral). Ir para o Híbrido sem renegociar preços provocará queda de margem líquida de {dreComparativo.trad.margemLiquidaPct.toFixed(1)}% para {dreComparativo.hib.margemLiquidaPct.toFixed(1)}%. Reprecifique suas tabelas de frete/produtos antes de oficializar a opção.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Recomendação: Manter Simples Tradicional (Tudo no DAS).</strong> A maior parte das suas vendas destina-se a clientes que não tomam crédito tributário ({100 - pctVendaB2B}% consumidor final/varejo). O Simples Tradicional maximiza seu resultado líquido de caixa ({formatMoney(dreComparativo.trad.resultadoLiquido)}) e poupa a empresa da complexidade do débito e crédito da Reforma.
-                    </>
-                  )}
-                </p>
-              </div>
+              {/* DIAGNÓSTICO ESTRATÉGICO AUTOMATIZADO APAGADO E SUBSTITUIDO PELO WIZARD NO TOPO */}
             </div>
           </div>
         </div>

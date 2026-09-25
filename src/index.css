@@ -153,3 +153,79 @@ html, body {
   white-space: nowrap;
 }
 
+/* ============================================================
+   DANFE / DACTE / DANFSe — COMPLIANCE VISUAL & ANTI-DARK-MODE
+   Garante folha física 100% branca (#ffffff), texto preto (#000000)
+   e imunidade absoluta a extensões (Dark Reader) e Auto Dark Mode
+   ============================================================ */
+.danfe-sheet,
+.danfe-sheet *,
+.danfe-print-area,
+.danfe-print-area * {
+  color-scheme: light !important;
+  forced-color-adjust: none !important;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.danfe-sheet,
+.danfe-print-area {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Células e blocos padrão do DANFE */
+.danfe-sheet .danfe-cell,
+.danfe-print-area .danfe-cell,
+.danfe-sheet .danfe-box,
+.danfe-print-area .danfe-box {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+/* Barras de título de seção (cinza claro neutro MOC) */
+.danfe-sheet .danfe-header-bar,
+.danfe-print-area .danfe-header-bar {
+  background-color: #e5e7eb !important; /* gray-200 */
+  color: #000000 !important;
+}
+
+/* Tabelas e grids */
+.danfe-sheet table,
+.danfe-print-area table,
+.danfe-sheet thead,
+.danfe-print-area thead,
+.danfe-sheet tbody,
+.danfe-print-area tbody,
+.danfe-sheet tr,
+.danfe-print-area tr,
+.danfe-sheet td,
+.danfe-print-area td {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+}
+
+.danfe-sheet th,
+.danfe-print-area th {
+  background-color: #f3f4f6 !important; /* gray-100 */
+  color: #000000 !important;
+}
+
+/* Rótulos de campos (pequenos e legíveis em cinza escuro) */
+.danfe-sheet .danfe-field-label,
+.danfe-print-area .danfe-field-label {
+  color: #4b5563 !important; /* slate-600 */
+}
+
+/* Valores principais em preto puro */
+.danfe-sheet .danfe-field-val,
+.danfe-print-area .danfe-field-val,
+.danfe-sheet strong,
+.danfe-print-area strong,
+.danfe-sheet span,
+.danfe-print-area span {
+  color: #000000;
+}
+
+

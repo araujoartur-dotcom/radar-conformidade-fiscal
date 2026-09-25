@@ -1480,8 +1480,18 @@ export const TabelasFiscaisPanel: React.FC = () => {
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-mono">Cat. C</span>
         </button>
 
-
-
+        <button
+          onClick={() => setActiveTab('cfop')}
+          className={`flex-1 min-w-[150px] py-2.5 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'cfop'
+              ? 'bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-md shadow-indigo-600/30'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+          }`}
+        >
+          <Scale className="w-4 h-4 text-indigo-400" />
+          <span>Matriz CFOP ({cfopRules.length})</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">Cat. C</span>
+        </button>
 
         <button
           onClick={() => setActiveTab('inferencia')}

@@ -166,6 +166,7 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
             <tr>
               {/* Grupo 1: Identificação */}
               <th className="py-2.5 px-3 bg-slate-900/90 border-r border-slate-800">Doc / Modelo</th>
+              <th className="py-2.5 px-3 bg-slate-900/90 border-r border-slate-800 text-center">Movimento</th>
               <th className="py-2.5 px-3 bg-slate-900/90 border-r border-slate-800">Chave / Datas</th>
               <th className="py-2.5 px-3 bg-slate-900/90 border-r border-slate-800 min-w-[200px]">Fornecedor / Transportador</th>
 
@@ -252,7 +253,7 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
           <tbody className="divide-y divide-slate-800/60 font-mono">
             {filteredDataset.length === 0 ? (
               <tr>
-                <td colSpan={20} className="p-12 text-center text-slate-500 font-sans">
+                <td colSpan={21} className="p-12 text-center text-slate-500 font-sans">
                   Nenhum documento mercantil (NF-e) ou de transporte (CT-e) localizado com os filtros selecionados.
                 </td>
               </tr>
@@ -281,6 +282,21 @@ export const RelatorioConsolidadoMercadorias: React.FC<RelatorioConsolidadoMerca
                       <div className="text-[10px] text-slate-400 mt-0.5">
                         Comp: <span className="text-slate-300 font-semibold">{it.competencia}</span>
                       </div>
+                    </td>
+
+                    {/* Movimento (Saída / Entrada) */}
+                    <td className="py-2.5 px-3 border-r border-slate-800/60 text-center">
+                      {it.direcaoMovimento === 'SAIDA' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-950 text-emerald-300 border border-emerald-700/60 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                          SAÍDA
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-950 text-blue-300 border border-blue-700/60 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                          ENTRADA
+                        </span>
+                      )}
                     </td>
 
                     {/* Chave / Datas */}

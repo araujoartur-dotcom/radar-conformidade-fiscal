@@ -63,6 +63,8 @@ export interface ParsedDfeDoc {
   numero: string;
   serie: string;
   tipoOperacao: 'Entrada' | 'Saída';
+  direcaoMovimento: 'ENTRADA' | 'SAIDA';
+  tomadorCnpj?: string;
   dataEmissao: string;        // YYYY-MM-DD
   dataEmissaoCompleta: string; // ISO Brasília
   dataEntrada: string;        // ISO Brasília
@@ -388,15 +390,77 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
   const dataEntrada = getBrasiliaTimestamp();
   const competencia = extractTagRegex(sanitized, 'Competencia')?.substring(0, 7) || dataEmissao.substring(0, 7);
 
-  // 7. Tipo de Operação em relação ao Tenant
-  let tipoOperacao: 'Entrada' | 'Saída' = 'Entrada';
-  if (cnpjTenant) {
-    const cleanTenantRaiz = cnpjTenant.replace(/\D/g, '').substring(0, 8);
-    const cleanEmitRaiz = emitCnpj.replace(/\D/g, '').substring(0, 8);
+  // 7. Tomador e Tipo de Operação em relação ao Tenant / DF-e
+  // 7.1 Identificação Canônica do Tomador (CT-e / NFS-e / NF-e)
+  let tomadorCnpj = '';
+  if (tipoDoc === 'CTe') {
+    // No CT-e: toma3 (0=rem, 1=exped, 2=receb, 3=dest) ou toma4 (outros com CNPJ próprio)
+    const toma4Cnpj = extractSubTagRegex(sanitized, 'toma4', 'CNPJ') || extractSubTagRegex(sanitized, 'toma4', 'CPF');
+    const toma3Tipo = extractSubTagRegex(sanitized, 'toma3', 'toma') || extractTagRegex(sanitized, 'toma');
+    if (toma4Cnpj) {
+      tomadorCnpj = toma4Cnpj;
+    } else if (toma3Tipo === '0') {
+      tomadorCnpj = extractSubTagRegex(sanitized, 'rem', 'CNPJ') || extractSubTagRegex(sanitized, 'rem', 'CPF') || emitCnpj;
+    } else if (toma3Tipo === '1') {
+      tomadorCnpj = extractSubTagRegex(sanitized, 'exped', 'CNPJ') || extractSubTagRegex(sanitized, 'exped', 'CPF') || '';
+    } else if (toma3Tipo === '2') {
+      tomadorCnpj = extractSubTagRegex(sanitized, 'receb', 'CNPJ') || extractSubTagRegex(sanitized, 'receb', 'CPF') || '';
+    } else if (toma3Tipo === '3') {
+      tomadorCnpj = destCnpj;
+    } else {
+      tomadorCnpj = destCnpj;
+    }
+  } else {
+    tomadorCnpj = destCnpj;
+  }
+
+  // 7.2 Direção Canônica do Movimento (ENTRADA | SAIDA)
+  const tpNf = extractTagRegex(sanitized, 'tpNF') || '1'; // 0=Entrada, 1=Saída
+  let direcaoMovimento: 'ENTRADA' | 'SAIDA' = 'ENTRADA';
+
+  const cleanTenant = cnpjTenant ? cnpjTenant.replace(/\D/g, '') : '';
+  const cleanTenantRaiz = cleanTenant.substring(0, 8);
+  const cleanEmit = emitCnpj.replace(/\D/g, '');
+  const cleanEmitRaiz = cleanEmit.substring(0, 8);
+  const cleanDest = destCnpj.replace(/\D/g, '');
+  const cleanDestRaiz = cleanDest.substring(0, 8);
+  const cleanToma = tomadorCnpj.replace(/\D/g, '');
+  const cleanTomaRaiz = cleanToma.substring(0, 8);
+
+  if (tipoDoc === 'CTe') {
     if (cleanTenantRaiz && cleanTenantRaiz === cleanEmitRaiz) {
-      tipoOperacao = 'Saída';
+      direcaoMovimento = 'SAIDA'; // Empresa é a transportadora emitente
+    } else if (cleanTenantRaiz && (cleanTenantRaiz === cleanTomaRaiz || cleanTenantRaiz === cleanDestRaiz)) {
+      direcaoMovimento = 'ENTRADA'; // Empresa tomou o serviço de frete
+    } else {
+      direcaoMovimento = 'ENTRADA';
+    }
+  } else if (tipoDoc === 'NFSe') {
+    if (cleanTenantRaiz && cleanTenantRaiz === cleanEmitRaiz) {
+      direcaoMovimento = 'SAIDA'; // Prestador do serviço
+    } else {
+      direcaoMovimento = 'ENTRADA'; // Tomador do serviço
+    }
+  } else {
+    // NF-e e NFC-e
+    if (cleanTenantRaiz) {
+      if (cleanTenantRaiz === cleanEmitRaiz) {
+        // Empresa emitiu o documento
+        // tpNF == '0' -> Entrada emitida pela própria empresa (devolução recebida, entrada produtor rural)
+        direcaoMovimento = tpNf === '0' ? 'ENTRADA' : 'SAIDA';
+      } else if (cleanTenantRaiz === cleanDestRaiz) {
+        // Empresa é a destinatária
+        // tpNF == '0' -> Fornecedor emitiu nota de entrada (devolução), logo saída do tenant
+        direcaoMovimento = tpNf === '0' ? 'SAIDA' : 'ENTRADA';
+      } else {
+        direcaoMovimento = tpNf === '0' ? 'ENTRADA' : 'SAIDA';
+      }
+    } else {
+      direcaoMovimento = tpNf === '0' ? 'ENTRADA' : 'SAIDA';
     }
   }
+
+  const tipoOperacao: 'Entrada' | 'Saída' = direcaoMovimento === 'SAIDA' ? 'Saída' : 'Entrada';
 
   // 8. Totais e Impostos
   const valorTotal = parseValor(
@@ -745,6 +809,8 @@ export async function parseFiscalXml(xmlString: string, cnpjTenant?: string): Pr
     numero: `${numero} / ${serie}`,
     serie,
     tipoOperacao,
+    direcaoMovimento,
+    tomadorCnpj,
     dataEmissao,
     dataEmissaoCompleta,
     dataEntrada,

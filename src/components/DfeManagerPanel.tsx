@@ -38,6 +38,7 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
   const [isTurboModalOpen, setIsTurboModalOpen] = useState<boolean>(false);
   const [isNfseModalOpen, setIsNfseModalOpen] = useState<boolean>(false);
   const [tipoDocFiltro, setTipoDocFiltro] = useState<'TODOS' | 'NFE' | 'NFCE' | 'CTE' | 'NFSE'>('TODOS');
+  const [operacaoFiltro, setOperacaoFiltro] = useState<'todas' | 'saidas' | 'entradas'>('todas');
   const [modalFluxo, setModalFluxo] = useState<'entrada' | 'saida'>('entrada');
   const [listSearch, setListSearch] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(50);
@@ -49,6 +50,19 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
     if (tipoDocFiltro === 'NFCE' && item.tipo !== 'NFCe') return false;
     if (tipoDocFiltro === 'CTE' && item.tipo !== 'CTe') return false;
     if (tipoDocFiltro === 'NFSE' && item.tipo !== 'NFSe' && (item.tipo as string) !== 'NFS-e') return false;
+    
+    const cleanEmpresa = empresaAtiva?.cnpjCompleto?.replace(/\D/g, '') || '';
+    if (operacaoFiltro === 'saidas') {
+      const isSaida = item.direcaoMovimento === 'SAIDA' || 
+        (cleanEmpresa && item.emitenteCnpj?.replace(/\D/g, '') === cleanEmpresa);
+      if (!isSaida) return false;
+    } else if (operacaoFiltro === 'entradas') {
+      const isEntrada = item.direcaoMovimento === 'ENTRADA' || 
+        (cleanEmpresa && item.destinatarioCnpj?.replace(/\D/g, '') === cleanEmpresa) ||
+        (cleanEmpresa && item.tomadorCnpj?.replace(/\D/g, '') === cleanEmpresa);
+      if (!isEntrada) return false;
+    }
+
     if (!listSearch) return true;
     const q = listSearch.toLowerCase();
     return (
@@ -157,6 +171,9 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             statusSincronizacaoErp: doc.status_erp || '',
             xmlRaw: doc.xml_raw || '',
             downloadAt: doc.download_at || '',
+            direcaoMovimento: (doc.direcao_movimento === 'SAIDA' || String(doc.tipo_operacao).toLowerCase().includes('sai')) ? 'SAIDA' : 'ENTRADA',
+            tomadorCnpj: doc.tomador_cnpj || '',
+            tipoOperacao: doc.tipo_operacao || ((doc.direcao_movimento === 'SAIDA' || String(doc.tipo_operacao).toLowerCase().includes('sai')) ? 'Saída' : 'Entrada'),
           };
         });
 
@@ -348,6 +365,43 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
             </button>
           </div>
 
+          {/* Botões de Direção do Movimento (Saídas vs Entradas) */}
+          <div className="flex items-center p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+            <button
+              type="button"
+              onClick={() => setOperacaoFiltro('todas')}
+              className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all text-center cursor-pointer ${
+                operacaoFiltro === 'todas'
+                  ? 'bg-cyan-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Todas
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperacaoFiltro('saidas')}
+              className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1 ${
+                operacaoFiltro === 'saidas'
+                  ? 'bg-emerald-600 text-white shadow shadow-emerald-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🟢</span> Saídas
+            </button>
+            <button
+              type="button"
+              onClick={() => setOperacaoFiltro('entradas')}
+              className={`flex-1 py-1 px-2 rounded-lg font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1 ${
+                operacaoFiltro === 'entradas'
+                  ? 'bg-blue-600 text-white shadow shadow-blue-600/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span>🔵</span> Entradas
+            </button>
+          </div>
+
           {/* Quick Filter */}
           {dfeList.length > 5 && (
             <div className="relative">
@@ -405,6 +459,17 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
                           <span className="text-[11px] font-mono text-slate-400">
                             Série {item.serie}
                           </span>
+                          {item.direcaoMovimento === 'SAIDA' ? (
+                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-700/60 flex items-center gap-1 shadow-sm">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              SAÍDA
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-blue-950/90 text-blue-300 border border-blue-700/60 flex items-center gap-1 shadow-sm">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                              ENTRADA
+                            </span>
+                          )}
                           {item.alertaFraude && (
                             <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-red-600 text-white shadow-sm animate-pulse flex items-center gap-1">
                               <ShieldAlert className="w-3 h-3" />
@@ -481,8 +546,19 @@ export const DfeManagerPanel: React.FC<DfeManagerPanelProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-lg font-bold text-white">
-                      {selectedDfe.tipo} Nº {selectedDfe.numero} - Série {selectedDfe.serie}
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>{selectedDfe.tipo} Nº {selectedDfe.numero} - Série {selectedDfe.serie}</span>
+                      {selectedDfe.direcaoMovimento === 'SAIDA' ? (
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-700/60 flex items-center gap-1 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                          SAÍDA
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-950 text-blue-300 border border-blue-700/60 flex items-center gap-1 shadow-sm">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                          ENTRADA
+                        </span>
+                      )}
                     </h3>
                     <span className="text-xs px-2 py-0.5 rounded bg-cyan-950/80 text-cyan-300 font-mono border border-cyan-800 flex items-center gap-1.5" title={selectedDfe.chaveAcesso}>
                       <span>Chave: {selectedDfe.chaveAcesso.length > 20 ? `${selectedDfe.chaveAcesso.slice(0, 18)}...` : selectedDfe.chaveAcesso}</span>

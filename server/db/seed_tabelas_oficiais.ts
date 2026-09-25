@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { getDatabase } from './database';
+import { USER_CFOP_LIST } from './cfop_user_data';
 
 export function seedTabelasOficiais() {
   const db = getDatabase();
@@ -454,6 +455,55 @@ export function seedTabelasOficiais() {
     }
   } catch (err: any) {
     console.error('Erro ao semear NCMs LC 214/2025:', err.message);
+  }
+
+  // 4. SEED MATRIZ CANÔNICA DE CFOPS (Lista Oficial com Onerosidade)
+  try {
+    const totalCfopsAtual = (db.prepare('SELECT count(*) as total FROM cfop_tratamento WHERE ativo = 1').get() as any)?.total || 0;
+    if (totalCfopsAtual < 100) {
+      const stmtCheck = db.prepare('SELECT id FROM cfop_tratamento WHERE cfop = ?');
+      const stmtInsert = db.prepare(`
+        INSERT INTO cfop_tratamento (
+          id, empresa_id, cfop, descricao, categoria,
+          tratamento_padrao, exige_onerosidade, exige_validacao_cclasstrib,
+          evidencia_minima, ativo, created_at, updated_at
+        ) VALUES (?, NULL, ?, ?, ?, ?, ?, 1, ?, 1, datetime('now'), datetime('now'))
+      `);
+      const insertManyCfop = db.transaction((items: any[]) => {
+        for (const item of items) {
+          const c = item.classe.toLowerCase();
+          const categoria = c.includes('compra') || c.includes('aquisi') ? 'Compra' :
+            c.includes('dev') ? 'Devolução' :
+            c.includes('transf') ? 'Transferência' :
+            c.includes('remessa') ? 'Remessa' :
+            c.includes('retorno') ? 'Retorno' :
+            c.includes('venda') || c.includes('presta') ? 'Venda' : 'Outros';
+
+          const tratamentoPadrao = item.tipoOperacao === 'Depende - Avaliar cada Cenário SGB' ? 'Depende' :
+            item.tipoOperacao === 'Não Onerosas' ? 'Não elegível' :
+            categoria === 'Compra' ? 'Elegível' :
+            categoria === 'Devolução' ? 'Depende' :
+            categoria === 'Venda' ? 'Não elegível' : 'Depende';
+
+          const exigeOnerosidade = item.tipoOperacao === 'Não Onerosas' ? 0 : 1;
+          const evidenciaMinima = item.cfop.startsWith('3') ? 'DI / Duimp + NF-e de Entrada de Importação + Comprovante de Pagamento' :
+            item.classe.includes('Transporte') ? 'CT-e Autorizado vinculado à NF-e + DACTE' :
+            categoria === 'Compra' ? 'XML NF-e com Chave Válida + Fatura Comercial / Duplicata Paga' :
+            categoria === 'Devolução' ? 'NF-e de Devolução espelho com chave da nota originária' :
+            categoria === 'Transferência' ? 'NF-e de Transferência entre estabelecimentos da mesma empresa' :
+            categoria === 'Remessa' || categoria === 'Retorno' ? 'NF-e de Remessa/Retorno sem cobrança financeira (Art. 32 LC 214/2025)' :
+            'Documento Fiscal Eletrônico (DF-e) Autorizado';
+
+          if (!stmtCheck.get(item.cfop)) {
+            stmtInsert.run(uuid(), item.cfop, item.descricao, categoria, tratamentoPadrao, exigeOnerosidade, evidenciaMinima);
+          }
+        }
+      });
+      insertManyCfop(USER_CFOP_LIST);
+      console.log(`✅ Matriz canônica de CFOPs semeada com sucesso no SQLite: ${USER_CFOP_LIST.length} itens.`);
+    }
+  } catch (err: any) {
+    console.error('Erro ao semear Matriz de CFOPs:', err.message);
   }
 
   console.log('🏁 Seed das Tabelas Oficiais RTC finalizado!');

@@ -14,7 +14,7 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../db/database';
-import { getSupabaseAdmin, isSupabaseConfigured } from '../db/supabase';
+import { getSupabaseAdmin, isSupabaseConfigured, checkSupabaseHasColumn } from '../db/supabase';
 import { AuthenticatedRequest, requireAuth } from '../middleware/auth';
 import { salvarXmlLocalmente } from '../utils/fileStorage';
 import { getBrasiliaTimestamp, getBrasiliaDate } from '../utils/timezone';
@@ -90,7 +90,7 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
       // Upsert Documento
       db.prepare(`
         INSERT OR REPLACE INTO dfe_documentos (
-          id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+          id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, direcao_movimento, tomador_cnpj, numero_serie,
           data_emissao, data_entrada, competencia,
           fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio, fornecedor_ie,
           cliente_cnpj, cliente_razao, cliente_uf, cliente_ie,
@@ -100,7 +100,7 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
           base_cbs, base_ibs, regime_tributario,
           xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
         ) VALUES (
-          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?, ?, ?,
           ?, ?, ?,
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?,
@@ -116,6 +116,8 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
         parsed.tipoDoc,
         parsed.chaveAcesso,
         parsed.tipoOperacao,
+        parsed.direcaoMovimento,
+        parsed.tomadorCnpj || '',
         parsed.numero,
         parsed.dataEmissao,
         parsed.dataEntrada,
@@ -243,7 +245,8 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
             razao_social: empresaRow?.razao_social || parsed.destinatarioNome || parsed.emitenteNome
           });
 
-          const { error: docError } = await supabase.from('dfe_documentos').upsert({
+          const hasDirMov = await checkSupabaseHasColumn('dfe_documentos', 'direcao_movimento');
+          const supaDocPayload: any = {
             id: docId,
             empresa_id: supaEmpresaId,
             tipo_doc: parsed.tipoDoc,
@@ -282,7 +285,14 @@ router.post('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response
             protocolo_sefaz: parsed.protocoloSefaz,
             download_at: brasiliaNow,
             updated_at: brasiliaNow
-          }, { onConflict: 'chave_acesso' });
+          };
+
+          if (hasDirMov) {
+            supaDocPayload.direcao_movimento = parsed.direcaoMovimento;
+            supaDocPayload.tomador_cnpj = parsed.tomadorCnpj || '';
+          }
+
+          const { error: docError } = await supabase.from('dfe_documentos').upsert(supaDocPayload, { onConflict: 'chave_acesso' });
 
           if (docError) {
             console.error('❌ Erro ao gravar dfe_documentos no Supabase:', docError.message, docError.details);
@@ -423,7 +433,7 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
     // 2. Persistência Atômica no SQLite (1 Transação única para todo o lote)
     const insertDocStmt = db.prepare(`
       INSERT OR REPLACE INTO dfe_documentos (
-        id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, numero_serie,
+        id, empresa_id, tipo_doc, chave_acesso, tipo_operacao, direcao_movimento, tomador_cnpj, numero_serie,
         data_emissao, data_entrada, competencia,
         fornecedor_cnpj, fornecedor_razao, fornecedor_uf, fornecedor_municipio, fornecedor_ie,
         cliente_cnpj, cliente_razao, cliente_uf, cliente_ie,
@@ -433,7 +443,7 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
         base_cbs, base_ibs, regime_tributario,
         xml_raw, status_sefaz, protocolo_sefaz, download_at, created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -480,6 +490,8 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
           item.parsed.tipoDoc,
           item.parsed.chaveAcesso,
           item.parsed.tipoOperacao,
+          item.parsed.direcaoMovimento,
+          item.parsed.tomadorCnpj || '',
           item.parsed.numero,
           item.parsed.dataEmissao,
           item.parsed.dataEntrada,
@@ -582,49 +594,60 @@ router.post('/batch-xml', requireAuth, async (req: AuthenticatedRequest, res: Re
             razao_social: empresaRow?.razao_social
           });
 
-          const supaDocs = parsedBatch.map(b => ({
-            id: `doc-${b.parsed.chaveAcesso}`,
-            empresa_id: supaEmpresaId,
-            tipo_doc: b.parsed.tipoDoc,
-            chave_acesso: b.parsed.chaveAcesso,
-            tipo_operacao: b.parsed.tipoOperacao,
-            numero_serie: b.parsed.numero,
-            data_emissao: b.parsed.dataEmissao,
-            data_entrada: b.parsed.dataEntrada,
-            competencia: b.parsed.competencia,
-            fornecedor_cnpj: b.parsed.emitenteCnpj,
-            fornecedor_razao: b.parsed.emitenteNome,
-            fornecedor_uf: b.parsed.emitenteUf,
-            fornecedor_municipio: b.parsed.emitenteMunicipio,
-            fornecedor_ie: b.parsed.emitenteIe || '',
-            cliente_cnpj: b.parsed.destinatarioCnpj,
-            cliente_razao: b.parsed.destinatarioNome,
-            cliente_uf: b.parsed.destinatarioUf,
-            cliente_ie: b.parsed.destinatarioIe || '',
-            situacao_doc: b.parsed.situacaoDoc,
-            situacao_manifestacao: b.parsed.situacaoManifestacao,
-            evento_ultimo: b.parsed.eventoUltimo,
-            valor_total: b.parsed.valorTotal,
-            valor_icms: b.parsed.valorIcms,
-            valor_ipi: b.parsed.valorIpi,
-            valor_pis: b.parsed.valorPis,
-            valor_cofins: b.parsed.valorCofins,
-            valor_cbs: b.parsed.valorCbs,
-            valor_ibs: b.parsed.valorIbs,
-            valor_is: b.parsed.valorIs,
-            valor_irrf: b.parsed.valorIrrf,
-            valor_inss: b.parsed.valorInss,
-            valor_iss: b.parsed.valorIss,
-            valor_csll: b.parsed.valorCsll,
-            base_cbs: b.parsed.baseCbs,
-            base_ibs: b.parsed.baseIbs,
-            regime_tributario: b.parsed.regimeTributario || '',
-            xml_raw: b.raw,
-            status_sefaz: b.parsed.statusSefaz,
-            protocolo_sefaz: b.parsed.protocoloSefaz,
-            download_at: brasiliaNow,
-            updated_at: brasiliaNow
-          }));
+          const hasDirMovBatch = await checkSupabaseHasColumn('dfe_documentos', 'direcao_movimento');
+
+          const supaDocs = parsedBatch.map(b => {
+            const d: any = {
+              id: `doc-${b.parsed.chaveAcesso}`,
+              empresa_id: supaEmpresaId,
+              tipo_doc: b.parsed.tipoDoc,
+              chave_acesso: b.parsed.chaveAcesso,
+              tipo_operacao: b.parsed.tipoOperacao,
+              numero_serie: b.parsed.numero,
+              data_emissao: b.parsed.dataEmissao,
+              data_entrada: b.parsed.dataEntrada,
+              competencia: b.parsed.competencia,
+              fornecedor_cnpj: b.parsed.emitenteCnpj,
+              fornecedor_razao: b.parsed.emitenteNome,
+              fornecedor_uf: b.parsed.emitenteUf,
+              fornecedor_municipio: b.parsed.emitenteMunicipio,
+              fornecedor_ie: b.parsed.emitenteIe || '',
+              cliente_cnpj: b.parsed.destinatarioCnpj,
+              cliente_razao: b.parsed.destinatarioNome,
+              cliente_uf: b.parsed.destinatarioUf,
+              cliente_ie: b.parsed.destinatarioIe || '',
+              situacao_doc: b.parsed.situacaoDoc,
+              situacao_manifestacao: b.parsed.situacaoManifestacao,
+              evento_ultimo: b.parsed.eventoUltimo,
+              valor_total: b.parsed.valorTotal,
+              valor_icms: b.parsed.valorIcms,
+              valor_ipi: b.parsed.valorIpi,
+              valor_pis: b.parsed.valorPis,
+              valor_cofins: b.parsed.valorCofins,
+              valor_cbs: b.parsed.valorCbs,
+              valor_ibs: b.parsed.valorIbs,
+              valor_is: b.parsed.valorIs,
+              valor_irrf: b.parsed.valorIrrf,
+              valor_inss: b.parsed.valorInss,
+              valor_iss: b.parsed.valorIss,
+              valor_csll: b.parsed.valorCsll,
+              base_cbs: b.parsed.baseCbs,
+              base_ibs: b.parsed.baseIbs,
+              regime_tributario: b.parsed.regimeTributario || '',
+              xml_raw: b.raw,
+              status_sefaz: b.parsed.statusSefaz,
+              protocolo_sefaz: b.parsed.protocoloSefaz,
+              download_at: brasiliaNow,
+              updated_at: brasiliaNow
+            };
+
+            if (hasDirMovBatch) {
+              d.direcao_movimento = b.parsed.direcaoMovimento;
+              d.tomador_cnpj = b.parsed.tomadorCnpj || '';
+            }
+
+            return d;
+          });
 
           const { error: supaDocErr } = await supabase.from('dfe_documentos').upsert(supaDocs, { onConflict: 'chave_acesso' });
 
@@ -794,8 +817,15 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
             supaQuery = supaQuery.eq('empresa_id', 'none');
           }
 
-          // Filtros opcionais
-          if (req.query.tipoOperacao) supaQuery = supaQuery.eq('tipo_operacao', String(req.query.tipoOperacao));
+          // Filtros opcionais de Operação / Direção do Movimento
+          const opFilter = (req.query.tipoOperacao as string || req.query.direcaoMovimento as string || '').trim().toUpperCase();
+          if (opFilter && opFilter !== 'TODAS' && opFilter !== 'TODOS') {
+            if (opFilter.includes('SAI')) {
+              supaQuery = supaQuery.or('tipo_operacao.ilike.%saí%,tipo_operacao.ilike.%sai%');
+            } else if (opFilter.includes('ENT')) {
+              supaQuery = supaQuery.or('tipo_operacao.ilike.%ent%');
+            }
+          }
           if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
             const td = String(req.query.tipoDoc).toUpperCase();
             if (td === 'NFSE' || td === 'NFS-E' || td === 'NFS') {
@@ -906,11 +936,15 @@ router.get('/documentos', requireAuth, async (req: AuthenticatedRequest, res: Re
         countQuery += ' AND 1=0';
       }
 
-      if (req.query.tipoOperacao) {
-        query += ' AND d.tipo_operacao = ?';
-        countQuery += ' AND d.tipo_operacao = ?';
-        params.push(req.query.tipoOperacao);
-        countParams.push(req.query.tipoOperacao);
+      const opFilterSql = (req.query.tipoOperacao as string || req.query.direcaoMovimento as string || '').trim().toUpperCase();
+      if (opFilterSql && opFilterSql !== 'TODAS' && opFilterSql !== 'TODOS') {
+        if (opFilterSql.includes('SAI')) {
+          query += " AND (d.direcao_movimento = 'SAIDA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('saída', 'saida', 'saídas', 'saidas')))";
+          countQuery += " AND (d.direcao_movimento = 'SAIDA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('saída', 'saida', 'saídas', 'saidas')))";
+        } else if (opFilterSql.includes('ENT')) {
+          query += " AND (d.direcao_movimento = 'ENTRADA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('entrada', 'entradas')))";
+          countQuery += " AND (d.direcao_movimento = 'ENTRADA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('entrada', 'entradas')))";
+        }
       }
       if (req.query.tipoDoc && req.query.tipoDoc !== 'TODOS') {
         const td = String(req.query.tipoDoc).toUpperCase();
@@ -1016,6 +1050,8 @@ router.get('/kpis', requireAuth, async (req: AuthenticatedRequest, res: Response
       success: true,
       totalGeral: result.totalGeral,
       totalFiltrado: result.totalFiltrado,
+      totaisSaida: result.totaisSaida,
+      totaisEntrada: result.totaisEntrada,
       source: result.source,
       executionTimeMs: result.executionTimeMs
     });
@@ -1133,6 +1169,8 @@ router.get('/stats', requireAuth, async (req: AuthenticatedRequest, res: Respons
       data: result.totalGeral,
       totalGeral: result.totalGeral,
       totalFiltrado: result.totalFiltrado,
+      totaisSaida: result.totaisSaida,
+      totaisEntrada: result.totaisEntrada,
       source: result.source,
       executionTimeMs: result.executionTimeMs
     });

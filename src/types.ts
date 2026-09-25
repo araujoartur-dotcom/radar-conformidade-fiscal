@@ -189,7 +189,11 @@ export interface DfeXmlItem {
   destinatarioCnpj: string;
   destinatarioNome: string;
   destinatarioUf: string;
+  destinatarioMunicipio?: string;
   destinatarioIe?: string;
+  tipoOperacao?: string;
+  direcaoMovimento?: 'ENTRADA' | 'SAIDA';
+  tomadorCnpj?: string;
   valorTotal: number;
   // Impostos Atuais
   valorIcms: number;
@@ -419,6 +423,9 @@ export interface XmlItemDetailReport {
   clienteCnpj: string;
   clienteRazao: string;
   clienteUf: string;
+  tipoOperacao?: string;
+  direcaoMovimento?: 'ENTRADA' | 'SAIDA';
+  tomadorCnpj?: string;
   situacaoDoc: 'autorizado' | 'cancelado' | 'denegado' | 'substituido';
   
   // Linha do Item

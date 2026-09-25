@@ -160,12 +160,16 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
   // Filtragem por Operação e Período (fallback de memória)
   const filteredItems = useMemo(() => {
     return baseItems.filter(item => {
+      const cleanEmpresa = empresaAtiva?.cnpjCompleto?.replace(/\D/g, '') || '';
       if (operacaoFilter === 'entradas') {
-        const isEntrada = item.destinatarioCnpj?.replace(/\D/g, '') === empresaAtiva?.cnpjCompleto?.replace(/\D/g, '');
+        const isEntrada = item.direcaoMovimento === 'ENTRADA' || 
+          (cleanEmpresa && item.destinatarioCnpj?.replace(/\D/g, '') === cleanEmpresa) ||
+          (cleanEmpresa && item.tomadorCnpj?.replace(/\D/g, '') === cleanEmpresa);
         if (!isEntrada) return false;
       }
       if (operacaoFilter === 'saidas') {
-        const isSaida = item.emitenteCnpj?.replace(/\D/g, '') === empresaAtiva?.cnpjCompleto?.replace(/\D/g, '');
+        const isSaida = item.direcaoMovimento === 'SAIDA' || 
+          (cleanEmpresa && item.emitenteCnpj?.replace(/\D/g, '') === cleanEmpresa);
         if (!isSaida) return false;
       }
       if (item.dataEmissao) {
@@ -388,21 +392,21 @@ export const CentralKpisPanel: React.FC<CentralKpisPanelProps> = ({ dfeList = []
             </button>
             <button
               type="button"
-              onClick={() => setOperacaoFilter('entradas')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                operacaoFilter === 'entradas' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              onClick={() => setOperacaoFilter('saidas')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                operacaoFilter === 'saidas' ? 'bg-emerald-600 text-white shadow shadow-emerald-600/30' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Entradas (Compras)
+              <span>🟢</span> Saídas
             </button>
             <button
               type="button"
-              onClick={() => setOperacaoFilter('saidas')}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                operacaoFilter === 'saidas' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200'
+              onClick={() => setOperacaoFilter('entradas')}
+              className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                operacaoFilter === 'entradas' ? 'bg-blue-600 text-white shadow shadow-blue-600/30' : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Saídas (Vendas)
+              <span>🔵</span> Entradas
             </button>
           </div>
 

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Layers, Filter, Play, Download, Save, FolderOpen, Plus, Trash2,
+  Layers, Filter, Play, Save, FolderOpen, Trash2,
   RefreshCw, CheckCircle2, AlertTriangle, Lock, Globe, Building2, User,
-  Search, ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown,
-  Table, BarChart2, Calendar, FileSpreadsheet, FileCode, Clock, ShieldCheck,
-  Copy, X, Sparkles, SlidersHorizontal, Info, Eye
+  Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown,
+  Table, BarChart2, Calendar, FileSpreadsheet, FileCode, Clock,
+  Copy, X, Sparkles, Info, Pencil
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
@@ -14,6 +14,9 @@ import {
   CockpitAggregationType, CockpitFilterOperator
 } from '../types';
 
+// ============================================================
+// FONTES DE DADOS CANÔNICAS (Tags Oficiais XML SEFAZ/RTC)
+// ============================================================
 const DEFAULT_COCKPIT_DATA_SOURCES: CockpitDataSource[] = [
   {
     id: 'dfe_itens_documentos',
@@ -161,51 +164,10 @@ const DEFAULT_COCKPIT_DATA_SOURCES: CockpitDataSource[] = [
   }
 ];
 
-const ANOS_DISPONIVEIS = ['2026', '2025', '2024', '2023', '2022', 'todos'] as const;
-
-const MESES = [
-  { valor: 'todos', label: 'Ano Todo' },
-  { valor: '01', label: 'Jan' },
-  { valor: '02', label: 'Fev' },
-  { valor: '03', label: 'Mar' },
-  { valor: '04', label: 'Abr' },
-  { valor: '05', label: 'Mai' },
-  { valor: '06', label: 'Jun' },
-  { valor: '07', label: 'Jul' },
-  { valor: '08', label: 'Ago' },
-  { valor: '09', label: 'Set' },
-  { valor: '10', label: 'Out' },
-  { valor: '11', label: 'Nov' },
-  { valor: '12', label: 'Dez' }
-];
-
+// ============================================================
+// MODELOS PADRÃO DE FÁBRICA (sem Hierarquia RTC removida)
+// ============================================================
 const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
-  {
-    id: 'padrao-hierarquia-rtc-sefaz',
-    nome: 'Hierarquia Oficial RTC (cClassTrib → pIBS → indOper → cMun → UF)',
-    descricao: 'Pivot da Reforma Tributária com agrupamento estrito da esquerda para a direita e valores reais extraídos diretamente das tags XML.',
-    categoria: 'fiscal',
-    escopo: 'global',
-    usuario_id: 'sistema',
-    is_padrao_sistema: 1,
-    podeEditar: false,
-    configuracao: {
-      fonte_dados: 'dfe_itens_documentos',
-      modo: 'agrupado',
-      dimensoes: ['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF'],
-      metricas: [
-        { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
-        { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
-        { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
-        { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
-        { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
-        { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
-      ],
-      ordenacao: [{ campo: 'vBC', direcao: 'desc' }],
-      limite: 0,
-      periodo: { ano: '2026', mes: 'todos' }
-    }
-  },
   {
     id: 'padrao-fornecedor-uf',
     nome: 'Ranking de Compras por Fornecedor & UF',
@@ -220,11 +182,11 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
       modo: 'agrupado',
       dimensoes: ['fornecedor_razao', 'fornecedor_uf', 'tipo_operacao'],
       metricas: [
-        { campo: 'valor_total', agregacao: 'sum', apelido: 'Total Compras' },
-        { campo: 'valor_icms', agregacao: 'sum', apelido: 'ICMS Destacado' },
-        { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total' },
-        { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total' },
-        { campo: 'id', agregacao: 'count', apelido: 'Total de Notas' }
+        { campo: 'valor_total', agregacao: 'sum', apelido: 'Total Compras', exibicao: 'valor' },
+        { campo: 'valor_icms', agregacao: 'sum', apelido: 'ICMS Destacado', exibicao: 'valor' },
+        { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total', exibicao: 'valor' },
+        { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total', exibicao: 'valor' },
+        { campo: 'id', agregacao: 'count', apelido: 'Total de Notas', exibicao: 'valor' }
       ],
       ordenacao: [{ campo: 'valor_total', direcao: 'desc' }],
       limite: 0,
@@ -245,7 +207,7 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
       modo: 'agrupado',
       dimensoes: ['tipo_dfe', 'nome_evento', 'status'],
       metricas: [
-        { campo: 'id', agregacao: 'count', apelido: 'Qtd Eventos' }
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Eventos', exibicao: 'valor' }
       ],
       ordenacao: [{ campo: 'id', direcao: 'desc' }],
       limite: 0,
@@ -266,11 +228,11 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
       modo: 'agrupado',
       dimensoes: ['tipo_operacao', 'mov'],
       metricas: [
-        { campo: 'debito_em_aberto', agregacao: 'sum', apelido: 'Débito em Aberto' },
-        { campo: 'debito_extinto', agregacao: 'sum', apelido: 'Débito Extinto' },
-        { campo: 'credito_a_propriar', agregacao: 'sum', apelido: 'Crédito a Propriar' },
-        { campo: 'credito_utilizado', agregacao: 'sum', apelido: 'Crédito Utilizado' },
-        { campo: 'id', agregacao: 'count', apelido: 'Qtd Lançamentos' }
+        { campo: 'debito_em_aberto', agregacao: 'sum', apelido: 'Débito em Aberto', exibicao: 'valor' },
+        { campo: 'debito_extinto', agregacao: 'sum', apelido: 'Débito Extinto', exibicao: 'valor' },
+        { campo: 'credito_a_propriar', agregacao: 'sum', apelido: 'Crédito a Propriar', exibicao: 'valor' },
+        { campo: 'credito_utilizado', agregacao: 'sum', apelido: 'Crédito Utilizado', exibicao: 'valor' },
+        { campo: 'id', agregacao: 'count', apelido: 'Qtd Lançamentos', exibicao: 'valor' }
       ],
       ordenacao: [{ campo: 'debito_extinto', direcao: 'desc' }],
       limite: 0,
@@ -279,41 +241,44 @@ const DEFAULT_COCKPIT_MODELS: CockpitModelo[] = [
   }
 ];
 
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 export const CockpitRelatoriosPanel: React.FC = () => {
   const { user, empresaAtiva } = useAuth();
   const { get, post, put, del } = useApi();
 
-  // Estados de Metadados
+  // --- Metadados ---
   const [fontes, setFontes] = useState<CockpitDataSource[]>(DEFAULT_COCKPIT_DATA_SOURCES);
   const [modelos, setModelos] = useState<CockpitModelo[]>(DEFAULT_COCKPIT_MODELS);
   const [modeloAtivo, setModeloAtivo] = useState<CockpitModelo | null>(DEFAULT_COCKPIT_MODELS[0]);
   const [isLoadingMeta, setIsLoadingMeta] = useState<boolean>(false);
 
-  // Estados de Período da Pesquisa (Competência)
-  const [anoSelecionado, setAnoSelecionado] = useState<string>('2026');
-  const [mesSelecionado, setMesSelecionado] = useState<string>('todos');
+  // --- Período por Date Range ---
+  const hoje = new Date();
+  const [dataInicio, setDataInicio] = useState<string>(`${hoje.getFullYear()}-01-01`);
+  const [dataFim, setDataFim] = useState<string>(hoje.toISOString().slice(0, 10));
 
-  // Estados de Construção da Consulta
-  const [fonteSelecionada, setFonteSelecionada] = useState<string>('dfe_itens_documentos');
+  // --- Construção da Consulta ---
+  const [fonteSelecionada, setFonteSelecionada] = useState<string>('dfe_documentos');
   const [modo, setModo] = useState<'detalhado' | 'agrupado'>('agrupado');
-  const [dimensoes, setDimensoes] = useState<string[]>(['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF']);
+  const [dimensoes, setDimensoes] = useState<string[]>(['fornecedor_razao', 'fornecedor_uf', 'tipo_operacao']);
   const [colunasPivot, setColunasPivot] = useState<string[]>([]);
   const [metricas, setMetricas] = useState<CockpitMetrica[]>([
-    { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
-    { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
-    { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
-    { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
-    { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
-    { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
+    { campo: 'valor_total', agregacao: 'sum', apelido: 'Total Compras', exibicao: 'valor' },
+    { campo: 'valor_icms', agregacao: 'sum', apelido: 'ICMS Destacado', exibicao: 'valor' },
+    { campo: 'valor_ibs', agregacao: 'sum', apelido: 'IBS Total', exibicao: 'valor' },
+    { campo: 'valor_cbs', agregacao: 'sum', apelido: 'CBS Total', exibicao: 'valor' },
+    { campo: 'id', agregacao: 'count', apelido: 'Total de Notas', exibicao: 'valor' }
   ]);
   const [filtros, setFiltros] = useState<CockpitFiltro[]>([]);
   const [ordenacao, setOrdenacao] = useState<CockpitOrdenacao[]>([
-    { campo: 'vBC', direcao: 'desc' }
+    { campo: 'valor_total', direcao: 'desc' }
   ]);
   const [limite, setLimite] = useState<number>(0);
   const [buscaCampo, setBuscaCampo] = useState<string>('');
 
-  // Estados de Execução & Resultados
+  // --- Execução & Resultados ---
   const [isExecutando, setIsExecutando] = useState<boolean>(false);
   const [execErro, setExecErro] = useState<string | null>(null);
   const [sucessoFeedback, setSucessoFeedback] = useState<string | null>(null);
@@ -325,17 +290,21 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     executionTimeMs: number;
   } | null>(null);
 
-  // Estados de Paginação e Filtro Local de Busca
+  // --- Paginação & Busca Local ---
   const [termoBusca, setTermoBusca] = useState<string>('');
   const [paginaAtual, setPaginaAtual] = useState<number>(1);
   const [itensPorPagina, setItensPorPagina] = useState<number>(25);
 
-  // Estados de Modais
+  // --- UI: Config colapsável ---
+  const [isConfigAberta, setIsConfigAberta] = useState<boolean>(true);
+
+  // --- Modais ---
   const [isSalvarModalOpen, setIsSalvarModalOpen] = useState<boolean>(false);
   const [isGerenciarModelosOpen, setIsGerenciarModelosOpen] = useState<boolean>(false);
   const [filtroEscopoModelos, setFiltroEscopoModelos] = useState<'todos' | 'global' | 'empresa' | 'pessoal'>('todos');
 
-  // Form de Salvamento de Modelo
+  // --- Form de Modelo (Create/Edit) ---
+  const [editandoModeloId, setEditandoModeloId] = useState<string | null>(null);
   const [nomeNovoModelo, setNomeNovoModelo] = useState<string>('');
   const [descNovoModelo, setDescNovoModelo] = useState<string>('');
   const [categoriaNovoModelo, setCategoriaNovoModelo] = useState<string>('fiscal');
@@ -344,12 +313,43 @@ export const CockpitRelatoriosPanel: React.FC = () => {
 
   const isAdminMaster = user?.perfil === 'admin_master';
 
-  // Obter fonte de dados ativa
+  // ============================================================
+  // VALORES DERIVADOS
+  // ============================================================
   const fonteAtivaObj = useMemo(() => {
     return fontes.find(f => f.id === fonteSelecionada) || fontes[0] || null;
   }, [fontes, fonteSelecionada]);
 
-  // Carregar fontes de dados e modelos salvos
+  // Converter date range para formato { ano, mes } do backend
+  const periodoDerivado = useMemo(() => {
+    if (!dataInicio) return { ano: String(hoje.getFullYear()), mes: 'todos' };
+
+    const inicio = new Date(dataInicio + 'T00:00:00');
+    const fim = dataFim ? new Date(dataFim + 'T00:00:00') : inicio;
+
+    const anoI = inicio.getFullYear();
+    const anoF = fim.getFullYear();
+    const mesI = inicio.getMonth() + 1;
+    const mesF = fim.getMonth() + 1;
+
+    if (anoI !== anoF) return { ano: 'todos', mes: 'todos' };
+    if (mesI === mesF) return { ano: String(anoI), mes: String(mesI).padStart(2, '0') };
+    return { ano: String(anoI), mes: 'todos' };
+  }, [dataInicio, dataFim]);
+
+  // Label legível do período
+  const periodoLabel = useMemo(() => {
+    const fmt = (d: string) => {
+      if (!d) return '';
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y}`;
+    };
+    return `${fmt(dataInicio)} a ${fmt(dataFim)}`;
+  }, [dataInicio, dataFim]);
+
+  // ============================================================
+  // CALLBACKS: CARREGAR DADOS DO BACKEND
+  // ============================================================
   const carregarMetadados = useCallback(async () => {
     setIsLoadingMeta(true);
     try {
@@ -381,15 +381,14 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     carregarMetadados();
   }, [carregarMetadados]);
 
-  // Executar a consulta dinâmica
-  const executarConsulta = useCallback(async (anoOverride?: string, mesOverride?: string) => {
+  // ============================================================
+  // CALLBACKS: EXECUTAR CONSULTA
+  // ============================================================
+  const executarConsulta = useCallback(async () => {
     if (!empresaAtiva?.id) {
       setExecErro('Por favor, selecione uma empresa ativa para consultar os dados com isolamento multi-tenant.');
       return;
     }
-
-    const ano = anoOverride !== undefined ? anoOverride : anoSelecionado;
-    const mes = mesOverride !== undefined ? mesOverride : mesSelecionado;
 
     setIsExecutando(true);
     setExecErro(null);
@@ -404,10 +403,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         filtros,
         ordenacao,
         limite,
-        periodo: {
-          ano,
-          mes
-        }
+        periodo: periodoDerivado
       };
 
       const res = await post('/cockpit/executar', payload);
@@ -429,16 +425,18 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     } finally {
       setIsExecutando(false);
     }
-  }, [empresaAtiva?.id, fonteSelecionada, modo, dimensoes, metricas, filtros, ordenacao, limite, anoSelecionado, mesSelecionado, post]);
+  }, [empresaAtiva?.id, fonteSelecionada, modo, dimensoes, metricas, filtros, ordenacao, limite, periodoDerivado, post]);
 
-  // Auto-executar consulta ao inicializar ou quando mudar modelo ativo
+  // Auto-executar ao inicializar
   useEffect(() => {
     if (empresaAtiva?.id && fontes.length > 0 && !resultado && !isExecutando) {
       executarConsulta();
     }
   }, [empresaAtiva?.id, fontes.length]);
 
-  // Aplicar modelo selecionado
+  // ============================================================
+  // CALLBACKS: MODELO (APLICAR / SALVAR / EDITAR / EXCLUIR)
+  // ============================================================
   const aplicarModelo = (mod: CockpitModelo) => {
     setModeloAtivo(mod);
     const cfg = mod.configuracao;
@@ -450,20 +448,53 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     if (cfg.filtros) setFiltros(cfg.filtros);
     if (cfg.ordenacao) setOrdenacao(cfg.ordenacao);
     setLimite(cfg.limite !== undefined ? cfg.limite : 0);
-    if (cfg.periodo?.ano) setAnoSelecionado(String(cfg.periodo.ano));
-    if (cfg.periodo?.mes) setMesSelecionado(String(cfg.periodo.mes));
+
+    // Converter periodo do modelo para date range
+    if (cfg.periodo) {
+      const ano = cfg.periodo.ano || String(new Date().getFullYear());
+      const mes = cfg.periodo.mes || 'todos';
+
+      if (ano === 'todos') {
+        setDataInicio('2022-01-01');
+        setDataFim(new Date().toISOString().slice(0, 10));
+      } else if (mes === 'todos') {
+        setDataInicio(`${ano}-01-01`);
+        setDataFim(`${ano}-12-31`);
+      } else {
+        const lastDay = new Date(Number(ano), Number(mes), 0).getDate();
+        setDataInicio(`${ano}-${mes}-01`);
+        setDataFim(`${ano}-${mes}-${String(lastDay).padStart(2, '0')}`);
+      }
+    }
 
     setIsGerenciarModelosOpen(false);
     setSucessoFeedback(`Modelo '${mod.nome}' carregado com sucesso!`);
     setTimeout(() => setSucessoFeedback(null), 4000);
   };
 
-  // Salvar modelo atual
+  const handleAbrirSalvarNovo = () => {
+    setEditandoModeloId(null);
+    setNomeNovoModelo('');
+    setDescNovoModelo('');
+    setCategoriaNovoModelo('fiscal');
+    setEscopoNovoModelo('pessoal');
+    setIsSalvarModalOpen(true);
+  };
+
+  const handleIniciarEdicao = (mod: CockpitModelo) => {
+    setEditandoModeloId(mod.id);
+    setNomeNovoModelo(mod.nome);
+    setDescNovoModelo(mod.descricao || '');
+    setCategoriaNovoModelo(mod.categoria || 'fiscal');
+    setEscopoNovoModelo((mod.escopo || 'pessoal') as CockpitScope);
+    setIsGerenciarModelosOpen(false);
+    setIsSalvarModalOpen(true);
+  };
+
   const handleSalvarModelo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nomeNovoModelo.trim()) return;
 
-    // Proteção de Governança
     if (escopoNovoModelo === 'global' && !isAdminMaster) {
       alert('Apenas o Administrador Master tem autorização para criar modelos com escopo Global.');
       return;
@@ -486,20 +517,24 @@ export const CockpitRelatoriosPanel: React.FC = () => {
           filtros,
           ordenacao,
           limite,
-          periodo: {
-            ano: anoSelecionado,
-            mes: mesSelecionado
-          }
+          periodo: periodoDerivado
         }
       };
 
-      const res = await post('/cockpit/modelos', payload);
+      const res = editandoModeloId
+        ? await put(`/cockpit/modelos/${editandoModeloId}`, payload)
+        : await post('/cockpit/modelos', payload);
 
       if (res.ok) {
         setIsSalvarModalOpen(false);
         setNomeNovoModelo('');
         setDescNovoModelo('');
-        setSucessoFeedback('Modelo salvo com sucesso no escopo ' + escopoNovoModelo.toUpperCase());
+        setEditandoModeloId(null);
+        setSucessoFeedback(
+          editandoModeloId
+            ? `Modelo atualizado com sucesso!`
+            : `Modelo salvo com sucesso no escopo ${escopoNovoModelo.toUpperCase()}`
+        );
         setTimeout(() => setSucessoFeedback(null), 4000);
         carregarMetadados();
       } else {
@@ -512,7 +547,6 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     }
   };
 
-  // Excluir modelo
   const handleExcluirModelo = async (id: string, nome: string) => {
     if (!confirm(`Deseja realmente excluir o modelo '${nome}'?`)) return;
 
@@ -531,7 +565,9 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     }
   };
 
-  // Exportar relatório direto pelo backend (.xlsx ou .json)
+  // ============================================================
+  // CALLBACKS: EXPORTAR
+  // ============================================================
   const handleExportar = async (formato: 'xlsx' | 'json') => {
     if (!empresaAtiva?.id) {
       alert('Selecione uma empresa ativa.');
@@ -549,10 +585,7 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         filtros,
         ordenacao,
         limite: 0,
-        periodo: {
-          ano: anoSelecionado,
-          mes: mesSelecionado
-        }
+        periodo: periodoDerivado
       };
 
       const token = localStorage.getItem('@RadarFiscal:token') || '';
@@ -587,7 +620,9 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     }
   };
 
-  // Helpers de Manipulação de Dimensões (Linhas)
+  // ============================================================
+  // CALLBACKS: MANIPULAÇÃO DE DIMENSÕES, MÉTRICAS, FILTROS
+  // ============================================================
   const toggleDimensao = (campoKey: string) => {
     setDimensoes(prev => {
       if (prev.includes(campoKey)) {
@@ -610,43 +645,21 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     });
   };
 
-  const toggleColunaPivot = (campoKey: string) => {
-    setColunasPivot(prev => {
-      if (prev.includes(campoKey)) {
-        return prev.filter(k => k !== campoKey);
-      } else {
-        return [...prev, campoKey];
+  // TOGGLE de Métrica (V) — corrige duplicação
+  const toggleMetrica = (campoKey: string) => {
+    setMetricas(prev => {
+      const hasExisting = prev.some(m => m.campo === campoKey);
+      if (hasExisting) {
+        return prev.filter(m => m.campo !== campoKey);
       }
+      const campoObj = fonteAtivaObj?.campos.find(c => c.key === campoKey);
+      return [...prev, {
+        campo: campoKey,
+        agregacao: 'sum' as CockpitAggregationType,
+        apelido: campoObj?.label || campoKey,
+        exibicao: 'valor' as const
+      }];
     });
-  };
-
-  const aplicarHierarquiaRtc = () => {
-    setFonteSelecionada('dfe_itens_documentos');
-    setModo('agrupado');
-    setDimensoes(['cClassTrib', 'pIBS', 'indOper', 'cMun', 'UF']);
-    setMetricas([
-      { campo: 'vBC', agregacao: 'sum', apelido: 'vBC (Base IBS/CBS)', exibicao: 'valor' },
-      { campo: 'vIBSUF', agregacao: 'sum', apelido: 'vIBSUF (IBS Estadual)', exibicao: 'valor' },
-      { campo: 'vCBS', agregacao: 'sum', apelido: 'vCBS (CBS Federal)', exibicao: 'valor' },
-      { campo: 'vProd', agregacao: 'sum', apelido: 'vProd (Valor Produtos)', exibicao: 'valor' },
-      { campo: 'vProd', agregacao: 'sum', apelido: '% do Total', exibicao: 'percent_total' },
-      { campo: 'id', agregacao: 'count', apelido: 'Qtd Itens', exibicao: 'valor' }
-    ]);
-    setOrdenacao([{ campo: 'vBC', direcao: 'desc' }]);
-    setSucessoFeedback('Hierarquia Oficial RTC SEFAZ aplicada (cClassTrib → pIBS → indOper → cMun → UF)!');
-    setTimeout(() => setSucessoFeedback(null), 4000);
-  };
-
-  // Helpers de Manipulação de Métricas
-  const adicionarMetrica = (campoKey: string, tipoExibicao: 'valor' | 'percent_total' = 'valor') => {
-    const campoObj = fonteAtivaObj?.campos.find(c => c.key === campoKey);
-    const apelido = tipoExibicao === 'percent_total' 
-      ? `% ${campoObj ? campoObj.label : campoKey}` 
-      : (campoObj ? `${campoObj.label}` : campoKey);
-    setMetricas(prev => [
-      ...prev,
-      { campo: campoKey, agregacao: 'sum', apelido, exibicao: tipoExibicao }
-    ]);
   };
 
   const duplicarMetricaComoPercentual = (index: number) => {
@@ -671,12 +684,22 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     setMetricas(prev => prev.map((m, idx) => idx === index ? { ...m, ...patch } : m));
   };
 
-  // Helpers de Filtros
+  // TOGGLE de Filtro (F) — corrige duplicação
+  const toggleFiltro = (campoKey: string) => {
+    setFiltros(prev => {
+      const hasExisting = prev.some(f => f.campo === campoKey);
+      if (hasExisting) {
+        return prev.filter(f => f.campo !== campoKey);
+      }
+      return [...prev, { campo: campoKey, operador: 'contains' as CockpitFilterOperator, valor: '' }];
+    });
+  };
+
   const adicionarFiltro = () => {
     const primeiroCampo = fonteAtivaObj?.campos[0]?.key || 'ncm';
     setFiltros(prev => [
       ...prev,
-      { campo: primeiroCampo, operador: 'contains', valor: '' }
+      { campo: primeiroCampo, operador: 'contains' as CockpitFilterOperator, valor: '' }
     ]);
   };
 
@@ -688,27 +711,27 @@ export const CockpitRelatoriosPanel: React.FC = () => {
     setFiltros(prev => prev.map((f, idx) => idx === index ? { ...f, ...patch } : f));
   };
 
-  // Filtragem local de busca nos dados carregados
+  // ============================================================
+  // DADOS DERIVADOS: FILTRO LOCAL, PAGINAÇÃO, FORMATAÇÃO
+  // ============================================================
   const linhasFiltradas = useMemo(() => {
     if (!resultado?.rows) return [];
     if (!termoBusca.trim()) return resultado.rows;
 
     const termo = termoBusca.toLowerCase().trim();
     return resultado.rows.filter(row => {
-      return Object.values(row).some(val => 
+      return Object.values(row).some(val =>
         String(val ?? '').toLowerCase().includes(termo)
       );
     });
   }, [resultado?.rows, termoBusca]);
 
-  // Paginação
   const totalPaginas = Math.ceil(linhasFiltradas.length / itensPorPagina) || 1;
   const linhasPaginadas = useMemo(() => {
     const inicio = (paginaAtual - 1) * itensPorPagina;
     return linhasFiltradas.slice(inicio, inicio + itensPorPagina);
   }, [linhasFiltradas, paginaAtual, itensPorPagina]);
 
-  // Formatação de valores
   const formatarValor = (valor: any, tipo?: string, labelOuChave?: string) => {
     if (valor === null || valor === undefined || valor === '') return '-';
     if (String(valor).includes('(Não informado') || String(valor).includes('Sem RTC')) {
@@ -721,1015 +744,816 @@ export const CockpitRelatoriosPanel: React.FC = () => {
       if (isPercent) {
         return `${num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
       }
-      // Se for número inteiro pequeno ou contagem de itens
       if (Number.isInteger(num) && num < 1000 && !labelOuChave?.toLowerCase().includes('valor') && !labelOuChave?.toLowerCase().includes('base')) {
         return num.toString();
       }
-      // Formata como moeda/decimal brasileiro
       return num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     return String(valor);
   };
 
-  // Modelos filtrados por escopo no modal de gerenciamento
   const modelosFiltrados = useMemo(() => {
     if (filtroEscopoModelos === 'todos') return modelos;
     return modelos.filter(m => m.escopo === filtroEscopoModelos);
   }, [modelos, filtroEscopoModelos]);
 
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
-    <div className="space-y-5 animate-in fade-in duration-300">
-      {/* ============================================================ */}
-      {/* TOPO: BANNER DE CONTROLE DO COCKPIT & AÇÕES RÁPIDAS           */}
-      {/* ============================================================ */}
-      <div className="glass-panel-glow p-5 rounded-2xl border border-slate-800 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-amber-500/10 via-indigo-500/10 to-transparent rounded-full blur-3xl pointer-events-none" />
-
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative z-10">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 text-amber-400">
-                <Layers className="w-6 h-6" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-bold text-white tracking-tight">
-                    Cockpit de Relatórios Dinâmicos
-                  </h1>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-amber-500/40 text-amber-300">
-                    Studio Pivot
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Construa e customize relatórios fiscais com qualquer informação do banco de dados, matrizes de agrupamento e salvamento com controle de acesso.
-                </p>
-              </div>
+    <div className="space-y-3 animate-in fade-in duration-300">
+      {/* ========================================================== */}
+      {/* FAIXA 1: TOOLBAR COMPACTA HORIZONTAL                       */}
+      {/* ========================================================== */}
+      <div className="glass-panel-glow p-3 rounded-xl border border-slate-800 relative overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Título */}
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="p-1.5 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/10 border border-amber-500/30 text-amber-400">
+              <Layers className="w-4 h-4" />
             </div>
+            <h1 className="text-sm font-bold text-white tracking-tight">
+              Relatórios Dinâmicos
+            </h1>
           </div>
 
-          {/* Botões de Ação do Topo */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Seletor de Modelo Ativo */}
+          <div className="h-5 w-px bg-slate-700 shrink-0 hidden sm:block" />
+
+          {/* Date Range */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Calendar className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <label className="text-[11px] text-slate-400">De</label>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={e => setDataInicio(e.target.value)}
+              className="bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-cyan-500 font-mono w-[120px]"
+            />
+            <label className="text-[11px] text-slate-400">Até</label>
+            <input
+              type="date"
+              value={dataFim}
+              onChange={e => setDataFim(e.target.value)}
+              className="bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-cyan-500 font-mono w-[120px]"
+            />
+          </div>
+
+          <div className="h-5 w-px bg-slate-700 shrink-0 hidden lg:block" />
+
+          {/* Fonte de Dados */}
+          <select
+            value={fonteSelecionada}
+            onChange={e => {
+              setFonteSelecionada(e.target.value);
+              if (e.target.value === 'dfe_documentos') {
+                setDimensoes(['fornecedor_uf', 'cliente_uf', 'tipo_operacao']);
+              } else if (e.target.value === 'eventos_transmitidos') {
+                setDimensoes(['tipo_dfe', 'nome_evento', 'status']);
+              } else if (e.target.value === 'apuracao_extrato_cc') {
+                setDimensoes(['tipo_operacao', 'mov']);
+              } else {
+                setDimensoes(['cClassTrib', 'CFOP', 'UF']);
+              }
+            }}
+            className="bg-slate-900/90 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-cyan-500 max-w-[220px]"
+            title="Fonte de Dados"
+          >
+            {fontes.map(f => (
+              <option key={f.id} value={f.id}>{f.nome}</option>
+            ))}
+          </select>
+
+          {/* Modo */}
+          <div className="flex items-center rounded-lg border border-slate-700 overflow-hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => setModo('agrupado')}
+              className={`px-2.5 py-1 text-[11px] font-semibold cursor-pointer transition-colors ${
+                modo === 'agrupado'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-900/60 text-slate-400 hover:text-white'
+              }`}
+            >
+              Pivot
+            </button>
+            <button
+              type="button"
+              onClick={() => setModo('detalhado')}
+              className={`px-2.5 py-1 text-[11px] font-semibold cursor-pointer transition-colors ${
+                modo === 'detalhado'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-slate-900/60 text-slate-400 hover:text-white'
+              }`}
+            >
+              Analítico
+            </button>
+          </div>
+
+          <div className="flex-1 min-w-0" />
+
+          {/* Ações */}
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
             <button
               onClick={() => setIsGerenciarModelosOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer shadow-sm"
-              title="Gerenciar e Carregar Modelos Salvos"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 border border-slate-700 hover:border-slate-600 transition-all cursor-pointer"
+              title="Gerenciar Modelos"
             >
-              <FolderOpen className="w-4 h-4 text-cyan-400" />
-              <span>{modeloAtivo ? modeloAtivo.nome : 'Selecionar Modelo'}</span>
-              {modeloAtivo && (
-                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold uppercase ${
-                  modeloAtivo.escopo === 'global' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-                  modeloAtivo.escopo === 'empresa' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' :
-                  'bg-purple-500/20 text-purple-300 border border-purple-500/30'
-                }`}>
-                  {modeloAtivo.escopo}
-                </span>
-              )}
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              <FolderOpen className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="max-w-[140px] truncate">{modeloAtivo ? modeloAtivo.nome : 'Modelos'}</span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
 
-            {/* Salvar como Modelo */}
             <button
-              onClick={() => setIsSalvarModalOpen(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-800/90 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 hover:border-indigo-400 transition-all cursor-pointer shadow-sm"
-              title="Salvar a configuração atual como um novo modelo reutilizável"
+              onClick={handleAbrirSalvarNovo}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-800/90 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 hover:border-indigo-400 transition-all cursor-pointer"
+              title="Salvar Modelo"
             >
-              <Save className="w-4 h-4" />
-              <span>Salvar Modelo</span>
+              <Save className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Salvar</span>
             </button>
 
-            {/* Exportar Excel */}
             <button
               onClick={() => handleExportar('xlsx')}
               disabled={isExecutando || !resultado || resultado.rows.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Exportar dados para Excel (.xlsx)"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Exportar Excel"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>.XLSX</span>
             </button>
 
-            {/* Exportar JSON */}
             <button
               onClick={() => handleExportar('json')}
               disabled={isExecutando || !resultado || resultado.rows.length === 0}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Exportar dados para JSON (.json)"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Exportar JSON"
             >
-              <FileCode className="w-4 h-4" />
+              <FileCode className="w-3.5 h-3.5" />
               <span>.JSON</span>
             </button>
 
-            {/* Botão Executar Consulta */}
             <button
-              onClick={executarConsulta}
+              onClick={() => executarConsulta()}
               disabled={isExecutando}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-lg shadow-blue-600/30 border border-cyan-400/30 transition-all cursor-pointer disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-lg shadow-blue-600/20 border border-cyan-400/30 transition-all cursor-pointer disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${isExecutando ? 'animate-spin' : ''}`} />
-              <span>{isExecutando ? 'Executando...' : 'Executar Relatório'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isExecutando ? 'animate-spin' : ''}`} />
+              <span>{isExecutando ? 'Executando...' : 'Executar'}</span>
             </button>
           </div>
         </div>
 
-        {/* Notificações de Sucesso / Feedback */}
+        {/* Feedback */}
         {sucessoFeedback && (
-          <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 text-xs text-emerald-300 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div className="mt-2 p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2 text-[11px] text-emerald-300 animate-in fade-in">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <span>{sucessoFeedback}</span>
           </div>
         )}
-
-        {/* Mensagem de Erro */}
         {execErro && (
-          <div className="mt-3 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center gap-2 text-xs text-rose-300 animate-in fade-in">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="mt-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center gap-2 text-[11px] text-rose-300 animate-in fade-in">
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
             <span>{execErro}</span>
           </div>
         )}
       </div>
 
-      {/* ============================================================ */}
-      {/* CORPO: DIVISÃO EM SIDEBAR DE CONFIGURAÇÃO E ÁREA DE RESULTADOS */}
-      {/* ============================================================ */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* ========================================== */}
-        {/* COLUNA ESQUERDA: CONSTRUTOR DA CONSULTA    */}
-        {/* ========================================== */}
-        <div className="lg:col-span-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] overflow-y-auto pr-1.5 custom-scrollbar space-y-4">
-          <div className="glass-panel-glow p-4 rounded-2xl border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                  Parâmetros da Consulta
-                </h3>
-              </div>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {empresaAtiva?.razaoSocial || 'Sem empresa'}
-              </span>
-            </div>
+      {/* ========================================================== */}
+      {/* FAIXA 2: CONFIGURAÇÃO COLAPSÁVEL (4 QUADRANTES HORIZONTAIS)*/}
+      {/* ========================================================== */}
+      <div className="glass-panel-glow rounded-xl border border-slate-800 overflow-hidden">
+        {/* Toggle de Colapso */}
+        <button
+          type="button"
+          onClick={() => setIsConfigAberta(!isConfigAberta)}
+          className="w-full flex items-center justify-between px-3 py-2 bg-slate-900/50 hover:bg-slate-800/60 transition-colors cursor-pointer border-b border-slate-800/60"
+        >
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+              Configuração da Consulta
+            </span>
+            <span className="text-[10px] text-slate-500 font-mono">
+              {dimensoes.length} linhas · {metricas.length} valores · {filtros.length} filtros
+            </span>
+          </div>
+          {isConfigAberta ? (
+            <ChevronUp className="w-4 h-4 text-slate-400" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          )}
+        </button>
 
-            {/* 0. Período de Pesquisa (Competência Ano/Mês) */}
-            <div className="p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 space-y-2.5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold text-cyan-300 flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Período da Pesquisa (Competência)</span>
-                </label>
-                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/30">
-                  {anoSelecionado === 'todos' ? 'Todos os Anos' : anoSelecionado}
-                  {mesSelecionado !== 'todos' ? ` / ${MESES.find(m => m.valor === mesSelecionado)?.label || mesSelecionado}` : ' (Ano Todo)'}
-                </span>
-              </div>
-
-              {/* Seletor de Ano */}
-              <div>
-                <span className="text-[10px] text-slate-400 block mb-1 font-semibold uppercase tracking-wider">
-                  Ano Fiscal:
-                </span>
-                <div className="grid grid-cols-6 gap-1">
-                  {ANOS_DISPONIVEIS.map(ano => (
-                    <button
-                      key={ano}
-                      type="button"
-                      onClick={() => {
-                        setAnoSelecionado(ano);
-                        executarConsulta(ano, mesSelecionado);
-                      }}
-                      className={`py-1 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer ${
-                        anoSelecionado === ano
-                          ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30 font-extrabold'
-                          : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/60'
-                      }`}
-                    >
-                      {ano === 'todos' ? 'Todos' : ano}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Seletor de Mês */}
-              <div>
-                <span className="text-[10px] text-slate-400 block mb-1 font-semibold uppercase tracking-wider">
-                  Mês / Competência:
-                </span>
-                <div className="grid grid-cols-4 sm:grid-cols-4 gap-1">
-                  {MESES.map(mes => (
-                    <button
-                      key={mes.valor}
-                      type="button"
-                      onClick={() => {
-                        setMesSelecionado(mes.valor);
-                        executarConsulta(anoSelecionado, mes.valor);
-                      }}
-                      className={`py-1 px-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer text-center ${
-                        mesSelecionado === mes.valor
-                          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md border border-cyan-400/40 font-bold'
-                          : 'bg-slate-800/60 text-slate-400 hover:bg-slate-700/70 hover:text-slate-200 border border-slate-700/40'
-                      }`}
-                    >
-                      {mes.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* 1. Fonte de Dados */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <Table className="w-3.5 h-3.5 text-cyan-400" />
-                <span>1. Fonte de Dados Canônica</span>
-              </label>
-              <select
-                value={fonteSelecionada}
-                onChange={e => {
-                  setFonteSelecionada(e.target.value);
-                  // Reseta dimensões para padrões da nova fonte
-                  if (e.target.value === 'dfe_documentos') {
-                    setDimensoes(['fornecedor_uf', 'cliente_uf', 'tipo_operacao']);
-                  } else if (e.target.value === 'eventos_transmitidos') {
-                    setDimensoes(['tipo_dfe', 'nome_evento', 'status']);
-                  } else if (e.target.value === 'apuracao_extrato_cc') {
-                    setDimensoes(['tipo_tributo', 'tipo_lancamento', 'natureza_operacao']);
-                  } else {
-                    setDimensoes(['ncm', 'cclasstrib', 'cst_csosn', 'fornecedor_razao']);
-                  }
-                }}
-                className="w-full bg-slate-900/90 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
-              >
-                {fontes.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome}
-                  </option>
-                ))}
-              </select>
-              {fonteAtivaObj && (
-                <p className="text-[10px] text-slate-400 px-1">
-                  {fonteAtivaObj.descricao}
-                </p>
+        {isConfigAberta && (
+          <div className="p-3 space-y-3">
+            {/* Barra de Pesquisa de Tags XML (full width) */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={buscaCampo}
+                onChange={e => setBuscaCampo(e.target.value)}
+                placeholder="Pesquisar tag XML (cClassTrib, vBC, pIBS, vProd, CFOP, NCM...)"
+                className="w-full bg-slate-900/90 border border-slate-700/80 rounded-lg pl-8 pr-7 py-1.5 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
+              />
+              {buscaCampo && (
+                <button
+                  onClick={() => setBuscaCampo('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-0.5 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               )}
             </div>
 
-            {/* 2. Modo de Visualização */}
-            <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
-                <BarChart2 className="w-3.5 h-3.5 text-indigo-400" />
-                <span>2. Modo de Montagem</span>
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModo('agrupado')}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    modo === 'agrupado'
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md border border-cyan-400/40'
-                      : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-white'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>Pivot Agrupada</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModo('detalhado')}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    modo === 'detalhado'
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md border border-cyan-400/40'
-                      : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-white'
-                  }`}
-                >
-                  <Table className="w-3.5 h-3.5" />
-                  <span>Tabela Analítica</span>
-                </button>
+            {/* Tag Picker com botões L V F (toggle) */}
+            <div className="max-h-28 overflow-y-auto p-2 bg-slate-900/70 border border-slate-800 rounded-lg">
+              <div className="flex flex-wrap gap-1">
+                {fonteAtivaObj?.campos
+                  .filter(c => !buscaCampo.trim() || c.label.toLowerCase().includes(buscaCampo.toLowerCase()) || c.key.toLowerCase().includes(buscaCampo.toLowerCase()))
+                  .map(campo => {
+                    const isLinha = dimensoes.includes(campo.key);
+                    const isMetrica = metricas.some(m => m.campo === campo.key);
+                    const isFiltro = filtros.some(f => f.campo === campo.key);
+                    const isNum = campo.aggregatable || campo.type === 'number';
+
+                    return (
+                      <div
+                        key={campo.key}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border font-mono transition-all flex items-center gap-0.5 ${
+                          isLinha
+                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            : isMetrica
+                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                            : isFiltro
+                            ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                            : 'bg-slate-800/80 text-slate-300 border-slate-700/60 hover:border-slate-600'
+                        }`}
+                      >
+                        <span className="truncate max-w-[120px]" title={`${campo.label} (${campo.key})`}>
+                          {campo.key}
+                        </span>
+
+                        <div className="flex items-center gap-px border-l border-slate-700/60 pl-0.5 ml-0.5">
+                          <button
+                            type="button"
+                            onClick={() => toggleDimensao(campo.key)}
+                            title={isLinha ? 'Remover das Linhas' : 'Adicionar às Linhas'}
+                            className={`px-0.5 rounded hover:bg-white/10 cursor-pointer ${isLinha ? 'text-amber-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            L
+                          </button>
+                          {isNum && modo === 'agrupado' && (
+                            <button
+                              type="button"
+                              onClick={() => toggleMetrica(campo.key)}
+                              title={isMetrica ? 'Remover dos Valores' : 'Adicionar aos Valores'}
+                              className={`px-0.5 rounded hover:bg-white/10 cursor-pointer ${isMetrica ? 'text-emerald-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
+                            >
+                              V
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleFiltro(campo.key)}
+                            title={isFiltro ? 'Remover dos Filtros' : 'Adicionar aos Filtros'}
+                            className={`px-0.5 rounded hover:bg-white/10 cursor-pointer ${isFiltro ? 'text-cyan-400 font-bold' : 'text-slate-500 hover:text-slate-300'}`}
+                          >
+                            F
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
-            {/* 3. Seleção de Campos / Tags XML & 4 Quadrantes Pivot (Excel Style) */}
-            <div className="space-y-3 border-t border-slate-800/80 pt-3">
-              {/* Cabeçalho da Seção com Atalho RTC */}
-              <div className="flex items-center justify-between">
-                <label className="text-[11px] font-bold text-slate-200 flex items-center gap-1.5">
-                  <Table className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>3. Matriz Pivot &amp; Tags XML (Estilo Excel)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={aplicarHierarquiaRtc}
-                  className="text-[10px] px-2 py-0.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 flex items-center gap-1 transition-all font-semibold cursor-pointer shadow-sm"
-                  title="Aplicar agrupamento padrão RTC: cClassTrib → pIBS → indOper → cMun → UF"
-                >
-                  <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>Hierarquia RTC SEFAZ</span>
-                </button>
-              </div>
-
-              {/* Barra de Pesquisa de Campos / Tags XML */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={buscaCampo}
-                  onChange={e => setBuscaCampo(e.target.value)}
-                  placeholder="Pesquisar tag XML (cClassTrib, vBC, pIBS, indOper...)"
-                  className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-8 pr-7 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono"
-                />
-                {buscaCampo && (
-                  <button
-                    onClick={() => setBuscaCampo('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-
-              {/* Tag Picker dos Campos Disponíveis com Ações Rápidas */}
-              <div className="max-h-36 overflow-y-auto p-2 bg-slate-900/70 border border-slate-800 rounded-xl space-y-1">
-                <div className="flex flex-wrap gap-1">
-                  {fonteAtivaObj?.campos
-                    .filter(c => !buscaCampo.trim() || c.label.toLowerCase().includes(buscaCampo.toLowerCase()) || c.key.toLowerCase().includes(buscaCampo.toLowerCase()))
-                    .map(campo => {
-                      const isLinha = dimensoes.includes(campo.key);
-                      const isMetrica = metricas.some(m => m.campo === campo.key);
-                      const isFiltro = filtros.some(f => f.campo === campo.key);
-                      const isNum = campo.aggregatable || campo.type === 'number';
-
+            {/* 4 QUADRANTES (Agora forçando layout horizontal com rolagem em telas pequenas) */}
+            <div className="flex xl:grid xl:grid-cols-4 gap-2.5 overflow-x-auto pb-1 snap-x">
+              {/* Q1: LINHAS */}
+              <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1.5 min-w-[240px] xl:min-w-0 flex-1 snap-start">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-amber-300">
+                    <Layers className="w-3 h-3 text-amber-400" />
+                    <span>Linhas ({dimensoes.length})</span>
+                  </div>
+                  <span className="text-[9px] text-slate-500">Esq. → Dir.</span>
+                </div>
+                {dimensoes.length === 0 ? (
+                  <p className="text-[9px] text-slate-500 italic py-1">Use "L" nos campos acima.</p>
+                ) : (
+                  <div className="space-y-0.5 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                    {dimensoes.map((dimKey, idx) => {
+                      const cObj = fonteAtivaObj?.campos.find(c => c.key === dimKey);
                       return (
                         <div
-                          key={campo.key}
-                          className={`text-[10px] px-2 py-0.5 rounded-lg border font-mono transition-all flex items-center gap-1 ${
-                            isLinha
-                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                              : isMetrica
-                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                              : isFiltro
-                              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                              : 'bg-slate-800/80 text-slate-300 border-slate-700/60 hover:border-slate-600'
-                          }`}
+                          key={dimKey}
+                          className="p-1 rounded bg-slate-800/80 border border-amber-500/20 flex items-center justify-between text-[10px]"
                         >
-                          <span className="truncate max-w-[130px]" title={`${campo.label} (${campo.key})`}>
-                            {campo.key}
-                          </span>
-
-                          <div className="flex items-center gap-0.5 border-l border-slate-700/60 pl-1 ml-0.5">
-                            <button
-                              type="button"
-                              onClick={() => toggleDimensao(campo.key)}
-                              title={isLinha ? "Remover das Linhas" : "Adicionar às Linhas (Agrupamento)"}
-                              className={`p-0.5 rounded hover:bg-white/10 ${isLinha ? 'text-amber-400 font-bold' : 'text-slate-400'}`}
-                            >
-                              L
+                          <div className="flex items-center gap-1 truncate min-w-0">
+                            <span className="w-3.5 h-3.5 rounded-full bg-amber-500/20 text-amber-300 text-[8px] font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="font-mono font-semibold text-white truncate" title={cObj?.label || dimKey}>
+                              {dimKey}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-px shrink-0">
+                            <button type="button" disabled={idx === 0} onClick={() => reordenarDimensao(idx, 'up')} className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer shrink-0">
+                              <ArrowUp className="w-2.5 h-2.5" />
                             </button>
-                            {isNum && modo === 'agrupado' && (
-                              <button
-                                type="button"
-                                onClick={() => adicionarMetrica(campo.key, 'valor')}
-                                title="Adicionar aos Valores (Soma R$)"
-                                className={`p-0.5 rounded hover:bg-white/10 ${isMetrica ? 'text-emerald-400 font-bold' : 'text-slate-400'}`}
-                              >
-                                V
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => setFiltros(prev => [...prev, { campo: campo.key, operador: 'contains', valor: '' }])}
-                              title="Adicionar aos Filtros"
-                              className={`p-0.5 rounded hover:bg-white/10 ${isFiltro ? 'text-cyan-400 font-bold' : 'text-slate-400'}`}
-                            >
-                              F
+                            <button type="button" disabled={idx === dimensoes.length - 1} onClick={() => reordenarDimensao(idx, 'down')} className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer shrink-0">
+                              <ArrowDown className="w-2.5 h-2.5" />
+                            </button>
+                            <button type="button" onClick={() => toggleDimensao(dimKey)} className="p-0.5 text-slate-400 hover:text-rose-400 cursor-pointer shrink-0">
+                              <X className="w-2.5 h-2.5" />
                             </button>
                           </div>
                         </div>
                       );
                     })}
-                </div>
+                  </div>
+                )}
               </div>
 
-              {/* OS 4 QUADRANTES CLÁSSICOS DO EXCEL (Filtros, Colunas, Linhas, Valores) */}
-              <div className="space-y-2.5 pt-1">
-                {/* LINHA SUPERIOR: FILTROS & COLUNAS */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {/* Quadrante 1: FILTROS */}
-                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-cyan-300">
-                        <Filter className="w-3 h-3 text-cyan-400" />
-                        <span>Filtros ({filtros.length})</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={adicionarFiltro}
-                        className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer"
-                      >
-                        + Novo
-                      </button>
-                    </div>
-                    {filtros.length === 0 ? (
-                      <p className="text-[9px] text-slate-500 italic py-1">Sem filtros (tudo).</p>
-                    ) : (
-                      <div className="space-y-1 max-h-32 overflow-y-auto pr-0.5">
-                        {filtros.map((fil, idx) => (
-                          <div key={idx} className="p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 space-y-1">
-                            <div className="flex items-center gap-1">
-                              <select
-                                value={fil.campo}
-                                onChange={e => atualizarFiltro(idx, { campo: e.target.value })}
-                                className="flex-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none"
-                              >
-                                {fonteAtivaObj?.campos.map(c => (
-                                  <option key={c.key} value={c.key}>{c.key}</option>
-                                ))}
-                              </select>
-                              <select
-                                value={fil.operador}
-                                onChange={e => atualizarFiltro(idx, { operador: e.target.value as CockpitFilterOperator })}
-                                className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-cyan-300 font-mono focus:outline-none"
-                              >
-                                <option value="contains">Contém</option>
-                                <option value="eq">=</option>
-                                <option value="neq">!=</option>
-                                <option value="gt">&gt;</option>
-                                <option value="gte">&gt;=</option>
-                                <option value="lt">&lt;</option>
-                                <option value="lte">&lt;=</option>
-                                <option value="is_null">Vazio</option>
-                                <option value="is_not_null">Preenchido</option>
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => removerFiltro(idx)}
-                                className="text-slate-500 hover:text-rose-400 p-0.5 cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                            {fil.operador !== 'is_null' && fil.operador !== 'is_not_null' && (
-                              <input
-                                type="text"
-                                value={fil.valor ?? ''}
-                                onChange={e => atualizarFiltro(idx, { valor: e.target.value })}
-                                placeholder="Valor..."
-                                className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
-                              />
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              {/* Q2: VALORES (Métricas) */}
+              <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1.5 min-w-[240px] xl:min-w-0 flex-1 snap-start">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-300">
+                    <BarChart2 className="w-3 h-3 text-emerald-400" />
+                    <span>Valores ({metricas.length})</span>
                   </div>
-
-                  {/* Quadrante 2: COLUNAS */}
-                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-indigo-300">
-                        <Table className="w-3 h-3 text-indigo-400" />
-                        <span>Colunas ({colunasPivot.length})</span>
-                      </div>
-                      <span className="text-[9px] text-slate-500">Horizontal</span>
-                    </div>
-                    {colunasPivot.length === 0 ? (
-                      <p className="text-[9px] text-slate-500 italic py-1">Padrão: métricas em colunas.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
-                        {colunasPivot.map(colKey => (
-                          <span
-                            key={colKey}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 font-mono"
+                  <span className="text-[9px] text-slate-500">Cálculos</span>
+                </div>
+                {metricas.length === 0 ? (
+                  <p className="text-[9px] text-slate-500 italic py-1">Use "V" nos campos numéricos.</p>
+                ) : (
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                    {metricas.map((met, idx) => (
+                      <div key={idx} className="p-1.5 rounded bg-slate-800/80 border border-emerald-500/20 text-[10px] space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={met.agregacao}
+                            onChange={e => atualizarMetrica(idx, { agregacao: e.target.value as CockpitAggregationType })}
+                            className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[9px] text-emerald-300 font-mono focus:outline-none w-14"
                           >
-                            <span>{colKey}</span>
-                            <button onClick={() => toggleColunaPivot(colKey)} className="hover:text-rose-400">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
+                            <option value="sum">Soma</option>
+                            <option value="count">Qtd</option>
+                            <option value="avg">Média</option>
+                            <option value="min">Mín</option>
+                            <option value="max">Máx</option>
+                          </select>
+
+                          <span className="flex-1 font-mono font-semibold text-white truncate" title={met.apelido || met.campo}>
+                            {met.campo}
                           </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                {/* LINHA INFERIOR: LINHAS (HIERARQUIA ESQ->DIR) & VALORES (MÉTRICAS + PERCENTUAIS) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {/* Quadrante 3: LINHAS (Hierarquia Ordenada) */}
-                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-amber-300">
-                        <Layers className="w-3 h-3 text-amber-400" />
-                        <span>Linhas ({dimensoes.length})</span>
-                      </div>
-                      <span className="text-[9px] text-slate-500">Esq. → Dir.</span>
-                    </div>
-                    {dimensoes.length === 0 ? (
-                      <p className="text-[9px] text-slate-500 italic py-1">Selecione campos para agrupar.</p>
-                    ) : (
-                      <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
-                        {dimensoes.map((dimKey, idx) => {
-                          const cObj = fonteAtivaObj?.campos.find(c => c.key === dimKey);
-                          return (
-                            <div
-                              key={dimKey}
-                              className="p-1.5 rounded-lg bg-slate-800/80 border border-amber-500/30 flex items-center justify-between text-[11px]"
-                            >
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span className="w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-bold flex items-center justify-center shrink-0">
-                                  {idx + 1}
-                                </span>
-                                <span className="font-mono font-bold text-white truncate" title={cObj?.label || dimKey}>
-                                  {dimKey}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-0.5 shrink-0">
-                                <button
-                                  type="button"
-                                  disabled={idx === 0}
-                                  onClick={() => reordenarDimensao(idx, 'up')}
-                                  className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer"
-                                  title="Subir na hierarquia (mais à esquerda)"
-                                >
-                                  <ArrowUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={idx === dimensoes.length - 1}
-                                  onClick={() => reordenarDimensao(idx, 'down')}
-                                  className="p-0.5 text-slate-400 hover:text-amber-300 disabled:opacity-30 cursor-pointer"
-                                  title="Descer na hierarquia (mais à direita)"
-                                >
-                                  <ArrowDown className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleDimensao(dimKey)}
-                                  className="p-0.5 text-slate-400 hover:text-rose-400 cursor-pointer"
-                                  title="Remover da hierarquia"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Quadrante 4: VALORES (Métricas + % Total Geral) */}
-                  <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-1">
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-300">
-                        <Sparkles className="w-3 h-3 text-emerald-400" />
-                        <span>Valores ({metricas.length})</span>
-                      </div>
-                      <span className="text-[9px] text-slate-500">Cálculos &amp; %</span>
-                    </div>
-                    {metricas.length === 0 ? (
-                      <p className="text-[9px] text-slate-500 italic py-1">Nenhuma métrica selecionada.</p>
-                    ) : (
-                      <div className="space-y-1 max-h-48 overflow-y-auto pr-0.5">
-                        {metricas.map((met, idx) => (
-                          <div
-                            key={idx}
-                            className="p-1.5 rounded-lg bg-slate-800/80 border border-emerald-500/30 space-y-1 text-[10px]"
+                          <button
+                            type="button"
+                            onClick={() => atualizarMetrica(idx, { exibicao: met.exibicao === 'percent_total' ? 'valor' : 'percent_total' })}
+                            className={`px-1 py-px rounded text-[8px] font-bold cursor-pointer transition-all ${
+                              met.exibicao === 'percent_total'
+                                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
+                                : 'bg-slate-700 text-slate-300 hover:text-white'
+                            }`}
+                            title={met.exibicao === 'percent_total' ? '% do Total' : 'Valor R$'}
                           >
-                            <div className="flex items-center gap-1">
-                              <select
-                                value={met.agregacao}
-                                onChange={e => atualizarMetrica(idx, { agregacao: e.target.value as CockpitAggregationType })}
-                                className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-emerald-300 font-mono focus:outline-none"
-                              >
-                                <option value="sum">Soma</option>
-                                <option value="count">Qtd</option>
-                                <option value="avg">Média</option>
-                                <option value="min">Mín</option>
-                                <option value="max">Máx</option>
-                              </select>
+                            {met.exibicao === 'percent_total' ? '%' : 'R$'}
+                          </button>
 
-                              <span className="flex-1 font-mono font-bold text-white truncate" title={met.campo}>
-                                {met.campo}
-                              </span>
+                          {met.exibicao !== 'percent_total' && (
+                            <button type="button" onClick={() => duplicarMetricaComoPercentual(idx)} className="text-slate-400 hover:text-cyan-300 p-0.5 cursor-pointer shrink-0" title="Duplicar como %">
+                              <Copy className="w-2.5 h-2.5" />
+                            </button>
+                          )}
 
-                              {/* Alternador R$ ou % Total */}
-                              <button
-                                type="button"
-                                onClick={() => atualizarMetrica(idx, { exibicao: met.exibicao === 'percent_total' ? 'valor' : 'percent_total' })}
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-bold cursor-pointer transition-all ${
-                                  met.exibicao === 'percent_total'
-                                    ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                                    : 'bg-slate-700 text-slate-300 hover:text-white'
-                                }`}
-                                title={met.exibicao === 'percent_total' ? "Exibindo como % do Total Geral" : "Exibindo como Valor R$"}
-                              >
-                                {met.exibicao === 'percent_total' ? '% Total' : 'R$'}
-                              </button>
-
-                              {/* Botão Duplicar como Percentual */}
-                              {met.exibicao !== 'percent_total' && (
-                                <button
-                                  type="button"
-                                  onClick={() => duplicarMetricaComoPercentual(idx)}
-                                  className="text-slate-400 hover:text-cyan-300 p-0.5 cursor-pointer"
-                                  title="Duplicar esta métrica como % do Total Geral"
-                                >
-                                  <Copy className="w-3 h-3" />
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => removerMetrica(idx)}
-                                className="text-slate-500 hover:text-rose-400 p-0.5 cursor-pointer"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-
-                            <input
-                              type="text"
-                              value={met.apelido || ''}
-                              onChange={e => atualizarMetrica(idx, { apelido: e.target.value })}
-                              placeholder="Rótulo da coluna..."
-                              className="w-full bg-slate-900 border border-slate-700/80 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
-                            />
-                          </div>
-                        ))}
+                          <button type="button" onClick={() => removerMetrica(idx)} className="text-slate-400 hover:text-rose-400 p-0.5 cursor-pointer shrink-0">
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={met.apelido || ''}
+                          onChange={e => atualizarMetrica(idx, { apelido: e.target.value })}
+                          placeholder="Rótulo..."
+                          className="w-full bg-slate-900 border border-slate-700/80 rounded px-1.5 py-px text-[9px] text-slate-200"
+                        />
                       </div>
-                    )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Q3: FILTROS */}
+              <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1.5 min-w-[240px] xl:min-w-0 flex-1 snap-start">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-cyan-300">
+                    <Filter className="w-3 h-3 text-cyan-400" />
+                    <span>Filtros ({filtros.length})</span>
+                  </div>
+                  <button type="button" onClick={adicionarFiltro} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold cursor-pointer">
+                    + Novo
+                  </button>
+                </div>
+                {filtros.length === 0 ? (
+                  <p className="text-[9px] text-slate-500 italic py-1">Sem filtros. Use "F" ou "+ Novo".</p>
+                ) : (
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5 custom-scrollbar">
+                    {filtros.map((fil, idx) => (
+                      <div key={idx} className="p-1.5 rounded bg-slate-800/80 border border-cyan-500/20 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={fil.campo}
+                            onChange={e => atualizarFiltro(idx, { campo: e.target.value })}
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-white focus:outline-none min-w-0"
+                          >
+                            {fonteAtivaObj?.campos.map(c => (
+                              <option key={c.key} value={c.key}>{c.key}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={fil.operador}
+                            onChange={e => atualizarFiltro(idx, { operador: e.target.value as CockpitFilterOperator })}
+                            className="bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-[10px] text-cyan-300 font-mono focus:outline-none w-20"
+                          >
+                            <option value="contains">Contém</option>
+                            <option value="eq">=</option>
+                            <option value="neq">!=</option>
+                            <option value="gt">&gt;</option>
+                            <option value="gte">&gt;=</option>
+                            <option value="lt">&lt;</option>
+                            <option value="lte">&lt;=</option>
+                            <option value="is_null">Vazio</option>
+                            <option value="is_not_null">Preenchido</option>
+                          </select>
+                          <button type="button" onClick={() => removerFiltro(idx)} className="text-slate-400 hover:text-rose-400 p-0.5 cursor-pointer shrink-0">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {fil.operador !== 'is_null' && fil.operador !== 'is_not_null' && (
+                          <input
+                            type="text"
+                            value={fil.valor ?? ''}
+                            onChange={e => atualizarFiltro(idx, { valor: e.target.value })}
+                            placeholder="Valor do filtro..."
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Q4: OPÇÕES ADICIONAIS (Limite & Ordenação) */}
+              <div className="p-2 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2 min-w-[180px] xl:min-w-0 flex-1 snap-start">
+                <div className="flex items-center gap-1 text-[11px] font-bold text-slate-300 pb-1 border-b border-slate-800">
+                  <Table className="w-3 h-3 text-slate-400" />
+                  <span>Opções</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div>
+                    <label className="text-[9px] font-semibold text-slate-400 block mb-0.5 uppercase tracking-wider">Limite</label>
+                    <select
+                      value={limite}
+                      onChange={e => setLimite(Number(e.target.value))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 font-mono"
+                    >
+                      <option value={0}>Sem Limite</option>
+                      <option value={25000}>25.000</option>
+                      <option value={10000}>10.000</option>
+                      <option value={5000}>5.000</option>
+                      <option value={1000}>1.000</option>
+                      <option value={500}>500</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] font-semibold text-slate-400 block mb-0.5 uppercase tracking-wider">Ordenação</label>
+                    <select
+                      value={ordenacao[0]?.direcao || 'desc'}
+                      onChange={e => {
+                        const dir = e.target.value as 'asc' | 'desc';
+                        setOrdenacao(prev => [{ campo: prev[0]?.campo || dimensoes[0] || 'id', direcao: dir }]);
+                      }}
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[10px] text-slate-300 font-mono"
+                    >
+                      <option value="desc">Decrescente (Z-A)</option>
+                      <option value="asc">Crescente (A-Z)</option>
+                    </select>
+                  </div>
+
+                  <div className="text-[9px] text-slate-500 font-mono pt-1 border-t border-slate-800/60">
+                    Empresa: {empresaAtiva?.razaoSocial || 'Não selecionada'}
                   </div>
                 </div>
               </div>
             </div>
+          </div>
+        )}
+      </div>
 
-            {/* 6. Ordenação & Limite da Extração */}
-            <div className="grid grid-cols-2 gap-2 border-t border-slate-800/80 pt-3">
-              <div>
-                <label className="text-[10px] font-semibold text-slate-400 block mb-1">
-                  Limite da Extração
-                </label>
-                <select
-                  value={limite}
-                  onChange={e => setLimite(Number(e.target.value))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 font-mono"
-                >
-                  <option value={0}>Sem Limite (Todo o Período)</option>
-                  <option value={25000}>25.000 linhas</option>
-                  <option value={10000}>10.000 linhas</option>
-                  <option value={5000}>5.000 linhas</option>
-                  <option value={1000}>1.000 linhas</option>
-                  <option value={500}>500 linhas</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-semibold text-slate-400 block mb-1">
-                  Direção da Ordenação
-                </label>
-                <select
-                  value={ordenacao[0]?.direcao || 'desc'}
-                  onChange={e => {
-                    const dir = e.target.value as 'asc' | 'desc';
-                    setOrdenacao(prev => [{ campo: prev[0]?.campo || dimensoes[0] || 'id', direcao: dir }]);
-                  }}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-300 font-mono"
-                >
-                  <option value="desc">Decrescente (Z-A / Maior)</option>
-                  <option value="asc">Crescente (A-Z / Menor)</option>
-                </select>
-              </div>
+      {/* ========================================================== */}
+      {/* FAIXA 3: RESULTADOS & TABELA DINÂMICA (FULL WIDTH)         */}
+      {/* ========================================================== */}
+      <div className="glass-panel-glow p-3 rounded-xl border border-slate-800 space-y-2.5">
+        {/* Status Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 text-[11px] text-slate-300">
+              <span className="font-bold text-white">
+                {linhasFiltradas.length.toLocaleString('pt-BR')}
+              </span>
+              <span>registro(s)</span>
             </div>
 
-            {/* Botão Final de Execução */}
-            <button
-              type="button"
-              onClick={() => executarConsulta()}
-              disabled={isExecutando}
-              className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${isExecutando ? 'animate-spin' : ''}`} />
-              <span>{isExecutando ? 'Processando dados...' : 'Atualizar e Executar'}</span>
-            </button>
+            <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+              📅 {periodoLabel}
+            </span>
+
+            {limite === 0 ? (
+              <span className="text-[9px] font-bold uppercase text-emerald-300 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                Sem Limite
+              </span>
+            ) : (
+              <span className="text-[9px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60">
+                Máx {limite.toLocaleString('pt-BR')}
+              </span>
+            )}
+
+            {resultado && (
+              <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/20 flex items-center gap-1">
+                <Clock className="w-2.5 h-2.5" />
+                {resultado.executionTimeMs} ms
+              </span>
+            )}
+          </div>
+
+          {/* Busca Rápida nos Resultados */}
+          <div className="relative w-full sm:w-56">
+            <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-2" />
+            <input
+              type="text"
+              value={termoBusca}
+              onChange={e => {
+                setTermoBusca(e.target.value);
+                setPaginaAtual(1);
+              }}
+              placeholder="Pesquisar nos resultados..."
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-7 pr-3 py-1 text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+            />
           </div>
         </div>
 
-        {/* ========================================== */}
-        {/* COLUNA DIREITA: RESULTADOS & TABELA DINÂMICA */}
-        {/* ========================================== */}
-        <div className="lg:col-span-8 space-y-4">
-          <div className="glass-panel-glow p-4 rounded-2xl border border-slate-800 space-y-3">
-            {/* Barra de Status e Pesquisa Local */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
-              <div className="flex flex-wrap items-center gap-2.5">
-                <div className="flex items-center gap-1.5 text-xs text-slate-300">
-                  <span className="font-bold text-white">
-                    {linhasFiltradas.length.toLocaleString('pt-BR')}
-                  </span>
-                  <span>registro(s) retornado(s)</span>
-                </div>
+        {/* Tabela de Resultados */}
+        <div className="overflow-x-auto rounded-lg border border-slate-800 max-h-[600px] relative">
+          <table className="w-full text-left border-collapse text-[11px]">
+            <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-md z-10 border-b border-slate-800 text-[10px] uppercase tracking-wider text-slate-400">
+              <tr>
+                <th className="p-2 font-mono text-slate-500 w-10 text-center">#</th>
+                {resultado?.columns.map(col => {
+                  const isSorted = ordenacao[0]?.campo === col.key;
+                  const sortDir = ordenacao[0]?.direcao;
 
-                <div className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded-full border border-cyan-500/20">
-                  <Calendar className="w-3 h-3 text-cyan-400" />
-                  <span>
-                    {anoSelecionado === 'todos' ? 'Todos os Anos' : anoSelecionado}
-                    {mesSelecionado !== 'todos' ? ` / ${MESES.find(m => m.valor === mesSelecionado)?.label || mesSelecionado}` : ' (Ano Todo)'}
-                  </span>
-                </div>
-
-                {limite === 0 ? (
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                    Sem Limite
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-full border border-slate-700/60">
-                    Máx {limite.toLocaleString('pt-BR')}
-                  </span>
-                )}
-
-                {resultado && (
-                  <div className="flex items-center gap-1 text-[11px] font-mono text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-500/20">
-                    <Clock className="w-3 h-3" />
-                    <span>{resultado.executionTimeMs} ms</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Input de Busca Rápida Local */}
-              <div className="relative w-full sm:w-64">
-                <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={termoBusca}
-                  onChange={e => {
-                    setTermoBusca(e.target.value);
-                    setPaginaAtual(1);
-                  }}
-                  placeholder="Pesquisar nos resultados..."
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                />
-              </div>
-            </div>
-
-            {/* Tabela de Resultados */}
-            <div className="overflow-x-auto rounded-xl border border-slate-800 max-h-[560px] relative">
-              <table className="w-full text-left border-collapse text-xs">
-                {/* Cabeçalho Fixo */}
-                <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-md z-10 border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400">
-                  <tr>
-                    <th className="p-3 font-mono text-slate-500 w-12 text-center">#</th>
-                    {resultado?.columns.map(col => {
-                      const isSorted = ordenacao[0]?.campo === col.key;
-                      const sortDir = ordenacao[0]?.direcao;
-
-                      return (
-                        <th
-                          key={col.key}
-                          onClick={() => {
-                            setOrdenacao(prev => {
-                              const currentDir = prev[0]?.campo === col.key ? prev[0].direcao : 'desc';
-                              const nextDir = currentDir === 'asc' ? 'desc' : 'asc';
-                              return [{ campo: col.key, direcao: nextDir }];
-                            });
-                          }}
-                          className="p-3 font-semibold text-slate-300 hover:text-white cursor-pointer select-none transition-colors"
-                        >
-                          <div className="flex items-center gap-1.5">
-                            <span>{col.label}</span>
-                            {isSorted ? (
-                              sortDir === 'asc' ? <ArrowUp className="w-3 h-3 text-cyan-400" /> : <ArrowDown className="w-3 h-3 text-cyan-400" />
-                            ) : (
-                              <ArrowUpDown className="w-3 h-3 text-slate-600 opacity-0 group-hover:opacity-100" />
-                            )}
-                          </div>
-                        </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-
-                {/* Corpo de Dados */}
-                <tbody className="divide-y divide-slate-800/60 font-sans">
-                  {linhasPaginadas.length === 0 ? (
-                    <tr>
-                      <td colSpan={(resultado?.columns.length || 1) + 1} className="p-8 text-center text-slate-500">
-                        {isExecutando ? (
-                          <div className="flex items-center justify-center gap-2 text-cyan-400 font-semibold">
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Carregando dados fiscais...</span>
-                          </div>
-                        ) : (
-                          <span>Nenhum registro encontrado para os parâmetros selecionados.</span>
+                  return (
+                    <th
+                      key={col.key}
+                      onClick={() => {
+                        setOrdenacao(prev => {
+                          const currentDir = prev[0]?.campo === col.key ? prev[0].direcao : 'desc';
+                          const nextDir = currentDir === 'asc' ? 'desc' : 'asc';
+                          return [{ campo: col.key, direcao: nextDir }];
+                        });
+                      }}
+                      className="p-2 font-semibold text-slate-300 hover:text-white cursor-pointer select-none transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{col.label}</span>
+                        {isSorted && (
+                          sortDir === 'asc'
+                            ? <ArrowUp className="w-2.5 h-2.5 text-cyan-400" />
+                            : <ArrowDown className="w-2.5 h-2.5 text-cyan-400" />
                         )}
-                      </td>
-                    </tr>
-                  ) : (
-                    linhasPaginadas.map((row, rIdx) => {
-                      const rowNum = (paginaAtual - 1) * itensPorPagina + rIdx + 1;
-                      return (
-                        <tr key={rIdx} className="hover:bg-slate-800/40 transition-colors">
-                          <td className="p-3 font-mono text-slate-500 text-center text-[10px]">
-                            {rowNum}
-                          </td>
-                          {resultado?.columns.map(col => {
-                            const val = row[col.key];
-                            const isNumeric = col.type === 'number';
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
 
-                            return (
-                              <td
-                                key={col.key}
-                                className={`p-3 text-slate-300 ${
-                                  isNumeric ? 'text-right font-mono font-medium' : ''
-                                }`}
-                              >
-                                {col.key === 'cClassTrib' || col.key === 'cclasstrib' || col.key === 'indOper' ? (
-                                  val && val !== '(Não informado / Sem RTC)' ? (
-                                    <span className="text-[10px] px-2 py-0.5 rounded-md font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                      {val}
-                                    </span>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-500 italic">
-                                      {val || '-'}
-                                    </span>
-                                  )
-                                ) : col.key === 'cst_csosn' || col.key === 'tipo_doc' ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded-md font-bold font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                                    {val || '-'}
-                                  </span>
-                                ) : (col.label.includes('%') || col.key.includes('%')) && typeof val === 'number' ? (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden shrink-0">
-                                      <div 
-                                        className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full" 
-                                        style={{ width: `${Math.min(Math.max(val, 0), 100)}%` }} 
-                                      />
-                                    </div>
-                                    <span>{formatarValor(val, col.type, col.label)}</span>
-                                  </div>
-                                ) : (
-                                  formatarValor(val, col.type, col.label)
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-
-                {/* Rodapé com Totais Automáticos */}
-                {resultado?.totals && Object.keys(resultado.totals).length > 0 && linhasFiltradas.length > 0 && (
-                  <tfoot className="sticky bottom-0 bg-slate-900/95 border-t-2 border-cyan-500/30 font-semibold text-white">
-                    <tr>
-                      <td className="p-3 text-center text-[10px] font-mono uppercase text-cyan-400">
-                        TOTAL
+            <tbody className="divide-y divide-slate-800/60 font-sans">
+              {linhasPaginadas.length === 0 ? (
+                <tr>
+                  <td colSpan={(resultado?.columns.length || 1) + 1} className="p-6 text-center text-slate-500">
+                    {isExecutando ? (
+                      <div className="flex items-center justify-center gap-2 text-cyan-400 font-semibold">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Carregando dados fiscais...</span>
+                      </div>
+                    ) : (
+                      <span>Nenhum registro encontrado para os parâmetros selecionados.</span>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                linhasPaginadas.map((row, rIdx) => {
+                  const rowNum = (paginaAtual - 1) * itensPorPagina + rIdx + 1;
+                  return (
+                    <tr key={rIdx} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="p-2 font-mono text-slate-500 text-center text-[9px]">
+                        {rowNum}
                       </td>
-                      {resultado.columns.map(col => {
-                        const totalVal = resultado.totals[col.key];
+                      {resultado?.columns.map(col => {
+                        const val = row[col.key];
+                        const isNumeric = col.type === 'number';
+
                         return (
                           <td
                             key={col.key}
-                            className={`p-3 text-xs ${
-                              totalVal !== undefined ? 'text-right font-mono text-cyan-300 font-bold' : 'text-slate-500'
+                            className={`p-2 text-slate-300 ${
+                              isNumeric ? 'text-right font-mono font-medium' : ''
                             }`}
                           >
-                            {totalVal !== undefined ? formatarValor(totalVal, 'number', col.label) : ''}
+                            {col.key === 'cClassTrib' || col.key === 'cclasstrib' || col.key === 'indOper' ? (
+                              val && val !== '(Não informado / Sem RTC)' ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-slate-500 italic">
+                                  {val || '-'}
+                                </span>
+                              )
+                            ) : col.key === 'cst_csosn' || col.key === 'tipo_doc' ? (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                                {val || '-'}
+                              </span>
+                            ) : (col.label.includes('%') || col.key.includes('%')) && typeof val === 'number' ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <div className="w-10 h-1.5 bg-slate-800 rounded-full overflow-hidden shrink-0">
+                                  <div
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full"
+                                    style={{ width: `${Math.min(Math.max(val, 0), 100)}%` }}
+                                  />
+                                </div>
+                                <span>{formatarValor(val, col.type, col.label)}</span>
+                              </div>
+                            ) : (
+                              formatarValor(val, col.type, col.label)
+                            )}
                           </td>
                         );
                       })}
                     </tr>
-                  </tfoot>
-                )}
-              </table>
+                  );
+                })
+              )}
+            </tbody>
+
+            {/* Rodapé com Totais */}
+            {resultado?.totals && Object.keys(resultado.totals).length > 0 && linhasFiltradas.length > 0 && (
+              <tfoot className="sticky bottom-0 bg-slate-900/95 border-t-2 border-cyan-500/30 font-semibold text-white">
+                <tr>
+                  <td className="p-2 text-center text-[9px] font-mono uppercase text-cyan-400">
+                    TOTAL
+                  </td>
+                  {resultado.columns.map(col => {
+                    const totalVal = resultado.totals[col.key];
+                    return (
+                      <td
+                        key={col.key}
+                        className={`p-2 text-[11px] ${
+                          totalVal !== undefined ? 'text-right font-mono text-cyan-300 font-bold' : 'text-slate-500'
+                        }`}
+                      >
+                        {totalVal !== undefined ? formatarValor(totalVal, 'number', col.label) : ''}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+
+        {/* Paginação */}
+        {linhasFiltradas.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span>Exibindo</span>
+              <select
+                value={itensPorPagina}
+                onChange={e => {
+                  setItensPorPagina(Number(e.target.value));
+                  setPaginaAtual(1);
+                }}
+                className="bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] text-white"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span>de {linhasFiltradas.length} linhas</span>
             </div>
 
-            {/* Barra de Paginação */}
-            {linhasFiltradas.length > 0 && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>Exibindo</span>
-                  <select
-                    value={itensPorPagina}
-                    onChange={e => {
-                      setItensPorPagina(Number(e.target.value));
-                      setPaginaAtual(1);
-                    }}
-                    className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                  <span>de {linhasFiltradas.length} linhas</span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setPaginaAtual(1)}
-                    disabled={paginaAtual === 1}
-                    className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
-                  >
-                    &laquo;
-                  </button>
-                  <button
-                    onClick={() => setPaginaAtual(prev => Math.max(prev - 1, 1))}
-                    disabled={paginaAtual === 1}
-                    className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
-                  >
-                    Anterior
-                  </button>
-
-                  <span className="text-xs px-2 font-mono text-slate-300">
-                    {paginaAtual} / {totalPaginas}
-                  </span>
-
-                  <button
-                    onClick={() => setPaginaAtual(prev => Math.min(prev + 1, totalPaginas))}
-                    disabled={paginaAtual === totalPaginas}
-                    className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
-                  >
-                    Próxima
-                  </button>
-                  <button
-                    onClick={() => setPaginaAtual(totalPaginas)}
-                    disabled={paginaAtual === totalPaginas}
-                    className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
-                  >
-                    &raquo;
-                  </button>
-                </div>
-              </div>
-            )}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPaginaAtual(1)}
+                disabled={paginaAtual === 1}
+                className="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+              >
+                &laquo;
+              </button>
+              <button
+                onClick={() => setPaginaAtual(prev => Math.max(prev - 1, 1))}
+                disabled={paginaAtual === 1}
+                className="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+              >
+                Anterior
+              </button>
+              <span className="text-[11px] px-2 font-mono text-slate-300">
+                {paginaAtual} / {totalPaginas}
+              </span>
+              <button
+                onClick={() => setPaginaAtual(prev => Math.min(prev + 1, totalPaginas))}
+                disabled={paginaAtual === totalPaginas}
+                className="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+              >
+                Próxima
+              </button>
+              <button
+                onClick={() => setPaginaAtual(totalPaginas)}
+                disabled={paginaAtual === totalPaginas}
+                className="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+              >
+                &raquo;
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* ============================================================ */}
-      {/* MODAL: SALVAR COMO MODELO DE RELATÓRIO                       */}
-      {/* ============================================================ */}
+      {/* ========================================================== */}
+      {/* MODAL: SALVAR / EDITAR MODELO                              */}
+      {/* ========================================================== */}
       {isSalvarModalOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="glass-panel-glow w-full max-w-lg rounded-2xl border border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-400">
-                  <Save className="w-5 h-5" />
+          <div className="glass-panel-glow w-full max-w-lg rounded-xl border border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-indigo-500/20 border border-indigo-500/30 text-indigo-400">
+                  {editandoModeloId ? <Pencil className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">
-                    Salvar Modelo de Relatório
+                  <h3 className="text-sm font-bold text-white">
+                    {editandoModeloId ? 'Editar Modelo' : 'Salvar Novo Modelo'}
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Grave a configuração atual para execução instantânea no futuro.
+                  <p className="text-[10px] text-slate-400">
+                    {editandoModeloId ? 'Atualize as propriedades do modelo.' : 'Grave a configuração atual para uso futuro.'}
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsSalvarModalOpen(false)}
+                onClick={() => { setIsSalvarModalOpen(false); setEditandoModeloId(null); }}
                 className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSalvarModelo} className="p-5 space-y-4">
+            <form onSubmit={handleSalvarModelo} className="p-4 space-y-3">
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Nome do Modelo *
-                </label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Nome do Modelo *</label>
                 <input
                   type="text"
                   value={nomeNovoModelo}
                   onChange={e => setNomeNovoModelo(e.target.value)}
                   placeholder="Ex: Auditoria de Combustíveis por Fornecedor"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Descrição / Objetivo
-                </label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Descrição</label>
                 <textarea
                   value={descNovoModelo}
                   onChange={e => setDescNovoModelo(e.target.value)}
-                  placeholder="Explique a finalidade tributária deste relatório..."
+                  placeholder="Finalidade tributária deste relatório..."
                   rows={2}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Categoria
-                  </label>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Categoria</label>
                   <select
                     value={categoriaNovoModelo}
                     onChange={e => setCategoriaNovoModelo(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
                   >
                     <option value="fiscal">Fiscal Geral</option>
                     <option value="auditoria">Auditoria & Compliance</option>
@@ -1739,85 +1563,54 @@ export const CockpitRelatoriosPanel: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-300 block mb-1">
-                    Escopo de Visibilidade *
-                  </label>
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer text-xs">
-                      <input
-                        type="radio"
-                        name="escopo"
-                        value="pessoal"
-                        checked={escopoNovoModelo === 'pessoal'}
-                        onChange={() => setEscopoNovoModelo('pessoal')}
-                      />
-                      <User className="w-3.5 h-3.5 text-purple-400" />
-                      <span className="text-slate-200">🔒 Pessoal (Apenas Você)</span>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">Escopo *</label>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer text-[11px]">
+                      <input type="radio" name="escopo" value="pessoal" checked={escopoNovoModelo === 'pessoal'} onChange={() => setEscopoNovoModelo('pessoal')} />
+                      <User className="w-3 h-3 text-purple-400" />
+                      <span className="text-slate-200">🔒 Pessoal</span>
                     </label>
-
-                    <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800 cursor-pointer text-xs">
-                      <input
-                        type="radio"
-                        name="escopo"
-                        value="empresa"
-                        checked={escopoNovoModelo === 'empresa'}
-                        onChange={() => setEscopoNovoModelo('empresa')}
-                      />
-                      <Building2 className="w-3.5 h-3.5 text-cyan-400" />
-                      <span className="text-slate-200">🏢 Empresa (Equipe Desta Empresa)</span>
+                    <label className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-900 border border-slate-800 cursor-pointer text-[11px]">
+                      <input type="radio" name="escopo" value="empresa" checked={escopoNovoModelo === 'empresa'} onChange={() => setEscopoNovoModelo('empresa')} />
+                      <Building2 className="w-3 h-3 text-cyan-400" />
+                      <span className="text-slate-200">🏢 Empresa</span>
                     </label>
-
-                    {/* Escopo Global Restrito */}
-                    <label className={`flex items-center gap-2 p-2 rounded-xl border text-xs ${
-                      isAdminMaster
-                        ? 'bg-slate-900 border-amber-500/30 cursor-pointer'
-                        : 'bg-slate-900/40 border-slate-800 opacity-60 cursor-not-allowed'
+                    <label className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] ${
+                      isAdminMaster ? 'bg-slate-900 border-amber-500/30 cursor-pointer' : 'bg-slate-900/40 border-slate-800 opacity-60 cursor-not-allowed'
                     }`}>
-                      <input
-                        type="radio"
-                        name="escopo"
-                        value="global"
-                        disabled={!isAdminMaster}
-                        checked={escopoNovoModelo === 'global'}
-                        onChange={() => setEscopoNovoModelo('global')}
-                      />
-                      <Globe className="w-3.5 h-3.5 text-amber-400" />
+                      <input type="radio" name="escopo" value="global" disabled={!isAdminMaster} checked={escopoNovoModelo === 'global'} onChange={() => setEscopoNovoModelo('global')} />
+                      <Globe className="w-3 h-3 text-amber-400" />
                       <div className="flex-1">
-                        <span className="text-amber-300 font-semibold">🌐 Global (Plataforma)</span>
-                        {!isAdminMaster && (
-                          <span className="block text-[9px] text-amber-500/80 font-mono">
-                            Exclusivo para o Admin Master do Sistema
-                          </span>
-                        )}
+                        <span className="text-amber-300 font-semibold">🌐 Global</span>
+                        {!isAdminMaster && <span className="block text-[8px] text-amber-500/80 font-mono">Admin Master</span>}
                       </div>
-                      {!isAdminMaster && <Lock className="w-3 h-3 text-amber-400" />}
+                      {!isAdminMaster && <Lock className="w-2.5 h-2.5 text-amber-400" />}
                     </label>
                   </div>
                 </div>
               </div>
 
-              {/* Aviso de Governança sobre Escopo Global */}
-              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300 flex items-start gap-2">
-                <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-300 flex items-start gap-1.5">
+                <Info className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Diretriz de Segurança:</strong> Modelos com escopo Global impactam todos os usuários e empresas da plataforma e só podem ser publicados pelo Administrador Master para evitar consultas desbalanceadas.
+                  <strong>Governança:</strong> Modelos Globais impactam todos os usuários e só podem ser criados pelo Admin Master.
                 </span>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-800">
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsSalvarModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-slate-800/80 cursor-pointer"
+                  onClick={() => { setIsSalvarModalOpen(false); setEditandoModeloId(null); }}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-slate-400 hover:text-white bg-slate-800/80 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isSalvandoModelo}
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-md cursor-pointer disabled:opacity-50"
+                  className="px-4 py-1.5 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-md cursor-pointer disabled:opacity-50"
                 >
-                  {isSalvandoModelo ? 'Salvando...' : 'Confirmar e Salvar'}
+                  {isSalvandoModelo ? 'Salvando...' : editandoModeloId ? 'Atualizar Modelo' : 'Confirmar e Salvar'}
                 </button>
               </div>
             </form>
@@ -1825,75 +1618,57 @@ export const CockpitRelatoriosPanel: React.FC = () => {
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* MODAL: GERENCIADOR DE MODELOS SALVOS                         */}
-      {/* ============================================================ */}
+      {/* ========================================================== */}
+      {/* MODAL: GERENCIADOR DE MODELOS (CRUD COMPLETO)              */}
+      {/* ========================================================== */}
       {isGerenciarModelosOpen && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="glass-panel-glow w-full max-w-3xl rounded-2xl border border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-cyan-500/20 border border-cyan-500/30 text-cyan-400">
-                  <FolderOpen className="w-5 h-5" />
+          <div className="glass-panel-glow w-full max-w-3xl rounded-xl border border-slate-700 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 max-h-[85vh] flex flex-col">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-cyan-500/20 border border-cyan-500/30 text-cyan-400">
+                  <FolderOpen className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">
-                    Meus Modelos e Modelos da Plataforma
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Selecione um modelo para carregar no Cockpit ou gerencie permissões.
-                  </p>
+                  <h3 className="text-sm font-bold text-white">Modelos Salvos</h3>
+                  <p className="text-[10px] text-slate-400">Carregar, editar ou excluir modelos.</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsGerenciarModelosOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
+              <button onClick={() => setIsGerenciarModelosOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer">
+                <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Filtro de Abas de Escopo */}
-            <div className="p-3 bg-slate-900/60 border-b border-slate-800 flex items-center gap-2">
-              <button
-                onClick={() => setFiltroEscopoModelos('todos')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  filtroEscopoModelos === 'todos' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Todos ({modelos.length})
-              </button>
-              <button
-                onClick={() => setFiltroEscopoModelos('global')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  filtroEscopoModelos === 'global' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                🌐 Globais ({modelos.filter(m => m.escopo === 'global').length})
-              </button>
-              <button
-                onClick={() => setFiltroEscopoModelos('empresa')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  filtroEscopoModelos === 'empresa' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                🏢 Empresa ({modelos.filter(m => m.escopo === 'empresa').length})
-              </button>
-              <button
-                onClick={() => setFiltroEscopoModelos('pessoal')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                  filtroEscopoModelos === 'pessoal' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                🔒 Pessoais ({modelos.filter(m => m.escopo === 'pessoal').length})
-              </button>
+            {/* Filtro por Escopo */}
+            <div className="px-3 py-2 bg-slate-900/60 border-b border-slate-800 flex items-center gap-1.5 flex-wrap">
+              {(['todos', 'global', 'empresa', 'pessoal'] as const).map(esc => {
+                const count = esc === 'todos' ? modelos.length : modelos.filter(m => m.escopo === esc).length;
+                const emoji = esc === 'global' ? '🌐' : esc === 'empresa' ? '🏢' : esc === 'pessoal' ? '🔒' : '';
+                const isActive = filtroEscopoModelos === esc;
+                const colors = esc === 'global' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                  : esc === 'empresa' ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'
+                  : esc === 'pessoal' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                  : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30';
+
+                return (
+                  <button
+                    key={esc}
+                    onClick={() => setFiltroEscopoModelos(esc)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors ${
+                      isActive ? `${colors} border` : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {emoji} {esc.charAt(0).toUpperCase() + esc.slice(1)} ({count})
+                  </button>
+                );
+              })}
             </div>
 
             {/* Lista de Modelos */}
-            <div className="p-4 overflow-y-auto space-y-3 flex-1">
+            <div className="p-3 overflow-y-auto space-y-2 flex-1">
               {modelosFiltrados.length === 0 ? (
-                <div className="p-8 text-center text-slate-500">
-                  Nenhum modelo cadastrado nesta categoria.
+                <div className="p-6 text-center text-slate-500 text-xs">
+                  Nenhum modelo nesta categoria.
                 </div>
               ) : (
                 modelosFiltrados.map(mod => {
@@ -1902,63 +1677,65 @@ export const CockpitRelatoriosPanel: React.FC = () => {
                   return (
                     <div
                       key={mod.id}
-                      className={`p-4 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                      className={`p-3 rounded-lg border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                         isCurrent
                           ? 'bg-blue-950/30 border-cyan-500/40 shadow-md'
                           : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
                       }`}
                     >
-                      <div className="space-y-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-sm font-bold text-white truncate">
-                            {mod.nome}
-                          </h4>
-
-                          {/* Badge de Escopo */}
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-xs font-bold text-white truncate">{mod.nome}</h4>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase ${
                             mod.escopo === 'global' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' :
                             mod.escopo === 'empresa' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' :
                             'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                           }`}>
                             {mod.escopo === 'global' ? '🌐 Global' : mod.escopo === 'empresa' ? '🏢 Empresa' : '🔒 Pessoal'}
                           </span>
-
                           {mod.is_padrao_sistema === 1 && (
-                            <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase bg-slate-800 text-slate-300 border border-slate-700">
-                              Padrão de Fábrica
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase bg-slate-800 text-slate-300 border border-slate-700">
+                              Fábrica
                             </span>
                           )}
                         </div>
-
                         {mod.descricao && (
-                          <p className="text-xs text-slate-400">
-                            {mod.descricao}
-                          </p>
+                          <p className="text-[10px] text-slate-400 truncate">{mod.descricao}</p>
                         )}
-
-                        <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono pt-1">
-                          <span>Criado por: {mod.criado_por_nome || 'Sistema'}</span>
-                          {mod.categoria && <span>Categoria: {mod.categoria.toUpperCase()}</span>}
+                        <div className="flex items-center gap-3 text-[9px] text-slate-500 font-mono">
+                          <span>Por: {mod.criado_por_nome || 'Sistema'}</span>
+                          {mod.categoria && <span>{mod.categoria.toUpperCase()}</span>}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           onClick={() => aplicarModelo(mod)}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 cursor-pointer shadow-sm flex items-center gap-1.5"
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-white bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 cursor-pointer shadow-sm flex items-center gap-1"
                         >
                           <Play className="w-3 h-3" />
-                          <span>Carregar no Cockpit</span>
+                          <span>Carregar</span>
                         </button>
 
-                        {/* Botão Excluir (Se autorizado) */}
+                        {/* Botão Editar (CRUD: Update via PUT) */}
+                        {mod.podeEditar && mod.is_padrao_sistema !== 1 && (
+                          <button
+                            onClick={() => handleIniciarEdicao(mod)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-cyan-500/10 cursor-pointer transition-colors"
+                            title="Editar Modelo"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Botão Excluir */}
                         {mod.podeEditar && mod.is_padrao_sistema !== 1 && (
                           <button
                             onClick={() => handleExcluirModelo(mod.id, mod.nome)}
                             className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
                             title="Excluir Modelo"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>

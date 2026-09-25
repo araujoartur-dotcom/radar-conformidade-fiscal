@@ -144,6 +144,8 @@ export function initializeSchema(): void {
       tipo_doc              TEXT NOT NULL,
       chave_acesso          TEXT NOT NULL UNIQUE,
       tipo_operacao         TEXT DEFAULT 'Entrada',
+      direcao_movimento     TEXT NOT NULL DEFAULT 'ENTRADA',
+      tomador_cnpj          TEXT DEFAULT '',
       numero_serie          TEXT,
       data_emissao          TEXT,
       data_entrada          TEXT,
@@ -693,6 +695,8 @@ export function initializeSchema(): void {
   addColumnIfNotExists('usuarios', 'empresa_ativa_id', 'TEXT DEFAULT NULL');
 
   // Migrações em dfe_documentos
+  addColumnIfNotExists('dfe_documentos', 'direcao_movimento', 'TEXT NOT NULL DEFAULT "ENTRADA"');
+  addColumnIfNotExists('dfe_documentos', 'tomador_cnpj', 'TEXT DEFAULT ""');
   addColumnIfNotExists('dfe_documentos', 'fornecedor_ie', 'TEXT DEFAULT ""');
   addColumnIfNotExists('dfe_documentos', 'cliente_ie', 'TEXT DEFAULT ""');
   addColumnIfNotExists('dfe_documentos', 'situacao_manifestacao', 'TEXT DEFAULT "sem_manifestacao"');
@@ -826,6 +830,8 @@ export function initializeSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_tipo_emissao ON dfe_documentos(tipo_doc, data_emissao);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_kpi_covering ON dfe_documentos(empresa_id, data_emissao, tipo_doc, valor_total, base_cbs, base_ibs, valor_cbs, valor_ibs);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_chave ON dfe_documentos(chave_acesso);
+    CREATE INDEX IF NOT EXISTS idx_dfe_docs_direcao ON dfe_documentos(empresa_id, direcao_movimento);
+    CREATE INDEX IF NOT EXISTS idx_dfe_docs_tomador ON dfe_documentos(tomador_cnpj);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_fornecedor ON dfe_documentos(fornecedor_cnpj);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_cliente ON dfe_documentos(cliente_cnpj);
     CREATE INDEX IF NOT EXISTS idx_dfe_docs_download ON dfe_documentos(download_at);
@@ -889,6 +895,18 @@ export function initializeSchema(): void {
   // Migrações seguras de colunas incrementais
   try {
     db.prepare("ALTER TABLE usuarios ADD COLUMN criado_por TEXT DEFAULT NULL").run();
+  } catch {}
+
+  // Backfill seguro para alinhar direcao_movimento com tipo_operacao histórico
+  try {
+    db.prepare(`
+      UPDATE dfe_documentos
+      SET direcao_movimento = CASE 
+        WHEN LOWER(tipo_operacao) IN ('saída', 'saida', 'saídas', 'saidas', '1') THEN 'SAIDA'
+        ELSE 'ENTRADA'
+      END
+      WHERE direcao_movimento IS NULL OR direcao_movimento = '' OR direcao_movimento = 'ENTRADA';
+    `).run();
   } catch {}
 
   console.log(`✅ Schema do banco de dados inicializado com sucesso em Horário Oficial de Brasília [${getBrasiliaTimestamp()}].`);

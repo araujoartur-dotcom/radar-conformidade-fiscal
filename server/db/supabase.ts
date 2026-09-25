@@ -36,7 +36,27 @@ export function getSupabaseAdmin(): SupabaseClient | null {
   return supabaseAdminClient;
 }
 
+const columnCache: Record<string, boolean> = {};
+
+export async function checkSupabaseHasColumn(table: string, column: string): Promise<boolean> {
+  const cacheKey = `${table}:${column}`;
+  if (cacheKey in columnCache) {
+    return columnCache[cacheKey];
+  }
+  const supa = getSupabaseAdmin();
+  if (!supa) return false;
+  try {
+    const { error } = await supa.from(table).select(column).limit(0);
+    const exists = !error;
+    columnCache[cacheKey] = exists;
+    return exists;
+  } catch {
+    return false;
+  }
+}
+
 export default {
   isSupabaseConfigured,
   getSupabaseAdmin,
+  checkSupabaseHasColumn,
 };

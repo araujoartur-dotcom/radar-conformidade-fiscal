@@ -212,6 +212,15 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
               }
             }
 
+            const opParam = (req.query.tipoOperacao as string || req.query.direcaoMovimento as string || '').trim().toUpperCase();
+            if (opParam && opParam !== 'TODAS' && opParam !== 'TODOS') {
+              if (opParam.includes('SAI')) {
+                sq = sq.or('tipo_operacao.ilike.%saí%,tipo_operacao.ilike.%sai%');
+              } else if (opParam.includes('ENT')) {
+                sq = sq.or('tipo_operacao.ilike.%ent%');
+              }
+            }
+
             if (searchTerm) {
               sq = sq.or(`fornecedor_razao.ilike.%${searchTerm}%,fornecedor_cnpj.ilike.%${searchTerm}%,chave_acesso.ilike.%${searchTerm}%`);
             }
@@ -335,6 +344,9 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                       dataEmissao: d.data_emissao,
                       dataEntrada: d.data_entrada,
                       competencia: d.competencia,
+                      tipoOperacao: d.tipo_operacao || (d.direcao_movimento === 'SAIDA' ? 'Saída' : 'Entrada'),
+                      direcaoMovimento: d.direcao_movimento || (d.tipo_operacao === 'Saída' ? 'SAIDA' : 'ENTRADA'),
+                      tomadorCnpj: d.tomador_cnpj || '',
                       fornecedorCnpj: d.fornecedor_cnpj,
                       fornecedorRazao: d.fornecedor_razao,
                       fornecedorUf: d.fornecedor_uf,
@@ -409,6 +421,9 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
                     dataEmissao: d.data_emissao,
                     dataEntrada: d.data_entrada,
                     competencia: d.competencia,
+                    tipoOperacao: d.tipo_operacao || (d.direcao_movimento === 'SAIDA' ? 'Saída' : 'Entrada'),
+                    direcaoMovimento: d.direcao_movimento || (d.tipo_operacao === 'Saída' ? 'SAIDA' : 'ENTRADA'),
+                    tomadorCnpj: d.tomador_cnpj || '',
                     fornecedorCnpj: d.fornecedor_cnpj,
                     fornecedorRazao: d.fornecedor_razao,
                     fornecedorUf: d.fornecedor_uf,
@@ -494,6 +509,9 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
           d.data_emissao as dataEmissao,
           d.data_entrada as dataEntrada,
           d.competencia,
+          d.tipo_operacao as tipoOperacao,
+          d.direcao_movimento as direcaoMovimento,
+          d.tomador_cnpj as tomadorCnpj,
           d.fornecedor_cnpj as fornecedorCnpj,
           d.fornecedor_razao as fornecedorRazao,
           d.fornecedor_uf as fornecedorUf,
@@ -616,6 +634,14 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         } else {
           query += ` AND d.tipo_doc = ?`;
           params.push(effectiveTipoDoc);
+        }
+      }
+      const opFilterSql = (req.query.tipoOperacao as string || req.query.direcaoMovimento as string || '').trim().toUpperCase();
+      if (opFilterSql && opFilterSql !== 'TODAS' && opFilterSql !== 'TODOS') {
+        if (opFilterSql.includes('SAI')) {
+          query += " AND (d.direcao_movimento = 'SAIDA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('saída', 'saida', 'saídas', 'saidas')))";
+        } else if (opFilterSql.includes('ENT')) {
+          query += " AND (d.direcao_movimento = 'ENTRADA' OR (d.direcao_movimento IS NULL AND LOWER(d.tipo_operacao) IN ('entrada', 'entradas')))";
         }
       }
       if (situacaoDoc && situacaoDoc !== 'TODAS') {
@@ -1107,6 +1133,9 @@ router.get('/xml', requireAuth, async (req: AuthenticatedRequest, res: Response)
         dataEmissao: r.dataEmissao,
         dataEntrada: r.dataEntrada,
         competencia: r.competencia || (r.dataEmissao ? String(r.dataEmissao).substring(0, 7) : '2026-08'),
+        tipoOperacao: r.tipoOperacao || (r.direcaoMovimento === 'SAIDA' ? 'Saída' : 'Entrada'),
+        direcaoMovimento: r.direcaoMovimento || (r.tipoOperacao === 'Saída' ? 'SAIDA' : 'ENTRADA'),
+        tomadorCnpj: r.tomadorCnpj || '',
         fornecedorCnpj: r.fornecedorCnpj,
         fornecedorRazao: r.fornecedorRazao,
         fornecedorUf: r.fornecedorUf || 'SP',

@@ -58,6 +58,8 @@ export interface KpiTotals {
 export interface KpiAggregateResult {
   totalGeral: KpiTotals;
   totalFiltrado: KpiTotals;
+  totaisSaida: KpiTotals;
+  totaisEntrada: KpiTotals;
   source: 'hot-cache' | 'sqlite' | 'supabase';
   executionTimeMs: number;
 }
@@ -69,6 +71,7 @@ export interface KpiFilterOptions {
   dataFim?: string;
   tipoDoc?: string;
   tipoOperacao?: string;
+  direcaoMovimento?: string;
   isSuperadmin?: boolean;
 }
 
@@ -297,12 +300,20 @@ function accumulateDoc(totals: KpiTotals, doc: any, paramsInf: ParametrosInferen
   totals.deltaTransicao = totals.totalRegimeReforma - totals.totalRegimeAtual;
 }
 
+function isDocSaida(doc: any): boolean {
+  if (doc.direcao_movimento) {
+    return String(doc.direcao_movimento).toUpperCase() === 'SAIDA';
+  }
+  const op = String(doc.tipo_operacao || '').toLowerCase();
+  return op === 'saída' || op === 'saida' || op === 'saídas' || op === 'saidas' || op === '1';
+}
+
 /**
  * Executa agregação fiscal desacoplada com Total Geral e Total Filtrado
  */
 export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Promise<KpiAggregateResult> {
   const startTime = Date.now();
-  const cacheKey = `kpi_aggregates_${filters.empresaId || 'all'}_${filters.tenantCnpj || 'all'}_${filters.dataInicio || 'all'}_${filters.dataFim || 'all'}_${filters.tipoDoc || 'all'}_${filters.tipoOperacao || 'all'}`;
+  const cacheKey = `kpi_aggregates_${filters.empresaId || 'all'}_${filters.tenantCnpj || 'all'}_${filters.dataInicio || 'all'}_${filters.dataFim || 'all'}_${filters.tipoDoc || 'all'}_${filters.tipoOperacao || 'all'}_${filters.direcaoMovimento || 'all'}`;
 
   // 1. Checa Hot Cache em Memória
   const cached = hotCache.getHotData(cacheKey);
@@ -310,6 +321,8 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
     return {
       totalGeral: cached.data.totalGeral,
       totalFiltrado: cached.data.totalFiltrado,
+      totaisSaida: cached.data.totaisSaida || emptyTotals(),
+      totaisEntrada: cached.data.totaisEntrada || emptyTotals(),
       source: 'hot-cache',
       executionTimeMs: Date.now() - startTime,
     };
@@ -337,13 +350,17 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
             // Empresa ativa não possui documentos ainda cadastrados no Supabase
             const totalGeral = emptyTotals();
             const totalFiltrado = emptyTotals();
+            const totaisSaida = emptyTotals();
+            const totaisEntrada = emptyTotals();
             const result: KpiAggregateResult = {
               totalGeral,
               totalFiltrado,
+              totaisSaida,
+              totaisEntrada,
               source: 'supabase',
               executionTimeMs: Date.now() - startTime,
             };
-            hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado }, 0);
+            hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado, totaisSaida, totaisEntrada }, 0);
             return result;
           }
 
@@ -351,12 +368,20 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
           const numChunks = Math.ceil(totalDocsSupabase / CHUNK_SIZE);
           const chunkPromises: Promise<any>[] = [];
 
-          // Detecta se base_cbs já existe como coluna no Supabase
-          let selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, base_cbs, base_ibs, regime_tributario, cliente_cnpj, fornecedor_cnpj';
-          const { error: testColErr } = await supabase.from('dfe_documentos').select('base_cbs').limit(0);
-          if (testColErr) {
-            selectFields = 'id, empresa_id, tipo_doc, tipo_operacao, data_emissao, valor_total, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss, cliente_cnpj, fornecedor_cnpj';
+          // Detecta dinamicamente colunas existentes no schema cache do Supabase
+          const [{ error: baseErr }, { error: dirErr }] = await Promise.all([
+            supabase.from('dfe_documentos').select('base_cbs').limit(0),
+            supabase.from('dfe_documentos').select('direcao_movimento').limit(0)
+          ]);
+
+          const baseFields = ['id', 'empresa_id', 'tipo_doc', 'tipo_operacao', 'data_emissao', 'valor_total', 'valor_icms', 'valor_ipi', 'valor_pis', 'valor_cofins', 'valor_cbs', 'valor_ibs', 'valor_is', 'valor_irrf', 'valor_inss', 'valor_iss', 'cliente_cnpj', 'fornecedor_cnpj'];
+          if (!dirErr) {
+            baseFields.push('direcao_movimento');
           }
+          if (!baseErr) {
+            baseFields.push('base_cbs', 'base_ibs', 'regime_tributario');
+          }
+          const selectFields = baseFields.join(', ');
 
           for (let i = 0; i < numChunks; i++) {
             const from = i * CHUNK_SIZE;
@@ -379,16 +404,27 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
           const results = await Promise.all(chunkPromises);
           const totalGeral = emptyTotals();
           const totalFiltrado = emptyTotals();
+          const totaisSaida = emptyTotals();
+          const totaisEntrada = emptyTotals();
 
           const dataInicio = filters.dataInicio ? filters.dataInicio.substring(0, 10) : null;
           const dataFim = filters.dataFim ? filters.dataFim.substring(0, 10) : null;
           const tipoDoc = filters.tipoDoc && filters.tipoDoc !== 'TODOS' ? filters.tipoDoc.toUpperCase() : null;
+          const opFiltro = (filters.tipoOperacao || filters.direcaoMovimento || '').trim().toUpperCase();
 
           for (const res of results) {
             if (res.data) {
               for (const doc of res.data) {
                 // Sempre acumula no Total Geral
                 accumulateDoc(totalGeral, doc, paramsInf);
+
+                // Segregação permanente Saída vs Entrada
+                const isSaida = isDocSaida(doc);
+                if (isSaida) {
+                  accumulateDoc(totaisSaida, doc, paramsInf);
+                } else {
+                  accumulateDoc(totaisEntrada, doc, paramsInf);
+                }
 
                 // Aplica filtros para o Total Filtrado
                 let pass = true;
@@ -409,10 +445,9 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
                     pass = false;
                   }
                 }
-                if (filters.tipoOperacao && filters.tipoOperacao !== 'TODAS') {
-                  const isEntrada = doc.tipo_operacao === 'Entrada';
-                  if (filters.tipoOperacao === 'Entradas' && !isEntrada) pass = false;
-                  if (filters.tipoOperacao === 'Saídas' && isEntrada) pass = false;
+                if (opFiltro && opFiltro !== 'TODAS' && opFiltro !== 'TODOS') {
+                  if (opFiltro.includes('SAI') && !isSaida) pass = false;
+                  if (opFiltro.includes('ENT') && isSaida) pass = false;
                 }
 
                 if (pass) {
@@ -425,12 +460,14 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
           const result: KpiAggregateResult = {
             totalGeral,
             totalFiltrado,
+            totaisSaida,
+            totaisEntrada,
             source: 'supabase',
             executionTimeMs: Date.now() - startTime,
           };
 
           // Grava no Hot Cache
-          hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado }, totalGeral.totalDocs);
+          hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado, totaisSaida, totaisEntrada }, totalGeral.totalDocs);
           return result;
         }
       }
@@ -443,11 +480,13 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
   const db = getDatabase();
   const totalGeral = emptyTotals();
   const totalFiltrado = emptyTotals();
+  const totaisSaida = emptyTotals();
+  const totaisEntrada = emptyTotals();
 
   try {
     let sql = `
       SELECT 
-        id, empresa_id, tipo_doc, tipo_operacao, data_emissao,
+        id, empresa_id, tipo_doc, tipo_operacao, direcao_movimento, data_emissao,
         valor_total, valor_icms, valor_pis, valor_cofins, valor_ipi,
         valor_cbs, valor_ibs, valor_is, valor_irrf, valor_inss, valor_iss,
         base_cbs, base_ibs, regime_tributario, cliente_cnpj, fornecedor_cnpj
@@ -469,9 +508,18 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
     const dataInicio = filters.dataInicio ? filters.dataInicio.substring(0, 10) : null;
     const dataFim = filters.dataFim ? filters.dataFim.substring(0, 10) : null;
     const tipoDoc = filters.tipoDoc && filters.tipoDoc !== 'TODOS' ? filters.tipoDoc.toUpperCase() : null;
+    const opFiltro = (filters.tipoOperacao || filters.direcaoMovimento || '').trim().toUpperCase();
 
     for (const doc of rows) {
       accumulateDoc(totalGeral, doc, paramsInf);
+
+      // Segregação permanente Saída vs Entrada
+      const isSaida = isDocSaida(doc);
+      if (isSaida) {
+        accumulateDoc(totaisSaida, doc, paramsInf);
+      } else {
+        accumulateDoc(totaisEntrada, doc, paramsInf);
+      }
 
       let pass = true;
       const docDate = (doc.data_emissao || '').substring(0, 10);
@@ -491,10 +539,9 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
           pass = false;
         }
       }
-      if (filters.tipoOperacao && filters.tipoOperacao !== 'TODAS') {
-        const isEntrada = doc.tipo_operacao === 'Entrada';
-        if (filters.tipoOperacao === 'Entradas' && !isEntrada) pass = false;
-        if (filters.tipoOperacao === 'Saídas' && isEntrada) pass = false;
+      if (opFiltro && opFiltro !== 'TODAS' && opFiltro !== 'TODOS') {
+        if (opFiltro.includes('SAI') && !isSaida) pass = false;
+        if (opFiltro.includes('ENT') && isSaida) pass = false;
       }
 
       if (pass) {
@@ -505,11 +552,13 @@ export async function getDecoupledKpiAggregates(filters: KpiFilterOptions): Prom
     console.warn('⚠️ Erro ao agregar via SQLite:', sqlErr.message);
   }
 
-  hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado }, totalGeral.totalDocs);
+  hotCache.setHotData(cacheKey, { totalGeral, totalFiltrado, totaisSaida, totaisEntrada }, totalGeral.totalDocs);
 
   return {
     totalGeral,
     totalFiltrado,
+    totaisSaida,
+    totaisEntrada,
     source: 'sqlite',
     executionTimeMs: Date.now() - startTime,
   };
